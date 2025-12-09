@@ -1,0 +1,38 @@
+<odoo>
+    <record id="email_template_notify_directie" model="mail.template">
+        <field name="name">Notificatie aan Directie - Nieuwe Nascholingsaanvraag</field>
+        <field name="model_id" ref="model_nascholing_aanvraag"/>
+        <field name="email_from">${(object.teacher_id.work_email or object.create_uid.email_formatted)</field>
+        <field name="subject">Nieuwe nascholingsaanvraag: ${object.name}</field>
+        <field name="email_to">${object.director_id.work_email}</field>
+        <field name="body_html">
+            <![CDATA[
+                <p>Beste Directie,</p>
+                <p>Er is een nieuwe nascholingsaanvraag ingediend door ${object.teacher_id.name}.</p>
+                <p>Beschrijving: ${object.description}</p>
+                <p>Startdatum: ${object.start_date}</p>
+                <p>Einddatum: ${object.end_date}</p>
+                <p>Kost: €${object.cost}</p>
+                <p>Klik <a href="${object.get_portal_url()}">hier</a> om de aanvraag te bekijken.</p>
+            ]]>
+        </field>
+    </record>
+
+    <record id="email_template_notify_teacher" model="mail.template">
+        <field name="name">Notificatie aan Leerkracht - Status Nascholingsaanvraag</field>
+        <field name="model_id" ref="model_nascholing_aanvraag"/>
+        <field name="email_from">${(object.director_id.work_email or object.write_uid.email_formatted)</field>
+        <field name="subject">Status van uw nascholingsaanvraag: ${object.name}</field>
+        <field name="email_to">${object.teacher_id.work_email}</field>
+        <field name="body_html">
+            <![CDATA[
+                <p>Beste ${object.teacher_id.name},</p>
+                <p>Uw nascholingsaanvraag is ${'goedgekeurd' if object.state == 'approved' else 'afgekeurd'}.</p>
+                % if object.state == 'rejected':
+                    <p>Reden: ${object.reason}</p>
+                % endif
+                <p>Klik <a href="${object.get_portal_url()}">hier</a> om de aanvraag te bekijken.</p>
+            ]]>
+        </field>
+    </record>
+</odoo>

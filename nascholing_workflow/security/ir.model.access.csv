@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_nascholing_aanvraag_user,nascholing.aanvraag.user,model_nascholing_aanvraag,base.group_user,1,1,1,0
+access_nascholing_aanvraag_admin,nascholing.aanvraag.admin,model_nascholing_aanvraag,"",1,1,1,1
+access_nascholing_aanvraag_planner,nascholing.aanvraag.planner,model_nascholing_aanvraag,nascholing_workflow.group_nascholing_planner,1,1,1,0

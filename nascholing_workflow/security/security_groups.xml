@@ -1,0 +1,22 @@
+<odoo>
+    <record id="group_nascholing_admin" model="res.groups">
+        <field name="name">nascholing admin</field>
+<!--        <field name="category_id" ref="base.module_category_human_resources"/>-->
+    </record>
+        <record id="group_nascholing_user" model="res.groups">
+        <field name="name">nascholing user</field>
+<!--        <field name="category_id" ref="base.module_category_human_resources"/>-->
+    </record>
+        <record id="group_nascholing_planner" model="res.groups">
+        <field name="name">nascholing planner</field>
+<!--        <field name="category_id" ref="base.module_category_human_resources"/>-->
+    </record>
+</odoo>
+
+<!--        <record id="group_op_assignment_manager" model="res.groups">-->
+<!--            <field name="name">Manager</field>-->
+<!--            <field name="category_id" ref="module_category_openeducat_assignment"/>-->
+<!--            <field name="users" eval="[(4, ref('base.user_admin'))]"/>-->
+<!--            <field name="implied_ids"-->
+<!--                   eval="[(4, ref('openeducat_assignment.group_op_assignment_user'))]"/>-->
+<!--        </record>-->

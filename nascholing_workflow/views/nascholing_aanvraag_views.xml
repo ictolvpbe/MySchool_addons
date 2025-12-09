@@ -1,0 +1,136 @@
+<odoo>
+    <record id="view_nascholing_aanvraag_list" model="ir.ui.view">
+        <field name="name">nascholing.aanvraag.list</field>
+        <field name="model">nascholing.aanvraag</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="description"/>
+                <field name="start_date"/>
+                <field name="end_date"/>
+                <field name="cost"/>
+                <field name="state"/>
+                <field name="teacher_id"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_nascholing_aanvraag_admin_list" model="ir.ui.view">
+        <field name="name">nascholing.aanvraag.list</field>
+        <field name="model">nascholing.aanvraag</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="description"/>
+<!--                <field name="start_date"/>-->
+<!--                <field name="end_date"/>-->
+                <field name="cost"/>
+                <field name="state"/>
+                <field name="teacher_id"/>
+            </list>
+        </field>
+    </record>
+
+
+    <!-- ADMIN : Formulierweergave voor een admins -->
+    <record id="view_nascholing_aanvraag_admin_form" model="ir.ui.view">
+        <field name="name">nascholing.aanvraag.form</field>
+        <field name="model">nascholing.aanvraag</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <!-- Knoppen met groepsbeperkingen en zichtbaarheid op basis van state -->
+<!--                    <button-->
+<!--                        name="submit_request"-->
+<!--                        string="Indienen"-->
+<!--                        type="object"-->
+<!--                        class="btn-primary"-->
+<!--                        modifiers="{'invisible': [('state', '!=', 'draft')]}"-->
+<!--                    />-->
+                    <button
+                        name="approve_request"
+                        string="Goedkeuren"
+                        type="object"
+                        class="btn-primary"
+                        groups="nascholing_workflow.group_nascholing_admin"
+                        modifiers="{'invisible': [('state', '!=', 'submitted')]}"
+                    />
+                    <button
+                        name="reject_request"
+                        string="Afkeuren"
+                        type="object"
+                        groups="nascholing_workflow.group_nascholing_admin"
+                        modifiers="{'invisible': [('state', '!=', 'submitted')]}"
+                    />
+                </header>
+                <sheet>
+                    <group>
+                        <field name="name" readonly="1"/>
+                        <field name="description"/>
+<!--                        <field name="start_date"/>-->
+<!--                        <field name="end_date"/>-->
+                        <field name="cost"/>
+                        <field name="state" widget="statusbar"/>
+                        <!-- 'reason' is alleen leesbaar als state 'rejected' is -->
+                        <field name="reason" />
+<!--                            groups="nascholing_workflow.group_nascholing_admin"-->
+<!--                            readonly="[('state', 'in', ['draft'])]" />-->
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+       <!-- USER : Formulierweergave voor een nascholingsaanvraag -->
+    <record id="view_nascholing_aanvraag_user_form" model="ir.ui.view">
+        <field name="name">nascholing.aanvraag.form</field>
+        <field name="model">nascholing.aanvraag</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <!-- Knoppen met groepsbeperkingen en zichtbaarheid op basis van state -->
+                    <button
+                        name="submit_request"
+                        string="Indienen"
+                        type="object"
+                        class="btn-primary"
+                        modifiers="{'invisible': [('state', '!=', 'draft')]}"
+                    />
+                </header>
+                <sheet>
+                    <group>
+                        <field name="name" readonly="1"/>
+                        <field name="description"/>
+                        <field name="start_date"/>
+                        <field name="end_date"/>
+                        <field name="cost"/>
+                        <field name="state" widget="statusbar"/>
+                        <!-- 'reason' is alleen zicht als state 'rejected' is -->
+                        <field name="reason" invisible="state not in ['rejected']" readonly="True" />
+
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+
+
+
+    <!-- Lijstweergave voor goedgekeurde nascholingsaanvragen -->
+<!--    <record id="view_nascholing_aanvraag_approved_list" model="ir.ui.view">-->
+<!--        <field name="name">nascholing.aanvraag.approved.list</field>-->
+<!--        <field name="model">nascholing.aanvraag</field>-->
+<!--        <field name="arch" type="xml">-->
+<!--            <list>-->
+<!--                <field name="name"/>-->
+<!--                <field name="description"/>-->
+<!--                <field name="start_date"/>-->
+<!--                <field name="end_date"/>-->
+<!--                <field name="teacher_id"/>-->
+<!--                <field name="state"/>-->
+<!--                <field name="cost"/>-->
+<!--            </list>-->
+<!--        </field>-->
+<!--    </record>-->
+</odoo>

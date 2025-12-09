@@ -1,0 +1,11 @@
+<odoo>
+    <!-- Sequentiënummer voor nascholingsaanvragen -->
+    <record id="seq_nascholing_aanvraag" model="ir.sequence">
+        <field name="name">Nascholingsaanvraag</field>
+        <field name="code">nascholing.aanvraag</field>
+        <field name="prefix">NA-</field>
+        <field name="padding">5</field>
+        <field name="number_next">1</field>
+        <field name="number_increment">1</field>
+    </record>
+</odoo>

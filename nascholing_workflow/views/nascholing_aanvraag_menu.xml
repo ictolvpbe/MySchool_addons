@@ -1,0 +1,59 @@
+<odoo>
+    <!-- Actie voor alle nascholingsaanvragen -->
+<!--    <record id="action_nascholing_aanvraag" model="ir.actions.act_window">-->
+<!--        <field name="name">Nascholingsaanvragen</field>-->
+<!--        <field name="res_model">nascholing.aanvraag</field>-->
+<!--        <field name="view_mode">list,form</field>-->
+<!--        <field name="context">{'search_default_order_by_date': 1}</field>-->
+<!--    </record>-->
+
+
+    <!-- Actie voor eigen nascholingsaanvragen (met domain-filter) -->
+    <record id="action_nascholing_aanvraag_mijnaanvragen" model="ir.actions.act_window">
+        <field name="name">Mijn Nascholingsaanvragen</field>
+        <field name="res_model">nascholing.aanvraag</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_nascholing_aanvraag_list')}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_nascholing_aanvraag_user_form')}),
+            (0, 0, {'view_mode': 'kanban'})]"/>
+
+        <field name="domain">[('teacher_id.user_id', '=', uid)]</field>
+    </record>
+
+    <!-- Actie voor goed te keuren nascholingsaanvragen (met domain-filter) -->
+    <record id="action_nascholing_aanvraag_beheer" model="ir.actions.act_window">
+        <field name="name">Goed te keuren Nascholingsaanvragen</field>
+        <field name="res_model">nascholing.aanvraag</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_nascholing_aanvraag_admin_list')}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_nascholing_aanvraag_admin_form')}),
+            (0, 0, {'view_mode': 'kanban'})]"/>
+
+        <field name="domain">[('state', '=', 'submitted')]</field>
+        <field name="context">{'search_default_order_by_date': 1}</field>
+    </record>
+
+<!--&lt;!&ndash; Actie open admin formulier vanuit admin lijst &ndash;&gt;-->
+<!--    <record id="action_nascholing_aanvraag_beheer_form" model="ir.actions.act_window">-->
+<!--        <field name="name">Aanvraag Beheer</field>-->
+<!--        <field name="res_model">nascholing.aanvraag</field>-->
+<!--        <field name="view_mode">list,form</field>-->
+<!--        <field name="view_id" ref="view_nascholing_aanvraag_form_admin"/>-->
+<!--    </record>-->
+
+
+
+
+    <!-- Hoofdmenu voor Nascholing -->
+    <menuitem id="menu_nascholing_root" name="Nascholing" action="action_nascholing_aanvraag_mijnaanvragen"/>
+
+    <!-- Submenu voor alle aanvragen -->
+    <menuitem id="menu_nascholing_aanvraag_beheren" name="Beheren" parent="menu_nascholing_root" action="action_nascholing_aanvraag_beheer"/>
+<!--    <menuitem id="menu_nascholing_aanvraag_beheren" name="Beheren" parent="menu_nascholing_root" action="action_nascholing_aanvraag_beheer" groups="nascholing_workflow.group_nascholing_admin" sequence="20"/>-->
+
+    <!-- Submenu voor goedgekeurde aanvragen (voor afwezigheidsbeheer) -->
+<!--    <menuitem id="menu_nascholing_aanvraag_approved" name="Goedgekeurde Aanvragen" parent="menu_nascholing_root" action="action_nascholing_aanvraag_approved" groups="nascholing_workflow.group_nascholing_admin,base.group_user" sequence="30"/>-->
+
+</odoo>
