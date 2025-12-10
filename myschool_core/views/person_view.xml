@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Person Tree View -->
+    <record id="view_school_person_tree" model="ir.ui.view">
+        <field name="name">school.person.tree</field>
+        <field name="model">school.person</field>
+        <field name="arch" type="xml">
+            <tree string="Personen">
+                <field name="name"/>
+                <field name="first_name"/>
+                <field name="short_name"/>
+                <field name="person_type_id"/>
+                <field name="sap_ref"/>
+                <field name="is_active"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Person Form View -->
+    <record id="view_school_person_form" model="ir.ui.view">
+        <field name="name">school.person.form</field>
+        <field name="model">school.person</field>
+        <field name="arch" type="xml">
+            <form string="Persoon">
+                <sheet>
+                    <div class="oe_button_box" name="button_box"/>
+                    <group>
+                        <group string="Naamgegevens">
+                            <field name="name"/>
+                            <field name="first_name"/>
+                            <field name="short_name"/>
+                            <field name="abbreviation"/>
+                        </group>
+                        <group string="Status &amp; Type">
+                            <field name="person_type_id"/>
+                            <field name="is_active"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Basis Gegevens" name="basic_info">
+                            <group>
+                                <group>
+                                    <field name="gender"/>
+                                    <field name="birth_date"/>
+                                    <field name="insz"/>
+                                </group>
+                                <group>
+                                    <field name="sap_ref"/>
+                                    <field name="sap_person_uuid"/>
+                                    <field name="stam_boek_nr"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Registratie" name="registration">
+                            <group>
+                                <group>
+                                    <field name="reg_start_date"/>
+                                    <field name="reg_end_date"/>
+                                </group>
+                                <group>
+                                    <field name="reg_inst_nr"/>
+                                    <field name="reg_group_code"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Accounts" name="accounts">
+                            <group>
+                                <field name="email_cloud"/>
+                                <field name="password" password="True"/>
+                            </group>
+                        </page>
+
+                        <page string="Details" name="details">
+                            <field name="person_details_set">
+                                <tree>
+                                    <field name="hoofd_ambt"/>
+                                    <field name="extra_field_1"/>
+                                </tree>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Person Search View -->
+    <record id="view_school_person_search" model="ir.ui.view">
+        <field name="name">school.person.search</field>
+        <field name="model">school.person</field>
+        <field name="arch" type="xml">
+            <search string="Zoek Personen">
+                <field name="name"/>
+                <field name="first_name"/>
+                <field name="sap_ref"/>
+                <field name="person_type_id"/>
+                <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
+                <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
+                <group expand="0" string="Groepeer op">
+                    <filter string="Type" name="group_type" context="{'group_by': 'person_type_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Person Action -->
+    <record id="action_school_person" model="ir.actions.act_window">
+        <field name="name">Personen</field>
+        <field name="res_model">school.person</field>
+        <field name="view_mode">tree,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Maak een nieuwe persoon aan
+            </p>
+        </field>
+    </record>
+</odoo>
