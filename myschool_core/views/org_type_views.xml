@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Organization Type Tree View -->
-    <record id="view_school_org_type_tree" model="ir.ui.view">
-        <field name="name">school.org.type.tree</field>
-        <field name="model">school.org.type</field>
+    <!-- Organization Type list View -->
+    <record id="view_myschool_org_type_list" model="ir.ui.view">
+        <field name="name">myschool.org.type.list</field>
+        <field name="model">myschool.org.type</field>
         <field name="arch" type="xml">
-            <tree string="Organisatie Types">
+            <list>
                 <field name="name"/>
                 <field name="description"/>
                 <field name="is_active"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <!-- Organization Type Form View -->
-    <record id="view_school_org_type_form" model="ir.ui.view">
-        <field name="name">school.org.type.form</field>
-        <field name="model">school.org.type</field>
+    <record id="view_myschool_org_type_form" model="ir.ui.view">
+        <field name="name">myschool.org.type.form</field>
+        <field name="model">myschool.org.type</field>
         <field name="arch" type="xml">
             <form string="Organisatie Type">
                 <sheet>
@@ -33,10 +33,10 @@
     </record>
 
     <!-- Organization Type Action -->
-    <record id="action_school_org_type" model="ir.actions.act_window">
+    <record id="action_myschool_org_type" model="ir.actions.act_window">
         <field name="name">Organisatie Types</field>
-        <field name="res_model">school.org.type</field>
-        <field name="view_mode">tree,form</field>
+        <field name="res_model">myschool.org.type</field>
+        <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Maak een nieuw organisatie type aan

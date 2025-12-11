@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Role Type Tree View -->
-    <record id="view_school_role_type_tree" model="ir.ui.view">
-        <field name="name">school.role.type.tree</field>
-        <field name="model">school.role.type</field>
+    <!-- Role Type list View -->
+    <record id="view_myschool_role_type_list" model="ir.ui.view">
+        <field name="name">myschool.role.type.list</field>
+        <field name="model">myschool.role.type</field>
         <field name="arch" type="xml">
-            <tree string="Rol Types">
+            <list>
                 <field name="name"/>
                 <field name="short_name"/>
                 <field name="is_active"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <!-- Role Type Form View -->
-    <record id="view_school_role_type_form" model="ir.ui.view">
-        <field name="name">school.role.type.form</field>
-        <field name="model">school.role.type</field>
+    <record id="view_myschool_role_type_form" model="ir.ui.view">
+        <field name="name">myschool.role.type.form</field>
+        <field name="model">myschool.role.type</field>
         <field name="arch" type="xml">
             <form string="Rol Type">
                 <sheet>
@@ -31,10 +31,10 @@
     </record>
 
     <!-- Role Type Action -->
-    <record id="action_school_role_type" model="ir.actions.act_window">
+    <record id="action_myschool_role_type" model="ir.actions.act_window">
         <field name="name">Rol Types</field>
-        <field name="res_model">school.role.type</field>
-        <field name="view_mode">tree,form</field>
+        <field name="res_model">myschool.role.type</field>
+        <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Maak een nieuw rol type aan

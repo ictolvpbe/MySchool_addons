@@ -1,24 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Organization Tree View -->
-    <record id="view_school_org_tree" model="ir.ui.view">
-        <field name="name">school.org.tree</field>
-        <field name="model">school.org</field>
+    <data>
+    <!-- Organization list View -->
+    <record id="view_myschool_org_list" model="ir.ui.view">
+        <field name="name">myschool.org.list</field>
+        <field name="model">myschool.org</field>
         <field name="arch" type="xml">
-            <tree string="Organisaties">
+            <list>
                 <field name="name"/>
                 <field name="name_short"/>
                 <field name="inst_nr"/>
                 <field name="org_type_id"/>
                 <field name="is_active"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <!-- Organization Form View -->
-    <record id="view_school_org_form" model="ir.ui.view">
-        <field name="name">school.org.form</field>
-        <field name="model">school.org</field>
+    <record id="view_myschool_org_form" model="ir.ui.view">
+        <field name="name">myschool.org.form</field>
+        <field name="model">myschool.org</field>
         <field name="arch" type="xml">
             <form string="Organisatie">
                 <sheet>
@@ -101,9 +102,9 @@
     </record>
 
     <!-- Organization Search View -->
-    <record id="view_school_org_search" model="ir.ui.view">
-        <field name="name">school.org.search</field>
-        <field name="model">school.org</field>
+    <record id="view_myschool_org_search" model="ir.ui.view">
+        <field name="name">myschool.org.search</field>
+        <field name="model">myschool.org</field>
         <field name="arch" type="xml">
             <search string="Zoek Organisaties">
                 <field name="name"/>
@@ -112,18 +113,20 @@
                 <field name="org_type_id"/>
                 <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
                 <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
-                <group expand="0" string="Groepeer op">
-                    <filter string="Type" name="group_type" context="{'group_by': 'org_type_id'}"/>
-                </group>
+
+                <!-- group geeft nog een fout, waarschijnlijk omdat org_type_id een one2many veld is  >-->
+<!--                <group expand="0" string="Groepeer op" name="groupby_type">-->
+<!--                    <filter string="Type" name="group_by_type" context="{'group_by': 'org_type_id'}"/>-->
+<!--                </group>-->
             </search>
         </field>
     </record>
 
     <!-- Organization Action -->
-    <record id="action_school_org" model="ir.actions.act_window">
+    <record id="action_myschool_org" model="ir.actions.act_window">
         <field name="name">Organisaties</field>
-        <field name="res_model">school.org</field>
-        <field name="view_mode">tree,form</field>
+        <field name="res_model">myschool.org</field>
+        <field name="view_mode">list,form</field>
         <field name="context">{'search_default_active': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
@@ -131,4 +134,5 @@
             </p>
         </field>
     </record>
+    </data>
 </odoo>

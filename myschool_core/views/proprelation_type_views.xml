@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- PropRelation Type Tree View -->
-    <record id="view_school_proprelation_type_tree" model="ir.ui.view">
-        <field name="name">school.proprelation.type.tree</field>
-        <field name="model">school.proprelation.type</field>
+    <!-- PropRelation Type list View -->
+    <record id="view_myschool_proprelation_type_list" model="ir.ui.view">
+        <field name="name">myschool.proprelation.type.list</field>
+        <field name="model">myschool.proprelation.type</field>
         <field name="arch" type="xml">
-            <tree string="Relatie Types">
+            <list>
                 <field name="name"/>
                 <field name="usage"/>
                 <field name="is_active"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <!-- PropRelation Type Form View -->
-    <record id="view_school_proprelation_type_form" model="ir.ui.view">
-        <field name="name">school.proprelation.type.form</field>
-        <field name="model">school.proprelation.type</field>
+    <record id="view_myschool_proprelation_type_form" model="ir.ui.view">
+        <field name="name">myschool.proprelation.type.form</field>
+        <field name="model">myschool.proprelation.type</field>
         <field name="arch" type="xml">
             <form string="Relatie Type">
                 <sheet>
@@ -31,10 +31,10 @@
     </record>
 
     <!-- PropRelation Type Action -->
-    <record id="action_school_proprelation_type" model="ir.actions.act_window">
+    <record id="action_myschool_proprelation_type" model="ir.actions.act_window">
         <field name="name">Relatie Types</field>
-        <field name="res_model">school.proprelation.type</field>
-        <field name="view_mode">tree,form</field>
+        <field name="res_model">myschool.proprelation.type</field>
+        <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Maak een nieuw relatie type aan

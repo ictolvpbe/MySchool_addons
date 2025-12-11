@@ -1,105 +1,105 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- Main Menu -->
-    <menuitem id="menu_school_root"
+    <menuitem id="menu_myschool_root"
               name="School"
               sequence="10"
               web_icon="school,static/description/icon.png"/>
 
     <!-- Organizations Menu -->
-    <menuitem id="menu_school_organization"
+    <menuitem id="menu_myschool_organization"
               name="Organisaties"
-              parent="menu_school_root"
+              parent="menu_myschool_root"
               sequence="10"/>
 
-    <menuitem id="menu_school_org"
+    <menuitem id="menu_myschool_org"
               name="Organisaties"
-              parent="menu_school_organization"
-              action="action_school_org"
+              parent="menu_myschool_organization"
+              action="action_myschool_org"
               sequence="10"/>
 
-    <menuitem id="menu_school_org_type"
+    <menuitem id="menu_myschool_org_type"
               name="Organisatie Types"
-              parent="menu_school_organization"
-              action="action_school_org_type"
+              parent="menu_myschool_organization"
+              action="action_myschool_org_type"
               sequence="20"/>
 
     <!-- Persons Menu -->
-    <menuitem id="menu_school_persons"
+    <menuitem id="menu_myschool_persons"
               name="Personen"
-              parent="menu_school_root"
+              parent="menu_myschool_root"
               sequence="20"/>
 
-    <menuitem id="menu_school_person"
+    <menuitem id="menu_myschool_person"
               name="Personen"
-              parent="menu_school_persons"
-              action="action_school_person"
+              parent="menu_myschool_persons"
+              action="action_myschool_person"
               sequence="10"/>
 
-    <menuitem id="menu_school_person_type"
+    <menuitem id="menu_myschool_person_type"
               name="Persoon Types"
-              parent="menu_school_persons"
-              action="action_school_person_type"
+              parent="menu_myschool_persons"
+              action="action_myschool_person_type"
               sequence="20"/>
 
-    <menuitem id="menu_school_person_details"
+    <menuitem id="menu_myschool_person_details"
               name="Persoon Details"
-              parent="menu_school_persons"
-              action="action_school_person_details"
+              parent="menu_myschool_persons"
+              action="action_myschool_person_details"
               sequence="30"/>
 
     <!-- Roles Menu -->
-    <menuitem id="menu_school_roles"
+    <menuitem id="menu_myschool_roles"
               name="Rollen"
-              parent="menu_school_root"
+              parent="menu_myschool_root"
               sequence="30"/>
 
-    <menuitem id="menu_school_role"
+    <menuitem id="menu_myschool_role"
               name="Rollen"
-              parent="menu_school_roles"
-              action="action_school_role"
+              parent="menu_myschool_roles"
+              action="action_myschool_role"
               sequence="10"/>
 
-    <menuitem id="menu_school_role_type"
+    <menuitem id="menu_myschool_role_type"
               name="Rol Types"
-              parent="menu_school_roles"
-              action="action_school_role_type"
+              parent="menu_myschool_roles"
+              action="action_myschool_role_type"
               sequence="20"/>
 
     <!-- Periods Menu -->
-    <menuitem id="menu_school_periods"
+    <menuitem id="menu_myschool_periods"
               name="Periodes"
-              parent="menu_school_root"
+              parent="menu_myschool_root"
               sequence="40"/>
 
-    <menuitem id="menu_school_period"
+    <menuitem id="menu_myschool_period"
               name="Periodes"
-              parent="menu_school_periods"
-              action="action_school_period"
+              parent="menu_myschool_periods"
+              action="action_myschool_period"
               sequence="10"/>
 
-    <menuitem id="menu_school_period_type"
+    <menuitem id="menu_myschool_period_type"
               name="Periode Types"
-              parent="menu_school_periods"
-              action="action_school_period_type"
+              parent="menu_myschool_periods"
+              action="action_myschool_period_type"
               sequence="20"/>
 
     <!-- Relations Menu -->
-    <menuitem id="menu_school_relations"
+    <menuitem id="menu_myschool_relations"
               name="Relaties"
-              parent="menu_school_root"
+              parent="menu_myschool_root"
               sequence="50"/>
 
-    <menuitem id="menu_school_proprelation"
+    <menuitem id="menu_myschool_proprelation"
               name="Relaties"
-              parent="menu_school_relations"
-              action="action_school_proprelation"
+              parent="menu_myschool_relations"
+              action="action_myschool_proprelation"
               sequence="10"/>
 
-    <menuitem id="menu_school_proprelation_type"
+    <menuitem id="menu_myschool_proprelation_type"
               name="Relatie Types"
-              parent="menu_school_relations"
-              action="action_school_proprelation_type"
+              parent="menu_myschool_relations"
+              action="action_myschool_proprelation_type"
               sequence="20"/>
 
 </odoo>

@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Role Tree View -->
-    <record id="view_school_role_tree" model="ir.ui.view">
-        <field name="name">school.role.tree</field>
-        <field name="model">school.role</field>
+    <!-- Role list View -->
+    <record id="view_myschool_role_list" model="ir.ui.view">
+        <field name="name">myschool.role.list</field>
+        <field name="model">myschool.role</field>
         <field name="arch" type="xml">
-            <tree string="Rollen">
+            <list>
                 <field name="name"/>
                 <field name="short_name"/>
                 <field name="priority"/>
                 <field name="role_type_id"/>
                 <field name="is_active"/>
-            </tree>
+            </list>
         </field>
     </record>
 
     <!-- Role Form View -->
-    <record id="view_school_role_form" model="ir.ui.view">
-        <field name="name">school.role.form</field>
-        <field name="model">school.role</field>
+    <record id="view_myschool_role_form" model="ir.ui.view">
+        <field name="name">myschool.role.form</field>
+        <field name="model">myschool.role</field>
         <field name="arch" type="xml">
             <form string="Rol">
                 <sheet>
@@ -50,9 +50,9 @@
     </record>
 
     <!-- Role Search View -->
-    <record id="view_school_role_search" model="ir.ui.view">
-        <field name="name">school.role.search</field>
-        <field name="model">school.role</field>
+    <record id="view_myschool_role_search" model="ir.ui.view">
+        <field name="name">myschool.role.search</field>
+        <field name="model">myschool.role</field>
         <field name="arch" type="xml">
             <search string="Zoek Rollen">
                 <field name="name"/>
@@ -61,18 +61,18 @@
                 <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
                 <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
                 <filter string="Met UI Toegang" name="has_ui" domain="[('has_ui_access', '=', True)]"/>
-                <group expand="0" string="Groepeer op">
-                    <filter string="Type" name="group_type" context="{'group_by': 'role_type_id'}"/>
-                </group>
+<!--                <group expand="0" string="Groepeer op">-->
+<!--                    <filter string="Type" name="group_type" context="{'group_by': 'role_type_id'}"/>-->
+<!--                </group>-->
             </search>
         </field>
     </record>
 
     <!-- Role Action -->
-    <record id="action_school_role" model="ir.actions.act_window">
+    <record id="action_myschool_role" model="ir.actions.act_window">
         <field name="name">Rollen</field>
-        <field name="res_model">school.role</field>
-        <field name="view_mode">tree,form</field>
+        <field name="res_model">myschool.role</field>
+        <field name="view_mode">list,form</field>
         <field name="context">{'search_default_active': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">

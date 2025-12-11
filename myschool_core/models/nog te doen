@@ -1,0 +1,5 @@
+Init Bestanden: Zorg ervoor dat alle nieuwe Python-bestanden worden geïmporteerd in de __init__.py van hun respectievelijke mappen (bijv. in models/__init__.py).
+
+Manifest: Voeg je nieuwe XML-bestand (school_views.xml) toe aan de "data" lijst in je module's __manifest__.py bestand.
+
+Ontbrekende Modellen: Je zult de modellen myschool.person.details en de relaties van de PropRelation met zich zelf of andere modellen (die in de Java-code misschien niet volledig zijn) moeten verifiëren en eventueel aanmaken in Odoo als ze nodig zijn.
