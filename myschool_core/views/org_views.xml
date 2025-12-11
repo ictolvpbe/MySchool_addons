@@ -9,6 +9,7 @@
             <list>
                 <field name="name"/>
                 <field name="name_short"/>
+                <field name="OldId"/>
                 <field name="inst_nr"/>
                 <field name="org_type_id"/>
                 <field name="is_active"/>
@@ -110,6 +111,7 @@
                 <field name="name"/>
                 <field name="name_short"/>
                 <field name="inst_nr"/>
+                <field name="OldId"/>
                 <field name="org_type_id"/>
                 <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
                 <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>

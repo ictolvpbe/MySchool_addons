@@ -2,7 +2,7 @@
 <odoo>
     <!-- Main Menu -->
     <menuitem id="menu_myschool_root"
-              name="School"
+              name="MySchool"
               sequence="10"
               web_icon="school,static/description/icon.png"/>
 

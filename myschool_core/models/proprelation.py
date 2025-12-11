@@ -7,6 +7,9 @@ class PropRelation(models.Model):
     _name = 'myschool.proprelation'
     _description = 'Persoon/Rol/Organisatie/Period Relatie'
 
+    #Tijdelijk
+    OldId = fields.Char(string='OldId', required=False)
+
     name = fields.Char(string='Naam')
 
     # Many2one Relaties (naar zichzelf of naar andere modellen)

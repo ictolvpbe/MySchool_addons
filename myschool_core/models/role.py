@@ -6,7 +6,11 @@ class Role(models.Model):
     _description = 'Rol'
 
     name = fields.Char(string='Naam', required=True)
-    short_name = fields.Char(string='Korte Naam', required=True)
+    short_name = fields.Char(string='Korte Naam', required=False)
+
+    #Tijdelijk
+    OldId = fields.Char(string='OldId', required=False)
+
 
     # Let op: Java had 'priotity' (spelfout), hier gecorrigeerd naar 'priority'
     priority = fields.Integer(string='Prioriteit', help="Hoogste prioriteit bepaalt account creatie")

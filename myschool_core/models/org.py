@@ -6,6 +6,9 @@ class Org(models.Model):
     _description = 'Organisatie'
    # _inherit = 'mail.thread'
 
+    #Tijdelijk
+    OldId = fields.Char(string='OldId', required=False)
+
     # Aanname: SapProvider is een selection field. Vul de waarden aan indien nodig.
     SAP_PROVIDER_SELECTION = [('1', 'Provider 1'), ('2', 'Provider 2')]
 
@@ -19,8 +22,8 @@ class Org(models.Model):
     org_type_id = fields.Many2one('myschool.org.type', string='Organisatie Type', ondelete='restrict')
 
     # Adres
-    street = fields.Char(string='Straat', size=50)
-    street_nr = fields.Char(string='Straatnummer', size=10)
+    street = fields.Char(string='Straat', size=50, required=True)
+    street_nr = fields.Char(string='Straatnummer', size=10,required=True)
     postal_code = fields.Char(string='Postcode', size=10)
     community = fields.Char(string='Gemeente', size=50)
     country = fields.Char(string='Land', size=30)
@@ -35,6 +38,7 @@ class Org(models.Model):
     domain_internal = fields.Char(string='Intern Domein')
     domain_external = fields.Char(string='Extern Domein')
     has_ou = fields.Boolean(string='Heeft OU', default=False)
+    has_role = fields.Boolean(string='Heeft Role', default=False)
     has_comgroup = fields.Boolean(string='Heeft Communicatiegroep', default=False)
     has_secgroup = fields.Boolean(string='Heeft Securitygroep', default=False)
     ou_fqdn_internal = fields.Char(string='OU FQDN Intern')

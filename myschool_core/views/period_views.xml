@@ -10,6 +10,7 @@
                 <field name="name_in_sap"/>
                 <field name="period_type_id"/>
                 <field name="start_date"/>
+                <field name="end_date"/>
                 <field name="is_active"/>
             </list>
         </field>
@@ -31,6 +32,7 @@
                         <group>
                             <field name="period_type_id"/>
                             <field name="start_date"/>
+                            <field name="end_date"/>
                             <field name="is_active"/>
                         </group>
                     </group>

@@ -12,6 +12,7 @@ class Period(models.Model):
 
     # Java Date + TemporalType.TIMESTAMP vertaald naar Datetime
     start_date = fields.Datetime(string='Startdatum')
+    end_date = fields.Datetime(string='Einddatum')
 
     # Relatie
     period_type_id = fields.Many2one('myschool.period.type', string='Periode Type', ondelete='restrict')
