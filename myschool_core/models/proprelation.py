@@ -17,20 +17,23 @@ class PropRelation(models.Model):
 
     # Person Relaties
     id_person = fields.Many2one('myschool.person', string='Persoon')
-    id_person_child = fields.Many2one('myschool.person', string='Kind Persoon')
-    id_person_parent = fields.Many2one('myschool.person', string='Ouder Persoon')
+    id_person_child = fields.Many2one('myschool.person', string='Child Persoon')
+    id_person_parent = fields.Many2one('myschool.person', string='Parent Persoon')
 
     # Role Relaties
     id_role = fields.Many2one('myschool.role', string='Rol')
-    id_role_parent = fields.Many2one('myschool.role', string='Ouder Rol')  # Kind Rol (idRoleChild) mist in PropRelation.java
+    id_role_parent = fields.Many2one('myschool.role', string='Parent Rol')  # Kind Rol (idRoleChild) mist in PropRelation.java
+    id_role_child = fields.Many2one('myschool.role', string='Child Rol')
 
     # Org Relaties
     id_org = fields.Many2one('myschool.org', string='Organisatie')
-    id_org_parent = fields.Many2one('myschool.org', string='Ouder Organisatie')  # Kind Org (idOrgChild) mist in PropRelation.java
+    id_org_parent = fields.Many2one('myschool.org', string='Parent Organisatie')  # Kind Org (idOrgChild) mist in PropRelation.java
+    id_org_child = fields.Many2one('myschool.org', string='Child Organgistation')
 
     # Period Relaties
     id_period = fields.Many2one('myschool.period', string='Periode')
-    id_period_parent = fields.Many2one('myschool.period', string='Ouder Periode')  # Kind Periode (idPeriodChild) mist in PropRelation.java
+    id_period_parent = fields.Many2one('myschool.period', string='Parent Periode')  # Kind Periode (idPeriodChild) mist in PropRelation.java
+    id_period_child = fields.Many2one('myschool.period', string='Child Periode')
 
     # Status & Datum
     is_administrative = fields.Boolean(string='Is Administratief', default=False)

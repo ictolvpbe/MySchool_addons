@@ -1,0 +1,60 @@
+Stap 3: Definieer de Afhankelijkheid in de UI Module
+Dit is de cruciale stap. Open het manifestbestand van de UI-module en voeg mijnapp_core toe aan de depends lijst.
+mijnapp_ui/__manifest__.py:
+python
+{
+    'name': 'Mijn App UI & Extra Views',
+    'version': '1.0',
+    'category': 'Specific Apps',
+    'summary': 'Extra schermen en UI voor Mijn App',
+    'installable': True,
+    'application': True, # Dit is de app die de gebruiker installeert
+    'depends': ['mijnapp_core'], # <-- HIER IS DE AFHANKELIJKHEID
+    'data': [
+        # XML view bestanden, menu items, etc. komen hier
+    ],
+}
+Wees voorzichtig met code.
+
+Stap 4: Gebruik de Code en Modellen
+Zodra je deze afhankelijkheid hebt ingesteld en beide modules in je Odoo Addons Path hebt geplaatst:
+Modellen Gebruiken (Python): In je Python-code binnen mijnapp_ui kun je direct verwijzen naar de modellen die in mijnapp_core zijn gedefinieerd.
+python
+# Voorbeeld in mijnapp_ui/models/ui_extra.py
+from odoo import models, fields
+
+class PersonsInheritUI(models.Model):
+    # We 'patchen' het bestaande model uit de core module
+    _inherit = 'my_module.persons'
+
+    # We voegen een nieuw veld toe via de UI module
+    ui_specific_field = fields.Char(string="Alleen zichtbaar in UI module")
+
+    # Je kunt ook methoden uit de core module overschrijven of uitbreiden
+Wees voorzichtig met code.
+
+Code Gebruiken (Python): Je kunt Python-klassen en functies importeren uit de core module. Zorg er wel voor dat de __init__.py bestanden de imports correct afhandelen.
+python
+# Voorbeeld: Importeer een service uit de core module
+from odoo import models
+from mijnapp_core.services.person_service import PersonService
+
+class SomeUIClass(models.Model):
+    _name = 'mijnapp_ui.something'
+
+    def call_core_service(self):
+        # Gebruik code die in de core module is gedefinieerd
+        PersonService.get_all_persons_data(self.env)
+Wees voorzichtig met code.
+
+Belangrijk: Installatievolgorde
+Wanneer je de modules installeert:
+Zet beide modules in je Odoo addons pad.
+Ga naar de Odoo interface (zorg dat de ontwikkelaarsmodus aan staat).
+Update de "Apps List".
+Installeer mijnapp_ui.
+Odoo zal automatisch herkennen dat mijnapp_ui afhankelijk is van mijnapp_core en zal eerst de mijnapp_core installeren voordat het met de UI-module begint.
+AI-reacties kunnen fouten bevatten. Meer informatie
+
+
+

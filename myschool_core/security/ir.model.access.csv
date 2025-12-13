@@ -21,3 +21,11 @@ access_myschool_proprelation_user,myschool.proprelation.user,model_myschool_prop
 access_myschool_proprelation_manager,myschool.proprelation.manager,model_myschool_proprelation,group_myschool_manager,1,1,1,1
 access_myschool_proprelation_type_user,myschool.proprelation.type.user,model_myschool_proprelation_type,group_myschool_user,1,0,0,0
 access_myschool_proprelation_type_manager,myschool.proprelation.type.manager,model_myschool_proprelation_type,group_myschool_manager,1,1,1,1
+access_myschool_config_item_user,myschool.config.item.user,model_myschool_config_item,group_myschool_user,1,0,0,0
+access_myschool_config_item_manager,myschool.config.item.manager,model_myschool_config_item,group_myschool_manager,1,1,1,1
+access_myschool_ci_relation_user,myschool.ci.relation.user,model_myschool_ci_relation,group_myschool_user,1,0,0,0
+access_myschool_ci_relation_manager,myschool.ci.relation.manager,model_myschool_ci_relation,group_myschool_manager,1,1,1,1
+access_myschool_betask_type_user,myschool.betask.type.user,model_myschool_betask_type,group_myschool_user,1,0,0,0
+access_myschool_betask_type_manager,myschool.betask.type.manager,model_myschool_betask_type,group_myschool_manager,1,1,1,1
+access_myschool_betask_task_user,myschool.betask.task.user,model_myschool_betask_task,group_myschool_user,1,0,0,0
+access_myschool_betask_task_manager,myschool.betask.task.manager,model_myschool_betask_task,group_myschool_manager,1,1,1,1

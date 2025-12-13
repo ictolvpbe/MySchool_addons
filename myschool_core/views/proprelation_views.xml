@@ -29,7 +29,6 @@
                         <group>
                             <field name="name"/>
                             <field name="proprelation_type_id"/>
-                            <field name="OldId"/>
                         </group>
                         <group>
                             <field name="start_date"/>
@@ -50,6 +49,7 @@
                             <group>
                                 <field name="id_role"/>
                                 <field name="id_role_parent"/>
+                                <field name="id_role_child"/>
                             </group>
                         </page>
 
@@ -57,6 +57,7 @@
                             <group>
                                 <field name="id_org"/>
                                 <field name="id_org_parent"/>
+                                <field name="id_org_child"/>
                             </group>
                         </page>
 
@@ -64,6 +65,7 @@
                             <group>
                                 <field name="id_period"/>
                                 <field name="id_period_parent"/>
+                                <field name="id_period_child"/>
                             </group>
                         </page>
 

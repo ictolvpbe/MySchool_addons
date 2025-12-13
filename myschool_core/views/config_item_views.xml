@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="view_config_item_list" model="ir.ui.view">
+            <field name="name">myschool.config.item.list</field>
+            <field name="model">myschool.config.item</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="name"/>
+                    <field name="scope"/>
+                    <field name="type"/>
+                    <field name="string_value"/>
+                    <field name="integer_value"/>
+                    <field name="boolean_value"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_config_item_form" model="ir.ui.view">
+            <field name="name">myschool.config.item.form</field>
+            <field name="model">myschool.config.item</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <field name="name"/>
+                            <field name="scope"/>
+                            <field name="type"/>
+                        </group>
+
+                        <group string="Values">
+                            <field name="string_value"/>
+                            <field name="integer_value"/>
+                            <field name="boolean_value"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Action -->
+        <record id="action_config_item" model="ir.actions.act_window">
+            <field name="name">Configuration Items</field>
+            <field name="res_model">myschool.config.item</field>
+            <field name="view_mode">list,form</field>
+        </record>
+    </data>
+</odoo>

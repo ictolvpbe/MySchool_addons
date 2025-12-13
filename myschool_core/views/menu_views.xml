@@ -2,7 +2,7 @@
 <odoo>
     <!-- Main Menu -->
     <menuitem id="menu_myschool_root"
-              name="MySchool"
+              name="MySchool Management"
               sequence="10"
               web_icon="school,static/description/icon.png"/>
 
@@ -100,6 +100,45 @@
               name="Relatie Types"
               parent="menu_myschool_relations"
               action="action_myschool_proprelation_type"
+              sequence="20"/>
+
+        <!-- Configuration Menu -->
+    <menuitem id="menu_myschool_config_item"
+              name="Configuration"
+              parent="menu_myschool_root"
+              sequence="10"/>
+
+    <!-- Config Item Menu -->
+    <menuitem id="menu_config_item"
+              name="Configuration Items"
+              parent="menu_myschool_config_item"
+              action="action_config_item"
+              sequence="10"/>
+
+    <!-- CI Relations Menu -->
+    <menuitem id="menu_ci_relation"
+              name="CI Relations"
+              parent="menu_myschool_config_item"
+              action="action_ci_relation"
+              sequence="20"/>
+
+
+    <!-- Backend Tasks Menu -->
+    <menuitem id="menu_myschool_betask"
+              name="BeTask"
+              parent="menu_myschool_root"
+              sequence="10"/>
+
+    <menuitem id="menu_betask_tasks"
+              name="Tasks"
+              parent="menu_myschool_betask"
+              action="action_betask_task"
+              sequence="10"/>
+
+    <menuitem id="menu_betask_types"
+              name="Task Types"
+              parent="menu_myschool_betask"
+              action="action_betask_type"
               sequence="20"/>
 
 </odoo>

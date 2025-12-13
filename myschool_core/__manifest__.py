@@ -28,6 +28,8 @@
         'views/role_type_views.xml',
         'views/period_type_views.xml',
         'views/proprelation_type_views.xml',
+        'views/ci_relation_views.xml',
+
 
         # Views - Main models
         'views/org_views.xml',
@@ -36,6 +38,8 @@
         'views/role_views.xml',
         'views/period_views.xml',
         'views/proprelation_views.xml',
+        'views/config_item_views.xml',
+        'views/betask_views.xml',
 
         # Menus
         'views/menu_views.xml',
