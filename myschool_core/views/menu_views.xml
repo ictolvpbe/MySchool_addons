@@ -4,6 +4,7 @@
     <menuitem id="menu_myschool_root"
               name="MySchool Management"
               sequence="10"
+              action="action_myschool_app"
               web_icon="school,static/description/icon.png"/>
 
     <!-- Organizations Menu -->
@@ -140,5 +141,43 @@
               parent="menu_myschool_betask"
               action="action_betask_type"
               sequence="20"/>
+
+   <!-- Events Menu -->
+    <menuitem id="menu_sys_event_events"
+              name="SysEvents"
+              parent="menu_myschool_root"
+              sequence="10"/>
+
+    <menuitem id="menu_sys_event_all"
+              name="All Events"
+              parent="menu_sys_event_events"
+              action="action_sys_event_all"
+              sequence="10"/>
+
+    <menuitem id="menu_sys_event_new"
+              name="New Events"
+              parent="menu_sys_event_events"
+              action="action_sys_event_new"
+              sequence="20"/>
+
+    <menuitem id="menu_sys_event_errors"
+              name="Errors"
+              parent="menu_sys_event_events"
+              action="action_sys_event_errors"
+              sequence="30"/>
+
+    <!-- Configuration Menu -->
+    <menuitem id="menu_sys_event_config"
+              name="Configuration"
+              parent="menu_sys_event_events"
+              sequence="90"/>
+
+    <menuitem id="menu_sys_event_type"
+              name="Event Types"
+              parent="menu_sys_event_events"
+              action="action_sys_event_type"
+              sequence="10"/>
+
+
 
 </odoo>

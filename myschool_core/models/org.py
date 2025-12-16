@@ -22,8 +22,8 @@ class Org(models.Model):
     org_type_id = fields.Many2one('myschool.org.type', string='Organisatie Type', ondelete='restrict')
 
     # Adres
-    street = fields.Char(string='Straat', size=50, required=True)
-    street_nr = fields.Char(string='Straatnummer', size=10,required=True)
+    street = fields.Char(string='Straat', size=50)
+    street_nr = fields.Char(string='Straatnummer', size=10)
     postal_code = fields.Char(string='Postcode', size=10)
     community = fields.Char(string='Gemeente', size=50)
     country = fields.Char(string='Land', size=30)

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- List View -->
+    <record id="view_sys_event_type_list" model="ir.ui.view">
+        <field name="name">myschool.sys.event.type.list</field>
+        <field name="model">myschool.sys.event.type</field>
+        <field name="arch" type="xml">
+            <list string="System Event Types">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="event_count"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_sys_event_type_form" model="ir.ui.view">
+        <field name="name">myschool.sys.event.type.form</field>
+        <field name="model">myschool.sys.event.type</field>
+        <field name="arch" type="xml">
+            <form string="System Event Type">
+                <sheet>
+<!--                    <div class="oe_button_box" name="button_box">-->
+<!--                        <button name="%(action_sys_event_all)d"-->
+<!--                                type="action"-->
+<!--                                class="oe_stat_button"-->
+<!--                                icon="fa-calendar"-->
+<!--                                context="{'default_syseventtype_id': active_id, 'search_default_syseventtype_id': active_id}">-->
+<!--                            <field name="event_count" widget="statinfo" string="Events"/>-->
+<!--                        </button>-->
+<!--                    </div>-->
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="code"/>
+                        </group>
+                        <group>
+                            <field name="active" widget="boolean_toggle"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description">
+                            <field name="description" placeholder="Enter a detailed description of this event type..."/>
+                        </page>
+                        <page string="Events">
+                            <field name="event_ids" readonly="1">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="eventcode"/>
+                                    <field name="source"/>
+                                    <field name="priority" widget="priority"/>
+                                    <field name="status" widget="badge" decoration-success="status == 'CLOSED'" decoration-info="status == 'PROCESS'" decoration-warning="status == 'PRO_ERROR'" decoration-muted="status == 'NEW'"/>
+                                    <field name="create_date"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_sys_event_type_search" model="ir.ui.view">
+        <field name="name">myschool.sys.event.type.search</field>
+        <field name="model">myschool.sys.event.type</field>
+        <field name="arch" type="xml">
+            <search string="Search Event Types">
+                <field name="name" filter_domain="['|', ('name', 'ilike', self), ('code', 'ilike', self)]"/>
+                <field name="code"/>
+                <separator/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+<!--                <group expand="0" string="Group By">-->
+<!--                    <filter string="Active" name="group_active" context="{'group_by': 'active'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_sys_event_type" model="ir.actions.act_window">
+        <field name="name">Event Types</field>
+        <field name="res_model">myschool.sys.event.type</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first Event Type
+            </p>
+            <p>
+                Event types categorize system events for better organization and tracking.
+            </p>
+        </field>
+    </record>
+</odoo>

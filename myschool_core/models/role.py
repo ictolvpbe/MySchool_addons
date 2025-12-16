@@ -16,7 +16,7 @@ class Role(models.Model):
     priority = fields.Integer(string='Prioriteit', help="Hoogste prioriteit bepaalt account creatie")
 
     # Relatie
-    role_type_id = fields.Many2one('myschool.role.type', string='Rol Type', ondelete='restrict')
+    role_type_id = fields.Many2one('myschool.role.type', string='Rol Type')#, ondelete='restrict')
 
     has_ui_access = fields.Boolean(string='Heeft UI Toegang', default=True)
     has_group = fields.Boolean(string='Vereist Groep', default=False)

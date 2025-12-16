@@ -1,30 +1,23 @@
-# my_module/services/person_service.py
-from odoo import models, api, _
+from odoo import api, models
 
-class PersonService(models.AbstractModel):
-    _name = 'myschool.informat.service'
-    _description = 'Service for managing informat '
 
-    @api.model
-    def get_all_persons_data(self):
+class InformatService:
+    def __init__(self, env):
+        self.env = env
+
+    def my_procedure(self):
         """
-        Haalt alle records op van het persons model.persons
+        Your procedure logic here
         """
-        # We gebruiken self.env['modelnaam'] om het model te benaderen
-        all_persons = self.env['my_module.persons'].search([])
-
-        if not all_persons:
-            print("Geen personen gevonden.")
-            return []
-
-        results = []
-        for person in all_persons:
-            results.append({
-                'id': person.id,
-                'name': person.name,
-                'age': person.age,
-            })
-            print(f"Persoon gevonden: {person.name} (ID: {person.id})")
-
-        return results
-
+        # Example: Log something or perform operations
+        print("Procedure executed!")
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Success',
+                'message': 'Procedure executed successfully!',
+                'type': 'success',
+                'sticky': False,
+            }
+        }

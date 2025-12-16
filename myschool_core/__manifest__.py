@@ -23,13 +23,13 @@
         'security/ir.model.access.csv',
 
         # Views - Types first (dependencies)
+        'views/main_views.xml',
         'views/org_type_views.xml',
         'views/person_type_views.xml',
         'views/role_type_views.xml',
         'views/period_type_views.xml',
         'views/proprelation_type_views.xml',
         'views/ci_relation_views.xml',
-
 
         # Views - Main models
         'views/org_views.xml',
@@ -40,9 +40,14 @@
         'views/proprelation_views.xml',
         'views/config_item_views.xml',
         'views/betask_views.xml',
+        'views/sys_event_views.xml',
+        'views/sys_event_type_views.xml',
 
         # Menus
         'views/menu_views.xml',
+
+        #demo data
+        'data/sequence.xml',
     ],
     'demo': [],
     'installable': True,
