@@ -48,6 +48,7 @@
 
         #demo data
         'data/sequence.xml',
+        'data/sys_event_data.xml',
     ],
     'demo': [],
     'installable': True,

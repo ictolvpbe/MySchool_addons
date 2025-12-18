@@ -1,20 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- ========================================= -->
+    <!-- SYSTEM EVENT VIEWS -->
+    <!-- ========================================= -->
+
     <!-- List View -->
     <record id="view_sys_event_list" model="ir.ui.view">
         <field name="name">myschool.sys.event.list</field>
         <field name="model">myschool.sys.event</field>
         <field name="arch" type="xml">
-            <list string="System Events" decoration-danger="status == 'PRO_ERROR'" decoration-success="status == 'CLOSED'" decoration-info="status == 'PROCESS'">
+            <list string="System Events" 
+                  decoration-danger="status == 'PRO_ERROR' or (priority == '1' and status != 'CLOSED')" 
+                  decoration-success="status == 'CLOSED'" 
+                  decoration-info="status == 'PROCESS'"
+                  decoration-warning="is_blocking and status != 'CLOSED'">
                 <field name="name"/>
                 <field name="syseventtype_id"/>
                 <field name="eventcode"/>
                 <field name="source"/>
                 <field name="priority" widget="priority"/>
-                <field name="status" widget="badge" decoration-success="status == 'CLOSED'" decoration-info="status == 'PROCESS'" decoration-warning="status == 'PRO_ERROR'" decoration-muted="status == 'NEW'"/>
-                <field name="user_id" widget="many2one_avatar_user"/>
-                <field name="create_date"/>
-                <field name="eventclosed" optional="hide"/>
+                <field name="is_blocking" column_invisible="1"/>
+                <field name="status" widget="badge" 
+                       decoration-success="status == 'CLOSED'" 
+                       decoration-info="status == 'PROCESS'" 
+                       decoration-danger="status == 'PRO_ERROR'" 
+                       decoration-muted="status == 'NEW'"/>
+                <field name="user_id" widget="many2one_avatar_user" optional="show"/>
+                <field name="create_date" string="Created"/>
+                <field name="eventclosed" string="Closed" optional="hide"/>
+                <field name="duration_hours" string="Duration (h)" optional="hide"/>
             </list>
         </field>
     </record>
@@ -26,61 +40,76 @@
         <field name="arch" type="xml">
             <form string="System Event">
                 <header>
-                    <button name="action_set_processing" string="Start Processing" type="object" 
-                            class="oe_highlight" invisible="status != 'NEW'"/>
-                    <button name="action_set_error" string="Mark as Error" type="object" 
-                            class="btn-warning" invisible="status not in ['NEW', 'PROCESS']"/>
-                    <button name="action_set_closed" string="Close Event" type="object" 
-                            class="oe_highlight" invisible="status == 'CLOSED'"/>
-                    <button name="action_reopen" string="Reopen" type="object" 
+                    <button name="action_set_processing" 
+                            string="Start Processing" 
+                            type="object" 
+                            class="oe_highlight" 
+                            invisible="status != 'NEW'"/>
+                    <button name="action_set_error" 
+                            string="Mark as Error" 
+                            type="object" 
+                            class="btn-warning" 
+                            invisible="status not in ['NEW', 'PROCESS']"/>
+                    <button name="action_set_closed" 
+                            string="Close Event" 
+                            type="object" 
+                            class="oe_highlight" 
+                            invisible="status == 'CLOSED'"/>
+                    <button name="action_reopen" 
+                            string="Reopen" 
+                            type="object" 
                             invisible="status != 'CLOSED'"/>
                     <field name="status" widget="statusbar" statusbar_visible="NEW,PROCESS,CLOSED"/>
                 </header>
                 <sheet>
-                    <div class="oe_button_box" name="button_box">
-                        <!-- Add custom buttons here if needed -->
-                    </div>
+                    <div class="oe_button_box" name="button_box"/>
                     <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <widget name="web_ribbon" title="BLOCKING ERROR" bg_color="text-bg-danger" invisible="not is_blocking or status == 'CLOSED'"/>
+                    <widget name="web_ribbon" title="HIGH PRIORITY" bg_color="text-bg-warning" invisible="priority != '1' or is_blocking or status == 'CLOSED'"/>
                     <div class="oe_title">
                         <h1>
                             <field name="name" readonly="1"/>
                         </h1>
+                        <h3 invisible="not eventcode">
+                            <span class="text-muted">Code:</span> <field name="eventcode" readonly="1" class="oe_inline"/>
+                        </h3>
                     </div>
                     <group>
-                        <group>
+                        <group string="Event Information">
                             <field name="syseventtype_id" options="{'no_create': True}"/>
                             <field name="source"/>
                             <field name="eventcode"/>
                             <field name="priority" widget="priority"/>
                         </group>
-                        <group>
+                        <group string="Tracking">
                             <field name="user_id" widget="many2one_avatar_user"/>
                             <field name="company_id" groups="base.group_multi_company"/>
                             <field name="create_date" string="Created On"/>
                             <field name="eventclosed" readonly="1"/>
-                            <field name="duration_days" invisible="not eventclosed"/>
+                            <field name="duration_hours" invisible="not eventclosed" readonly="1"/>
                             <field name="active" widget="boolean_toggle"/>
                         </group>
                     </group>
                     <notebook>
-                        <page string="Event Data">
-                            <field name="data" placeholder="Enter detailed event data here..." widget="text"/>
+                        <page string="Event Data" name="data">
+                            <field name="data" placeholder="Detailed event data..." widget="text"/>
                         </page>
-                        <page string="Additional Information">
+                        <page string="Classification" name="classification">
                             <group>
-                                <group>
-                                    <field name="priority_label"/>
-                                    <field name="is_closed"/>
+                                <group string="Priority">
+                                    <field name="priority_label" readonly="1"/>
+                                    <field name="is_error" readonly="1"/>
+                                    <field name="is_blocking" readonly="1"/>
+                                </group>
+                                <group string="Status">
+                                    <field name="is_closed" readonly="1"/>
+                                    <field name="duration_days" readonly="1"/>
                                 </group>
                             </group>
                         </page>
                     </notebook>
                 </sheet>
-<!--                <div class="oe_chatter">-->
-<!--                    <field name="message_follower_ids"/>-->
-<!--                    <field name="activity_ids"/>-->
-<!--                    <field name="message_ids"/>-->
-<!--                </div>-->
+                <chatter/>
             </form>
         </field>
     </record>
@@ -98,9 +127,12 @@
                 <field name="status"/>
                 <field name="eventcode"/>
                 <field name="create_date"/>
+                <field name="color"/>
+                <field name="is_blocking"/>
+                <progressbar field="status" colors='{"NEW": "muted", "PROCESS": "info", "PRO_ERROR": "danger", "CLOSED": "success"}'/>
                 <templates>
                     <t t-name="kanban-box">
-                        <div class="oe_kanban_global_click">
+                        <div t-attf-class="oe_kanban_color_#{kanban_getcolor(record.color.raw_value)} oe_kanban_card oe_kanban_global_click">
                             <div class="o_kanban_record_top">
                                 <div class="o_kanban_record_headings">
                                     <strong class="o_kanban_record_title">
@@ -112,10 +144,18 @@
                                 </span>
                             </div>
                             <div class="o_kanban_record_body">
-                                <field name="syseventtype_id"/>
-                                <br/>
-                                <span class="badge text-bg-secondary"><field name="source"/></span>
-                                <span t-if="record.eventcode.raw_value"> - <field name="eventcode"/></span>
+                                <div class="mb-1">
+                                    <field name="syseventtype_id"/>
+                                </div>
+                                <div>
+                                    <span class="badge text-bg-secondary"><field name="source"/></span>
+                                    <span t-if="record.eventcode.raw_value" class="ms-1 text-muted">
+                                        <field name="eventcode"/>
+                                    </span>
+                                </div>
+                                <div t-if="record.is_blocking.raw_value" class="mt-1">
+                                    <span class="badge text-bg-danger">BLOCKING</span>
+                                </div>
                             </div>
                             <div class="o_kanban_record_bottom">
                                 <div class="oe_kanban_bottom_left">
@@ -132,6 +172,49 @@
         </field>
     </record>
 
+    <!-- Calendar View -->
+    <record id="view_sys_event_calendar" model="ir.ui.view">
+        <field name="name">myschool.sys.event.calendar</field>
+        <field name="model">myschool.sys.event</field>
+        <field name="arch" type="xml">
+            <calendar string="System Events" 
+                      date_start="create_date" 
+                      date_stop="eventclosed" 
+                      color="syseventtype_id"
+                      mode="month"
+                      quick_create="0">
+                <field name="name"/>
+                <field name="eventcode"/>
+                <field name="status"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- Pivot View -->
+    <record id="view_sys_event_pivot" model="ir.ui.view">
+        <field name="name">myschool.sys.event.pivot</field>
+        <field name="model">myschool.sys.event</field>
+        <field name="arch" type="xml">
+            <pivot string="System Events Analysis">
+                <field name="syseventtype_id" type="row"/>
+                <field name="status" type="col"/>
+                <field name="id" type="measure" string="Count"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Graph View -->
+    <record id="view_sys_event_graph" model="ir.ui.view">
+        <field name="name">myschool.sys.event.graph</field>
+        <field name="model">myschool.sys.event</field>
+        <field name="arch" type="xml">
+            <graph string="System Events" type="bar">
+                <field name="create_date" interval="day"/>
+                <field name="id" type="measure" string="Event Count"/>
+            </graph>
+        </field>
+    </record>
+
     <!-- Search View -->
     <record id="view_sys_event_search" model="ir.ui.view">
         <field name="name">myschool.sys.event.search</field>
@@ -142,55 +225,78 @@
                 <field name="syseventtype_id"/>
                 <field name="eventcode"/>
                 <field name="source"/>
+                <field name="data"/>
                 <field name="user_id"/>
                 <separator/>
+                <!-- Status Filters -->
                 <filter string="New" name="new" domain="[('status', '=', 'NEW')]"/>
                 <filter string="Processing" name="processing" domain="[('status', '=', 'PROCESS')]"/>
                 <filter string="Errors" name="errors" domain="[('status', '=', 'PRO_ERROR')]"/>
                 <filter string="Closed" name="closed" domain="[('status', '=', 'CLOSED')]"/>
+                <filter string="Open (Not Closed)" name="open" domain="[('status', 'in', ['NEW', 'PROCESS', 'PRO_ERROR'])]"/>
                 <separator/>
+                <!-- Priority Filters -->
                 <filter string="High Priority" name="high_priority" domain="[('priority', '=', '1')]"/>
                 <filter string="Normal Priority" name="normal_priority" domain="[('priority', '=', '2')]"/>
                 <filter string="Low Priority" name="low_priority" domain="[('priority', '=', '3')]"/>
                 <separator/>
+                <!-- Type Filters -->
+                <filter string="Blocking Errors" name="blocking" domain="[('is_blocking', '=', True)]"/>
+                <filter string="All Errors" name="all_errors" domain="[('is_error', '=', True)]"/>
+                <filter string="General Events" name="general_events" domain="[('is_error', '=', False)]"/>
+                <separator/>
+                <!-- Source Filters -->
                 <filter string="Backend" name="backend" domain="[('source', '=', 'BE')]"/>
                 <filter string="AD Sync" name="adsync" domain="[('source', '=', 'ADSYNC')]"/>
+                <filter string="SAP Sync" name="sapsync" domain="[('source', '=', 'SAPSYNC')]"/>
+                <filter string="API" name="api" domain="[('source', '=', 'API')]"/>
+                <filter string="Scheduled" name="cron" domain="[('source', '=', 'CRON')]"/>
                 <separator/>
+                <!-- User Filters -->
                 <filter string="My Events" name="my_events" domain="[('user_id', '=', uid)]"/>
+                <separator/>
+                <!-- Active/Archived -->
                 <filter string="Active" name="active" domain="[('active', '=', True)]"/>
                 <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
                 <separator/>
-                <filter string="Created Today" name="today" domain="[('create_date', '&gt;=', datetime.datetime.now().strftime('%Y-%m-%d 00:00:00'))]"/>
-                <filter string="Created This Week" name="week" domain="[('create_date', '&gt;=', (context_today() - datetime.timedelta(days=7)).strftime('%Y-%m-%d'))]"/>
-                <filter string="Created This Month" name="month" domain="[('create_date', '&gt;=', (context_today().replace(day=1)).strftime('%Y-%m-%d'))]"/>
-<!--                <group expand="0" string="Group By">-->
-<!--                    <filter string="Status" name="group_status" context="{'group_by': 'status'}"/>-->
-<!--&lt;!&ndash;                    <filter string="Event Type" name="group_type" context="{'group_by': 'syseventtype_id'}"/>&ndash;&gt;-->
-<!--                    <filter string="Source" name="group_source" context="{'group_by': 'source'}"/>-->
-<!--                    <filter string="Priority" name="group_priority" context="{'group_by': 'priority'}"/>-->
-<!--&lt;!&ndash;                    <filter string="Responsible User" name="group_user" context="{'group_by': 'user_id'}"/>&ndash;&gt;-->
-<!--                    <filter string="Creation Date" name="group_create_date" context="{'group_by': 'create_date'}"/>-->
-<!--                </group>-->
+                <!-- Date Filters -->
+                <filter string="Created Today" name="today" 
+                        domain="[('create_date', '&gt;=', datetime.datetime.combine(context_today(), datetime.time(0,0,0)).strftime('%%Y-%%m-%%d %%H:%%M:%%S'))]"/>
+                <filter string="Created This Week" name="week" 
+                        domain="[('create_date', '&gt;=', (context_today() - datetime.timedelta(days=7)).strftime('%%Y-%%m-%%d'))]"/>
+                <filter string="Created This Month" name="month" 
+                        domain="[('create_date', '&gt;=', context_today().replace(day=1).strftime('%%Y-%%m-%%d'))]"/>
             </search>
         </field>
     </record>
 
-    <!-- Actions -->
+    <!-- ========================================= -->
+    <!-- ACTIONS -->
+    <!-- ========================================= -->
+
+    <!-- All Events -->
     <record id="action_sys_event_all" model="ir.actions.act_window">
         <field name="name">System Events</field>
         <field name="res_model">myschool.sys.event</field>
-        <field name="view_mode">list,kanban,form</field>
+        <field name="view_mode">list,kanban,form,calendar,pivot,graph</field>
         <field name="context">{'search_default_active': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 No system events found
             </p>
             <p>
-                System events will be created automatically by the system or manually by users.
+                System events are created automatically by the system during operations like:
+                <ul>
+                    <li>User logins and actions</li>
+                    <li>Data synchronization (AD Sync, SAP Sync)</li>
+                    <li>API calls and scheduled tasks</li>
+                    <li>Error conditions and exceptions</li>
+                </ul>
             </p>
         </field>
     </record>
 
+    <!-- New Events -->
     <record id="action_sys_event_new" model="ir.actions.act_window">
         <field name="name">New Events</field>
         <field name="res_model">myschool.sys.event</field>
@@ -199,6 +305,7 @@
         <field name="domain">[('status', '=', 'NEW')]</field>
     </record>
 
+    <!-- Error Events -->
     <record id="action_sys_event_errors" model="ir.actions.act_window">
         <field name="name">Event Errors</field>
         <field name="res_model">myschool.sys.event</field>
@@ -206,4 +313,23 @@
         <field name="context">{'search_default_errors': 1, 'search_default_active': 1}</field>
         <field name="domain">[('status', '=', 'PRO_ERROR')]</field>
     </record>
+
+    <!-- Blocking Errors -->
+    <record id="action_sys_event_blocking" model="ir.actions.act_window">
+        <field name="name">Blocking Errors</field>
+        <field name="res_model">myschool.sys.event</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="context">{'search_default_blocking': 1, 'search_default_open': 1}</field>
+        <field name="domain">[('is_blocking', '=', True), ('status', '!=', 'CLOSED')]</field>
+    </record>
+
+    <!-- Open Events -->
+    <record id="action_sys_event_open" model="ir.actions.act_window">
+        <field name="name">Open Events</field>
+        <field name="res_model">myschool.sys.event</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="context">{'search_default_open': 1}</field>
+        <field name="domain">[('status', 'in', ['NEW', 'PROCESS', 'PRO_ERROR'])]</field>
+    </record>
+
 </odoo>
