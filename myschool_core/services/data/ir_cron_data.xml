@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        
+        <!-- Scheduled action for Informat Sync (runs daily at 3:00 AM) -->
+        <record id="ir_cron_informat_sync" model="ir.cron">
+            <field name="name">Informat: Sync with local database</field>
+            <field name="model_id" ref="model_myschool_informat_service"/>
+            <field name="state">code</field>
+            <field name="code">model.execute_sync(dev_mode=False)</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="active" eval="True"/>
+            <!-- Run at 3:00 AM -->
+            <field name="nextcall" eval="(DateTime.now().replace(hour=3, minute=0, second=0) + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')"/>
+            <field name="priority">5</field>
+        </record>
+        
+        <!-- Scheduled action for Differential Informat Sync (runs daily at 3:00 AM) -->
+        <record id="ir_cron_informat_diff_sync" model="ir.cron">
+            <field name="name">Informat: Differential Sync with local database</field>
+            <field name="model_id" ref="model_myschool_informat_service"/>
+            <field name="state">code</field>
+            <field name="code">model.execute_diff_sync(dev_mode=False)</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="numbercall">-1</field>
+            <field name="doall" eval="False"/>
+            <field name="active" eval="False"/>
+            <!-- Run at 3:00 AM (disabled by default) -->
+            <field name="nextcall" eval="(DateTime.now().replace(hour=3, minute=0, second=0) + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')"/>
+            <field name="priority">10</field>
+        </record>
+        
+    </data>
+</odoo>

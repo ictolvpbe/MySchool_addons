@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- Informat Service Configuration Form View -->
+    <record id="view_informat_service_config_form" model="ir.ui.view">
+        <field name="name">myschool.informat.service.config.form</field>
+        <field name="model">myschool.informat.service.config</field>
+        <field name="arch" type="xml">
+            <form string="Informat Service Configuration">
+                <header>
+                    <button name="action_run_sync" type="object" 
+                            string="Run Full Sync" class="btn-primary"
+                            confirm="This will run a full synchronization with Informat. Continue?"/>
+                    <button name="action_run_diff_sync" type="object" 
+                            string="Run Differential Sync" class="btn-secondary"
+                            confirm="This will run a differential synchronization. Continue?"/>
+                    <button name="action_create_storage_directories" type="object"
+                            string="Create Storage Directories" class="btn-secondary"
+                            groups="base.group_system"/>
+                    <button name="action_show_storage_paths" type="object"
+                            string="Show Paths" class="btn-link"
+                            groups="base.group_system"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                    </div>
+                    <widget name="web_ribbon" title="Development" bg_color="warning" 
+                            invisible="not dev_mode"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="Configuration Name"/>
+                        </h1>
+                    </div>
+                    
+                    <group>
+                        <group string="General Settings">
+                            <field name="active"/>
+                            <field name="dev_mode"/>
+                            <field name="default_org_short_name"/>
+                        </group>
+                        <group string="Sync Settings">
+                            <field name="sync_days_back"/>
+                            <field name="retry_count"/>
+                            <field name="timeout_seconds"/>
+                        </group>
+                    </group>
+                    
+                    <notebook>
+                        <page string="API Configuration" name="api_config">
+                            <group>
+                                <group string="Authentication">
+                                    <field name="identity_server_url"/>
+                                    <field name="api_version"/>
+                                </group>
+                                <group string="Endpoints">
+                                    <field name="students_api_url"/>
+                                    <field name="employees_api_url"/>
+                                    <field name="employee_assignments_api_url"/>
+                                </group>
+                            </group>
+                        </page>
+                        
+                        <page string="Storage" name="storage">
+                            <group>
+                                <group string="File Paths">
+                                    <field name="storage_path_dev"/>
+                                    <field name="storage_path_prod"/>
+                                </group>
+                            </group>
+                        </page>
+                        
+                        <page string="Last Sync Status" name="status">
+                            <group>
+                                <group string="Status">
+                                    <field name="last_sync_timestamp"/>
+                                    <field name="last_sync_status" widget="badge"
+                                           decoration-success="last_sync_status == 'success'"
+                                           decoration-danger="last_sync_status == 'error'"
+                                           decoration-warning="last_sync_status == 'running'"
+                                           decoration-muted="last_sync_status == 'not_run'"/>
+                                </group>
+                                <group string="Statistics">
+                                    <field name="last_students_processed"/>
+                                    <field name="last_employees_processed"/>
+                                    <field name="last_tasks_created"/>
+                                </group>
+                            </group>
+                            <group string="Message">
+                                <field name="last_sync_message" nolabel="1" colspan="2"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    
+    <!-- Informat Service Configuration list View -->
+    <record id="view_informat_service_config_list" model="ir.ui.view">
+        <field name="name">myschool.informat.service.config.list</field>
+        <field name="model">myschool.informat.service.config</field>
+        <field name="arch" type="xml">
+            <list string="Informat Service Configurations">
+                <field name="name"/>
+                <field name="active"/>
+                <field name="dev_mode"/>
+                <field name="last_sync_timestamp"/>
+                <field name="last_sync_status" widget="badge"
+                       decoration-success="last_sync_status == 'success'"
+                       decoration-danger="last_sync_status == 'error'"
+                       decoration-warning="last_sync_status == 'running'"
+                       decoration-muted="last_sync_status == 'not_run'"/>
+            </list>
+        </field>
+    </record>
+    
+    <!-- Action for Informat Service Configuration -->
+    <record id="action_informat_service_config" model="ir.actions.act_window">
+        <field name="name">Informat Service Configuration</field>
+        <field name="res_model">myschool.informat.service.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create a new Informat Service Configuration
+            </p>
+            <p>
+                Configure the synchronization settings for the Informat SAP integration.
+            </p>
+        </field>
+    </record>
+    
+    <!-- Menu Items (parent menu should exist in myschool_core module) -->
+    <!-- Uncomment and adjust parent reference based on your module structure -->
+    <!--
+    <menuitem id="menu_informat_service_root"
+              name="Informat Service"
+              parent="myschool_core.menu_myschool_config"
+              sequence="100"/>
+    
+    <menuitem id="menu_informat_service_config"
+              name="Configuration"
+              parent="menu_informat_service_root"
+              action="action_informat_service_config"
+              sequence="10"/>
+    -->
+    
+</odoo>

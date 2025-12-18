@@ -44,6 +44,7 @@
         'views/sys_event_type_views.xml',
         'views/betask_type_views.xml',
         'views/betask_views.xml',
+        'views/informat_service_config_views.xml',
 
         # Menus
         'views/menu_views.xml',
@@ -51,6 +52,11 @@
         #demo data
         'data/sequence.xml',
         'data/sys_event_data.xml',
+
+        #Services
+        #'services/data/ir_cron_data.xml',
+
+
     ],
     'demo': [],
     'installable': True,

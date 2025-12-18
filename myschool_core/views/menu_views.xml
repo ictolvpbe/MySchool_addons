@@ -194,7 +194,7 @@
               action="action_betask_processing"
               sequence="40"/>
 
-    <!-- Configuration -->
+    <!-- Betask Configuration -->
     <menuitem id="menu_betask_config"
               name="Configuration"
               parent="menu_betask_root"
@@ -206,5 +206,16 @@
               action="action_betask_type"
               sequence="10"/>
 
+    <!-- Informat Sync Configuration -->
 
+    <menuitem id="menu_informat_service_root"
+              parent="menu_myschool_root"
+              name="Informat Sync"
+              sequence="99"/>
+
+    <menuitem id="menu_informat_service_config"
+              name="Configuration"
+              parent="menu_informat_service_root"
+              action="action_informat_service_config"
+              sequence="10"/>
 </odoo>
