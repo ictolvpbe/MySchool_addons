@@ -42,6 +42,8 @@
         'views/betask_views.xml',
         'views/sys_event_views.xml',
         'views/sys_event_type_views.xml',
+        'views/betask_type_views.xml',
+        'views/betask_views.xml',
 
         # Menus
         'views/menu_views.xml',

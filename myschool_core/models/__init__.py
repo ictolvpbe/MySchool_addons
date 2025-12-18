@@ -13,5 +13,6 @@ from . import proprelation
 from . import config_item
 from . import cirelation
 from . import betask
+from . import betask_type
 from . import sys_event
 from . import sys_event_type
