@@ -11,7 +11,7 @@ from . import period
 from . import proprelation_type
 from . import proprelation
 from . import config_item
-from . import cirelation
+from . import ci_relation
 from . import betask
 from . import betask_type
 from . import sys_event

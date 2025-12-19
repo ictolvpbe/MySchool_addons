@@ -10,7 +10,7 @@ class Org(models.Model):
     OldId = fields.Char(string='OldId', required=False)
 
     # Aanname: SapProvider is een selection field. Vul de waarden aan indien nodig.
-    SAP_PROVIDER_SELECTION = [('1', 'Provider 1'), ('2', 'Provider 2')]
+    SAP_PROVIDER_SELECTION = [('1', 'INFORMAT'), ('2', 'NONE')]  #TODO : get providers from database in stead of selection
 
     name = fields.Char(string='Naam', required=True)
     name_short = fields.Char(string='Korte Naam', required=True)

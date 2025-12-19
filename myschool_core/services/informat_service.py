@@ -21,7 +21,6 @@ import os
 import traceback
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Any
-
 import requests
 
 from odoo import api, fields, models, _
@@ -213,7 +212,7 @@ class InformatService(models.AbstractModel):
     # =========================================================================
 
     @api.model
-    def execute_sync(self, dev_mode: bool = True) -> bool:
+    def execute_sync(self, dev_mode: bool = False) -> bool:
         """
         Main synchronization method - retrieves data from SAP, analyzes it,
         and creates the required tasks.
@@ -234,9 +233,9 @@ class InformatService(models.AbstractModel):
             # Calculate timestamp for last sync (15 days ago)
             timestamp_latest_sync = (datetime.now() - timedelta(days=15)).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
             
-            # Check for blocking tasks
-            if self._check_blocking_tasks():
-                return False
+            # Check for blocking tasks  todo: controleren eens er taken verwerkt worden
+            # if self._check_blocking_tasks():
+            #     return False
             
             # =====================================================
             # PHASE 1: Employee Processing
@@ -627,7 +626,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', 'INFORMAT')])
+            schools = Org.search([('sap_provider', '=', '1')])  #TODO : rework selection
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing employee data for {school.inst_nr}")
@@ -718,7 +717,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', 'INFORMAT')])
+            schools = Org.search([('sap_provider', '=', '1')])
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing assignment data for {school.inst_nr}")
@@ -1205,8 +1204,8 @@ class InformatService(models.AbstractModel):
 
     def _check_blocking_tasks(self) -> bool:
         """Check for system blocking tasks."""
-        BeTask = self.env['myschool.be.task']
-        BeTaskType = self.env['myschool.be.task.type']
+        BeTask = self.env['myschool.betask']
+        BeTaskType = self.env['myschool.betask.type']
         
         blocking_task_type = BeTaskType.search([
             ('target', '=', 'SYSTEM'),
@@ -1229,8 +1228,8 @@ class InformatService(models.AbstractModel):
 
     def _check_manual_role_tasks(self) -> bool:
         """Check for manual role tasks."""
-        BeTask = self.env['myschool.be.task']
-        BeTaskType = self.env['myschool.be.task.type']
+        BeTask = self.env['myschool.betask']
+        BeTaskType = self.env['myschool.betask.type']
         
         manual_task_type = BeTaskType.search([
             ('target', '=', 'ALL'),
@@ -1259,8 +1258,8 @@ class InformatService(models.AbstractModel):
         @param obj: Task object (STUDENT, EMPLOYEE, ORG, ROLE, etc.)
         @param action: Task action (ADD, UPD, DEACT, etc.)
         """
-        BeTaskProcessor = self.env.get('myschool.be.task.processor')
-        BeTaskType = self.env['myschool.be.task.type']
+        BeTaskProcessor = self.env.get('myschool.betask.processor')
+        BeTaskType = self.env['myschool.betask.type']
         
         task_type = BeTaskType.search([
             ('target', '=', target),
@@ -1282,13 +1281,13 @@ class InformatService(models.AbstractModel):
         @param data2: Additional JSON data
         @return: Created BeTask record
         """
-        BeTaskService = self.env.get('myschool.be.task.service')
+        BeTaskService = self.env.get('myschool.betask.service')
         if BeTaskService:
             return BeTaskService.create_betask(target, obj, action, data, data2)
         
         # Fallback: create directly
-        BeTask = self.env['myschool.be.task']
-        BeTaskType = self.env['myschool.be.task.type']
+        BeTask = self.env['myschool.betask']
+        BeTaskType = self.env['myschool.betask.type']
         
         task_type = BeTaskType.search([
             ('target', '=', target),

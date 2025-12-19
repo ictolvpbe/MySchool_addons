@@ -1,48 +1,132 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data>
-        <record id="view_config_item_list" model="ir.ui.view">
-            <field name="name">myschool.config.item.list</field>
-            <field name="model">myschool.config.item</field>
-            <field name="arch" type="xml">
-                <list>
-                    <field name="name"/>
-                    <field name="scope"/>
-                    <field name="type"/>
-                    <field name="string_value"/>
-                    <field name="integer_value"/>
-                    <field name="boolean_value"/>
-                </list>
-            </field>
-        </record>
-
-        <record id="view_config_item_form" model="ir.ui.view">
-            <field name="name">myschool.config.item.form</field>
-            <field name="model">myschool.config.item</field>
-            <field name="arch" type="xml">
-                <form>
-                    <sheet>
-                        <group>
-                            <field name="name"/>
+    
+    <!-- ===================================================================== -->
+    <!-- ConfigItem Views                                                      -->
+    <!-- ===================================================================== -->
+    
+    <!-- ConfigItem Form View -->
+    <record id="view_config_item_form" model="ir.ui.view">
+        <field name="name">myschool.config.item.form</field>
+        <field name="model">myschool.config.item</field>
+        <field name="arch" type="xml">
+            <form string="Configuration Item">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="toggle_active" type="object"
+                                class="oe_stat_button" icon="fa-archive"
+                                invisible="not is_active">
+                            <field name="is_active" widget="boolean_button"
+                                   options='{"terminology": "active"}'/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Encrypted" bg_color="warning"
+                            invisible="not is_encrypted"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="Configuration Name"/>
+                        </h1>
+                    </div>
+                    
+                    <group>
+                        <group string="Classification">
                             <field name="scope"/>
                             <field name="type"/>
+                            <field name="is_encrypted"/>
                         </group>
-
                         <group string="Values">
-                            <field name="string_value"/>
+                            <field name="string_value" 
+                                   password="is_encrypted"
+                                   placeholder="String value"/>
                             <field name="integer_value"/>
                             <field name="boolean_value"/>
                         </group>
-                    </sheet>
-                </form>
-            </field>
-        </record>
-
-        <!-- Action -->
-        <record id="action_config_item" model="ir.actions.act_window">
-            <field name="name">Configuration Items</field>
-            <field name="res_model">myschool.config.item</field>
-            <field name="view_mode">list,form</field>
-        </record>
-    </data>
+                    </group>
+                    
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description" placeholder="Describe what this configuration item is used for..."/>
+                        </page>
+                        <page string="Relations" name="relations">
+                            <field name="ci_relation_ids" readonly="1">
+                                <list string="Relations">
+                                    <field name="name"/>
+                                    <field name="id_org"/>
+                                    <field name="id_person"/>
+                                    <field name="id_role"/>
+                                    <field name="id_period"/>
+                                    <field name="isactive"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    
+    <!-- ConfigItem list View -->
+    <record id="view_config_item_list" model="ir.ui.view">
+        <field name="name">myschool.config.item.list</field>
+        <field name="model">myschool.config.item</field>
+        <field name="arch" type="xml">
+            <list string="Configuration Items" multi_edit="1">
+                <field name="name"/>
+                <field name="scope" optional="show"/>
+                <field name="type" optional="show"/>
+                <field name="string_value" optional="show"/>
+                <field name="integer_value" optional="hide"/>
+                <field name="boolean_value" optional="hide"/>
+                <field name="is_active"/>
+                <field name="is_encrypted" optional="hide"/>
+            </list>
+        </field>
+    </record>
+    
+    <!-- ConfigItem Search View -->
+    <record id="view_config_item_search" model="ir.ui.view">
+        <field name="name">myschool.config.item.search</field>
+        <field name="model">myschool.config.item</field>
+        <field name="arch" type="xml">
+            <search string="Search Configuration Items">
+                <field name="name"/>
+                <field name="scope"/>
+                <field name="type"/>
+                <field name="string_value"/>
+                <separator/>
+                <filter string="Active" name="active" domain="[('is_active', '=', True)]"/>
+                <filter string="Inactive" name="inactive" domain="[('is_active', '=', False)]"/>
+                <separator/>
+                <filter string="Global" name="global" domain="[('scope', '=', 'global')]"/>
+                <filter string="Local" name="local" domain="[('scope', '=', 'local')]"/>
+                <filter string="Organization" name="org" domain="[('scope', '=', 'org')]"/>
+                <separator/>
+                <filter string="Credentials" name="credentials" domain="[('type', '=', 'credential')]"/>
+                <filter string="API Settings" name="api" domain="[('type', '=', 'api')]"/>
+<!--                <group expand="0" string="Group By">-->
+<!--                    <filter string="Scope" name="group_scope" context="{'group_by': 'scope'}"/>-->
+<!--                    <filter string="Type" name="group_type" context="{'group_by': 'type'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+    
+    <!-- ConfigItem Action -->
+    <record id="action_config_item" model="ir.actions.act_window">
+        <field name="name">Configuration Items</field>
+        <field name="res_model">myschool.config.item</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_config_item_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create a new Configuration Item
+            </p>
+            <p>
+                Configuration items store settings like API credentials,
+                school year parameters, and system settings.
+            </p>
+        </field>
+    </record>
+    
 </odoo>
