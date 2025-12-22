@@ -33,8 +33,6 @@ access_myschool_sys_event_type_user,myschool.sys.event.type.user,model_myschool_
 access_myschool_sys_event_type_manager,myschool.sys.event.type.manager,model_myschool_sys_event_type,group_myschool_manager,1,1,1,1
 access_myschool_sys_event_user,myschool.sys.event.user,model_myschool_sys_event,group_myschool_user,1,0,0,0
 access_myschool_sys_event_manager,myschool.sys.event.manager,model_myschool_sys_event,group_myschool_manager,1,1,1,1
-access_myschool_app_user,myschool.app.user,model_myschool_core_app,group_myschool_user,1,0,0,0
-access_myschool_app_manager,myschool.app.manager,model_myschool_core_app,group_myschool_manager,1,1,1,1
 access_informat_service_config_user,myschool.informat.service.config.user,model_myschool_informat_service_config,group_myschool_user,1,0,0,0
 access_informat_service_config_manager,myschool.informat.service.config.manager,model_myschool_informat_service_config,group_myschool_manager,1,1,1,1
 access_myschool_informat_service_config_settings_user,myschool.informat.service.config.settings.user,model_myschool_informat_service_config_settings,group_myschool_user,1,0,0,0

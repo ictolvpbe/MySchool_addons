@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        
+        <!-- ========================================= -->
+        <!-- SEQUENCES -->
+        <!-- ========================================= -->
+        
+        <record id="seq_betask" model="ir.sequence">
+            <field name="name">Backend Task Sequence</field>
+            <field name="code">myschool.betask</field>
+            <field name="prefix">BT</field>
+            <field name="padding">6</field>
+            <field name="company_id" eval="False"/>
+        </record>
+
+        <!-- ========================================= -->
+        <!-- STANDARD TASK TYPES -->
+        <!-- ========================================= -->
+        
+        <!-- Database Operations - Organizations -->
+        <record id="betask_type_db_org_add" model="myschool.betask.type">
+            <field name="name">DB_ORG_ADD</field>
+            <field name="target">DB</field>
+            <field name="object">ORG</field>
+            <field name="action">ADD</field>
+            <field name="description">Add organization to database</field>
+            <field name="processor_method">process_db_org_add</field>
+            <field name="priority">10</field>
+        </record>
+
+        <record id="betask_type_db_org_update" model="myschool.betask.type">
+            <field name="name">DB_ORG_UPDATE</field>
+            <field name="target">DB</field>
+            <field name="object">ORG</field>
+            <field name="action">UPDATE</field>
+            <field name="description">Update organization in database</field>
+            <field name="processor_method">process_db_org_update</field>
+            <field name="priority">10</field>
+        </record>
+
+        <!-- Database Operations - Students -->
+        <record id="betask_type_db_student_add" model="myschool.betask.type">
+            <field name="name">DB_STUDENT_ADD</field>
+            <field name="target">DB</field>
+            <field name="object">STUDENT</field>
+            <field name="action">ADD</field>
+            <field name="description">Add student to database</field>
+            <field name="processor_method">process_db_student_add</field>
+            <field name="priority">20</field>
+        </record>
+
+        <record id="betask_type_db_student_update" model="myschool.betask.type">
+            <field name="name">DB_STUDENT_UPDATE</field>
+            <field name="target">DB</field>
+            <field name="object">STUDENT</field>
+            <field name="action">UPDATE</field>
+            <field name="description">Update student in database</field>
+            <field name="priority">20</field>
+        </record>
+
+        <!-- Database Operations - Employees -->
+        <record id="betask_type_db_employee_add" model="myschool.betask.type">
+            <field name="name">DB_EMPLOYEE_ADD</field>
+            <field name="target">DB</field>
+            <field name="object">EMPLOYEE</field>
+            <field name="action">ADD</field>
+            <field name="description">Add employee to database</field>
+            <field name="processor_method">process_db_employee_add</field>
+            <field name="priority">20</field>
+        </record>
+
+        <record id="betask_type_db_employee_upd" model="myschool.betask.type">
+            <field name="name">DB_EMPLOYEE_UPD</field>
+            <field name="target">DB</field>
+            <field name="object">EMPLOYEE</field>
+            <field name="action">UPD</field>
+            <field name="description">Update employee in database</field>
+            <field name="priority">20</field>
+        </record>
+
+        <!-- Database Operations - Roles -->
+        <record id="betask_type_db_role_add" model="myschool.betask.type">
+            <field name="name">DB_ROLE_ADD</field>
+            <field name="target">DB</field>
+            <field name="object">ROLE</field>
+            <field name="action">ADD</field>
+            <field name="description">Add role to database</field>
+            <field name="processor_method">process_db_role_add</field>
+            <field name="priority">15</field>
+        </record>
+
+        <!-- Database Operations - Relations -->
+        <record id="betask_type_db_relation_add" model="myschool.betask.type">
+            <field name="name">DB_RELATION_ADD</field>
+            <field name="target">DB</field>
+            <field name="object">RELATION</field>
+            <field name="action">ADD</field>
+            <field name="description">Add relation to database</field>
+            <field name="priority">25</field>
+        </record>
+
+        <!-- LDAP/AD Operations -->
+        <record id="betask_type_ldap_org_add" model="myschool.betask.type">
+            <field name="name">LDAP_ORG_ADD</field>
+            <field name="target">LDAP</field>
+            <field name="object">ORG</field>
+            <field name="action">ADD</field>
+            <field name="description">Add organization to LDAP/Active Directory</field>
+            <field name="processor_method">process_ldap_org_add</field>
+            <field name="priority">30</field>
+        </record>
+
+        <record id="betask_type_ldap_student_add" model="myschool.betask.type">
+            <field name="name">LDAP_STUDENT_ADD</field>
+            <field name="target">LDAP</field>
+            <field name="object">STUDENT</field>
+            <field name="action">ADD</field>
+            <field name="description">Add student to LDAP/Active Directory</field>
+            <field name="priority">35</field>
+        </record>
+
+        <record id="betask_type_ldap_employee_add" model="myschool.betask.type">
+            <field name="name">LDAP_EMPLOYEE_ADD</field>
+            <field name="target">LDAP</field>
+            <field name="object">EMPLOYEE</field>
+            <field name="action">ADD</field>
+            <field name="description">Add employee to LDAP/Active Directory</field>
+            <field name="processor_method">process_ldap_employee_add</field>
+            <field name="priority">35</field>
+        </record>
+
+        <record id="betask_type_ldap_employee_upd" model="myschool.betask.type">
+            <field name="name">LDAP_EMPLOYEE_UPD</field>
+            <field name="target">LDAP</field>
+            <field name="object">EMPLOYEE</field>
+            <field name="action">UPD</field>
+            <field name="description">Update employee in LDAP/Active Directory</field>
+            <field name="priority">35</field>
+        </record>
+
+        <!-- All Systems Operations -->
+        <record id="betask_type_all_role_upd" model="myschool.betask.type">
+            <field name="name">ALL_ROLE_UPD</field>
+            <field name="target">ALL</field>
+            <field name="object">ROLE</field>
+            <field name="action">UPD</field>
+            <field name="description">Update role in all systems</field>
+            <field name="priority">40</field>
+        </record>
+
+        <!-- Manual Tasks -->
+        <record id="betask_type_manual_config" model="myschool.betask.type">
+            <field name="name">MANUAL_CONFIG_MANUAL</field>
+            <field name="target">MANUAL</field>
+            <field name="object">CONFIG</field>
+            <field name="action">MANUAL</field>
+            <field name="description">Manual configuration task requiring human intervention</field>
+            <field name="auto_process">False</field>
+            <field name="requires_confirmation">True</field>
+            <field name="priority">100</field>
+        </record>
+
+    </data>
+
+    <!-- ========================================= -->
+    <!-- SCHEDULED ACTIONS (CRON JOBS) -->
+    <!-- ========================================= -->
+    
+    <data noupdate="0">
+        
+        <!-- Main task processor - runs every 15 minutes -->
+        <record id="ir_cron_process_betasks" model="ir.cron">
+            <field name="name">Backend Tasks: Process Pending</field>
+            <field name="model_id" ref="model_myschool_betask_processor"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_process_tasks()</field>
+            <field name="interval_number">15</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="active">True</field>
+            <field name="doall">False</field>
+        </record>
+
+        <!-- Cleanup old completed tasks - runs daily -->
+        <record id="ir_cron_cleanup_betasks" model="ir.cron">
+            <field name="name">Backend Tasks: Cleanup Old Tasks</field>
+            <field name="model_id" ref="model_myschool_betask"/>
+            <field name="state">code</field>
+            <field name="code">
+# Archive completed tasks older than 30 days
+from datetime import datetime, timedelta
+cutoff = datetime.now() - timedelta(days=30)
+old_tasks = model.search([
+    ('status', '=', 'completed_ok'),
+    ('lastrun', '&lt;', cutoff),
+    ('active', '=', True)
+])
+if old_tasks:
+    old_tasks.write({'active': False})
+            </field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="numbercall">-1</field>
+            <field name="active">True</field>
+            <field name="doall">False</field>
+        </record>
+
+    </data>
+</odoo>

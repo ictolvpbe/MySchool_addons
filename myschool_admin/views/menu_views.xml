@@ -2,7 +2,7 @@
 <odoo>
     <!-- Main Menu -->
     <menuitem id="menu_myschool_root"
-              name="MySchool Core"
+              name="MySchool Admin"
               sequence="10"
               action="action_myschool_app"
               web_icon="school,static/description/icon.png"/>

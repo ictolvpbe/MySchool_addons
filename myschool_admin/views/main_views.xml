@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+    <!-- Main app Form View -->
+    <record id="view_myschool_app_form" model="ir.ui.view">
+        <field name="name">myschool.app.form</field>
+        <field name="model">myschool.admin.app</field>
+        <field name="arch" type="xml">
+            <form string="MySchool Core">
+                <header>
+                    <button name="action_trigger_procedure"
+                            string="Execute Procedure"
+                            type="object"
+                            class="btn-primary"/>
+                </header>
+
+                <field name="name"/>
+<!--                <sheet>-->
+<!--                    <div class="oe_button_box" name="button_box"/>-->
+<!--                    <group>-->
+<!--                        <group>-->
+<!--                            <field name="name"/>-->
+<!--                            <field name="name_short"/>-->
+<!--                            <field name="inst_nr"/>-->
+<!--                            <field name="app_type_id"/>-->
+<!--                            <field name="is_active"/>-->
+<!--                        </group>-->
+<!--                        <group>-->
+<!--                            <field name="is_administrative"/>-->
+<!--                            <field name="appgroup_working_period"/>-->
+<!--                            <field name="richting"/>-->
+<!--                        </group>-->
+<!--                    </group>-->
+
+<!--                    <notebook>-->
+<!--                        <page string="Adres" name="address">-->
+<!--                            <group>-->
+<!--                                <group>-->
+<!--                                    <field name="street"/>-->
+<!--                                    <field name="street_nr"/>-->
+<!--                                </group>-->
+<!--                                <group>-->
+<!--                                    <field name="postal_code"/>-->
+<!--                                    <field name="community"/>-->
+<!--                                    <field name="country"/>-->
+<!--                                </group>-->
+<!--                            </group>-->
+<!--                        </page>-->
+
+<!--                        <page string="SAP &amp; Accounts" name="sap">-->
+<!--                            <group>-->
+<!--                                <group>-->
+<!--                                    <field name="sap_provider"/>-->
+<!--                                    <field name="sap_login"/>-->
+<!--                                    <field name="sap_password" password="True"/>-->
+<!--                                </group>-->
+<!--                            </group>-->
+<!--                        </page>-->
+
+<!--                        <page string="AD/OU Configuratie" name="ad_ou">-->
+<!--                            <group>-->
+<!--                                <group string="Domeinen">-->
+<!--                                    <field name="domain_internal"/>-->
+<!--                                    <field name="domain_external"/>-->
+<!--                                </group>-->
+<!--                                <group string="Opties">-->
+<!--                                    <field name="has_ou"/>-->
+<!--                                    <field name="has_comgroup"/>-->
+<!--                                    <field name="has_secgroup"/>-->
+<!--                                </group>-->
+<!--                            </group>-->
+<!--                            <group>-->
+<!--                                <group string="OU FQDN">-->
+<!--                                    <field name="ou_fqdn_internal"/>-->
+<!--                                    <field name="ou_fqdn_external"/>-->
+<!--                                </group>-->
+<!--                                <group string="Communicatiegroep">-->
+<!--                                    <field name="com_group_name"/>-->
+<!--                                    <field name="com_group_fqdn_internal"/>-->
+<!--                                    <field name="com_group_fqdn_external"/>-->
+<!--                                </group>-->
+<!--                            </group>-->
+<!--                            <group>-->
+<!--                                <group string="Securitygroep">-->
+<!--                                    <field name="sec_group_name"/>-->
+<!--                                    <field name="sec_group_fqdn_internal"/>-->
+<!--                                    <field name="sec_group_fqdn_external"/>-->
+<!--                                </group>-->
+<!--                            </group>-->
+<!--                        </page>-->
+<!--                    </notebook>-->
+<!--                </sheet>-->
+            </form>
+        </field>
+    </record>
+
+
+    <!-- appanization Action -->
+    <record id="action_myschool_app" model="ir.actions.act_window">
+        <field name="name">appanisaties</field>
+        <field name="res_model">myschool.admin.app</field>
+        <field name="view_mode">form</field>
+<!--        <field name="view_mode">list,form</field>-->
+<!--        <field name="help" type="html">-->
+<!--            <p class="o_view_nocontent_smiling_face">-->
+<!--                Maak een nieuwe appanisatie aan-->
+<!--            </p>-->
+<!--        </field>-->
+    </record>
+    </data>
+</odoo>

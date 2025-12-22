@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ========================================= -->
+    <!-- SYSTEM EVENT TYPE VIEWS -->
+    <!-- ========================================= -->
+
+    <!-- List View -->
+    <record id="view_sys_event_type_list" model="ir.ui.view">
+        <field name="name">myschool.sys.event.type.list</field>
+        <field name="model">myschool.sys.event.type</field>
+        <field name="arch" type="xml">
+            <list string="System Event Types" 
+                  decoration-danger="is_blocking" 
+                  decoration-warning="is_error_type and not is_blocking">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="priority"/>
+                <field name="is_error_type" invisible="1"/>
+                <field name="is_blocking" invisible="1"/>
+                <field name="event_count" string="Events"/>
+                <field name="open_event_count" string="Open"/>
+                <field name="error_event_count" string="Errors" decoration-danger="error_event_count > 0"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_sys_event_type_form" model="ir.ui.view">
+        <field name="name">myschool.sys.event.type.form</field>
+        <field name="model">myschool.sys.event.type</field>
+        <field name="arch" type="xml">
+            <form string="System Event Type">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_events"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-calendar">
+                            <field name="event_count" widget="statinfo" string="Events"/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <widget name="web_ribbon" title="Blocking Error" bg_color="text-bg-warning" invisible="not is_blocking"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="Event Type Name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Configuration">
+                            <field name="code"/>
+                            <field name="priority"/>
+                            <field name="active" widget="boolean_toggle"/>
+                        </group>
+                        <group string="Classification">
+                            <field name="is_error_type" readonly="1"/>
+                            <field name="is_blocking" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description" placeholder="Enter a detailed description of this event type..."/>
+                        </page>
+                        <page string="Events" name="events">
+                            <field name="event_ids" readonly="1">
+                                <list decoration-danger="status == 'PRO_ERROR'" 
+                                      decoration-success="status == 'CLOSED'" 
+                                      decoration-info="status == 'PROCESS'">
+                                    <field name="name"/>
+                                    <field name="eventcode"/>
+                                    <field name="source"/>
+                                    <field name="priority" widget="priority"/>
+                                    <field name="status" widget="badge" 
+                                           decoration-success="status == 'CLOSED'" 
+                                           decoration-info="status == 'PROCESS'" 
+                                           decoration-warning="status == 'PRO_ERROR'" 
+                                           decoration-muted="status == 'NEW'"/>
+                                    <field name="create_date"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Statistics" name="statistics">
+                            <group>
+                                <group>
+                                    <field name="event_count"/>
+                                    <field name="open_event_count"/>
+                                </group>
+                                <group>
+                                    <field name="error_event_count"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Kanban View -->
+    <record id="view_sys_event_type_kanban" model="ir.ui.view">
+        <field name="name">myschool.sys.event.type.kanban</field>
+        <field name="model">myschool.sys.event.type</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="priority"/>
+                <field name="event_count"/>
+                <field name="open_event_count"/>
+                <field name="is_error_type"/>
+                <field name="is_blocking"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div t-attf-class="oe_kanban_card oe_kanban_global_click #{record.is_blocking.raw_value ? 'oe_kanban_color_1' : (record.is_error_type.raw_value ? 'oe_kanban_color_2' : '')}">
+                            <div class="o_kanban_record_top">
+                                <div class="o_kanban_record_headings">
+                                    <strong class="o_kanban_record_title">
+                                        <field name="name"/>
+                                    </strong>
+                                </div>
+                                <span class="badge text-bg-secondary">
+                                    <field name="code"/>
+                                </span>
+                            </div>
+                            <div class="o_kanban_record_body">
+                                <span t-if="record.is_blocking.raw_value" class="badge text-bg-danger">Blocking</span>
+                                <span t-elif="record.is_error_type.raw_value" class="badge text-bg-warning">Error Type</span>
+                                <span t-else="" class="badge text-bg-info">Event</span>
+                            </div>
+                            <div class="o_kanban_record_bottom">
+                                <div class="oe_kanban_bottom_left">
+                                    <span class="badge text-bg-primary">
+                                        <field name="event_count"/> events
+                                    </span>
+                                    <span t-if="record.open_event_count.raw_value > 0" class="badge text-bg-warning ms-1">
+                                        <field name="open_event_count"/> open
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_sys_event_type_search" model="ir.ui.view">
+        <field name="name">myschool.sys.event.type.search</field>
+        <field name="model">myschool.sys.event.type</field>
+        <field name="arch" type="xml">
+            <search string="Search Event Types">
+                <field name="name" filter_domain="['|', ('name', 'ilike', self), ('code', 'ilike', self)]"/>
+                <field name="code"/>
+                <separator/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+                <separator/>
+                <filter string="Error Types" name="error_types" domain="[('is_error_type', '=', True)]"/>
+                <filter string="Blocking Errors" name="blocking" domain="[('is_blocking', '=', True)]"/>
+                <filter string="General Events" name="general" domain="[('is_error_type', '=', False)]"/>
+                <separator/>
+                <filter string="Has Open Events" name="has_open" domain="[('event_ids.status', 'in', ['NEW', 'PROCESS'])]"/>
+                <filter string="Has Errors" name="has_errors" domain="[('event_ids.status', '=', 'PRO_ERROR')]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Actions -->
+    <record id="action_sys_event_type" model="ir.actions.act_window">
+        <field name="name">Event Types</field>
+        <field name="res_model">myschool.sys.event.type</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first Event Type
+            </p>
+            <p>
+                Event types categorize system events. Standard types include:
+                <ul>
+                    <li><strong>EVENT</strong>: General system events</li>
+                    <li><strong>ERROR-BLOCKING</strong>: Critical errors requiring immediate attention</li>
+                    <li><strong>ERROR-NONBLOCKING</strong>: Non-critical errors for later processing</li>
+                </ul>
+            </p>
+        </field>
+    </record>
+
+</odoo>

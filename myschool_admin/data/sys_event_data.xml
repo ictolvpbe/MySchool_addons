@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        
+        <!-- ========================================= -->
+        <!-- SEQUENCES -->
+        <!-- ========================================= -->
+        
+        <!-- Sequence for System Events -->
+        <record id="seq_sys_event" model="ir.sequence">
+            <field name="name">System Event Sequence</field>
+            <field name="code">myschool.sys.event</field>
+            <field name="prefix">SE</field>
+            <field name="padding">6</field>
+            <field name="company_id" eval="False"/>
+        </record>
+
+        <!-- ========================================= -->
+        <!-- STANDARD EVENT TYPES -->
+        <!-- Matching Java Application Event Types -->
+        <!-- ========================================= -->
+        
+        <!-- General Event Type -->
+        <record id="sys_event_type_event" model="myschool.sys.event.type">
+            <field name="name">EVENT</field>
+            <field name="code">EVENT</field>
+            <field name="priority">3</field>
+            <field name="description">General system event for logging and monitoring. Used for informational events that don't require special handling.</field>
+        </record>
+
+        <!-- Blocking Error Type -->
+        <record id="sys_event_type_error_blocking" model="myschool.sys.event.type">
+            <field name="name">ERROR-BLOCKING</field>
+            <field name="code">ERROR_BLOCKING</field>
+            <field name="priority">1</field>
+            <field name="description">Blocking error that requires immediate attention and stops processing. These errors must be resolved before operations can continue.</field>
+        </record>
+
+        <!-- Non-Blocking Error Type -->
+        <record id="sys_event_type_error_nonblocking" model="myschool.sys.event.type">
+            <field name="name">ERROR-NONBLOCKING</field>
+            <field name="code">ERROR_NONBLOCKING</field>
+            <field name="priority">2</field>
+            <field name="description">Non-blocking error that is logged but allows processing to continue. These errors should be reviewed but don't halt operations.</field>
+        </record>
+
+        <!-- ========================================= -->
+        <!-- ADDITIONAL EVENT TYPES (Optional) -->
+        <!-- Common event types for school management -->
+        <!-- ========================================= -->
+        
+        <!-- Sync Event Types -->
+        <record id="sys_event_type_sync" model="myschool.sys.event.type">
+            <field name="name">SYNC</field>
+            <field name="code">SYNC</field>
+            <field name="priority">2</field>
+            <field name="description">Data synchronization events (AD Sync, SAP Sync, etc.)</field>
+        </record>
+
+        <record id="sys_event_type_ad_sync" model="myschool.sys.event.type">
+            <field name="name">AD-SYNC</field>
+            <field name="code">AD_SYNC</field>
+            <field name="priority">2</field>
+            <field name="description">Active Directory synchronization events</field>
+        </record>
+
+        <record id="sys_event_type_sap_sync" model="myschool.sys.event.type">
+            <field name="name">SAP-SYNC</field>
+            <field name="code">SAP_SYNC</field>
+            <field name="priority">2</field>
+            <field name="description">SAP/Informat synchronization events</field>
+        </record>
+
+        <!-- User Activity Event Types -->
+        <record id="sys_event_type_login" model="myschool.sys.event.type">
+            <field name="name">USER-LOGIN</field>
+            <field name="code">USER_LOGIN</field>
+            <field name="priority">3</field>
+            <field name="description">User login and authentication events</field>
+        </record>
+
+        <!-- Data Import/Export -->
+        <record id="sys_event_type_import" model="myschool.sys.event.type">
+            <field name="name">DATA-IMPORT</field>
+            <field name="code">DATA_IMPORT</field>
+            <field name="priority">2</field>
+            <field name="description">Data import events</field>
+        </record>
+
+        <record id="sys_event_type_export" model="myschool.sys.event.type">
+            <field name="name">DATA-EXPORT</field>
+            <field name="code">DATA_EXPORT</field>
+            <field name="priority">3</field>
+            <field name="description">Data export events</field>
+        </record>
+
+        <!-- Scheduled Tasks -->
+        <record id="sys_event_type_cron" model="myschool.sys.event.type">
+            <field name="name">SCHEDULED-TASK</field>
+            <field name="code">SCHEDULED_TASK</field>
+            <field name="priority">3</field>
+            <field name="description">Scheduled task and cron job events</field>
+        </record>
+
+        <!-- API Events -->
+        <record id="sys_event_type_api" model="myschool.sys.event.type">
+            <field name="name">API-CALL</field>
+            <field name="code">API_CALL</field>
+            <field name="priority">3</field>
+            <field name="description">External API call events</field>
+        </record>
+
+    </data>
+</odoo>

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- ===================================================================== -->
+    <!-- CiRelation Views                                                      -->
+    <!-- ===================================================================== -->
+    
+    <!-- CiRelation Form View -->
+    <record id="view_ci_relation_form" model="ir.ui.view">
+        <field name="name">myschool.ci.relation.form</field>
+        <field name="model">myschool.ci.relation</field>
+        <field name="arch" type="xml">
+            <form string="Configuration Item Relation">
+                <sheet>
+                    <widget name="web_ribbon" title="Inactive" bg_color="danger"
+                            invisible="isactive"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+                    
+                    <group>
+                        <group string="Configuration Item">
+                            <field name="id_ci" required="1" 
+                                   options="{'no_create': False, 'no_create_edit': False}"/>
+                            <field name="ci_string_value" invisible="not id_ci"/>
+                            <field name="ci_integer_value" invisible="not id_ci"/>
+                            <field name="ci_boolean_value" invisible="not id_ci"/>
+                        </group>
+                        <group string="Status">
+                            <field name="isactive"/>
+                            <field name="automatic_sync"/>
+                        </group>
+                    </group>
+                    
+                    <notebook>
+                        <page string="Linked Entities" name="entities">
+                            <group>
+                                <group string="Organization &amp; Role">
+                                    <field name="id_org" 
+                                           options="{'no_create': True}"/>
+                                    <field name="id_role"
+                                           options="{'no_create': True}"/>
+                                </group>
+                                <group string="Person &amp; Period">
+                                    <field name="id_person"
+                                           options="{'no_create': True}"/>
+                                    <field name="id_period"
+                                           options="{'no_create': True}"/>
+                                </group>
+                            </group>
+<!--                            <group>-->
+<!--                                <field name="id_sysmodule"-->
+<!--                                       options="{'no_create': True}"/>-->
+<!--                            </group>-->
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    
+    <!-- CiRelation list View -->
+    <record id="view_ci_relation_list" model="ir.ui.view">
+        <field name="name">myschool.ci.relation.list</field>
+        <field name="model">myschool.ci.relation</field>
+        <field name="arch" type="xml">
+            <list string="Configuration Item Relations" multi_edit="1"
+                  decoration-muted="not isactive">
+                <field name="name"/>
+                <field name="id_ci"/>
+                <field name="ci_string_value" optional="show"/>
+                <field name="id_org" optional="show"/>
+                <field name="id_person" optional="hide"/>
+                <field name="id_role" optional="hide"/>
+                <field name="id_period" optional="hide"/>
+                <field name="isactive"/>
+                <field name="automatic_sync" optional="hide"/>
+            </list>
+        </field>
+    </record>
+    
+    <!-- CiRelation Search View -->
+    <record id="view_ci_relation_search" model="ir.ui.view">
+        <field name="name">myschool.ci.relation.search</field>
+        <field name="model">myschool.ci.relation</field>
+        <field name="arch" type="xml">
+            <search string="Search Config Item Relations">
+                <field name="name"/>
+                <field name="id_ci"/>
+                <field name="ci_name"/>
+                <field name="id_org"/>
+                <field name="org_name"/>
+                <field name="id_person"/>
+                <field name="id_role"/>
+                <field name="id_period"/>
+                <separator/>
+                <filter string="Active" name="active" domain="[('isactive', '=', True)]"/>
+                <filter string="Inactive" name="inactive" domain="[('isactive', '=', False)]"/>
+                <separator/>
+                <filter string="Has Organization" name="has_org" domain="[('id_org', '!=', False)]"/>
+                <filter string="Has Person" name="has_person" domain="[('id_person', '!=', False)]"/>
+                <filter string="Has Role" name="has_role" domain="[('id_role', '!=', False)]"/>
+                <filter string="Has Period" name="has_period" domain="[('id_period', '!=', False)]"/>
+                <separator/>
+                <filter string="Auto Sync" name="auto_sync" domain="[('automatic_sync', '=', True)]"/>
+<!--                <group expand="0" string="Group By">-->
+<!--                    <filter string="Config Item" name="group_ci" context="{'group_by': 'id_ci'}"/>-->
+<!--                    <filter string="Organization" name="group_org" context="{'group_by': 'id_org'}"/>-->
+<!--                    <filter string="Person" name="group_person" context="{'group_by': 'id_person'}"/>-->
+<!--                    <filter string="Role" name="group_role" context="{'group_by': 'id_role'}"/>-->
+<!--                    <filter string="Period" name="group_period" context="{'group_by': 'id_period'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+    
+    <!-- CiRelation Action -->
+    <record id="action_ci_relation" model="ir.actions.act_window">
+        <field name="name">Configuration Item Relations</field>
+        <field name="res_model">myschool.ci.relation</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ci_relation_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create a new Configuration Item Relation
+            </p>
+            <p>
+                Relations link configuration items to specific organizations,
+                persons, roles, or periods, allowing context-specific settings.
+            </p>
+        </field>
+    </record>
+    
+    <!-- CiRelation for Organization (embedded view) -->
+    <record id="view_ci_relation_list_org" model="ir.ui.view">
+        <field name="name">myschool.ci.relation.list.org</field>
+        <field name="model">myschool.ci.relation</field>
+        <field name="arch" type="xml">
+            <list string="Config Items" editable="bottom">
+                <field name="id_ci" required="1"/>
+                <field name="ci_string_value"/>
+                <field name="ci_integer_value"/>
+                <field name="ci_boolean_value"/>
+                <field name="isactive"/>
+            </list>
+        </field>
+    </record>
+    
+</odoo>

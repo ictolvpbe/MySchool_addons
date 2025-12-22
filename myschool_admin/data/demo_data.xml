@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Demo Event Types -->
+        <record id="demo_event_type_login" model="myschool.sys.event.type">
+            <field name="name">User Login</field>
+            <field name="code">LOGIN</field>
+            <field name="description">Events related to user login activities</field>
+        </record>
+
+        <record id="demo_event_type_sync" model="myschool.sys.event.type">
+            <field name="name">Data Synchronization</field>
+            <field name="code">SYNC</field>
+            <field name="description">Events from data synchronization processes</field>
+        </record>
+
+        <record id="demo_event_type_error" model="myschool.sys.event.type">
+            <field name="name">System Error</field>
+            <field name="code">ERROR</field>
+            <field name="description">System error events requiring attention</field>
+        </record>
+
+        <record id="demo_event_type_backup" model="myschool.sys.event.type">
+            <field name="name">Backup Process</field>
+            <field name="code">BACKUP</field>
+            <field name="description">Events from backup processes</field>
+        </record>
+
+        <!-- Demo Events -->
+        <record id="demo_event_1" model="myschool.sys.event">
+            <field name="syseventtype_id" ref="demo_event_type_login"/>
+            <field name="source">BE</field>
+            <field name="eventcode">USER_LOGIN_SUCCESS</field>
+            <field name="priority">2</field>
+            <field name="data">User admin logged in successfully from IP: 192.168.1.100</field>
+            <field name="status">CLOSED</field>
+            <field name="eventclosed" eval="(DateTime.now() - timedelta(hours=2))"/>
+        </record>
+
+        <record id="demo_event_2" model="myschool.sys.event">
+            <field name="syseventtype_id" ref="demo_event_type_sync"/>
+            <field name="source">ADSYNC</field>
+            <field name="eventcode">AD_SYNC_COMPLETE</field>
+            <field name="priority">2</field>
+            <field name="data">Active Directory synchronization completed. 150 users synced, 5 new users added.</field>
+            <field name="status">CLOSED</field>
+            <field name="eventclosed" eval="(DateTime.now() - timedelta(hours=5))"/>
+        </record>
+
+        <record id="demo_event_3" model="myschool.sys.event">
+            <field name="syseventtype_id" ref="demo_event_type_error"/>
+            <field name="source">BE</field>
+            <field name="eventcode">DB_CONNECTION_ERROR</field>
+            <field name="priority">1</field>
+            <field name="data">Database connection timeout occurred at 14:35. Connection pool exhausted.</field>
+            <field name="status">PRO_ERROR</field>
+        </record>
+
+        <record id="demo_event_4" model="myschool.sys.event">
+            <field name="syseventtype_id" ref="demo_event_type_backup"/>
+            <field name="source">CRON</field>
+            <field name="eventcode">DAILY_BACKUP</field>
+            <field name="priority">2</field>
+            <field name="data">Daily backup process started. Estimated completion: 45 minutes.</field>
+            <field name="status">PROCESS</field>
+        </record>
+
+        <record id="demo_event_5" model="myschool.sys.event">
+            <field name="syseventtype_id" ref="demo_event_type_sync"/>
+            <field name="source">API</field>
+            <field name="eventcode">API_SYNC_PENDING</field>
+            <field name="priority">3</field>
+            <field name="data">External API data synchronization queued. Waiting for processing.</field>
+            <field name="status">NEW</field>
+        </record>
+    </data>
+</odoo>

@@ -21,6 +21,7 @@ import os
 import traceback
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Any
+
 import requests
 
 from odoo import api, fields, models, _
@@ -55,6 +56,29 @@ class InformatService(models.AbstractModel):
     STUDENTS_API_URL = 'https://leerlingenapi.informatsoftware.be/1/students'
     EMPLOYEES_API_URL = 'https://personeelsapi.informatsoftware.be/employees'
     EMPLOYEE_ASSIGNMENTS_API_URL = 'https://personeelsapi.informatsoftware.be/employees/assignments'
+
+    # =========================================================================
+    # BeTask Configuration - ADJUST THESE TO MATCH YOUR MODEL!
+    # =========================================================================
+    
+    # Model names
+    BETASK_MODEL = 'myschool.betask'            # Change if your model is named differently
+    BETASK_TYPE_MODEL = 'myschool.betask.type'  # Change if your model is named differently
+    
+    # Field names on BeTask model - ADJUST TO MATCH YOUR be_task.py!
+    BETASK_TYPE_FIELD = 'be_task_type_id'   # The Many2one field to BeTaskType
+    BETASK_STATUS_FIELD = 'status'          # The status/state field
+    BETASK_DATA_FIELD = 'data'              # The JSON data field
+    BETASK_DATA2_FIELD = 'data2'            # The secondary JSON data field
+    
+    # Field names on BeTaskType model - ADJUST TO MATCH YOUR be_task_type.py!
+    BETASKTYPE_TARGET_FIELD = 'target'      # e.g., 'DB', 'LDAP', 'ALL', 'SYSTEM'
+    BETASKTYPE_OBJECT_FIELD = 'object'      # e.g., 'STUDENT', 'EMPLOYEE', 'ORG'
+    BETASKTYPE_ACTION_FIELD = 'action'      # e.g., 'ADD', 'UPD', 'DEACT'
+    
+    # Status values - ADJUST TO MATCH YOUR model's selection values!
+    STATUS_NEW = 'new'                       # Could be: 'NEW', 'draft', 'pending'
+    STATUS_COMPLETED = 'completed'           # Could be: 'COMPLETED_OK', 'done'
 
     # =========================================================================
     # Storage Path Management
@@ -212,7 +236,7 @@ class InformatService(models.AbstractModel):
     # =========================================================================
 
     @api.model
-    def execute_sync(self, dev_mode: bool = False) -> bool:
+    def execute_sync(self, dev_mode: bool = True) -> bool:
         """
         Main synchronization method - retrieves data from SAP, analyzes it,
         and creates the required tasks.
@@ -233,9 +257,9 @@ class InformatService(models.AbstractModel):
             # Calculate timestamp for last sync (15 days ago)
             timestamp_latest_sync = (datetime.now() - timedelta(days=15)).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
             
-            # Check for blocking tasks  todo: controleren eens er taken verwerkt worden
-            # if self._check_blocking_tasks():
-            #     return False
+            # Check for blocking tasks
+            if self._check_blocking_tasks():
+                return False
             
             # =====================================================
             # PHASE 1: Employee Processing
@@ -626,7 +650,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])  #TODO : rework selection
+            schools = Org.search([('sap_provider', '=', 'INFORMAT')])
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing employee data for {school.inst_nr}")
@@ -717,7 +741,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])
+            schools = Org.search([('sap_provider', '=', 'INFORMAT')])
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing assignment data for {school.inst_nr}")
@@ -1204,19 +1228,23 @@ class InformatService(models.AbstractModel):
 
     def _check_blocking_tasks(self) -> bool:
         """Check for system blocking tasks."""
-        BeTask = self.env['myschool.betask']
-        BeTaskType = self.env['myschool.betask.type']
+        BeTask = self.env.get(self.BETASK_MODEL)
+        BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
+        
+        if not BeTask or not BeTaskType:
+            _logger.warning(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
+            return False
         
         blocking_task_type = BeTaskType.search([
-            ('target', '=', 'SYSTEM'),
-            ('object', '=', 'BLOCKINGMESSAGE'),
-            ('action', '=', 'MANUAL')
+            (self.BETASKTYPE_TARGET_FIELD, '=', 'SYSTEM'),
+            (self.BETASKTYPE_OBJECT_FIELD, '=', 'BLOCKINGMESSAGE'),
+            (self.BETASKTYPE_ACTION_FIELD, '=', 'MANUAL')
         ], limit=1)
         
         if blocking_task_type:
             blocking_tasks = BeTask.search([
-                ('betask_type_id', '=', blocking_task_type.id),
-                ('status', '=', 'NEW')
+                (self.BETASK_TYPE_FIELD, '=', blocking_task_type.id),
+                (self.BETASK_STATUS_FIELD, '=', self.STATUS_NEW)
             ])
             
             if blocking_tasks:
@@ -1228,19 +1256,23 @@ class InformatService(models.AbstractModel):
 
     def _check_manual_role_tasks(self) -> bool:
         """Check for manual role tasks."""
-        BeTask = self.env['myschool.betask']
-        BeTaskType = self.env['myschool.betask.type']
+        BeTask = self.env.get(self.BETASK_MODEL)
+        BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
+        
+        if not BeTask or not BeTaskType:
+            _logger.warning(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
+            return False
         
         manual_task_type = BeTaskType.search([
-            ('target', '=', 'ALL'),
-            ('object', '=', 'ROLE'),
-            ('action', '=', 'MANUAL')
+            (self.BETASKTYPE_TARGET_FIELD, '=', 'ALL'),
+            (self.BETASKTYPE_OBJECT_FIELD, '=', 'ROLE'),
+            (self.BETASKTYPE_ACTION_FIELD, '=', 'MANUAL')
         ], limit=1)
         
         if manual_task_type:
             manual_tasks = BeTask.search([
-                ('betask_type_id', '=', manual_task_type.id),
-                ('status', '=', 'NEW')
+                (self.BETASK_TYPE_FIELD, '=', manual_task_type.id),
+                (self.BETASK_STATUS_FIELD, '=', self.STATUS_NEW)
             ])
             
             if manual_tasks:
@@ -1258,17 +1290,23 @@ class InformatService(models.AbstractModel):
         @param obj: Task object (STUDENT, EMPLOYEE, ORG, ROLE, etc.)
         @param action: Task action (ADD, UPD, DEACT, etc.)
         """
-        BeTaskProcessor = self.env.get('myschool.betask.processor')
-        BeTaskType = self.env['myschool.betask.type']
+        BeTaskProcessor = self.env.get('myschool.be.task.processor')
+        BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
+        
+        if not BeTaskType:
+            _logger.warning(f"BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
+            return
         
         task_type = BeTaskType.search([
-            ('target', '=', target),
-            ('object', '=', obj),
-            ('action', '=', action)
+            (self.BETASKTYPE_TARGET_FIELD, '=', target),
+            (self.BETASKTYPE_OBJECT_FIELD, '=', obj),
+            (self.BETASKTYPE_ACTION_FIELD, '=', action)
         ], limit=1)
         
         if task_type and BeTaskProcessor:
             BeTaskProcessor.process_betasks(task_type)
+        elif task_type:
+            _logger.info(f"Task type found for {target}-{obj}-{action}, but no processor available")
 
     def _create_betask(self, target: str, obj: str, action: str, data: str, data2: str) -> Any:
         """
@@ -1281,27 +1319,42 @@ class InformatService(models.AbstractModel):
         @param data2: Additional JSON data
         @return: Created BeTask record
         """
-        BeTaskService = self.env.get('myschool.betask.service')
-        if BeTaskService:
+        BeTaskService = self.env.get('myschool.be.task.service')
+        if BeTaskService and hasattr(BeTaskService, 'create_betask'):
             return BeTaskService.create_betask(target, obj, action, data, data2)
         
         # Fallback: create directly
-        BeTask = self.env['myschool.betask']
-        BeTaskType = self.env['myschool.betask.type']
+        BeTask = self.env.get(self.BETASK_MODEL)
+        BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
+        
+        if not BeTask or not BeTaskType:
+            _logger.error(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
+            return None
         
         task_type = BeTaskType.search([
-            ('target', '=', target),
-            ('object', '=', obj),
-            ('action', '=', action)
+            (self.BETASKTYPE_TARGET_FIELD, '=', target),
+            (self.BETASKTYPE_OBJECT_FIELD, '=', obj),
+            (self.BETASKTYPE_ACTION_FIELD, '=', action)
         ], limit=1)
         
         if task_type:
-            return BeTask.create({
-                'betask_type_id': task_type.id,
-                'data': data,
-                'data2': data2,
-                'status': 'NEW'
-            })
+            try:
+                vals = {
+                    self.BETASK_TYPE_FIELD: task_type.id,
+                    self.BETASK_STATUS_FIELD: self.STATUS_NEW,
+                }
+                # Only add data fields if they exist in the model
+                if self.BETASK_DATA_FIELD in BeTask._fields:
+                    vals[self.BETASK_DATA_FIELD] = data
+                if data2 and self.BETASK_DATA2_FIELD in BeTask._fields:
+                    vals[self.BETASK_DATA2_FIELD] = data2
+                    
+                return BeTask.create(vals)
+            except Exception as e:
+                _logger.error(f"Error creating BeTask: {e}")
+                return None
+        else:
+            _logger.warning(f"BeTaskType not found for: {target}-{obj}-{action}")
         
         return None
 

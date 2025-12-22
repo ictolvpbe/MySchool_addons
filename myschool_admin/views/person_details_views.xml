@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Person Details list View -->
+    <record id="view_myschool_person_details_list" model="ir.ui.view">
+        <field name="name">myschool.person.details.list</field>
+        <field name="model">myschool.person.details</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="person_id"/>
+                <field name="hoofd_ambt"/>
+                <field name="extra_field_1"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Person Details Form View -->
+    <record id="view_myschool_person_details_form" model="ir.ui.view">
+        <field name="name">myschool.person.details.form</field>
+        <field name="model">myschool.person.details</field>
+        <field name="arch" type="xml">
+            <form string="Persoon Details">
+                <sheet>
+                    <group>
+                        <field name="person_id"/>
+                        <field name="hoofd_ambt"/>
+                        <field name="extra_field_1"/>
+                    </group>
+
+                    <notebook>
+                        <page string="JSON Data" name="json_data">
+                            <group>
+                                <field name="full_json_string" widget="text"/>
+                            </group>
+                        </page>
+                        <page string="Adressen" name="addresses">
+                            <field name="addresses" widget="text"/>
+                        </page>
+                        <page string="E-mails" name="emails">
+                            <field name="emails" widget="text"/>
+                        </page>
+                        <page string="Communicatienummers" name="comnrs">
+                            <field name="comnrs" widget="text"/>
+                        </page>
+                        <page string="Bankrekeningen" name="bank_accounts">
+                            <field name="bank_accounts" widget="text"/>
+                        </page>
+                        <page string="Relaties" name="relations">
+                            <field name="relations" widget="text"/>
+                        </page>
+                        <page string="Partner" name="partner">
+                            <field name="partner" widget="text"/>
+                        </page>
+                        <page string="Kinderen" name="children">
+                            <field name="children" widget="text"/>
+                        </page>
+                        <page string="Assignments" name="assignments">
+                            <field name="assignments" widget="text"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Person Details Action -->
+    <record id="action_myschool_person_details" model="ir.actions.act_window">
+        <field name="name">Persoon Details</field>
+        <field name="res_model">myschool.person.details</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Maak nieuwe persoon details aan
+            </p>
+        </field>
+    </record>
+</odoo>

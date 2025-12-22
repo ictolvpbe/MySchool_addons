@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Period list View -->
+    <record id="view_myschool_period_list" model="ir.ui.view">
+        <field name="name">myschool.period.list</field>
+        <field name="model">myschool.period</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="name_in_sap"/>
+                <field name="period_type_id"/>
+                <field name="start_date"/>
+                <field name="end_date"/>
+                <field name="is_active"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Period Form View -->
+    <record id="view_myschool_period_form" model="ir.ui.view">
+        <field name="name">myschool.period.form</field>
+        <field name="model">myschool.period</field>
+        <field name="arch" type="xml">
+            <form string="Periode">
+                <sheet>
+                    <div class="oe_button_box" name="button_box"/>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="name_in_sap"/>
+                        </group>
+                        <group>
+                            <field name="period_type_id"/>
+                            <field name="start_date"/>
+                            <field name="end_date"/>
+                            <field name="is_active"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Period Search View -->
+    <record id="view_myschool_period_search" model="ir.ui.view">
+        <field name="name">myschool.period.search</field>
+        <field name="model">myschool.period</field>
+        <field name="arch" type="xml">
+            <search string="Zoek Periodes">
+                <field name="name"/>
+                <field name="name_in_sap"/>
+                <field name="period_type_id"/>
+                <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
+                <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
+<!--                <group expand="0" string="Groepeer op">-->
+<!--                    <filter string="Type" name="group_type" context="{'group_by': 'period_type_id'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+    <!-- Period Action -->
+    <record id="action_myschool_period" model="ir.actions.act_window">
+        <field name="name">Periodes</field>
+        <field name="res_model">myschool.period</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Maak een nieuwe periode aan
+            </p>
+        </field>
+    </record>
+</odoo>

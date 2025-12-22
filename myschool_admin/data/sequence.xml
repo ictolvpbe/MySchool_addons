@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Sequence for System Events -->
+        <record id="seq_sys_event" model="ir.sequence">
+            <field name="name">System Event Sequence</field>
+            <field name="code">myschool.sys.event</field>
+            <field name="prefix">SE</field>
+            <field name="padding">5</field>
+            <field name="company_id" eval="False"/>
+        </record>
+    </data>
+</odoo>
