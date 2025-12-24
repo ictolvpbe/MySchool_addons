@@ -19,6 +19,13 @@ from . import sys_event_type
 from . import sys_event_type_service
 from . import sys_event
 from . import sys_event_service
+
+from . import informat_service
+from . import informat_service_config
+from . import informat_dto
+from . import smartschool_service
+
+
 # Base/independent models first
 # BeTask models (be_task_type must come before be_task)
 

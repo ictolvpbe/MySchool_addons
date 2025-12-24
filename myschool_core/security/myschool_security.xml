@@ -2,24 +2,23 @@
 <odoo>
     <data>
 
-<!--        <record id="module_category_school" model="ir.module.category">-->
-        <record id="module_category_myschool" model="res.groups.privilege">
-            <field name="name">MySchool Core Management</field>
-            <field name="description">User access level for school management</field>
-            <field name="sequence">10</field>
-        </record>
+    <!-- ===================================================================== -->
+    <!-- Security Groups for MySchool                                          -->
+    <!-- ===================================================================== -->
 
-        <record id="group_myschool_user" model="res.groups">
-            <field name="name">MySchool User</field>
-            <field name="privilege_id" ref="module_category_myschool"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
-        </record>
+    <!-- User Group - Read access to myschool_core only -->
+    <record id="group_myschool_core_user" model="res.groups">
+        <field name="name">MySchool User</field>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">Read access to MySchool Core models.</field>
+    </record>
 
-        <record id="group_myschool_manager" model="res.groups">
-            <field name="name">MySchool Manager</field>
-            <field name="privilege_id" ref="module_category_myschool"/>
-            <field name="implied_ids" eval="[(4, ref('group_myschool_user'))]"/>
-        </record>
+    <!-- Admin Group - Full access to myschool_core AND myschool_admin -->
+    <record id="group_myschool_core_admin" model="res.groups">
+        <field name="name">MySchool Admin</field>
+        <field name="implied_ids" eval="[(4, ref('group_myschool_core_user'))]"/>
+        <field name="comment">Full access to all MySchool modules including Admin.</field>
+    </record>
 
     </data>
 </odoo>

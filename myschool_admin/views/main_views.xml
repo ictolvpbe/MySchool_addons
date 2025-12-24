@@ -98,7 +98,7 @@
 
     <!-- appanization Action -->
     <record id="action_myschool_app" model="ir.actions.act_window">
-        <field name="name">appanisaties</field>
+        <field name="name">app</field>
         <field name="res_model">myschool.admin.app</field>
         <field name="view_mode">form</field>
 <!--        <field name="view_mode">list,form</field>-->

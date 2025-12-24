@@ -37,7 +37,7 @@ class SysEvent(models.Model):
         required=True,
         index=True,
         ondelete='restrict',
-        tracking=True,
+        #Tracking=True,
         help='Type of system event (EVENT, ERROR-BLOCKING, ERROR-NONBLOCKING)'
     )
     
@@ -58,7 +58,7 @@ class SysEvent(models.Model):
         required=True,
         default='BE',
         index=True,
-        tracking=True,
+        #Tracking=True,
         help='Source system that generated this event'
     )
     
@@ -66,7 +66,7 @@ class SysEvent(models.Model):
         string='Event Code',
         size=100,
         index=True,
-        tracking=True,
+        #Tracking=True,
         help='Specific code identifying the event (pCode from Java)'
     )
     
@@ -81,13 +81,13 @@ class SysEvent(models.Model):
         default='2',
         required=True,
         index=True,
-        tracking=True,
+        #Tracking=True,
         help='Priority level: 1-High (blocking errors), 2-Normal, 3-Low'
     )
     
     data = fields.Text(
         string='Event Data',
-        tracking=True,
+        #Tracking=True,
         help='Detailed data associated with this event (pData from Java)'
     )
     
@@ -102,18 +102,18 @@ class SysEvent(models.Model):
         required=True,
         default='NEW',
         index=True,
-        tracking=True,
+        #Tracking=True,
         help='Current status of the event'
     )
     
     eventclosed = fields.Datetime(
         string='Event Closed Date',
         readonly=True,
-        tracking=True,
+        #Tracking=True,
         help='Date and time when the event was closed'
     )
     
-    # Additional tracking fields
+    # Additional #Tracking fields
     active = fields.Boolean(
         string='Active',
         default=True,
@@ -131,7 +131,7 @@ class SysEvent(models.Model):
         comodel_name='res.users',
         string='Responsible User',
         default=lambda self: self.env.user,
-        tracking=True,
+        #Tracking=True,
         help='User responsible for this event'
     )
     

@@ -248,7 +248,28 @@ class InformatService(models.AbstractModel):
         @return: True if successful, False if errors occurred
         """
         _logger.info("SAPSYNC-001: Starting Informat sync process")
-        
+
+
+
+        # # Debug: print all myschool models
+        # myschool_models = [m for m in self.env.registry.models.keys() if 'myschool' in m]
+        # print("Available models:", sorted(myschool_models))
+        #
+        # # Check if sys_event exists
+        # print("sys_event exists:", 'myschool.sys.event' in self.env.registry.models)
+        #
+        # SysEvent = self.env.get('myschool.sys.event')
+        # print("SysEvent:", SysEvent, type(SysEvent))
+        #
+        #
+        #
+        # SysEvent = self.env.get('myschool.sys.event.service')
+        # SysEvent.create_sys_event("SAPSYNC-001", "Start importing Employee information",True)
+        #
+
+
+
+
         try:
             # Ensure storage directories exist
             if not self._ensure_storage_directories(dev_mode):
@@ -632,7 +653,8 @@ class InformatService(models.AbstractModel):
         """
         procedure_name = '_get_employees_from_informat'
         all_employees: Dict[str, str] = {}
-        
+
+
         self._create_sys_event("SAPSYNC-001", "Start importing Employee information")
         
         try:
@@ -650,7 +672,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', 'INFORMAT')])
+            schools = Org.search([('sap_provider', '=', '1')])  #todo: was INFORMAT - how to use string iso index
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing employee data for {school.inst_nr}")
@@ -1362,7 +1384,7 @@ class InformatService(models.AbstractModel):
         """Create a system event log entry."""
         _logger.info(f"{code}: {message}")
         
-        SysEvent = self.env.get('myschool.sys.event')
+        SysEvent = self.env.get('myschool.sys.event.service')
         if SysEvent:
             SysEvent.create_sys_event(code, message, True)
 
@@ -1370,7 +1392,7 @@ class InformatService(models.AbstractModel):
         """Create a system error log entry."""
         _logger.error(f"{code}: {message}")
         
-        SysEvent = self.env.get('myschool.sys.event')
+        SysEvent = self.env.get('myschool.sys.event.service')
         if SysEvent:
             SysEvent.create_sys_error(code, message, error_type, True)
 

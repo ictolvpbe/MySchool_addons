@@ -19,7 +19,6 @@
     'depends': ['base', 'mail','myschool_core'],
     'data': [
         # Securityaccount_analytic_applicability
-        'security/myschool_security.xml',
         'security/ir.model.access.csv',
 
         # Views - Types first (dependencies)

@@ -281,14 +281,20 @@ class ConfigItem(models.Model):
         """
         # Find via CiRelation
         CiRelation = self.env.get('myschool.ci.relation')
+        ConfigItem = self.env.get('myschool.config.item')
         Org = self.env.get('myschool.org')
         
-        if not CiRelation or not Org:
-            _logger.warning("CiRelation or Org model not found")
-            # Fallback: try to find by name only
-            config_item = self.search([('name', '=', ci_name)], limit=1)
-            return config_item.string_value if config_item else None
-        
+        # if not CiRelation or not Org:
+        #     _logger.warning("CiRelation or Org model not found")
+        #     # Fallback: try to find by name only
+        #     config_item = self.search([('name', '=', ci_name)], limit=1)
+        #     return config_item.string_value if config_item else None
+        #
+        # config_item = self.search([('name', '=', ci_name)], limit=1)
+        # SearchConfigItem = config_item.string_value
+        #
+
+
         # Find the organization
         org = Org.search([('name_short', '=', org_short_name)], limit=1)
         if not org:
@@ -305,7 +311,7 @@ class ConfigItem(models.Model):
         if ci_relation and ci_relation.id_ci:
             return ci_relation.id_ci.string_value
         
-        # Fallback: try to find config item by name only
+        # Fallback: try to find config item by name only  #todo : behouden ??
         config_item = self.search([('name', '=', ci_name)], limit=1)
         return config_item.string_value if config_item else None
 
