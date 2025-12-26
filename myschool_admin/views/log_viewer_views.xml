@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- ===================================================================== -->
+    <!-- Log Viewer Form View                                                  -->
+    <!-- ===================================================================== -->
+    
+    <record id="view_log_viewer_form" model="ir.ui.view">
+        <field name="name">myschool.log.viewer.form</field>
+        <field name="model">myschool.log.viewer</field>
+        <field name="arch" type="xml">
+            <form string="Log Viewer" create="false" delete="false">
+                <header>
+                    <button name="action_refresh" type="object" 
+                            string="🔄 Refresh" class="btn-primary"/>
+                    <button name="action_download" type="object" 
+                            string="⬇️ Download" class="btn-secondary"/>
+                    <button name="action_clear_filters" type="object" 
+                            string="Clear Filters" class="btn-secondary"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Server Log Viewer</h1>
+                    </div>
+                    
+                    <group>
+                        <group string="Log File Selection">
+                            <field name="log_file" widget="selection"/>
+                            <field name="num_lines"/>
+                        </group>
+                        <group string="Filters">
+                            <field name="filter_level"/>
+                            <field name="search_text" placeholder="Search in logs..."/>
+                        </group>
+                    </group>
+                    
+                    <group>
+                        <group string="Auto Refresh">
+                            <field name="auto_refresh"/>
+                            <field name="refresh_interval" 
+                                   invisible="not auto_refresh"/>
+                        </group>
+                        <group string="File Info">
+                            <field name="file_size"/>
+                            <field name="file_modified"/>
+                            <field name="last_refresh"/>
+                        </group>
+                    </group>
+                    
+                    <notebook>
+                        <page string="Log Output" name="log_output">
+                            <div class="alert alert-info" role="alert" style="margin-bottom: 10px;">
+                                <strong>Tip:</strong> Use filters to narrow down log entries. 
+                                Auto-refresh updates the log every few seconds.
+                            </div>
+                            <field name="log_content" widget="text" 
+                                   readonly="1" nolabel="1"
+                                   style="font-family: monospace; font-size: 12px; 
+                                          background-color: #1e1e1e; color: #d4d4d4;
+                                          padding: 15px; border-radius: 5px;
+                                          white-space: pre-wrap; word-wrap: break-word;
+                                          min-height: 500px; max-height: 800px; overflow-y: auto;"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    
+    <!-- ===================================================================== -->
+    <!-- Log Viewer Action                                                     -->
+    <!-- ===================================================================== -->
+    
+    <record id="action_log_viewer" model="ir.actions.act_window">
+        <field name="name">Log Viewer</field>
+        <field name="res_model">myschool.log.viewer</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+        <field name="context">{
+            'form_view_initial_mode': 'edit',
+            'default_num_lines': 100,
+            'default_filter_level': 'all'
+        }</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Real-time Log Viewer
+            </p>
+            <p>
+                View server logs in real-time, similar to <code>tail -f</code>.
+            </p>
+        </field>
+    </record>
+    
+</odoo>

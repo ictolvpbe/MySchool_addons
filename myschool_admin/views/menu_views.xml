@@ -253,4 +253,29 @@
               action="action_informat_service_config"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- Sub Menu: Log Viewer -->
+    <menuitem id="menu_myschool_log_viewer"
+              name="Log Viewer"
+              parent="menu_myschool_root"
+              action="action_log_viewer"
+              sequence="95"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+
+<!--    &lt;!&ndash; Action: Log Viewer &ndash;&gt;-->
+<!--    <record id="action_log_viewer" model="ir.actions.act_window">-->
+<!--        <field name="name">Log Viewer</field>-->
+<!--        <field name="res_model">myschool.log.viewer</field>-->
+<!--        <field name="view_mode">form</field>-->
+<!--        <field name="target">current</field>-->
+<!--        <field name="context">{-->
+<!--            'form_view_initial_mode': 'edit',-->
+<!--            'default_num_lines': 100,-->
+<!--            'default_filter_level': 'all'-->
+<!--        }</field>-->
+<!--    </record>-->
+
+
+
 </odoo>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    
+    <t t-name="myschool_admin.LogViewerWidget" owl="1">
+        <div class="log-viewer-widget">
+            <div class="log-viewer-header d-flex justify-content-between align-items-center mb-2">
+                <div class="log-viewer-info">
+                    <span t-if="state.lastRefresh" class="text-muted small">
+                        Last refresh: <t t-esc="state.lastRefresh"/>
+                    </span>
+                    <span t-if="state.fileSize" class="text-muted small ms-3">
+                        Size: <t t-esc="state.fileSize"/>
+                    </span>
+                </div>
+                <div class="log-viewer-actions">
+                    <button class="btn btn-sm btn-primary" t-on-click="refreshLog" t-att-disabled="state.isLoading">
+                        <t t-if="state.isLoading">
+                            <span class="spinner-border spinner-border-sm" role="status"/>
+                            Loading...
+                        </t>
+                        <t t-else="">
+                            🔄 Refresh
+                        </t>
+                    </button>
+                    <button class="btn btn-sm btn-secondary ms-1" t-on-click="scrollToBottom">
+                        ⬇️ Scroll to Bottom
+                    </button>
+                </div>
+            </div>
+            
+            <div t-if="state.error" class="alert alert-danger" role="alert">
+                <t t-esc="state.error"/>
+            </div>
+            
+            <div class="log-content-container" 
+                 style="font-family: 'Consolas', 'Monaco', monospace; 
+                        font-size: 12px; 
+                        background-color: #1e1e1e; 
+                        color: #d4d4d4;
+                        padding: 15px; 
+                        border-radius: 5px;
+                        white-space: pre-wrap; 
+                        word-wrap: break-word;
+                        min-height: 400px; 
+                        max-height: 600px; 
+                        overflow-y: auto;">
+                <t t-esc="state.logContent"/>
+            </div>
+        </div>
+    </t>
+    
+</templates>

@@ -16,7 +16,7 @@
     'author': 'MySchool OLVP',
     'website': 'https://www.olvp.be',
     'license': 'LGPL-3',
-    'depends': ['base', 'mail','myschool_core'],
+    'depends': ['base','mail','myschool_core','web'],
     'data': [
         # Securityaccount_analytic_applicability
         'security/ir.model.access.csv',
@@ -44,6 +44,7 @@
         'views/betask_type_views.xml',
         'views/betask_views.xml',
         'views/informat_service_config_views.xml',
+        'views/log_viewer_views.xml',
 
         # Menus
         'views/menu_views.xml',
@@ -57,6 +58,12 @@
 
 
     ],
+    'assets': {
+        'web.assets_backend': [
+            'myschool_admin/static/src/js/log_viewer.js',
+            'myschool_admin/static/src/xml/log_viewer.xml',
+        ],
+    },
     'demo': [],
     'installable': True,
     'application': True,
