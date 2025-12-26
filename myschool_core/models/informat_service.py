@@ -263,9 +263,13 @@ class InformatService(models.AbstractModel):
         #
         #
         #
-        # SysEvent = self.env.get('myschool.sys.event.service')
+        #SysEvent = self.env.get('myschool.sys.event.service')
+
+        self._create_sys_error("SAPSYNC-900", "Error in getEmployeesFromInformat")
+
+
         # SysEvent.create_sys_event("SAPSYNC-001", "Start importing Employee information",True)
-        #
+
 
 
 
@@ -481,7 +485,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', 'INFORMAT')])
+            schools = Org.search([('sap_provider', '=', '1')])
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing data for {school.inst_nr}")
@@ -545,7 +549,7 @@ class InformatService(models.AbstractModel):
 
     def _get_students_from_informat(self, timestamp: str, student_id: str, dev_mode: bool) -> Optional[Dict[str, str]]:
         """
-        Retrieve Student data from SAP Informat for all orgs where SAP = INFORMAT.
+        Retrieve Student data from SAP Informat for all orgs where SAP = 1.
         
         Equivalent to Java: getStudentsFromInformat()
         
@@ -575,7 +579,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', 'INFORMAT')])
+            schools = Org.search([('sap_provider', '=', '1')])
             
             for school in schools:
                 _logger.info(f"Start importing student data for {school.inst_nr}")
@@ -763,7 +767,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', 'INFORMAT')])
+            schools = Org.search([('sap_provider', '=', '1')])
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing assignment data for {school.inst_nr}")
@@ -1171,7 +1175,7 @@ class InformatService(models.AbstractModel):
         try:
             Role = self.env['myschool.role']
             Org = self.env['myschool.org']
-            PropRelation = self.env['myschool.prop.relation']
+            PropRelation = self.env['myschool.proprelation']
             
             processed_assignments: List[str] = []
             first_task = True
@@ -1253,10 +1257,10 @@ class InformatService(models.AbstractModel):
         BeTask = self.env.get(self.BETASK_MODEL)
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
         
-        if not BeTask or not BeTaskType:
+        if not self.BETASK_MODEL or self.BETASK_TYPE_MODEL in self.env:
             _logger.warning(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
             return False
-        
+
         blocking_task_type = BeTaskType.search([
             (self.BETASKTYPE_TARGET_FIELD, '=', 'SYSTEM'),
             (self.BETASKTYPE_OBJECT_FIELD, '=', 'BLOCKINGMESSAGE'),
@@ -1281,7 +1285,7 @@ class InformatService(models.AbstractModel):
         BeTask = self.env.get(self.BETASK_MODEL)
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
         
-        if not BeTask or not BeTaskType:
+        if not BeTask or not BeTaskType:  #todo : aanpassen zoals def hierboven na test
             _logger.warning(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
             return False
         
@@ -1383,10 +1387,13 @@ class InformatService(models.AbstractModel):
     def _create_sys_event(self, code: str, message: str) -> None:
         """Create a system event log entry."""
         _logger.info(f"{code}: {message}")
-        
-        SysEvent = self.env.get('myschool.sys.event.service')
-        if SysEvent:
-            SysEvent.create_sys_event(code, message, True)
+
+        if 'myschool.sys.event.service' in self.env:
+            self.env['myschool.sys.event.service'].create_sys_event(code, message, True)
+
+        # SysEvent = self.env.get('myschool.sys.event.service')
+        # if SysEvent:
+        #     SysEvent.create_sys_event(code, message, True)
 
     def _create_sys_error(self, code: str, message: str, error_type: str = 'ERROR-BLOCKING') -> None:
         """Create a system error log entry."""
