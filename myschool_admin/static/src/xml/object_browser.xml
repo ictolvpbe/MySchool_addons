@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- Tree Node Template -->
+    <t t-name="myschool_admin.TreeNode" owl="1">
+        <div class="ob-node" t-att-style="'margin-left: ' + (level * 20) + 'px;'">
+            <!-- Node Row -->
+            <div class="ob-row" t-att-class="{ 'ob-row-expandable': hasChildren }">
+                <!-- Toggle Button -->
+                <t t-if="hasChildren">
+                    <span class="ob-toggle" t-on-click="toggle">
+                        <t t-if="state.expanded">▼</t>
+                        <t t-else="">▶</t>
+                    </span>
+                </t>
+                <t t-else="">
+                    <span class="ob-toggle ob-toggle-empty"></span>
+                </t>
+                
+                <!-- Icon -->
+                <span class="ob-icon">
+                    <t t-if="props.node.type === 'org'">🏢</t>
+                    <t t-elif="props.node.type === 'person'">👤</t>
+                    <t t-elif="props.node.type === 'role'">🎭</t>
+                    <t t-else="">📄</t>
+                </span>
+                
+                <!-- Name (clickable) -->
+                <span class="ob-name" t-on-click="openRecord">
+                    <t t-esc="props.node.name"/>
+                </span>
+                
+                <!-- Badges -->
+                <span class="ob-badges">
+                    <t t-if="props.node.child_count">
+                        <span class="ob-badge ob-badge-info">
+                            <t t-esc="props.node.child_count"/> sub
+                        </span>
+                    </t>
+                    <t t-if="props.node.person_count">
+                        <span class="ob-badge ob-badge-success">
+                            <t t-esc="props.node.person_count"/> pers
+                        </span>
+                    </t>
+                    <t t-if="props.node.roles">
+                        <t t-foreach="props.node.roles" t-as="role" t-key="role">
+                            <span class="ob-badge ob-badge-role"><t t-esc="role"/></span>
+                        </t>
+                    </t>
+                </span>
+            </div>
+            
+            <!-- Children (if expanded) -->
+            <t t-if="state.expanded and hasChildren">
+                <div class="ob-children">
+                    <!-- Child Organizations -->
+                    <t t-if="props.node.children">
+                        <t t-foreach="props.node.children" t-as="child" t-key="child.id">
+                            <TreeNode node="child" level="childLevel" onOpenRecord="props.onOpenRecord"/>
+                        </t>
+                    </t>
+                    
+                    <!-- Persons under this org -->
+                    <t t-if="props.node.persons">
+                        <t t-foreach="props.node.persons" t-as="person" t-key="person.id">
+                            <TreeNode node="person" level="childLevel" onOpenRecord="props.onOpenRecord"/>
+                        </t>
+                    </t>
+                </div>
+            </t>
+        </div>
+    </t>
+
+    <!-- Main Object Browser Template -->
+    <t t-name="myschool_admin.ObjectBrowserClient" owl="1">
+        <div class="ob-container">
+            <!-- Header -->
+            <div class="ob-header">
+                <h2>🗂️ Object Browser</h2>
+                <div class="ob-toolbar">
+                    <input type="text" 
+                           class="ob-search" 
+                           placeholder="Search persons..." 
+                           t-att-value="state.searchText"
+                           t-on-input="onSearchInput"/>
+                    <label class="ob-checkbox">
+                        <input type="checkbox" 
+                               t-att-checked="state.showInactive"
+                               t-on-change="onToggleInactive"/>
+                        Show Inactive
+                    </label>
+                    <button class="ob-btn ob-btn-primary" t-on-click="onRefresh">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Tabs -->
+            <div class="ob-tabs">
+                <button class="ob-tab" 
+                        t-att-class="{ 'ob-tab-active': state.activeTab === 'orgs' }"
+                        t-on-click="setTabOrgs">
+                    🏢 Organizations (<t t-esc="state.treeData.organizations.length"/>)
+                </button>
+                <button class="ob-tab"
+                        t-att-class="{ 'ob-tab-active': state.activeTab === 'roles' }"
+                        t-on-click="setTabRoles">
+                    🎭 Roles (<t t-esc="state.treeData.roles.length"/>)
+                </button>
+                <t t-if="state.searchResults.length > 0">
+                    <button class="ob-tab"
+                            t-att-class="{ 'ob-tab-active': state.activeTab === 'search' }"
+                            t-on-click="setTabSearch">
+                        🔍 Search (<t t-esc="state.searchResults.length"/>)
+                    </button>
+                </t>
+            </div>
+            
+            <!-- Content -->
+            <div class="ob-content">
+                <!-- Loading -->
+                <t t-if="state.loading">
+                    <div class="ob-loading">Loading...</div>
+                </t>
+                
+                <!-- Organizations Tab -->
+                <t t-elif="state.activeTab === 'orgs'">
+                    <div class="ob-tree">
+                        <t t-if="state.treeData.organizations.length === 0">
+                            <div class="ob-empty">No organizations found</div>
+                        </t>
+                        <t t-else="">
+                            <t t-foreach="state.treeData.organizations" t-as="org" t-key="org.id">
+                                <TreeNode node="org" level="0" onOpenRecord="(model, id) => this.onOpenRecord(model, id)"/>
+                            </t>
+                        </t>
+                    </div>
+                </t>
+                
+                <!-- Roles Tab -->
+                <t t-elif="state.activeTab === 'roles'">
+                    <div class="ob-tree">
+                        <t t-if="state.treeData.roles.length === 0">
+                            <div class="ob-empty">No roles found</div>
+                        </t>
+                        <t t-else="">
+                            <t t-foreach="state.treeData.roles" t-as="role" t-key="role.id">
+                                <div class="ob-node">
+                                    <div class="ob-row">
+                                        <span class="ob-toggle ob-toggle-empty"></span>
+                                        <span class="ob-icon">🎭</span>
+                                        <span class="ob-name" t-on-click="() => this.openRecord(role.model, role.id)">
+                                            <t t-esc="role.name"/>
+                                            <t t-if="role.shortname"> (<t t-esc="role.shortname"/>)</t>
+                                        </span>
+                                    </div>
+                                </div>
+                            </t>
+                        </t>
+                    </div>
+                </t>
+                
+                <!-- Search Results Tab -->
+                <t t-elif="state.activeTab === 'search'">
+                    <div class="ob-tree">
+                        <t t-if="state.searchResults.length === 0">
+                            <div class="ob-empty">No results found</div>
+                        </t>
+                        <t t-else="">
+                            <t t-foreach="state.searchResults" t-as="person" t-key="person.id">
+                                <div class="ob-node">
+                                    <div class="ob-row">
+                                        <span class="ob-toggle ob-toggle-empty"></span>
+                                        <span class="ob-icon">👤</span>
+                                        <span class="ob-name" t-on-click="() => this.openRecord(person.model, person.id)">
+                                            <t t-esc="person.name"/>
+                                        </span>
+                                    </div>
+                                </div>
+                            </t>
+                        </t>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+
+</templates>

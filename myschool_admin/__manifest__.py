@@ -45,9 +45,13 @@
         'views/betask_views.xml',
         'views/informat_service_config_views.xml',
         'views/log_viewer_views.xml',
+        'views/object_browser_views.xml',
 
         # Menus
         'views/menu_views.xml',
+
+        #Wizards
+        'views/wizard_views.xml',
 
         #demo data
         'data/sequence.xml',
@@ -55,11 +59,12 @@
 
         #Services
         #'services/data/ir_cron_data.xml',
-
-
     ],
     'assets': {
         'web.assets_backend': [
+            'myschool_admin/static/src/css/object_browser.css',
+            'myschool_admin/static/src/js/object_browser.js',
+            'myschool_admin/static/src/xml/object_browser.xml',
             'myschool_admin/static/src/js/log_viewer.js',
             'myschool_admin/static/src/xml/log_viewer.xml',
         ],

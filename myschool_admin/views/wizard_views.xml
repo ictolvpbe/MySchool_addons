@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- ===================================================================== -->
+    <!-- Assign Role Wizard                                                    -->
+    <!-- ===================================================================== -->
+    
+    <record id="view_assign_role_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.assign.role.wizard.form</field>
+        <field name="model">myschool.assign.role.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Rol Toewijzen">
+                <group>
+                    <field name="person_id" options="{'no_create': True}"/>
+                    <field name="role_id" options="{'no_create': True}"/>
+                    <field name="org_id" options="{'no_create': True}"/>
+                </group>
+                <group>
+                    <field name="proprelation_type_id" options="{'no_create': True}"/>
+                    <field name="is_master"/>
+                    <field name="start_date"/>
+                </group>
+                <footer>
+                    <button name="action_assign" type="object" string="Toewijzen" class="btn-primary"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+    
+    <record id="action_assign_role_wizard" model="ir.actions.act_window">
+        <field name="name">Rol Toewijzen</field>
+        <field name="res_model">myschool.assign.role.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+    
+    <!-- ===================================================================== -->
+    <!-- Move Org Wizard                                                       -->
+    <!-- ===================================================================== -->
+    
+    <record id="view_move_org_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.move.org.wizard.form</field>
+        <field name="model">myschool.move.org.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Organisatie Verplaatsen">
+                <group>
+                    <field name="org_id" readonly="1"/>
+                    <field name="current_parent_id"/>
+                    <field name="new_parent_id" options="{'no_create': True}"/>
+                </group>
+                <footer>
+                    <button name="action_move" type="object" string="Verplaatsen" class="btn-primary"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+    
+    <record id="action_move_org_wizard" model="ir.actions.act_window">
+        <field name="name">Organisatie Verplaatsen</field>
+        <field name="res_model">myschool.move.org.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+    
+    <!-- ===================================================================== -->
+    <!-- Move Person Wizard                                                    -->
+    <!-- ===================================================================== -->
+    
+    <record id="view_move_person_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.move.person.wizard.form</field>
+        <field name="model">myschool.move.person.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Persoon Verplaatsen">
+                <group>
+                    <field name="person_id" readonly="1"/>
+                    <field name="current_org_id" options="{'no_create': True}"/>
+                    <field name="new_org_id" options="{'no_create': True}"/>
+                </group>
+                <group>
+                    <field name="role_id" options="{'no_create': True}"/>
+                    <field name="keep_old_relations"/>
+                </group>
+                <footer>
+                    <button name="action_move" type="object" string="Verplaatsen" class="btn-primary"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+    
+    <record id="action_move_person_wizard" model="ir.actions.act_window">
+        <field name="name">Persoon Verplaatsen</field>
+        <field name="res_model">myschool.move.person.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+    
+    <!-- ===================================================================== -->
+    <!-- Remove Role Wizard                                                    -->
+    <!-- ===================================================================== -->
+    
+    <record id="view_remove_role_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.remove.role.wizard.form</field>
+        <field name="model">myschool.remove.role.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Rol Verwijderen">
+                <group>
+                    <field name="proprelation_id" readonly="1"/>
+                    <field name="person_id"/>
+                    <field name="role_id"/>
+                    <field name="org_id"/>
+                </group>
+                <group>
+                    <field name="delete_permanently"/>
+                </group>
+                <footer>
+                    <button name="action_remove" type="object" string="Verwijderen" class="btn-danger"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+    
+    <record id="action_remove_role_wizard" model="ir.actions.act_window">
+        <field name="name">Rol Verwijderen</field>
+        <field name="res_model">myschool.remove.role.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+    
+    <!-- ===================================================================== -->
+    <!-- Add Child Org Wizard                                                  -->
+    <!-- ===================================================================== -->
+    
+    <record id="view_add_child_org_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.add.child.org.wizard.form</field>
+        <field name="model">myschool.add.child.org.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Sub Organisatie Toevoegen">
+                <group>
+                    <field name="parent_org_id" readonly="1"/>
+                    <field name="child_org_id" options="{'no_create': True}"/>
+                </group>
+                <footer>
+                    <button name="action_add" type="object" string="Toevoegen" class="btn-primary"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+    
+    <record id="action_add_child_org_wizard" model="ir.actions.act_window">
+        <field name="name">Sub Organisatie Toevoegen</field>
+        <field name="res_model">myschool.add.child.org.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+    
+</odoo>

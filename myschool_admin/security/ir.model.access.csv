@@ -1,3 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_myschool_admin_app,myschool.admin.app.admin,model_myschool_admin_app,myschool_core.group_myschool_core_admin,1,1,1,1
 access_log_viewer_admin,myschool.log.viewer.admin,model_myschool_log_viewer,myschool_core.group_myschool_core_admin,1,1,1,1
+access_object_browser_admin,myschool.object.browser.admin,model_myschool_object_browser,myschool_core.group_myschool_core_admin,1,1,1,1
+access_object_browser_user,myschool.object.browser.user,model_myschool_object_browser,myschool_core.group_myschool_core_admin,1,1,1,1

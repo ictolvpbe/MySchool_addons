@@ -8,6 +8,23 @@
               web_icon="school,static/description/icon.png"
               groups="myschool_core.group_myschool_core_admin"/>
 
+      <!-- Sub Menu: Object Browser -->
+    <menuitem id="menu_myschool_object_browser"
+              name="Object Browser"
+              parent="menu_myschool_root"
+              action="action_object_browser_client"
+              sequence="5"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+<!--    &lt;!&ndash; Sub Menu: LDAP Configuration &ndash;&gt;-->
+<!--    <menuitem id="menu_myschool_ldap_config"-->
+<!--              name="LDAP Configuration"-->
+<!--              parent="menu_myschool_root"-->
+<!--              action="action_ldap_config"-->
+<!--              sequence="6"-->
+<!--              groups="myschool_core.group_myschool_core_admin"/>-->
+
+
     <!-- Organizations Menu -->
     <menuitem id="menu_myschool_organization"
               name="Organisaties"

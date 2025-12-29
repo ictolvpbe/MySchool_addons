@@ -39,6 +39,6 @@ class PropRelation(models.Model):
     is_administrative = fields.Boolean(string='Is Administratief', default=False)
     is_organisational = fields.Boolean(string='Is Organisatorisch', default=False)
     is_master = fields.Boolean(string='Is Master Relatie', default=False)
-    is_active = fields.Boolean(string='Actief', default=False)
+    is_active = fields.Boolean(string='Actief', default=True)
     start_date = fields.Datetime(string='Startdatum')
     automatic_sync = fields.Boolean(string='Auto Sync', default=True, required=True)

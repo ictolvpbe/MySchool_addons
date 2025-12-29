@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- Client Action for Object Browser -->
+    <record id="action_object_browser_client" model="ir.actions.client">
+        <field name="name">Object Browser</field>
+        <field name="tag">myschool_object_browser</field>
+    </record>
+    
+    <!-- Menu Item -->
+    <menuitem id="menu_object_browser_root"
+              name="Object Browser"
+              action="action_object_browser_client"
+              sequence="999"/>
+    
+</odoo>
