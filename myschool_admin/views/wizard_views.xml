@@ -1,161 +1,572 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    
-    <!-- ===================================================================== -->
-    <!-- Assign Role Wizard                                                    -->
-    <!-- ===================================================================== -->
-    
-    <record id="view_assign_role_wizard_form" model="ir.ui.view">
-        <field name="name">myschool.assign.role.wizard.form</field>
-        <field name="model">myschool.assign.role.wizard</field>
+
+    <!-- Create Person Wizard -->
+    <record id="view_create_person_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.create.person.wizard.form</field>
+        <field name="model">myschool.create.person.wizard</field>
         <field name="arch" type="xml">
-            <form string="Rol Toewijzen">
+            <form string="Create Person">
+                <field name="external_domain" invisible="1"/>
                 <group>
-                    <field name="person_id" options="{'no_create': True}"/>
-                    <field name="role_id" options="{'no_create': True}"/>
-                    <field name="org_id" options="{'no_create': True}"/>
+                    <group string="Organization">
+                        <field name="org_id" invisible="1"/>
+                        <field name="org_name" readonly="1" string="Name"/>
+                        <field name="org_fqdn" readonly="1" string="Parent OU FQDN"/>
+                    </group>
                 </group>
                 <group>
-                    <field name="proprelation_type_id" options="{'no_create': True}"/>
-                    <field name="is_master"/>
-                    <field name="start_date"/>
+                    <group string="Person Details">
+                        <field name="first_name"/>
+                        <field name="last_name"/>
+                        <field name="role_id" options="{'no_create': True}"/>
+                        <field name="is_employee" invisible="1"/>
+                        <field name="email_cloud" string="Email Cloud"/>
+                    </group>
+                    <group string="Employee Details" invisible="not is_employee">
+                        <field name="abbreviation"/>
+                        <field name="stamboeknummer" string="Stamboeknummer"/>
+                    </group>
                 </group>
+                <group>
+                    <group string="Odoo User" invisible="not is_employee">
+                        <field name="link_existing_user"/>
+                        <field name="existing_user_id" 
+                               invisible="not link_existing_user"
+                               options="{'no_create': True}"/>
+                        <field name="create_odoo_user" invisible="link_existing_user"/>
+                        <field name="odoo_user_login" 
+                               invisible="not create_odoo_user or link_existing_user"/>
+                    </group>
+                </group>
+                <separator/>
+                <div class="alert alert-info" role="alert" invisible="not is_employee">
+                    <strong>EMPLOYEE:</strong> Email Cloud is auto-generated. Odoo user will be created automatically.
+                </div>
                 <footer>
-                    <button name="action_assign" type="object" string="Toewijzen" class="btn-primary"/>
-                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                    <button name="action_create" type="object" string="Create &amp; Edit Details" class="btn-primary"
+                            help="Create person and open form to complete all details"/>
+                    <button name="action_create_and_close" type="object" string="Create &amp; Close" class="btn-secondary"
+                            help="Create person and return to browser"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
                 </footer>
             </form>
         </field>
     </record>
-    
-    <record id="action_assign_role_wizard" model="ir.actions.act_window">
-        <field name="name">Rol Toewijzen</field>
-        <field name="res_model">myschool.assign.role.wizard</field>
-        <field name="view_mode">form</field>
-        <field name="target">new</field>
-    </record>
-    
-    <!-- ===================================================================== -->
-    <!-- Move Org Wizard                                                       -->
-    <!-- ===================================================================== -->
-    
-    <record id="view_move_org_wizard_form" model="ir.ui.view">
-        <field name="name">myschool.move.org.wizard.form</field>
-        <field name="model">myschool.move.org.wizard</field>
-        <field name="arch" type="xml">
-            <form string="Organisatie Verplaatsen">
-                <group>
-                    <field name="org_id" readonly="1"/>
-                    <field name="current_parent_id"/>
-                    <field name="new_parent_id" options="{'no_create': True}"/>
-                </group>
-                <footer>
-                    <button name="action_move" type="object" string="Verplaatsen" class="btn-primary"/>
-                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
-                </footer>
-            </form>
-        </field>
-    </record>
-    
-    <record id="action_move_org_wizard" model="ir.actions.act_window">
-        <field name="name">Organisatie Verplaatsen</field>
-        <field name="res_model">myschool.move.org.wizard</field>
-        <field name="view_mode">form</field>
-        <field name="target">new</field>
-    </record>
-    
-    <!-- ===================================================================== -->
-    <!-- Move Person Wizard                                                    -->
-    <!-- ===================================================================== -->
-    
-    <record id="view_move_person_wizard_form" model="ir.ui.view">
-        <field name="name">myschool.move.person.wizard.form</field>
-        <field name="model">myschool.move.person.wizard</field>
-        <field name="arch" type="xml">
-            <form string="Persoon Verplaatsen">
-                <group>
-                    <field name="person_id" readonly="1"/>
-                    <field name="current_org_id" options="{'no_create': True}"/>
-                    <field name="new_org_id" options="{'no_create': True}"/>
-                </group>
-                <group>
-                    <field name="role_id" options="{'no_create': True}"/>
-                    <field name="keep_old_relations"/>
-                </group>
-                <footer>
-                    <button name="action_move" type="object" string="Verplaatsen" class="btn-primary"/>
-                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
-                </footer>
-            </form>
-        </field>
-    </record>
-    
-    <record id="action_move_person_wizard" model="ir.actions.act_window">
-        <field name="name">Persoon Verplaatsen</field>
-        <field name="res_model">myschool.move.person.wizard</field>
-        <field name="view_mode">form</field>
-        <field name="target">new</field>
-    </record>
-    
-    <!-- ===================================================================== -->
-    <!-- Remove Role Wizard                                                    -->
-    <!-- ===================================================================== -->
-    
-    <record id="view_remove_role_wizard_form" model="ir.ui.view">
-        <field name="name">myschool.remove.role.wizard.form</field>
-        <field name="model">myschool.remove.role.wizard</field>
-        <field name="arch" type="xml">
-            <form string="Rol Verwijderen">
-                <group>
-                    <field name="proprelation_id" readonly="1"/>
-                    <field name="person_id"/>
-                    <field name="role_id"/>
-                    <field name="org_id"/>
-                </group>
-                <group>
-                    <field name="delete_permanently"/>
-                </group>
-                <footer>
-                    <button name="action_remove" type="object" string="Verwijderen" class="btn-danger"/>
-                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
-                </footer>
-            </form>
-        </field>
-    </record>
-    
-    <record id="action_remove_role_wizard" model="ir.actions.act_window">
-        <field name="name">Rol Verwijderen</field>
-        <field name="res_model">myschool.remove.role.wizard</field>
-        <field name="view_mode">form</field>
-        <field name="target">new</field>
-    </record>
-    
-    <!-- ===================================================================== -->
-    <!-- Add Child Org Wizard                                                  -->
-    <!-- ===================================================================== -->
-    
+
+    <!-- Add Child Org Wizard -->
     <record id="view_add_child_org_wizard_form" model="ir.ui.view">
         <field name="name">myschool.add.child.org.wizard.form</field>
         <field name="model">myschool.add.child.org.wizard</field>
         <field name="arch" type="xml">
-            <form string="Sub Organisatie Toevoegen">
+            <form string="Add Child Organization">
                 <group>
-                    <field name="parent_org_id" readonly="1"/>
-                    <field name="child_org_id" options="{'no_create': True}"/>
+                    <field name="parent_org_name" readonly="1" string="Parent"/>
+                    <field name="parent_org_id" invisible="1"/>
                 </group>
+                <separator/>
+                <group>
+                    <field name="use_existing"/>
+                </group>
+                
+                <!-- Existing Org Selection -->
+                <group invisible="not use_existing">
+                    <field name="existing_org_id" 
+                           options="{'no_create': True}"
+                           domain="[('id', '!=', parent_org_id)]"
+                           string="Select Organization"/>
+                </group>
+                
+                <!-- New Org Creation -->
+                <group invisible="use_existing">
+                    <group string="Required Fields">
+                        <field name="new_org_name" required="not use_existing"/>
+                        <field name="new_org_name_short" required="not use_existing"
+                               help="Short code/abbreviation shown in tree view"/>
+                        <field name="new_org_inst_nr" required="not use_existing"
+                               help="Official institution number"/>
+                    </group>
+                    <group string="Options">
+                        <field name="new_org_has_ou"/>
+                        <field name="new_org_has_role"/>
+                        <field name="new_org_has_comgroup"/>
+                        <field name="new_org_has_secgroup"/>
+                    </group>
+                    <group string="LDAP Settings (auto-generated)">
+                        <field name="new_org_ou_fqdn_intern"/>
+                        <field name="new_org_ou_fqdn_extern"/>
+                    </group>
+                    <group string="Communication Group (auto-generated)" invisible="not new_org_has_comgroup">
+                        <field name="new_org_com_group_name"/>
+                        <field name="new_org_com_group_fqdn_internal"/>
+                        <field name="new_org_com_group_fqdn_external"/>
+                    </group>
+                    <group string="Security Group (auto-generated)" invisible="not new_org_has_secgroup">
+                        <field name="new_org_sec_group_name"/>
+                        <field name="new_org_sec_group_fqdn_internal"/>
+                        <field name="new_org_sec_group_fqdn_external"/>
+                    </group>
+                    <group string="Optional Fields">
+                        <field name="new_org_type_id" options="{'no_create': True}"/>
+                        <field name="new_org_description"/>
+                    </group>
+                </group>
+                
                 <footer>
-                    <button name="action_add" type="object" string="Toevoegen" class="btn-primary"/>
-                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                    <button name="action_add" type="object" string="Add &amp; Edit Details" class="btn-primary"
+                            help="Add organization and open form to complete all details"/>
+                    <button name="action_add_and_close" type="object" string="Add &amp; Close" class="btn-secondary"
+                            help="Add organization and return to browser"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
                 </footer>
             </form>
         </field>
     </record>
-    
-    <record id="action_add_child_org_wizard" model="ir.actions.act_window">
-        <field name="name">Sub Organisatie Toevoegen</field>
-        <field name="res_model">myschool.add.child.org.wizard</field>
+
+    <!-- Move Org Wizard -->
+    <record id="view_move_org_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.move.org.wizard.form</field>
+        <field name="model">myschool.move.org.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Move Organization">
+                <group>
+                    <field name="org_name" readonly="1"/>
+                    <field name="org_id" invisible="1"/>
+                    <field name="move_to_root"/>
+                </group>
+                <group invisible="move_to_root">
+                    <field name="new_parent_id" 
+                           options="{'no_create': True}"
+                           domain="[('id', '!=', org_id)]"/>
+                </group>
+                <footer>
+                    <button name="action_move" type="object" string="Move" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Move Person Wizard -->
+    <record id="view_move_person_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.move.person.wizard.form</field>
+        <field name="model">myschool.move.person.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Move Person">
+                <group>
+                    <field name="person_name" readonly="1"/>
+                    <field name="person_id" invisible="1"/>
+                    <field name="new_org_id" options="{'no_create': True}"/>
+                    <field name="keep_roles"/>
+                </group>
+                <footer>
+                    <button name="action_move" type="object" string="Move" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Assign Role Wizard -->
+    <record id="view_assign_role_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.assign.role.wizard.form</field>
+        <field name="model">myschool.assign.role.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Assign Role">
+                <group>
+                    <field name="person_name" readonly="1"/>
+                    <field name="person_id" invisible="1"/>
+                    <field name="role_id" options="{'no_create': True}"/>
+                    <field name="org_id" options="{'no_create': True}"/>
+                </group>
+                <footer>
+                    <button name="action_assign" type="object" string="Assign Role" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Bulk Assign Role Wizard -->
+    <record id="view_bulk_assign_role_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.bulk.assign.role.wizard.form</field>
+        <field name="model">myschool.bulk.assign.role.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Bulk Assign Role">
+                <group>
+                    <field name="person_count" readonly="1"/>
+                    <field name="role_id" options="{'no_create': True}"/>
+                    <field name="org_id" options="{'no_create': True}"/>
+                </group>
+                <footer>
+                    <button name="action_assign" type="object" string="Assign to All" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Bulk Move Wizard -->
+    <record id="view_bulk_move_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.bulk.move.wizard.form</field>
+        <field name="model">myschool.bulk.move.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Bulk Move Persons">
+                <group>
+                    <field name="person_count" readonly="1"/>
+                    <field name="org_id" options="{'no_create': True}"/>
+                </group>
+                <footer>
+                    <button name="action_move" type="object" string="Move All" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ======================================================================
+         Configuration Item Wizards
+         ====================================================================== -->
+
+    <!-- Manage CI Relations Wizard -->
+    <record id="view_manage_ci_relations_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.manage.ci.relations.wizard.form</field>
+        <field name="model">myschool.manage.ci.relations.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Configuration Items">
+                <group>
+                    <field name="org_id" invisible="1"/>
+                    <field name="org_name" string="Organization" readonly="1"/>
+                    <field name="ci_relation_count" string="Total Config Items" readonly="1"/>
+                </group>
+                <separator string="Active Configuration Items"/>
+                <p class="text-muted">
+                    Use "Add Config Item" to link configuration items to this organization, 
+                    or "View All" to see and manage all relations in a list view.
+                </p>
+                <footer>
+                    <button name="action_add_ci" type="object" string="Add Config Item" class="btn-primary" icon="fa-plus"/>
+                    <button name="action_view_all" type="object" string="View All" class="btn-secondary" icon="fa-list"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Add CI Relation Wizard -->
+    <record id="view_add_ci_relation_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.add.ci.relation.wizard.form</field>
+        <field name="model">myschool.add.ci.relation.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add Configuration Item">
+                <group>
+                    <field name="org_id" invisible="1"/>
+                    <field name="org_name" string="Organization" readonly="1"/>
+                </group>
+                <separator/>
+                <group>
+                    <field name="use_existing_ci" widget="boolean_toggle"/>
+                </group>
+                
+                <!-- Select Existing CI -->
+                <group invisible="not use_existing_ci">
+                    <field name="existing_ci_id" 
+                           options="{'no_create': False, 'no_create_edit': False}"
+                           domain="[('is_active', '=', True)]"
+                           string="Select Config Item"/>
+                </group>
+                
+                <!-- Create New CI -->
+                <group invisible="use_existing_ci" string="New Configuration Item">
+                    <group>
+                        <field name="new_ci_name" required="not use_existing_ci"/>
+                        <field name="new_ci_scope"/>
+                        <field name="new_ci_type"/>
+                    </group>
+                    <group>
+                        <field name="value_type"/>
+                        <field name="string_value" invisible="value_type != 'string'"/>
+                        <field name="integer_value" invisible="value_type != 'integer'"/>
+                        <field name="boolean_value" invisible="value_type != 'boolean'"/>
+                    </group>
+                    <group>
+                        <field name="new_ci_description"/>
+                    </group>
+                </group>
+                
+                <footer>
+                    <button name="action_add" type="object" string="Add" class="btn-primary"/>
+                    <button name="action_add_and_new" type="object" string="Add &amp; New" class="btn-secondary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Edit CI Relation Wizard -->
+    <record id="view_edit_ci_relation_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.edit.ci.relation.wizard.form</field>
+        <field name="model">myschool.edit.ci.relation.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Edit Configuration Item">
+                <group>
+                    <field name="ci_relation_id" invisible="1"/>
+                    <field name="ci_name" string="Config Item" readonly="1"/>
+                    <field name="org_name" string="Organization" readonly="1"/>
+                </group>
+                <separator string="Value"/>
+                <group>
+                    <field name="value_type"/>
+                    <field name="string_value" invisible="value_type != 'string'"/>
+                    <field name="integer_value" invisible="value_type != 'integer'"/>
+                    <field name="boolean_value" invisible="value_type != 'boolean'" widget="boolean_toggle"/>
+                </group>
+                <footer>
+                    <button name="action_save" type="object" string="Save" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Remove CI Relation Wizard -->
+    <record id="view_remove_ci_relation_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.remove.ci.relation.wizard.form</field>
+        <field name="model">myschool.remove.ci.relation.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Remove Configuration Item">
+                <group>
+                    <field name="ci_relation_id" invisible="1"/>
+                    <field name="ci_name" string="Config Item" readonly="1"/>
+                    <field name="org_name" string="Organization" readonly="1"/>
+                </group>
+                <div class="alert alert-warning" role="alert">
+                    <strong>Warning:</strong> This will remove the configuration item link from this organization.
+                    The configuration item itself will not be deleted.
+                </div>
+                <footer>
+                    <button name="action_remove" type="object" string="Remove" class="btn-danger"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ======================================================================
+         Role Relations Manager
+         ====================================================================== -->
+
+    <!-- Role Relations Manager Main View -->
+    <record id="view_role_relations_manager_form" model="ir.ui.view">
+        <field name="name">myschool.role.relations.manager.form</field>
+        <field name="model">myschool.role.relations.manager</field>
+        <field name="arch" type="xml">
+            <form string="Role Relations Manager">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Role Relations Manager</h1>
+                        <p class="text-muted">Manage role-based proprelations for SAP roles, backend roles, schools and departments.</p>
+                    </div>
+                    
+                    <notebook>
+                        <!-- SRBR Tab -->
+                        <page string="SAP-Role to Backend-Role (SRBR)" name="srbr">
+                            <group>
+                                <div class="alert alert-info" role="alert">
+                                    <strong>SRBR Relations</strong> link SAP roles to backend roles.
+                                    This mapping determines which backend role corresponds to a SAP role.
+                                </div>
+                            </group>
+                            <group>
+                                <field name="srbr_count" string="Active Relations" readonly="1"/>
+                            </group>
+                            <footer>
+                                <button name="action_add_srbr" type="object" string="Add SRBR Relation" class="btn-primary" icon="fa-plus"/>
+                                <button name="action_view_srbr" type="object" string="View All SRBR" class="btn-secondary" icon="fa-list"/>
+                            </footer>
+                        </page>
+                        
+                        <!-- BRSO Tab -->
+                        <page string="Backend-Role to School/Dept (BRSO)" name="brso">
+                            <group>
+                                <div class="alert alert-info" role="alert">
+                                    <strong>BRSO Relations</strong> link a backend role to a school and department.
+                                    This determines in which organization persons with a certain role will be created.
+                                </div>
+                            </group>
+                            <group>
+                                <field name="brso_count" string="Active Relations" readonly="1"/>
+                            </group>
+                            <footer>
+                                <button name="action_add_brso" type="object" string="Add BRSO Relation" class="btn-primary" icon="fa-plus"/>
+                                <button name="action_view_brso" type="object" string="View All BRSO" class="btn-secondary" icon="fa-list"/>
+                            </footer>
+                        </page>
+                        
+                        <!-- PPBRSO Tab -->
+                        <page string="Person/Period BRSO (PPBRSO)" name="ppbrso">
+                            <group>
+                                <div class="alert alert-info" role="alert">
+                                    <strong>PPBRSO Relations</strong> are like BRSO but also include a person and period.
+                                    Used for person-specific role assignments within a time period.
+                                </div>
+                            </group>
+                            <group>
+                                <field name="ppbrso_count" string="Active Relations" readonly="1"/>
+                            </group>
+                            <footer>
+                                <button name="action_add_ppbrso" type="object" string="Add PPBRSO Relation" class="btn-primary" icon="fa-plus"/>
+                                <button name="action_view_ppbrso" type="object" string="View All PPBRSO" class="btn-secondary" icon="fa-list"/>
+                            </footer>
+                        </page>
+                    </notebook>
+                </sheet>
+                
+                <footer>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Add SRBR Wizard -->
+    <record id="view_add_srbr_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.add.srbr.wizard.form</field>
+        <field name="model">myschool.add.srbr.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add SAP-Role to Backend-Role Relation">
+                <group>
+                    <div class="alert alert-info" role="alert">
+                        Link a <strong>SAP Role</strong> to a <strong>Backend Role</strong>.
+                    </div>
+                </group>
+                <group>
+                    <group>
+                        <field name="sap_role_id" options="{'no_create': True}"/>
+                    </group>
+                    <group>
+                        <field name="backend_role_id" options="{'no_create': True}"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_add" type="object" string="Add" class="btn-primary"/>
+                    <button name="action_add_and_new" type="object" string="Add &amp; New" class="btn-secondary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Add BRSO Wizard -->
+    <record id="view_add_brso_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.add.brso.wizard.form</field>
+        <field name="model">myschool.add.brso.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add Backend-Role to School/Department Relation">
+                <group>
+                    <div class="alert alert-info" role="alert">
+                        Link a <strong>Backend Role</strong> to a <strong>School</strong> and <strong>Department</strong>.
+                        Persons with this role in this school will be created in the specified department.
+                    </div>
+                </group>
+                <group>
+                    <field name="backend_role_id" options="{'no_create': True}"/>
+                </group>
+                <group>
+                    <group>
+                        <field name="school_id" options="{'no_create': True}"/>
+                    </group>
+                    <group>
+                        <field name="department_id" options="{'no_create': True}"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_add" type="object" string="Add" class="btn-primary"/>
+                    <button name="action_add_and_new" type="object" string="Add &amp; New" class="btn-secondary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Add PPBRSO Wizard -->
+    <record id="view_add_ppbrso_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.add.ppbrso.wizard.form</field>
+        <field name="model">myschool.add.ppbrso.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add Person/Period Backend-Role to School/Department Relation">
+                <group>
+                    <div class="alert alert-info" role="alert">
+                        Link a <strong>Person</strong> and <strong>Period</strong> with a <strong>Backend Role</strong>, 
+                        <strong>School</strong> and <strong>Department</strong>.
+                    </div>
+                </group>
+                <group>
+                    <group>
+                        <field name="person_id" options="{'no_create': True}"/>
+                        <field name="period_id" options="{'no_create': True}"/>
+                    </group>
+                    <group>
+                        <field name="backend_role_id" options="{'no_create': True}"/>
+                    </group>
+                </group>
+                <group>
+                    <group>
+                        <field name="school_id" options="{'no_create': True}"/>
+                    </group>
+                    <group>
+                        <field name="department_id" options="{'no_create': True}"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_add" type="object" string="Add" class="btn-primary"/>
+                    <button name="action_add_and_new" type="object" string="Add &amp; New" class="btn-secondary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Link Role to Org Wizard (from Org context menu) -->
+    <record id="view_link_role_org_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.link.role.org.wizard.form</field>
+        <field name="model">myschool.link.role.org.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Link Role to Organization">
+                <group>
+                    <div class="alert alert-info" role="alert">
+                        Link a <strong>Backend Role</strong> to this organization.
+                        This creates a BRSO relation for person creation.
+                    </div>
+                </group>
+                <group>
+                    <group>
+                        <field name="org_id" invisible="1"/>
+                        <field name="org_name" string="Organization" readonly="1"/>
+                        <field name="org_type_name" string="Type" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="school_id" options="{'no_create': True}"/>
+                    </group>
+                </group>
+                <group>
+                    <field name="backend_role_id" options="{'no_create': True}"/>
+                </group>
+                <footer>
+                    <button name="action_link" type="object" string="Link Role" class="btn-primary"/>
+                    <button name="action_link_and_new" type="object" string="Link &amp; Add Another" class="btn-secondary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action to open Role Relations Manager -->
+    <record id="action_role_relations_manager" model="ir.actions.act_window">
+        <field name="name">Role Relations Manager</field>
+        <field name="res_model">myschool.role.relations.manager</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
     </record>
-    
+
 </odoo>

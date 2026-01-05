@@ -4,17 +4,17 @@
     <menuitem id="menu_myschool_root"
               name="MySchool Admin"
               sequence="10"
-              action="action_myschool_app"
+              action="action_object_browser_client"
               web_icon="school,static/description/icon.png"
               groups="myschool_core.group_myschool_core_admin"/>
 
       <!-- Sub Menu: Object Browser -->
-    <menuitem id="menu_myschool_object_browser"
-              name="Object Browser"
-              parent="menu_myschool_root"
-              action="action_object_browser_client"
-              sequence="5"
-              groups="myschool_core.group_myschool_core_admin"/>
+<!--    <menuitem id="menu_myschool_object_browser"-->
+<!--              name="Object Browser"-->
+<!--              parent="menu_myschool_root"-->
+<!--              action="action_object_browser_client"-->
+<!--              sequence="5"-->
+<!--              groups="myschool_core.group_myschool_core_admin"/>-->
 
 <!--    &lt;!&ndash; Sub Menu: LDAP Configuration &ndash;&gt;-->
 <!--    <menuitem id="menu_myschool_ldap_config"-->
@@ -80,6 +80,14 @@
               parent="menu_myschool_root"
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_myschool_role_manager"
+              name="Roll Manager"
+              parent="menu_myschool_roles"
+              action="myschool_admin.action_role_relations_manager"
+              sequence="5"
+              groups="myschool_core.group_myschool_core_admin"/>
+
 
     <menuitem id="menu_myschool_role"
               name="Rollen"

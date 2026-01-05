@@ -56,7 +56,6 @@ class Role(models.Model):
 
     shortname = fields.Char(
         string='Short Name',
-        required=True,
         index=True,
         help="Short code for the role (used in SAP systems)"
     )
@@ -325,9 +324,9 @@ class Role(models.Model):
         @return: Dictionary mapping role_id -> org_id
         """
         PropRelation = self.env.get('myschool.prop.relation')
-        if not PropRelation:
-            _logger.warning("PropRelation model not found")
-            return {}
+        # if not PropRelation:
+        #     _logger.warning("PropRelation model not found")
+        #     return {}
         
         # Roles to exclude (from Java code)
         exclude_role_names = ['GUARDIAN', 'EMPLOYEE_PARTNER', 'EMPLOYEE_CHILD', 'STUDENT']
@@ -364,9 +363,9 @@ class Role(models.Model):
         PropRelation = self.env.get('myschool.prop.relation')
         RoleType = self.env.get('myschool.role.type')
         
-        if not PropRelation or not RoleType:
-            _logger.warning("PropRelation or RoleType model not found")
-            return {}
+        # if not PropRelation or not RoleType:
+        #     _logger.warning("PropRelation or RoleType model not found")
+        #     return {}
         
         # Get role types
         backend_role_type = RoleType.search([('name', '=', 'BACKEND')], limit=1)

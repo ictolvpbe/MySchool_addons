@@ -2,12 +2,11 @@
 """
 Object Browser - Hierarchical Tree View
 ========================================
-Backend model that provides tree data as JSON.
-The frontend OWL component handles expand/collapse.
+Backend model that provides tree data as JSON and handles operations.
 """
 
 from odoo import models, fields, api
-import json
+from odoo.exceptions import UserError
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -15,40 +14,47 @@ _logger = logging.getLogger(__name__)
 
 class ObjectBrowser(models.TransientModel):
     """
-    Object Browser - provides tree data for the OWL component.
+    Object Browser - provides tree data and operations for the OWL component.
     """
     _name = 'myschool.object.browser'
     _description = 'Object Browser'
 
     name = fields.Char(default='Object Browser')
 
+    # =========================================================================
+    # DATA RETRIEVAL
+    # =========================================================================
+
     @api.model
-    def get_tree_data(self, search_text='', show_inactive=False):
-        """
-        Get tree data as JSON for the OWL component.
-        Returns a list of root nodes, each with children.
-        """
+    def get_tree_data(self, search_text='', show_inactive=False, show_administrative=False):
+        """Get tree data as JSON for the OWL component."""
         result = {
-            'organizations': self._get_org_tree(search_text, show_inactive),
+            'organizations': self._get_org_tree(search_text, show_inactive, show_administrative),
             'roles': self._get_role_list(show_inactive),
         }
         return result
 
-    def _get_org_tree(self, search_text='', show_inactive=False):
+    def _get_org_tree(self, search_text='', show_inactive=False, show_administrative=False):
         """Build organization tree using proprelation."""
         if 'myschool.org' not in self.env:
             return []
         
         Org = self.env['myschool.org']
         
-        # Get all orgs
+        # Get all orgs with filters
         domain = []
         if not show_inactive:
             domain.append(('is_active', '=', True))
+        if not show_administrative:
+            if 'is_administrative' in Org._fields:
+                domain.append(('is_administrative', '=', False))
         if search_text:
+            domain.append('|')
             domain.append(('name', 'ilike', search_text))
+            domain.append(('name_short', 'ilike', search_text))
         
         all_orgs = Org.search(domain, order='name')
+        all_org_ids = set(all_orgs.ids)
         
         # Build parent-child map from proprelation
         org_children = {}
@@ -57,7 +63,6 @@ class ObjectBrowser(models.TransientModel):
         if 'myschool.proprelation' in self.env:
             PropRelation = self.env['myschool.proprelation']
             
-            # id_org (child) -> id_org_parent (parent)
             relations = PropRelation.search([
                 ('id_org', '!=', False),
                 ('id_org_parent', '!=', False),
@@ -68,10 +73,17 @@ class ObjectBrowser(models.TransientModel):
                 if is_active or show_inactive:
                     child_id = rel.id_org.id
                     parent_id = rel.id_org_parent.id
-                    org_parent[child_id] = parent_id
-                    if parent_id not in org_children:
-                        org_children[parent_id] = []
-                    org_children[parent_id].append(child_id)
+                    
+                    # Skip self-references
+                    if child_id == parent_id:
+                        continue
+                    
+                    if child_id in all_org_ids:
+                        org_parent[child_id] = parent_id
+                        if parent_id not in org_children:
+                            org_children[parent_id] = []
+                        if child_id not in org_children[parent_id]:
+                            org_children[parent_id].append(child_id)
             
             # Also check id_org_child -> id_org_parent
             relations2 = PropRelation.search([
@@ -84,43 +96,81 @@ class ObjectBrowser(models.TransientModel):
                 if is_active or show_inactive:
                     child_id = rel.id_org_child.id
                     parent_id = rel.id_org_parent.id
-                    org_parent[child_id] = parent_id
-                    if parent_id not in org_children:
-                        org_children[parent_id] = []
-                    if child_id not in org_children[parent_id]:
-                        org_children[parent_id].append(child_id)
+                    
+                    # Skip self-references
+                    if child_id == parent_id:
+                        continue
+                    
+                    if child_id in all_org_ids:
+                        org_parent[child_id] = parent_id
+                        if parent_id not in org_children:
+                            org_children[parent_id] = []
+                        if child_id not in org_children[parent_id]:
+                            org_children[parent_id].append(child_id)
         
         # Find root orgs
-        root_orgs = [org for org in all_orgs if org.id not in org_parent]
+        root_orgs = [org for org in all_orgs if org.id not in org_parent or org_parent[org.id] not in all_org_ids]
         
-        # Build tree
+        # Build tree with cycle detection
         org_dict = {org.id: org for org in all_orgs}
         tree = []
         for org in root_orgs:
-            tree.append(self._build_org_node(org, org_dict, org_children))
+            tree.append(self._build_org_node(org, org_dict, org_children, show_inactive, show_administrative, visited=set()))
         
         return tree
 
-    def _build_org_node(self, org, org_dict, org_children):
+    def _get_display_name(self, org):
+        """Get display name for org - prefer name_short if available."""
+        # Check possible field names for short name
+        if hasattr(org, 'name_short') and org.name_short:
+            return org.name_short
+        if hasattr(org, 'short_name') and org.short_name:
+            return org.short_name
+        if hasattr(org, 'shortname') and org.shortname:
+            return org.shortname
+        return org.name
+
+    def _build_org_node(self, org, org_dict, org_children, show_inactive=False, show_administrative=False, visited=None):
         """Build a single org node with children."""
-        child_ids = org_children.get(org.id, [])
+        # Cycle detection
+        if visited is None:
+            visited = set()
         
-        # Get person count
+        if org.id in visited:
+            _logger.warning(f"Circular reference detected for org {org.id} ({org.name}), skipping")
+            return None
+        
+        visited.add(org.id)
+        
+        child_ids = org_children.get(org.id, [])
+        child_ids = [cid for cid in child_ids if cid in org_dict]
+        
+        # Get persons
         person_count = 0
         persons = []
         if 'myschool.proprelation' in self.env:
             PropRelation = self.env['myschool.proprelation']
-            person_rels = PropRelation.search([
+            
+            person_rel_domain = [
                 ('id_org', '=', org.id),
                 ('id_person', '!=', False),
-                ('is_active', '=', True)
-            ])
+            ]
+            if not show_inactive:
+                person_rel_domain.append(('is_active', '=', True))
+            
+            person_rels = PropRelation.search(person_rel_domain)
             
             person_dict = {}
             for rel in person_rels:
-                pid = rel.id_person.id
+                person = rel.id_person
+                
+                if not show_administrative and hasattr(person, 'is_administrative') and person.is_administrative:
+                    continue
+                if not show_inactive and hasattr(person, 'is_active') and not person.is_active:
+                    continue
+                
+                pid = person.id
                 if pid not in person_dict:
-                    person = rel.id_person
                     name = person.name or 'Unknown'
                     if hasattr(person, 'first_name') and person.first_name:
                         name = f"{person.first_name} {person.name}"
@@ -129,32 +179,53 @@ class ObjectBrowser(models.TransientModel):
                         'name': name,
                         'type': 'person',
                         'model': 'myschool.person',
-                        'roles': []
+                        'org_id': org.id,
+                        'roles': [],
+                        'is_administrative': person.is_administrative if hasattr(person, 'is_administrative') else False,
                     }
                 if rel.id_role:
                     role = rel.id_role
                     role_name = role.shortname if hasattr(role, 'shortname') and role.shortname else role.name
-                    person_dict[pid]['roles'].append(role_name)
+                    if role_name not in person_dict[pid]['roles']:
+                        person_dict[pid]['roles'].append(role_name)
             
             persons = list(person_dict.values())
             person_count = len(persons)
         
+        # Get CI relations count
+        ci_count = 0
+        if 'myschool.ci.relation' in self.env:
+            CiRelation = self.env['myschool.ci.relation']
+            ci_count = CiRelation.search_count([
+                ('id_org', '=', org.id),
+                ('isactive', '=', True)
+            ])
+        
+        is_administrative = org.is_administrative if hasattr(org, 'is_administrative') else False
+        
+        # Use short_name for display
+        display_name = self._get_display_name(org)
+        
         node = {
             'id': org.id,
-            'name': org.name,
+            'name': display_name,
+            'full_name': org.name,  # Keep full name for tooltips/details
             'type': 'org',
             'model': 'myschool.org',
             'child_count': len(child_ids),
             'person_count': person_count,
+            'ci_count': ci_count,
             'children': [],
             'persons': persons,
+            'is_administrative': is_administrative,
         }
         
-        # Add child orgs
         for child_id in child_ids:
-            if child_id in org_dict:
+            if child_id in org_dict and child_id not in visited:
                 child_org = org_dict[child_id]
-                node['children'].append(self._build_org_node(child_org, org_dict, org_children))
+                child_node = self._build_org_node(child_org, org_dict, org_children, show_inactive, show_administrative, visited.copy())
+                if child_node:
+                    node['children'].append(child_node)
         
         return node
 
@@ -200,3 +271,501 @@ class ObjectBrowser(models.TransientModel):
             'type': 'person',
             'model': 'myschool.person',
         } for p in persons]
+
+    # =========================================================================
+    # OPERATIONS
+    # =========================================================================
+
+    @api.model
+    def move_org(self, org_id, new_parent_id):
+        """Move an organization under a new parent using proprelation."""
+        if 'myschool.proprelation' not in self.env:
+            raise UserError("PropRelation model not found")
+        
+        Org = self.env['myschool.org']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        
+        org = Org.browse(org_id)
+        new_parent = Org.browse(new_parent_id)
+        
+        if not org.exists():
+            raise UserError("Organization not found")
+        if not new_parent.exists():
+            raise UserError("New parent organization not found")
+        
+        # Check for circular reference
+        if self._would_create_cycle(org_id, new_parent_id):
+            raise UserError("Cannot move: would create circular reference")
+        
+        # Get or create OrgTree proprelation type
+        org_tree_type = PropRelationType.search([('name', '=', 'OrgTree')], limit=1)
+        if not org_tree_type:
+            org_tree_type = PropRelationType.create({
+                'name': 'OrgTree',
+                'usage': 'Organization hierarchy relationship',
+                'is_active': True,
+            })
+        
+        # Build the relation name: Or=<org_short>.OrP<parent_short>
+        org_short = org.name_short if hasattr(org, 'name_short') and org.name_short else org.name
+        parent_short = new_parent.name_short if hasattr(new_parent, 'name_short') and new_parent.name_short else new_parent.name
+        relation_name = f"Or={org_short}.OrP={parent_short}"
+        
+        # Find existing parent relation
+        existing = PropRelation.search([
+            ('id_org', '=', org_id),
+            ('id_org_parent', '!=', False),
+            ('is_active', '=', True),
+        ], limit=1)
+        
+        if existing:
+            # Update existing relation
+            existing.write({
+                'name': relation_name,
+                'proprelation_type_id': org_tree_type.id,
+                'id_org_parent': new_parent_id,
+            })
+        else:
+            # Create new relation
+            PropRelation.create({
+                'name': relation_name,
+                'proprelation_type_id': org_tree_type.id,
+                'id_org': org_id,
+                'id_org_parent': new_parent_id,
+                'is_active': True,
+            })
+        
+        _logger.info(f"Moved org {org.name} under {new_parent.name}")
+        return True
+
+    def _would_create_cycle(self, org_id, new_parent_id):
+        """Check if moving org under new_parent would create a cycle."""
+        if org_id == new_parent_id:
+            return True
+        
+        PropRelation = self.env['myschool.proprelation']
+        
+        # Walk up from new_parent to see if we reach org_id
+        current_id = new_parent_id
+        visited = set()
+        
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+            if current_id == org_id:
+                return True
+            
+            # Find parent of current
+            rel = PropRelation.search([
+                ('id_org', '=', current_id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ], limit=1)
+            
+            if rel:
+                current_id = rel.id_org_parent.id
+            else:
+                break
+        
+        return False
+
+    @api.model
+    def move_person_to_org(self, person_id, new_org_id):
+        """Move a person to a different organization."""
+        if 'myschool.proprelation' not in self.env:
+            raise UserError("PropRelation model not found")
+        
+        Person = self.env['myschool.person']
+        Org = self.env['myschool.org']
+        PropRelation = self.env['myschool.proprelation']
+        
+        person = Person.browse(person_id)
+        new_org = Org.browse(new_org_id)
+        
+        if not person.exists():
+            raise UserError("Person not found")
+        if not new_org.exists():
+            raise UserError("Organization not found")
+        
+        # Find existing org relations for this person
+        existing = PropRelation.search([
+            ('id_person', '=', person_id),
+            ('id_org', '!=', False),
+            ('is_active', '=', True),
+        ])
+        
+        if existing:
+            # Update existing relations to new org
+            existing.write({'id_org': new_org_id})
+        else:
+            # Create new relation
+            PropRelation.create({
+                'id_person': person_id,
+                'id_org': new_org_id,
+                'is_active': True,
+            })
+        
+        _logger.info(f"Moved person {person.name} to org {new_org.name}")
+        return True
+
+    @api.model
+    def remove_person_from_org(self, person_id, org_id):
+        """Remove a person from an organization (deactivate proprelation)."""
+        if 'myschool.proprelation' not in self.env:
+            raise UserError("PropRelation model not found")
+        
+        PropRelation = self.env['myschool.proprelation']
+        
+        # Find and deactivate relations
+        relations = PropRelation.search([
+            ('id_person', '=', person_id),
+            ('id_org', '=', org_id),
+            ('is_active', '=', True),
+        ])
+        
+        if relations:
+            relations.write({'is_active': False})
+            _logger.info(f"Removed person {person_id} from org {org_id}")
+        
+        return True
+
+    @api.model
+    def delete_node(self, node_type, node_id):
+        """Delete a node (org, person, or role)."""
+        model_map = {
+            'org': 'myschool.org',
+            'person': 'myschool.person',
+            'role': 'myschool.role',
+        }
+        
+        model_name = model_map.get(node_type)
+        if not model_name or model_name not in self.env:
+            raise UserError(f"Unknown node type: {node_type}")
+        
+        record = self.env[model_name].browse(node_id)
+        if not record.exists():
+            raise UserError("Record not found")
+        
+        # Check for child objects before deleting an organization
+        if node_type == 'org' and 'myschool.proprelation' in self.env:
+            PropRelation = self.env['myschool.proprelation']
+            
+            # Check for child organizations
+            child_orgs = PropRelation.search([
+                ('id_org_parent', '=', node_id),
+                ('id_org', '!=', False),
+                ('is_active', '=', True),
+            ])
+            
+            # Check for persons in this org
+            persons_in_org = PropRelation.search([
+                ('id_org', '=', node_id),
+                ('id_person', '!=', False),
+                ('is_active', '=', True),
+            ])
+            
+            # Build error message if children exist
+            errors = []
+            if child_orgs:
+                child_names = []
+                for rel in child_orgs[:5]:  # Show max 5 names
+                    if rel.id_org:
+                        name = rel.id_org.name_short if hasattr(rel.id_org, 'name_short') and rel.id_org.name_short else rel.id_org.name
+                        child_names.append(name)
+                more = f" and {len(child_orgs) - 5} more" if len(child_orgs) > 5 else ""
+                errors.append(f"{len(child_orgs)} sub-organization(s): {', '.join(child_names)}{more}")
+            
+            if persons_in_org:
+                person_names = []
+                for rel in persons_in_org[:5]:  # Show max 5 names
+                    if rel.id_person:
+                        name = rel.id_person.name
+                        if hasattr(rel.id_person, 'first_name') and rel.id_person.first_name:
+                            name = f"{rel.id_person.first_name} {name}"
+                        person_names.append(name)
+                more = f" and {len(persons_in_org) - 5} more" if len(persons_in_org) > 5 else ""
+                errors.append(f"{len(persons_in_org)} person(s): {', '.join(person_names)}{more}")
+            
+            if errors:
+                org_name = record.name_short if hasattr(record, 'name_short') and record.name_short else record.name
+                raise UserError(
+                    f"Cannot delete organization '{org_name}' because it contains:\n\n"
+                    f"• {chr(10).join('• ' + e for e in errors)[2:]}\n\n"
+                    f"Please move or delete these items first."
+                )
+        
+        # Deactivate related proprelations
+        if 'myschool.proprelation' in self.env:
+            PropRelation = self.env['myschool.proprelation']
+            
+            if node_type == 'org':
+                # Deactivate all proprelations where this org is involved
+                relations = PropRelation.search([
+                    '|', '|',
+                    ('id_org', '=', node_id),
+                    ('id_org_parent', '=', node_id),
+                    ('id_org_child', '=', node_id),
+                    ('is_active', '=', True),
+                ])
+                if relations:
+                    relations.write({'is_active': False})
+                    _logger.info(f"Deactivated {len(relations)} proprelations for org {node_id}")
+            
+            elif node_type == 'person':
+                # Deactivate all proprelations where this person is involved
+                relations = PropRelation.search([
+                    '|', '|',
+                    ('id_person', '=', node_id),
+                    ('id_person_parent', '=', node_id),
+                    ('id_person_child', '=', node_id),
+                    ('is_active', '=', True),
+                ])
+                if relations:
+                    relations.write({'is_active': False})
+                    _logger.info(f"Deactivated {len(relations)} proprelations for person {node_id}")
+            
+            elif node_type == 'role':
+                # Deactivate all proprelations where this role is involved
+                relations = PropRelation.search([
+                    '|', '|',
+                    ('id_role', '=', node_id),
+                    ('id_role_parent', '=', node_id),
+                    ('id_role_child', '=', node_id),
+                    ('is_active', '=', True),
+                ])
+                if relations:
+                    relations.write({'is_active': False})
+                    _logger.info(f"Deactivated {len(relations)} proprelations for role {node_id}")
+        
+        # Soft delete if is_active field exists, otherwise hard delete
+        if 'is_active' in record._fields:
+            record.write({'is_active': False})
+            _logger.info(f"Deactivated {node_type} {node_id}")
+        else:
+            record.unlink()
+            _logger.info(f"Deleted {node_type} {node_id}")
+        
+        return True
+
+    @api.model
+    def bulk_assign_role(self, person_ids, role_id, org_id=None):
+        """Assign a role to multiple persons."""
+        if 'myschool.proprelation' not in self.env:
+            raise UserError("PropRelation model not found")
+        
+        PropRelation = self.env['myschool.proprelation']
+        Role = self.env['myschool.role']
+        
+        role = Role.browse(role_id)
+        if not role.exists():
+            raise UserError("Role not found")
+        
+        count = 0
+        for person_id in person_ids:
+            # Check if relation already exists
+            existing = PropRelation.search([
+                ('id_person', '=', person_id),
+                ('id_role', '=', role_id),
+                ('is_active', '=', True),
+            ], limit=1)
+            
+            if not existing:
+                vals = {
+                    'id_person': person_id,
+                    'id_role': role_id,
+                    'is_active': True,
+                }
+                if org_id:
+                    vals['id_org'] = org_id
+                PropRelation.create(vals)
+                count += 1
+        
+        _logger.info(f"Assigned role {role.name} to {count} persons")
+        return count
+
+    @api.model
+    def bulk_move_to_org(self, person_ids, org_id):
+        """Move multiple persons to an organization."""
+        count = 0
+        for person_id in person_ids:
+            self.move_person_to_org(person_id, org_id)
+            count += 1
+        return count
+
+    @api.model
+    def get_proprelations_for_record(self, model, record_id):
+        """Get all proprelations for a given record."""
+        if 'myschool.proprelation' not in self.env:
+            return []
+        
+        PropRelation = self.env['myschool.proprelation']
+        
+        domain = []
+        if model == 'myschool.org':
+            domain = ['|', '|',
+                ('id_org', '=', record_id),
+                ('id_org_parent', '=', record_id),
+                ('id_org_child', '=', record_id),
+            ]
+        elif model == 'myschool.person':
+            domain = [('id_person', '=', record_id)]
+        elif model == 'myschool.role':
+            domain = [('id_role', '=', record_id)]
+        else:
+            return []
+        
+        relations = PropRelation.search(domain)
+        return relations.ids
+
+    @api.model
+    def get_ci_relations_for_org(self, org_id):
+        """Get all active CI relations for an organization."""
+        if 'myschool.ci.relation' not in self.env:
+            return []
+        
+        CiRelation = self.env['myschool.ci.relation']
+        
+        relations = CiRelation.search([
+            ('id_org', '=', org_id),
+            ('isactive', '=', True)
+        ])
+        
+        result = []
+        for rel in relations:
+            ci = rel.id_ci
+            if ci:
+                # Determine value type and get value
+                value = ''
+                value_type = 'string'
+                if ci.string_value:
+                    value = ci.string_value
+                    value_type = 'string'
+                elif ci.integer_value:
+                    value = str(ci.integer_value)
+                    value_type = 'integer'
+                elif ci.boolean_value is not None:
+                    value = 'Yes' if ci.boolean_value else 'No'
+                    value_type = 'boolean'
+                
+                result.append({
+                    'id': rel.id,
+                    'ci_id': ci.id,
+                    'name': ci.name,
+                    'scope': ci.scope or 'global',
+                    'type': ci.type or 'config',
+                    'value': value,
+                    'value_type': value_type,
+                    'description': ci.description or '',
+                })
+        
+        return result
+
+    @api.model
+    def get_members_for_org(self, org_id):
+        """
+        Get all persons and persongroup orgs related to the selected org.
+        Returns persons and persongroups linked via proprelation.
+        """
+        result = {
+            'persons': [],
+            'persongroups': [],
+        }
+        
+        if not org_id:
+            return result
+        
+        PropRelation = self.env.get('myschool.proprelation')
+        if not PropRelation:
+            return result
+        
+        # Get persons linked to this org
+        person_rels = PropRelation.search([
+            ('id_org', '=', org_id),
+            ('id_person', '!=', False),
+            ('is_active', '=', True),
+        ])
+        
+        person_dict = {}
+        for rel in person_rels:
+            person = rel.id_person
+            if not person:
+                continue
+            
+            # Skip inactive persons
+            if hasattr(person, 'is_active') and not person.is_active:
+                continue
+            
+            pid = person.id
+            if pid not in person_dict:
+                name = person.name or 'Unknown'
+                if hasattr(person, 'first_name') and person.first_name:
+                    name = f"{person.first_name} {person.name}"
+                
+                email = ''
+                if hasattr(person, 'email') and person.email:
+                    email = person.email
+                
+                person_dict[pid] = {
+                    'id': pid,
+                    'name': name,
+                    'email': email,
+                    'model': 'myschool.person',
+                    'roles': [],
+                }
+            
+            # Add role if present
+            if rel.id_role:
+                role = rel.id_role
+                role_name = role.shortname if hasattr(role, 'shortname') and role.shortname else role.name
+                if role_name and role_name not in person_dict[pid]['roles']:
+                    person_dict[pid]['roles'].append(role_name)
+        
+        result['persons'] = list(person_dict.values())
+        
+        # Get persongroup orgs linked to this org
+        # Persongroups are orgs with org_type.name = 'PERSONGROUP'
+        OrgType = self.env.get('myschool.org.type')
+        Org = self.env.get('myschool.org')
+        
+        if OrgType and Org:
+            persongroup_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+            
+            if persongroup_type:
+                # Find orgs that are persongroups and linked to this org
+                # Check both id_org and id_org_child fields
+                pg_rels = PropRelation.search([
+                    '|',
+                    ('id_org_parent', '=', org_id),
+                    ('id_org', '=', org_id),
+                    ('is_active', '=', True),
+                ])
+                
+                persongroup_ids = set()
+                for rel in pg_rels:
+                    # Check if id_org is a persongroup
+                    if rel.id_org and rel.id_org.id != org_id:
+                        if rel.id_org.org_type_id and rel.id_org.org_type_id.id == persongroup_type.id:
+                            persongroup_ids.add(rel.id_org.id)
+                    # Check id_org_child if exists
+                    if hasattr(rel, 'id_org_child') and rel.id_org_child:
+                        if rel.id_org_child.org_type_id and rel.id_org_child.org_type_id.id == persongroup_type.id:
+                            persongroup_ids.add(rel.id_org_child.id)
+                
+                if persongroup_ids:
+                    persongroups = Org.browse(list(persongroup_ids))
+                    for pg in persongroups:
+                        if hasattr(pg, 'is_active') and not pg.is_active:
+                            continue
+                        
+                        display_name = pg.name
+                        if hasattr(pg, 'name_short') and pg.name_short:
+                            display_name = pg.name_short
+                        
+                        result['persongroups'].append({
+                            'id': pg.id,
+                            'name': display_name,
+                            'full_name': pg.name,
+                            'model': 'myschool.org',
+                        })
+        
+        return result
