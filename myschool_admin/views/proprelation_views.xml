@@ -94,7 +94,6 @@
             <search string="Zoek Relaties">
                 <field name="name"/>
                 <field name="proprelation_type_id"/>
-                <field name="OldId"/>
                 <field name="id_person"/>
                 <field name="id_role"/>
                 <field name="id_org"/>

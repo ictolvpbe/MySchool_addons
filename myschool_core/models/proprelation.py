@@ -8,8 +8,6 @@ class PropRelation(models.Model):
     _description = 'Persoon/Rol/Organisatie/Period Relatie'
 
     #Tijdelijk
-    OldId = fields.Char(string='OldId', required=False)
-
     name = fields.Char(string='Naam')
 
     # Many2one Relaties (naar zichzelf of naar andere modellen)
@@ -36,6 +34,7 @@ class PropRelation(models.Model):
     id_period_child = fields.Many2one('myschool.period', string='Child Periode')
 
     # Status & Datum
+    priority = fields.Integer(string='Priority')
     is_administrative = fields.Boolean(string='Is Administratief', default=False)
     is_organisational = fields.Boolean(string='Is Organisatorisch', default=False)
     is_master = fields.Boolean(string='Is Master Relatie', default=False)

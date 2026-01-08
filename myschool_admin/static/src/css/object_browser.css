@@ -33,7 +33,7 @@
 }
 
 .ob-header h2 i {
-    color: #667eea;
+    color: #714B67;
 }
 
 /* Toolbar */
@@ -68,8 +68,8 @@
 
 .ob-search:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: #714B67;
+    box-shadow: 0 0 0 3px rgba(113, 75, 103, 0.1);
 }
 
 .ob-checkbox {
@@ -96,13 +96,13 @@
 }
 
 .ob-btn-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #714B67;
     color: white;
 }
 
 .ob-btn-primary:hover {
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    transform: translateY(-1px);
+    background: #5a3c52;
+    box-shadow: 0 2px 8px rgba(113, 75, 103, 0.3);
 }
 
 .ob-btn-secondary {
@@ -131,7 +131,7 @@
 
 /* Bulk Actions Bar */
 .ob-bulk-bar {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #714B67;
     padding: 12px 20px;
     border-radius: 8px;
     display: flex;
@@ -330,13 +330,13 @@
 
 .ob-action-btn:hover {
     background: #e9ecef;
-    border-color: #667eea;
+    border-color: #714B67;
 }
 
 .ob-action-btn i {
     margin-right: 8px;
     width: 16px;
-    color: #667eea;
+    color: #714B67;
 }
 
 /* Tree Nodes */
@@ -345,8 +345,8 @@
 }
 
 .ob-node-active > .ob-row {
-    background: #e8f0fe;
-    border-color: #667eea;
+    background: #f3e8f0;
+    border-color: #714B67;
 }
 
 .ob-node-dragging {
@@ -412,7 +412,7 @@
 }
 
 .text-primary {
-    color: #667eea;
+    color: #714B67;
 }
 
 .text-info {
@@ -617,7 +617,7 @@
 
 .ob-ci-header i {
     margin-right: 6px;
-    color: #667eea;
+    color: #714B67;
 }
 
 .ob-ci-list {
@@ -717,8 +717,8 @@
 }
 
 .ob-tab-active {
-    color: #667eea;
-    border-bottom-color: #667eea;
+    color: #714B67;
+    border-bottom-color: #714B67;
     background: white;
 }
 
@@ -763,7 +763,7 @@
 }
 
 .ob-role-section-header h3 i {
-    color: #667eea;
+    color: #714B67;
 }
 
 .ob-role-section-header p {
@@ -779,9 +779,9 @@
 
 /* Members Panel */
 .ob-members {
-    width: 280px;
-    min-width: 220px;
-    max-width: 350px;
+    width: 310px;
+    min-width: 250px;
+    max-width: 380px;
     flex-shrink: 0;
     background: #fff;
     border-radius: 8px;
@@ -841,7 +841,7 @@
 }
 
 .ob-members-section-header i {
-    color: #667eea;
+    color: #714B67;
 }
 
 .ob-members-count {
@@ -870,7 +870,7 @@
 }
 
 .ob-member-icon {
-    color: #667eea;
+    color: #714B67;
     font-size: 14px;
     margin-top: 2px;
 }

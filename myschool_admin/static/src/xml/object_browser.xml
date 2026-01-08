@@ -367,6 +367,12 @@
                         <button class="ob-action-btn" t-on-click="onMovePersonClick">
                             <i class="fa fa-arrows"/> Move to Org
                         </button>
+                        <button class="ob-action-btn" t-on-click="onDeactivatePersonClick">
+                            <i class="fa fa-ban"/> Deactivate
+                        </button>
+                        <button class="ob-action-btn" t-on-click="onDeletePersonClick">
+                            <i class="fa fa-trash"/> Delete
+                        </button>
                     </t>
                 </div>
             </t>

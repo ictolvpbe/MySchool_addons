@@ -14,22 +14,23 @@
                         <field name="org_name" readonly="1" string="Name"/>
                         <field name="org_fqdn" readonly="1" string="Parent OU FQDN"/>
                     </group>
+                    <group string="Person Type">
+                        <field name="person_type" widget="radio" options="{'horizontal': true}"/>
+                    </group>
                 </group>
                 <group>
                     <group string="Person Details">
                         <field name="first_name"/>
                         <field name="last_name"/>
-                        <field name="role_id" options="{'no_create': True}"/>
-                        <field name="is_employee" invisible="1"/>
-                        <field name="email_cloud" string="Email Cloud"/>
+                        <field name="sap_ref" string="SAP Ref"/>
+                        <field name="email_cloud" string="Email Cloud" readonly="1"/>
                     </group>
-                    <group string="Employee Details" invisible="not is_employee">
+                    <group string="Employee Details" invisible="person_type != 'employee'">
                         <field name="abbreviation"/>
-                        <field name="stamboeknummer" string="Stamboeknummer"/>
                     </group>
                 </group>
-                <group>
-                    <group string="Odoo User" invisible="not is_employee">
+                <group invisible="person_type != 'employee'">
+                    <group string="Odoo User">
                         <field name="link_existing_user"/>
                         <field name="existing_user_id" 
                                invisible="not link_existing_user"
@@ -39,10 +40,9 @@
                                invisible="not create_odoo_user or link_existing_user"/>
                     </group>
                 </group>
-                <separator/>
-                <div class="alert alert-info" role="alert" invisible="not is_employee">
-                    <strong>EMPLOYEE:</strong> Email Cloud is auto-generated. Odoo user will be created automatically.
-                </div>
+                <group string="Debug Information" >
+                    <field name="debug_info" readonly="1" widget="text"/>
+                </group>
                 <footer>
                     <button name="action_create" type="object" string="Create &amp; Edit Details" class="btn-primary"
                             help="Create person and open form to complete all details"/>

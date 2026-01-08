@@ -430,6 +430,86 @@ class ObjectBrowser(models.TransientModel):
         return True
 
     @api.model
+    def deactivate_person(self, person_id):
+        """Deactivate a person and all related proprelations."""
+        if 'myschool.person' not in self.env:
+            raise UserError("Person model not found")
+        
+        Person = self.env['myschool.person']
+        person = Person.browse(person_id)
+        
+        if not person.exists():
+            raise UserError("Person not found")
+        
+        # Get person name for logging
+        person_name = person.name
+        if hasattr(person, 'first_name') and person.first_name:
+            person_name = f"{person.first_name} {person_name}"
+        
+        # Deactivate the person
+        person.write({'is_active': False})
+        _logger.info(f"Deactivated person: {person_name} (id={person_id})")
+        
+        # Deactivate all related proprelations
+        if 'myschool.proprelation' in self.env:
+            PropRelation = self.env['myschool.proprelation']
+            
+            # Find all proprelations involving this person
+            relations = PropRelation.search([
+                '|', '|',
+                ('id_person', '=', person_id),
+                ('id_person_parent', '=', person_id),
+                ('id_person_child', '=', person_id),
+                ('is_active', '=', True),
+            ])
+            
+            if relations:
+                relations.write({'is_active': False})
+                _logger.info(f"Deactivated {len(relations)} proprelations for person {person_id}")
+        
+        return True
+
+    @api.model
+    def delete_person(self, person_id):
+        """Delete a person and all related proprelations."""
+        if 'myschool.person' not in self.env:
+            raise UserError("Person model not found")
+        
+        Person = self.env['myschool.person']
+        person = Person.browse(person_id)
+        
+        if not person.exists():
+            raise UserError("Person not found")
+        
+        # Get person name for logging/messages
+        person_name = person.name
+        if hasattr(person, 'first_name') and person.first_name:
+            person_name = f"{person.first_name} {person_name}"
+        
+        # Delete all related proprelations first
+        if 'myschool.proprelation' in self.env:
+            PropRelation = self.env['myschool.proprelation']
+            
+            # Find all proprelations involving this person
+            relations = PropRelation.search([
+                '|', '|',
+                ('id_person', '=', person_id),
+                ('id_person_parent', '=', person_id),
+                ('id_person_child', '=', person_id),
+            ])
+            
+            if relations:
+                relation_count = len(relations)
+                relations.unlink()
+                _logger.info(f"Deleted {relation_count} proprelations for person {person_id}")
+        
+        # Delete the person
+        person.unlink()
+        _logger.info(f"Deleted person: {person_name} (id={person_id})")
+        
+        return True
+
+    @api.model
     def delete_node(self, node_type, node_id):
         """Delete a node (org, person, or role)."""
         model_map = {

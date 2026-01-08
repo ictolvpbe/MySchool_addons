@@ -29,18 +29,20 @@ class CreatePersonWizard(models.TransientModel):
     first_name = fields.Char(string='First Name', required=True)
     last_name = fields.Char(string='Last Name', required=True)
     email_cloud = fields.Char(string='Email Cloud', 
-        compute='_compute_email_cloud', store=False, readonly=False,
         help='Auto-generated cloud email address')
     
+    # Role selection (mutually exclusive)
+    person_type = fields.Selection([
+        ('employee', 'Employee'),
+        ('student_so', 'Student SO'),
+        ('student_basis', 'Student Basis'),
+    ], string='Person Type', default=False)
+    
     # Employee-specific fields
-    is_employee = fields.Boolean(string='Is Employee', compute='_compute_is_employee', store=False)
     abbreviation = fields.Char(string='Abbreviation', 
         help='Short abbreviation for the employee')
-    stamboeknummer = fields.Char(string='Stamboeknummer',
-        help='SAF reference number')
-    
-    # Role assignment
-    role_id = fields.Many2one('myschool.role', string='Role')
+    sap_ref = fields.Char(string='SAP Ref',
+        help='SAP reference number')
     
     # Odoo user linking
     create_odoo_user = fields.Boolean(string='Create Odoo User', default=False,
@@ -50,49 +52,93 @@ class CreatePersonWizard(models.TransientModel):
     link_existing_user = fields.Boolean(string='Link Existing User', default=False)
     existing_user_id = fields.Many2one('res.users', string='Existing Odoo User',
         help='Link to an existing Odoo user instead of creating new')
+    
+    # Debug field
+    debug_info = fields.Text(string='Debug Info', readonly=True)
 
     @api.model
     def default_get(self, fields_list):
         """Set defaults including FQDN from parent org."""
         res = super().default_get(fields_list)
         
+        debug_lines = ["=== default_get START ==="]
+        
         if 'org_id' in res and res['org_id']:
             org = self.env['myschool.org'].browse(res['org_id'])
+            debug_lines.append(f"org_id: {res['org_id']}")
+            debug_lines.append(f"org exists: {org.exists()}")
+            
             if org.exists():
                 res['org_name'] = org.name
+                debug_lines.append(f"org_name: {org.name}")
+                
                 # Get ou_fqdn_internal from parent org
-                parent_org = self._get_parent_org_static(org)
+                parent_org = self._get_parent_org_static(org, debug_lines)
+                debug_lines.append(f"parent_org: {parent_org.name if parent_org else 'None'}")
+                
                 if parent_org and hasattr(parent_org, 'ou_fqdn_internal') and parent_org.ou_fqdn_internal:
                     res['org_fqdn'] = parent_org.ou_fqdn_internal
+                    debug_lines.append(f"org_fqdn (from parent): {parent_org.ou_fqdn_internal}")
                 elif hasattr(org, 'ou_fqdn_internal') and org.ou_fqdn_internal:
                     res['org_fqdn'] = org.ou_fqdn_internal
+                    debug_lines.append(f"org_fqdn (from org): {org.ou_fqdn_internal}")
+                else:
+                    debug_lines.append("org_fqdn: NOT FOUND")
                 
-                # Get external_domain for email generation
-                ext_domain = self._get_external_domain_static(org)
-                if ext_domain:
-                    res['external_domain'] = ext_domain
+                # Get domain_external for email generation
+                domain_ext = self._get_domain_external_static(org, debug_lines)
+                debug_lines.append(f"domain_external result: {domain_ext if domain_ext else 'NOT FOUND'}")
+                if domain_ext:
+                    res['external_domain'] = domain_ext
+        else:
+            debug_lines.append("org_id not in res or is empty")
+        
+        debug_lines.append("=== default_get END ===")
+        res['debug_info'] = "\n".join(debug_lines)
         
         return res
 
-    def _get_parent_org_static(self, org):
-        """Get parent org via proprelation (static method for default_get)."""
+    def _get_parent_org_static(self, org, debug_lines=None):
+        """Get parent org via proprelation."""
+        if debug_lines is None:
+            debug_lines = []
+            
         if not org:
+            debug_lines.append("_get_parent_org: org is None")
             return None
         
-        PropRelation = self.env.get('myschool.proprelation')
-        if PropRelation:
+        debug_lines.append(f"_get_parent_org: Looking for parent of org.id={org.id}, org.name={org.name}")
+        
+        try:
+            PropRelation = self.env['myschool.proprelation']
+            # id_org = current org (child), id_org_parent = parent org
             parent_rel = PropRelation.search([
                 ('id_org', '=', org.id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
             ], limit=1)
             
-            if parent_rel and parent_rel.id_org_parent:
-                return parent_rel.id_org_parent
+            if parent_rel:
+                debug_lines.append(f"_get_parent_org: Found relation id={parent_rel.id}")
+                if parent_rel.id_org_parent:
+                    debug_lines.append(f"_get_parent_org: Parent is {parent_rel.id_org_parent.name} (id={parent_rel.id_org_parent.id})")
+                    return parent_rel.id_org_parent
+                else:
+                    debug_lines.append("_get_parent_org: id_org_parent is empty")
+            else:
+                debug_lines.append("_get_parent_org: No proprelation found with id_org_parent")
+        except KeyError:
+            debug_lines.append("_get_parent_org: PropRelation model not found")
+        except Exception as e:
+            debug_lines.append(f"_get_parent_org: Error - {str(e)}")
+        
         return None
 
-    def _get_external_domain_static(self, org):
-        """Walk up the org hierarchy to find external_domain value."""
+    def _get_domain_external_static(self, org, debug_lines=None):
+        """Walk up the org hierarchy to find domain_external value."""
+        if debug_lines is None:
+            debug_lines = []
+            
         if not org:
             return None
         
@@ -102,13 +148,21 @@ class CreatePersonWizard(models.TransientModel):
         while current_org and current_org.id not in visited:
             visited.add(current_org.id)
             
-            # Check if this org has external_domain
-            if hasattr(current_org, 'external_domain') and current_org.external_domain:
-                return current_org.external_domain
+            debug_lines.append(f"_get_domain_external: Checking org.id={current_org.id}, org.name={current_org.name}")
+            
+            # Check if this org has domain_external
+            if hasattr(current_org, 'domain_external') and current_org.domain_external:
+                debug_lines.append(f"_get_domain_external: FOUND domain_external={current_org.domain_external}")
+                return current_org.domain_external
+            else:
+                has_field = hasattr(current_org, 'domain_external')
+                value = getattr(current_org, 'domain_external', 'N/A') if has_field else 'field not exists'
+                debug_lines.append(f"_get_domain_external: domain_external not set (has_field={has_field}, value={value})")
             
             # Try to find parent org via proprelation
-            current_org = self._get_parent_org_static(current_org)
+            current_org = self._get_parent_org_static(current_org, debug_lines)
             if not current_org:
+                debug_lines.append("_get_domain_external: No more parents, stopping")
                 break
         
         return None
@@ -124,34 +178,100 @@ class CreatePersonWizard(models.TransientModel):
         result = ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
         return result
 
-    @api.depends('first_name', 'last_name', 'external_domain')
-    def _compute_email_cloud(self):
-        """Compute email_cloud dynamically based on names and domain."""
-        for wizard in self:
-            if wizard.first_name and wizard.last_name and wizard.external_domain:
-                # Clean names: remove diacritics and spaces, lowercase
-                clean_first = wizard._remove_diacritics(wizard.first_name).replace(' ', '').lower()
-                clean_last = wizard._remove_diacritics(wizard.last_name).replace(' ', '').lower()
-                wizard.email_cloud = f"{clean_first}.{clean_last}@{wizard.external_domain}"
-            else:
-                wizard.email_cloud = ''
+    def _generate_email_standard(self):
+        """Generate email address for Employee and Student SO: firstname.lastname@domain."""
+        if not self.first_name or not self.last_name or not self.external_domain:
+            return ''
+        
+        # Clean names: remove diacritics and spaces, lowercase
+        clean_first = self._remove_diacritics(self.first_name).replace(' ', '').lower()
+        clean_last = self._remove_diacritics(self.last_name).replace(' ', '').lower()
+        
+        return f"{clean_first}.{clean_last}@{self.external_domain}"
 
-    @api.depends('role_id')
-    def _compute_is_employee(self):
-        """Check if selected role is EMPLOYEE."""
-        for wizard in self:
-            if wizard.role_id:
-                role_name = wizard.role_id.name.upper() if wizard.role_id.name else ''
-                shortname = wizard.role_id.shortname.upper() if hasattr(wizard.role_id, 'shortname') and wizard.role_id.shortname else ''
-                wizard.is_employee = (role_name == 'EMPLOYEE' or shortname == 'EMPLOYEE')
-            else:
-                wizard.is_employee = False
+    def _generate_email_student_basis(self):
+        """Generate email address for Student Basis: b+sap_ref+1631@domain."""
+        if not self.sap_ref or not self.external_domain:
+            return ''
+        
+        # Clean sap_ref: remove spaces
+        clean_sap_ref = self.sap_ref.replace(' ', '')
+        
+        return f"b{clean_sap_ref}1631@{self.external_domain}"
 
-    @api.onchange('role_id')
-    def _onchange_role_id(self):
-        """Auto-enable Odoo user creation for EMPLOYEE role."""
-        if self.is_employee:
+    def _update_email(self):
+        """Update email based on current role selection."""
+        debug_lines = (self.debug_info or "").split("\n")
+        debug_lines.append(f"--- _update_email called ---")
+        debug_lines.append(f"person_type: {self.person_type}")
+        debug_lines.append(f"first_name: {self.first_name}")
+        debug_lines.append(f"last_name: {self.last_name}")
+        debug_lines.append(f"sap_ref: {self.sap_ref}")
+        debug_lines.append(f"external_domain: {self.external_domain}")
+        
+        if self.person_type in ('employee', 'student_so'):
+            # Standard email: firstname.lastname@domain
+            email = self._generate_email_standard()
+            debug_lines.append(f"Generated standard email: {email}")
+            self.email_cloud = email
+        elif self.person_type == 'student_basis':
+            # Student basis email: b+sap_ref+1631@domain
+            email = self._generate_email_student_basis()
+            debug_lines.append(f"Generated student_basis email: {email}")
+            self.email_cloud = email
+        else:
+            debug_lines.append("No person_type selected, email cleared")
+            self.email_cloud = ''
+        
+        self.debug_info = "\n".join(debug_lines)
+
+    def _get_role_by_name(self, role_name):
+        """Find role by name."""
+        try:
+            Role = self.env['myschool.role']
+            role = Role.search(['|', ('name', '=ilike', role_name), ('shortname', '=ilike', role_name)], limit=1)
+            return role
+        except KeyError:
+            return None
+
+    def _get_or_create_proprelation_type(self, type_name):
+        """Get or create a proprelation type by name."""
+        try:
+            PropRelationType = self.env['myschool.proprelation.type']
+            rel_type = PropRelationType.search([('name', '=', type_name)], limit=1)
+            if not rel_type:
+                rel_type = PropRelationType.create({'name': type_name})
+            return rel_type
+        except KeyError:
+            return None
+
+    @api.onchange('person_type')
+    def _onchange_person_type(self):
+        """Handle person type selection."""
+        debug_lines = (self.debug_info or "").split("\n")
+        debug_lines.append(f"--- _onchange_person_type: {self.person_type} ---")
+        
+        if self.person_type == 'employee':
             self.create_odoo_user = True
+            debug_lines.append("create_odoo_user set to True")
+        else:
+            self.create_odoo_user = False
+            debug_lines.append("create_odoo_user set to False")
+        
+        self.debug_info = "\n".join(debug_lines)
+        self._update_email()
+
+    @api.onchange('first_name', 'last_name')
+    def _onchange_names(self):
+        """Generate email when names change (for employee or student SO)."""
+        if self.person_type in ('employee', 'student_so'):
+            self._update_email()
+
+    @api.onchange('sap_ref')
+    def _onchange_sap_ref(self):
+        """Generate email when sap_ref changes (for student basis)."""
+        if self.person_type == 'student_basis':
+            self._update_email()
 
     @api.onchange('email_cloud')
     def _onchange_email_cloud(self):
@@ -185,16 +305,65 @@ class CreatePersonWizard(models.TransientModel):
             'is_active': True,
         }
         
-        # Store email_cloud
-        if self.email_cloud and 'email_cloud' in Person._fields:
-            person_vals['email_cloud'] = self.email_cloud
+        # Get external_domain (can't rely on readonly field being sent back)
+        external_domain = self._get_domain_external_static(self.org_id, [])
+        _logger.info(f"external_domain for email generation: {external_domain}")
+        
+        # Generate email based on person type
+        email_cloud = None
+        if self.person_type in ('employee', 'student_so'):
+            # Standard email: firstname.lastname@domain
+            if self.first_name and self.last_name and external_domain:
+                clean_first = self._remove_diacritics(self.first_name).replace(' ', '').lower()
+                clean_last = self._remove_diacritics(self.last_name).replace(' ', '').lower()
+                email_cloud = f"{clean_first}.{clean_last}@{external_domain}"
+        elif self.person_type == 'student_basis':
+            # Student basis email: b+sap_ref+1631@domain
+            if self.sap_ref and external_domain:
+                clean_sap_ref = self.sap_ref.replace(' ', '')
+                email_cloud = f"b{clean_sap_ref}1631@{external_domain}"
+        
+        if email_cloud:
+            person_vals['email_cloud'] = email_cloud
+            _logger.info(f"Generated email_cloud: {email_cloud}")
+        else:
+            _logger.warning(f"Could not generate email: person_type={self.person_type}, first_name={self.first_name}, last_name={self.last_name}, sap_ref={self.sap_ref}, external_domain={external_domain}")
+        
+        # Store sap_ref directly
+        if self.sap_ref:
+            person_vals['sap_ref'] = self.sap_ref
+            _logger.info(f"Storing sap_ref: {self.sap_ref}")
+        
+        # Set person_type_id based on wizard selection
+        person_type_name = None
+        if self.person_type == 'employee':
+            person_type_name = 'EMPLOYEE'
+        elif self.person_type in ('student_so', 'student_basis'):
+            person_type_name = 'STUDENT'
+        
+        if person_type_name:
+            try:
+                PersonType = self.env['myschool.person.type']
+                # Log all available person types for debugging
+                all_types = PersonType.search([])
+                _logger.info(f"Available person types: {[(t.id, t.name) for t in all_types]}")
+                
+                # Search case-insensitive
+                pt = PersonType.search([('name', '=ilike', person_type_name)], limit=1)
+                if pt:
+                    person_vals['person_type_id'] = pt.id
+                    _logger.info(f"Found person type: {pt.name} (id={pt.id})")
+                else:
+                    _logger.warning(f"Person type '{person_type_name}' not found in database")
+            except Exception as e:
+                _logger.warning(f"Error looking up person type: {str(e)}")
         
         # Store employee-specific fields
-        if self.is_employee:
-            if self.abbreviation and 'abbreviation' in Person._fields:
+        if self.person_type == 'employee':
+            if self.abbreviation:
                 person_vals['abbreviation'] = self.abbreviation
-            if self.stamboeknummer and 'stamboeknummer' in Person._fields:
-                person_vals['stamboeknummer'] = self.stamboeknummer
+        
+        _logger.info(f"Final person_vals before create: {person_vals}")
         
         # Handle Odoo user linking/creation
         user = None
@@ -222,16 +391,37 @@ class CreatePersonWizard(models.TransientModel):
             person_vals['user_id'] = user.id
         
         # Create person
+        _logger.info(f"Creating person with vals: {person_vals}")
         person = Person.create(person_vals)
+        _logger.info(f"Created person id={person.id}, email_cloud={person.email_cloud}, person_type_id={person.person_type_id.id if person.person_type_id else None}")
+        
+        # Determine role based on selection
+        role = None
+        if self.person_type == 'employee':
+            role = self._get_role_by_name('EMPLOYEE')
+        elif self.person_type == 'student_so':
+            role = self._get_role_by_name('STUDENT_SO')
+        elif self.person_type == 'student_basis':
+            role = self._get_role_by_name('STUDENT_BASIS')
+        
+        # Get or create PERSON-TREE relation type
+        relation_type = self._get_or_create_proprelation_type('PERSON-TREE')
+        
+        # Build proprelation name: Pn=firstname.lastname,Or=OrgShortName
+        org_short_name = self.org_id.short_name if hasattr(self.org_id, 'short_name') and self.org_id.short_name else self.org_id.name
+        proprel_name = f"Pn={self.first_name}.{self.last_name},Or={org_short_name}"
         
         # Create proprelation to org
         proprel_vals = {
+            'name': proprel_name,
             'id_person': person.id,
             'id_org': self.org_id.id,
             'is_active': True,
         }
-        if self.role_id:
-            proprel_vals['id_role'] = self.role_id.id
+        if role:
+            proprel_vals['id_role'] = role.id
+        if relation_type:
+            proprel_vals['proprelation_type_id'] = relation_type.id
         
         PropRelation.create(proprel_vals)
         
@@ -261,16 +451,51 @@ class CreatePersonWizard(models.TransientModel):
             'is_active': True,
         }
         
-        # Store email_cloud
-        if self.email_cloud and 'email_cloud' in Person._fields:
-            person_vals['email_cloud'] = self.email_cloud
+        # Get external_domain (can't rely on readonly field being sent back)
+        external_domain = self._get_domain_external_static(self.org_id, [])
+        
+        # Generate email based on person type
+        email_cloud = None
+        if self.person_type in ('employee', 'student_so'):
+            # Standard email: firstname.lastname@domain
+            if self.first_name and self.last_name and external_domain:
+                clean_first = self._remove_diacritics(self.first_name).replace(' ', '').lower()
+                clean_last = self._remove_diacritics(self.last_name).replace(' ', '').lower()
+                email_cloud = f"{clean_first}.{clean_last}@{external_domain}"
+        elif self.person_type == 'student_basis':
+            # Student basis email: b+sap_ref+1631@domain
+            if self.sap_ref and external_domain:
+                clean_sap_ref = self.sap_ref.replace(' ', '')
+                email_cloud = f"b{clean_sap_ref}1631@{external_domain}"
+        
+        if email_cloud:
+            person_vals['email_cloud'] = email_cloud
+        
+        # Store sap_ref directly
+        if self.sap_ref:
+            person_vals['sap_ref'] = self.sap_ref
+        
+        # Set person_type_id based on wizard selection
+        person_type_name = None
+        if self.person_type == 'employee':
+            person_type_name = 'EMPLOYEE'
+        elif self.person_type in ('student_so', 'student_basis'):
+            person_type_name = 'STUDENT'
+        
+        if person_type_name:
+            try:
+                PersonType = self.env['myschool.person.type']
+                # Search case-insensitive
+                pt = PersonType.search([('name', '=ilike', person_type_name)], limit=1)
+                if pt:
+                    person_vals['person_type_id'] = pt.id
+            except Exception:
+                pass
         
         # Store employee-specific fields
-        if self.is_employee:
-            if self.abbreviation and 'abbreviation' in Person._fields:
+        if self.person_type == 'employee':
+            if self.abbreviation:
                 person_vals['abbreviation'] = self.abbreviation
-            if self.stamboeknummer and 'stamboeknummer' in Person._fields:
-                person_vals['stamboeknummer'] = self.stamboeknummer
         
         # Handle Odoo user
         user = None
@@ -296,13 +521,32 @@ class CreatePersonWizard(models.TransientModel):
         
         person = Person.create(person_vals)
         
+        # Determine role based on selection
+        role = None
+        if self.person_type == 'employee':
+            role = self._get_role_by_name('EMPLOYEE')
+        elif self.person_type == 'student_so':
+            role = self._get_role_by_name('STUDENT_SO')
+        elif self.person_type == 'student_basis':
+            role = self._get_role_by_name('STUDENT_BASIS')
+        
+        # Get or create PERSON-TREE relation type
+        relation_type = self._get_or_create_proprelation_type('PERSON-TREE')
+        
+        # Build proprelation name: Pn=firstname.lastname,Or=OrgShortName
+        org_short_name = self.org_id.short_name if hasattr(self.org_id, 'short_name') and self.org_id.short_name else self.org_id.name
+        proprel_name = f"Pn={self.first_name}.{self.last_name},Or={org_short_name}"
+        
         proprel_vals = {
+            'name': proprel_name,
             'id_person': person.id,
             'id_org': self.org_id.id,
             'is_active': True,
         }
-        if self.role_id:
-            proprel_vals['id_role'] = self.role_id.id
+        if role:
+            proprel_vals['id_role'] = role.id
+        if relation_type:
+            proprel_vals['proprelation_type_id'] = relation_type.id
         
         PropRelation.create(proprel_vals)
         
@@ -566,7 +810,6 @@ class AddChildOrgWizard(models.TransientModel):
             
             # Walk up the org hierarchy to find the CI
             current_org = self.parent_org_id
-            PropRelation = self.env.get('myschool.proprelation')
             visited = set()
             
             while current_org and current_org.id not in visited:
@@ -583,14 +826,15 @@ class AddChildOrgWizard(models.TransientModel):
                     return ci_relation.id_ci.string_value
                 
                 # Move to parent org
-                if PropRelation:
+                try:
+                    PropRelation = self.env['myschool.proprelation']
                     parent_rel = PropRelation.search([
                         ('id_org', '=', current_org.id),
                         ('id_org_parent', '!=', False),
                         ('is_active', '=', True),
                     ], limit=1)
                     current_org = parent_rel.id_org_parent if parent_rel else None
-                else:
+                except KeyError:
                     break
         
         return None
@@ -1876,8 +2120,9 @@ class LinkRoleToOrgWizard(models.TransientModel):
     
     def _find_school_in_hierarchy(self, org):
         """Find the school in the organization hierarchy."""
-        PropRelation = self.env.get('myschool.proprelation')
-        if not PropRelation:
+        try:
+            PropRelation = self.env['myschool.proprelation']
+        except KeyError:
             return None
         
         # Check if current org is a school

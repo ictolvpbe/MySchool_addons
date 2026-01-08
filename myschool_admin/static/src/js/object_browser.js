@@ -217,6 +217,18 @@ export class DetailsPanel extends Component {
             this.props.onAction('move_person');
         }
     }
+    
+    onDeactivatePersonClick() {
+        if (this.props.onAction) {
+            this.props.onAction('deactivate_person');
+        }
+    }
+    
+    onDeletePersonClick() {
+        if (this.props.onAction) {
+            this.props.onAction('delete_person');
+        }
+    }
 }
 
 /**
@@ -274,6 +286,9 @@ export class ContextMenu extends Component {
             items.push({ divider: true });
             items.push({ action: 'assign_role', label: 'Assign Role', iconClass: 'fa fa-id-badge' });
             items.push({ action: 'move_person', label: 'Move to Org', iconClass: 'fa fa-arrows' });
+            items.push({ divider: true });
+            items.push({ action: 'deactivate_person', label: 'Deactivate', iconClass: 'fa fa-ban', danger: true });
+            items.push({ action: 'delete_person', label: 'Delete', iconClass: 'fa fa-trash', danger: true });
             items.push({ divider: true });
             items.push({ action: 'remove_from_org', label: 'Remove from Org', iconClass: 'fa fa-user-times', danger: true });
         } else if (node.type === 'role') {
@@ -552,6 +567,12 @@ export class ObjectBrowserClient extends Component {
             case 'remove_from_org':
                 await this.removePersonFromOrg(node);
                 break;
+            case 'deactivate_person':
+                await this.deactivatePerson(node);
+                break;
+            case 'delete_person':
+                await this.deletePerson(node);
+                break;
             case 'delete':
                 await this.deleteNode(node);
                 break;
@@ -817,6 +838,56 @@ export class ObjectBrowserClient extends Component {
             this.loadData();
         } catch (error) {
             this.notification.add('Error removing person', { type: 'danger' });
+        }
+    }
+    
+    async deactivatePerson(personNode) {
+        if (!confirm(`Deactivate ${personNode.name}? This will set the person and all related proprelations to inactive.`)) {
+            return;
+        }
+        
+        try {
+            await this.orm.call(
+                'myschool.object.browser',
+                'deactivate_person',
+                [personNode.id]
+            );
+            this.notification.add('Person deactivated successfully', { type: 'success' });
+            this.state.activeNode = null;
+            this.loadData();
+        } catch (error) {
+            let message = 'Error deactivating person';
+            if (error.data && error.data.message) {
+                message = error.data.message;
+            } else if (error.data && error.data.arguments && error.data.arguments[0]) {
+                message = error.data.arguments[0];
+            }
+            this.notification.add(message, { type: 'danger' });
+        }
+    }
+    
+    async deletePerson(personNode) {
+        if (!confirm(`Delete ${personNode.name}? This will permanently delete the person and all related proprelations.`)) {
+            return;
+        }
+        
+        try {
+            await this.orm.call(
+                'myschool.object.browser',
+                'delete_person',
+                [personNode.id]
+            );
+            this.notification.add('Person deleted successfully', { type: 'success' });
+            this.state.activeNode = null;
+            this.loadData();
+        } catch (error) {
+            let message = 'Error deleting person';
+            if (error.data && error.data.message) {
+                message = error.data.message;
+            } else if (error.data && error.data.arguments && error.data.arguments[0]) {
+                message = error.data.arguments[0];
+            }
+            this.notification.add(message, { type: 'danger' });
         }
     }
     

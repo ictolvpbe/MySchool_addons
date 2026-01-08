@@ -15,8 +15,8 @@ class Person(models.Model):
     abbreviation = fields.Char(string='Initialen/Afkorting', help="Enkel voor personeel")
 
     # Unieke Referenties (Required in Java)
-    sap_ref = fields.Char(string='SAP Referentie (pPersoon)', size=10, required=True)
-    sap_person_uuid = fields.Char(string='SAP Persoon UUID', size=40, required=True)
+    sap_ref = fields.Char(string='SAP Referentie (pPersoon)', size=10)
+    sap_person_uuid = fields.Char(string='SAP Persoon UUID', size=40)
     stam_boek_nr = fields.Char(string='Stamboeknummer', size=20)
 
     # Relatie naar PersonType
