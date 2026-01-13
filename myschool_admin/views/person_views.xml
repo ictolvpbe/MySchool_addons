@@ -70,6 +70,7 @@
                             <group>
                                 <field name="email_cloud"/>
                                 <field name="password" password="True"/>
+                                <field name="email_private"/>
                             </group>
                         </page>
 

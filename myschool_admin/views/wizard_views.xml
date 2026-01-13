@@ -24,6 +24,7 @@
                         <field name="last_name"/>
                         <field name="sap_ref" string="SAP Ref"/>
                         <field name="email_cloud" string="Email Cloud" readonly="1"/>
+                        <field name="email_private" string="Email Private"/>
                     </group>
                     <group string="Employee Details" invisible="person_type != 'employee'">
                         <field name="abbreviation"/>
@@ -567,6 +568,33 @@
         <field name="res_model">myschool.role.relations.manager</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
+    </record>
+
+    <!-- Password Wizard Form View -->
+    <record id="view_password_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.password.wizard.form</field>
+        <field name="model">myschool.password.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Manage Password">
+                <group>
+                    <field name="person_id" invisible="1"/>
+                    <field name="person_name" string="Person" readonly="1"/>
+                </group>
+                <group string="Current Password">
+                    <field name="current_password" password="True"/>
+                </group>
+                <group string="New Password">
+                    <field name="generate_random"/>
+                    <field name="new_password" password="True"/>
+                    <field name="confirm_password" password="True"/>
+                </group>
+                <footer>
+                    <button name="action_save_password" type="object" string="Save Password" class="btn-primary"/>
+                    <button name="action_clear_password" type="object" string="Clear Password" class="btn-warning"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
     </record>
 
 </odoo>

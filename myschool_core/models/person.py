@@ -35,6 +35,7 @@ class Person(models.Model):
 
     # Accounts
     email_cloud = fields.Char(string='E-mail Cloud')
+    email_private = fields.Char(string='E-mail privé')
     password = fields.Char(string='Wachtwoord', help="Enkel voor kinderen lagere school", groups="base.group_system")
 
     # One2many naar PersonDetails (zie PersonDetails.java)

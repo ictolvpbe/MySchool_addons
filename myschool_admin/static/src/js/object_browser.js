@@ -24,13 +24,27 @@ export class TreeNode extends Component {
         onDrop: { type: Function, optional: true },
         selectedIds: { type: Object, optional: true },
         draggedNode: { type: Object, optional: true },
+        expandedIds: { type: Object, optional: true },
+        onToggleExpand: { type: Function, optional: true },
     };
     
     setup() {
         this.state = useState({
-            expanded: (this.props.level || 0) === 0,
             dragOver: false,
         });
+    }
+    
+    get nodeKey() {
+        return `${this.props.node.type}_${this.props.node.id}`;
+    }
+    
+    get isExpanded() {
+        // Check expandedIds from parent - this is reactive
+        if (this.props.expandedIds && this.nodeKey in this.props.expandedIds) {
+            return this.props.expandedIds[this.nodeKey];
+        }
+        // Default: level 0 is expanded
+        return (this.props.level || 0) === 0;
     }
     
     get hasChildren() {
@@ -81,7 +95,10 @@ export class TreeNode extends Component {
     
     toggle(ev) {
         ev.stopPropagation();
-        this.state.expanded = !this.state.expanded;
+        // Toggle by notifying parent - the parent's expandedIds controls the state
+        if (this.props.onToggleExpand) {
+            this.props.onToggleExpand(this.nodeKey, !this.isExpanded);
+        }
     }
     
     onRowClick(ev) {
@@ -206,9 +223,21 @@ export class DetailsPanel extends Component {
         }
     }
     
-    onAssignRoleClick() {
+    onManageOrgRolesClick() {
         if (this.props.onAction) {
-            this.props.onAction('assign_role');
+            this.props.onAction('manage_org_roles');
+        }
+    }
+    
+    onDeleteOrgClick() {
+        if (this.props.onAction) {
+            this.props.onAction('delete');
+        }
+    }
+    
+    onManagePersonRolesClick() {
+        if (this.props.onAction) {
+            this.props.onAction('manage_person_roles');
         }
     }
     
@@ -241,14 +270,96 @@ export class MembersPanel extends Component {
         members: { type: Object, optional: true },
         loading: { type: Boolean, optional: true },
         onOpenRecord: { type: Function, optional: true },
+        onMemberContextMenu: { type: Function, optional: true },
+        onMemberSelect: { type: Function, optional: true },
+        onPasswordClick: { type: Function, optional: true },
+        selectedMemberId: { type: Number, optional: true },
+        selectedMemberType: { type: String, optional: true },
     };
     
+    setup() {
+        this.state = useState({
+            filterText: '',
+        });
+    }
+    
+    get filteredPersons() {
+        const persons = this.props.members?.persons || [];
+        if (!this.state.filterText) return persons;
+        const filter = this.state.filterText.toLowerCase();
+        return persons.filter(p => p.name.toLowerCase().includes(filter));
+    }
+    
+    get filteredPersongroups() {
+        const groups = this.props.members?.persongroups || [];
+        if (!this.state.filterText) return groups;
+        const filter = this.state.filterText.toLowerCase();
+        return groups.filter(g => 
+            g.name.toLowerCase().includes(filter) || 
+            (g.full_name && g.full_name.toLowerCase().includes(filter))
+        );
+    }
+    
+    onFilterInput(ev) {
+        this.state.filterText = ev.target.value;
+    }
+    
+    clearFilter() {
+        this.state.filterText = '';
+    }
+    
     onMemberClick(ev) {
+        ev.stopPropagation();
         const model = ev.currentTarget.dataset.model;
         const id = parseInt(ev.currentTarget.dataset.id);
-        if (model && id && this.props.onOpenRecord) {
-            this.props.onOpenRecord(model, id);
+        const name = ev.currentTarget.dataset.name;
+        const type = ev.currentTarget.dataset.type;
+        
+        if (this.props.onMemberSelect && id) {
+            // Create a node object and select it to show in details panel
+            const node = {
+                id: id,
+                name: name,
+                type: type,
+                model: model,
+                org_id: this.props.node?.id,
+            };
+            this.props.onMemberSelect(node);
         }
+    }
+    
+    onMemberContextMenu(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        
+        const model = ev.currentTarget.dataset.model;
+        const id = parseInt(ev.currentTarget.dataset.id);
+        const name = ev.currentTarget.dataset.name;
+        const type = ev.currentTarget.dataset.type;
+        
+        if (this.props.onMemberContextMenu && id) {
+            // Create a node object for the context menu
+            const node = {
+                id: id,
+                name: name,
+                type: type,
+                model: model,
+                org_id: this.props.node?.id,  // Parent org for person context
+            };
+            this.props.onMemberContextMenu(ev, node);
+        }
+    }
+    
+    onPasswordClick(ev, person) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (this.props.onPasswordClick) {
+            this.props.onPasswordClick(person);
+        }
+    }
+    
+    isMemberSelected(memberId, memberType) {
+        return this.props.selectedMemberId === memberId && this.props.selectedMemberType === memberType;
     }
 }
 
@@ -275,7 +386,7 @@ export class ContextMenu extends Component {
             items.push({ action: 'create_person', label: 'Create Person', iconClass: 'fa fa-user-plus' });
             items.push({ action: 'add_child_org', label: 'Add Sub-Organization', iconClass: 'fa fa-plus-circle' });
             items.push({ divider: true });
-            items.push({ action: 'link_role', label: 'Link Role', iconClass: 'fa fa-link' });
+            items.push({ action: 'manage_org_roles', label: 'Roles', iconClass: 'fa fa-id-badge' });
             items.push({ action: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders' });
             items.push({ divider: true });
             items.push({ action: 'move_org', label: 'Move Organization', iconClass: 'fa fa-arrows' });
@@ -284,7 +395,7 @@ export class ContextMenu extends Component {
         } else if (node.type === 'person') {
             items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
             items.push({ divider: true });
-            items.push({ action: 'assign_role', label: 'Assign Role', iconClass: 'fa fa-id-badge' });
+            items.push({ action: 'manage_person_roles', label: 'Roles', iconClass: 'fa fa-id-badge' });
             items.push({ action: 'move_person', label: 'Move to Org', iconClass: 'fa fa-arrows' });
             items.push({ divider: true });
             items.push({ action: 'deactivate_person', label: 'Deactivate', iconClass: 'fa fa-ban', danger: true });
@@ -325,13 +436,17 @@ export class ObjectBrowserClient extends Component {
             treeData: { organizations: [], roles: [] },
             searchText: '',
             searchResults: [],
+            globalSearchText: '',
+            globalSearchResults: [],
             showInactive: false,
             showAdministrative: false,
             selectionMode: false,
             selectedIds: {},
+            expandedIds: {},
             contextMenu: null,
             draggedNode: null,
             activeNode: null,
+            activeOrgNode: null,  // Keep track of selected org for members panel
             activeTab: 'orgs',  // 'orgs' or 'roles'
             membersData: { persons: [], persongroups: [] },
             membersLoading: false,
@@ -340,6 +455,9 @@ export class ObjectBrowserClient extends Component {
         // Bind methods that are passed as props
         this.onSelectNode = this.onSelectNode.bind(this);
         this.onContextMenu = this.onContextMenu.bind(this);
+        this.onMemberContextMenu = this.onMemberContextMenu.bind(this);
+        this.onMemberSelect = this.onMemberSelect.bind(this);
+        this.onPasswordClick = this.onPasswordClick.bind(this);
         this.onToggleSelect = this.onToggleSelect.bind(this);
         this.onDragStart = this.onDragStart.bind(this);
         this.onDragOver = this.onDragOver.bind(this);
@@ -352,6 +470,10 @@ export class ObjectBrowserClient extends Component {
         this.openRemoveCiWizard = this.openRemoveCiWizard.bind(this);
         this.onDocumentClick = this.onDocumentClick.bind(this);
         this.openRecord = this.openRecord.bind(this);
+        this.onToggleExpand = this.onToggleExpand.bind(this);
+        this.onGlobalSearchInput = this.onGlobalSearchInput.bind(this);
+        this.onGlobalSearchKeydown = this.onGlobalSearchKeydown.bind(this);
+        this.onGlobalSearchResultClick = this.onGlobalSearchResultClick.bind(this);
         
         onWillStart(async () => {
             await this.loadData();
@@ -397,13 +519,51 @@ export class ObjectBrowserClient extends Component {
         this.state.loading = false;
     }
     
+    // Track expanded/collapsed nodes
+    onToggleExpand(nodeKey, isExpanded) {
+        this.state.expandedIds[nodeKey] = isExpanded;
+    }
+    
+    // Expand path to a specific org (used after actions to keep tree open)
+    expandPathToOrg(orgId) {
+        // Mark the org and find its parents to expand
+        const nodeKey = `org_${orgId}`;
+        this.state.expandedIds[nodeKey] = true;
+        
+        // Find parent orgs in tree and expand them
+        const findAndExpandParents = (nodes, targetId, path = []) => {
+            for (const node of nodes) {
+                if (node.id === targetId && node.type === 'org') {
+                    // Found it, expand all nodes in path
+                    for (const p of path) {
+                        this.state.expandedIds[`org_${p.id}`] = true;
+                    }
+                    return true;
+                }
+                if (node.children && node.children.length > 0) {
+                    if (findAndExpandParents(node.children, targetId, [...path, node])) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        
+        findAndExpandParents(this.state.treeData.organizations || [], orgId);
+    }
+    
     // Node selection for details panel
     async onSelectNode(node) {
         this.state.activeNode = node;
-        this.state.membersData = { persons: [], persongroups: [] };
+        
+        console.log('onSelectNode called with node:', node);
         
         // Load CI relations and members for orgs
         if (node.type === 'org') {
+            // Track this org for members panel
+            this.state.activeOrgNode = node;
+            this.state.membersData = { persons: [], persongroups: [] };
+            
             // Load CI relations
             try {
                 const ciRelations = await this.orm.call(
@@ -412,26 +572,38 @@ export class ObjectBrowserClient extends Component {
                     [node.id]
                 );
                 this.state.activeNode = { ...node, ciRelations: ciRelations };
+                this.state.activeOrgNode = { ...node, ciRelations: ciRelations };
             } catch (error) {
                 console.warn('Could not load CI relations:', error);
                 this.state.activeNode = { ...node, ciRelations: [] };
+                this.state.activeOrgNode = { ...node, ciRelations: [] };
             }
             
             // Load members (persons and persongroups)
             this.state.membersLoading = true;
             try {
+                console.log('Calling get_members_for_org with org_id:', node.id);
                 const membersData = await this.orm.call(
                     'myschool.object.browser',
                     'get_members_for_org',
                     [node.id]
                 );
+                console.log('get_members_for_org returned:', membersData);
                 this.state.membersData = membersData || { persons: [], persongroups: [] };
+                console.log('membersData set to:', this.state.membersData);
             } catch (error) {
-                console.warn('Could not load members:', error);
+                console.error('Could not load members:', error);
                 this.state.membersData = { persons: [], persongroups: [] };
             }
             this.state.membersLoading = false;
         }
+        // For persons, don't clear members data - keep showing the org's members
+    }
+    
+    // Member selection from members panel - shows details without clearing members
+    onMemberSelect(node) {
+        this.state.activeNode = node;
+        // Don't change activeOrgNode or membersData - keep members panel showing
     }
     
     openActiveRecord() {
@@ -447,12 +619,25 @@ export class ObjectBrowserClient extends Component {
     }
     
     openRecord(model, id) {
+        // Store active org for when we return
+        const activeOrgId = this.state.activeOrgNode?.id;
+        if (activeOrgId) {
+            this.expandPathToOrg(activeOrgId);
+        }
+        
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: model,
             res_id: id,
             views: [[false, 'form']],
-            target: 'current',
+            target: 'new',  // Open in dialog to preserve tree state
+        }, {
+            onClose: async () => {
+                await this.loadData();
+                if (activeOrgId) {
+                    this.expandPathToOrg(activeOrgId);
+                }
+            }
         });
     }
     
@@ -469,6 +654,80 @@ export class ObjectBrowserClient extends Component {
         this.searchTimeout = setTimeout(() => {
             this.loadData();
         }, 300);
+    }
+    
+    // Global Search
+    onGlobalSearchInput(ev) {
+        this.state.globalSearchText = ev.target.value;
+        this.debounceGlobalSearch();
+    }
+    
+    onGlobalSearchKeydown(ev) {
+        if (ev.key === 'Escape') {
+            this.state.globalSearchText = '';
+            this.state.globalSearchResults = [];
+        }
+    }
+    
+    debounceGlobalSearch() {
+        if (this.globalSearchTimeout) {
+            clearTimeout(this.globalSearchTimeout);
+        }
+        this.globalSearchTimeout = setTimeout(async () => {
+            await this.performGlobalSearch();
+        }, 300);
+    }
+    
+    async performGlobalSearch() {
+        const query = this.state.globalSearchText.trim();
+        if (!query || query.length < 2) {
+            this.state.globalSearchResults = [];
+            return;
+        }
+        
+        try {
+            const results = await this.orm.call(
+                'myschool.object.browser',
+                'global_search',
+                [query]
+            );
+            this.state.globalSearchResults = results || [];
+        } catch (error) {
+            console.error('Global search error:', error);
+            this.state.globalSearchResults = [];
+        }
+    }
+    
+    onGlobalSearchResultClick(result) {
+        // Clear search
+        this.state.globalSearchText = '';
+        this.state.globalSearchResults = [];
+        
+        // Open the record
+        this.openRecord(result.model, result.id);
+    }
+    
+    // Password management
+    onPasswordClick(person) {
+        // Open password management wizard
+        this.action.doAction({
+            type: 'ir.actions.act_window',
+            res_model: 'myschool.password.wizard',
+            views: [[false, 'form']],
+            target: 'new',
+            context: {
+                default_person_id: person.id,
+            },
+        }, {
+            onClose: async () => {
+                // Refresh after password change
+                const activeOrgId = this.state.activeOrgNode?.id;
+                await this.loadData();
+                if (activeOrgId) {
+                    this.expandPathToOrg(activeOrgId);
+                }
+            }
+        });
     }
     
     // Filters
@@ -528,6 +787,16 @@ export class ObjectBrowserClient extends Component {
         this.state.activeNode = node;
     }
     
+    // Context Menu for members panel - doesn't change activeNode to preserve members list
+    onMemberContextMenu(ev, node) {
+        this.state.contextMenu = {
+            x: ev.clientX,
+            y: ev.clientY,
+            node: node,
+        };
+        // Don't change activeNode - keep the org selected so members panel stays visible
+    }
+    
     onCloseContextMenu() {
         this.state.contextMenu = null;
     }
@@ -552,17 +821,17 @@ export class ObjectBrowserClient extends Component {
             case 'configuration':
                 this.openManageCiWizard(node);
                 break;
-            case 'link_role':
-                this.openLinkRoleWizard(node);
+            case 'manage_org_roles':
+                this.openManageOrgRolesWizard(node);
+                break;
+            case 'manage_person_roles':
+                this.openManagePersonRolesWizard(node);
                 break;
             case 'move_org':
                 this.openMoveOrgWizard(node);
                 break;
             case 'move_person':
                 this.openMovePersonWizard(node);
-                break;
-            case 'assign_role':
-                this.openAssignRoleWizard(node);
                 break;
             case 'remove_from_org':
                 await this.removePersonFromOrg(node);
@@ -581,6 +850,10 @@ export class ObjectBrowserClient extends Component {
     
     // Wizards
     openCreatePersonWizard(orgNode) {
+        const orgId = orgNode.id;
+        // Store context for when dialogs close
+        this._pendingRefreshOrgId = orgId;
+        this.expandPathToOrg(orgId);
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: 'myschool.create.person.wizard',
@@ -589,10 +862,21 @@ export class ObjectBrowserClient extends Component {
             context: {
                 default_org_id: orgNode.id,
             },
+        }, {
+            onClose: async () => {
+                const refreshOrgId = this._pendingRefreshOrgId;
+                this._pendingRefreshOrgId = null;
+                await this.loadData();
+                if (refreshOrgId) this.expandPathToOrg(refreshOrgId);
+            }
         });
     }
     
     openAddChildOrgWizard(orgNode) {
+        const orgId = orgNode.id;
+        // Store context for when dialogs close
+        this._pendingRefreshOrgId = orgId;
+        this.expandPathToOrg(orgId);
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: 'myschool.add.child.org.wizard',
@@ -601,10 +885,19 @@ export class ObjectBrowserClient extends Component {
             context: {
                 default_parent_org_id: orgNode.id,
             },
+        }, {
+            onClose: async () => {
+                const refreshOrgId = this._pendingRefreshOrgId;
+                this._pendingRefreshOrgId = null;
+                await this.loadData();
+                if (refreshOrgId) this.expandPathToOrg(refreshOrgId);
+            }
         });
     }
     
     openMoveOrgWizard(orgNode) {
+        const orgId = orgNode.id;
+        this.expandPathToOrg(orgId);
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: 'myschool.move.org.wizard',
@@ -614,10 +907,17 @@ export class ObjectBrowserClient extends Component {
                 default_org_id: orgNode.id,
                 default_org_name: orgNode.name,
             },
+        }, {
+            onClose: async () => {
+                await this.loadData();
+                this.expandPathToOrg(orgId);
+            }
         });
     }
     
     openMovePersonWizard(personNode) {
+        const orgId = personNode.org_id;
+        if (orgId) this.expandPathToOrg(orgId);
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: 'myschool.move.person.wizard',
@@ -627,24 +927,57 @@ export class ObjectBrowserClient extends Component {
                 default_person_id: personNode.id,
                 default_person_name: personNode.name,
             },
+        }, {
+            onClose: async () => {
+                await this.loadData();
+                if (orgId) this.expandPathToOrg(orgId);
+            }
         });
     }
     
-    openAssignRoleWizard(personNode) {
+    openManageOrgRolesWizard(orgNode) {
+        const orgId = orgNode.id;
+        this.expandPathToOrg(orgId);
         this.action.doAction({
             type: 'ir.actions.act_window',
-            res_model: 'myschool.assign.role.wizard',
+            res_model: 'myschool.manage.org.roles.wizard',
+            views: [[false, 'form']],
+            target: 'new',
+            context: {
+                default_org_id: orgNode.id,
+                default_org_name: orgNode.name,
+            },
+        }, {
+            onClose: async () => {
+                await this.loadData();
+                this.expandPathToOrg(orgId);
+            }
+        });
+    }
+    
+    openManagePersonRolesWizard(personNode) {
+        const orgId = personNode.org_id;
+        if (orgId) this.expandPathToOrg(orgId);
+        this.action.doAction({
+            type: 'ir.actions.act_window',
+            res_model: 'myschool.manage.person.roles.wizard',
             views: [[false, 'form']],
             target: 'new',
             context: {
                 default_person_id: personNode.id,
                 default_person_name: personNode.name,
-                default_org_id: personNode.org_id,
             },
+        }, {
+            onClose: async () => {
+                await this.loadData();
+                if (orgId) this.expandPathToOrg(orgId);
+            }
         });
     }
     
     openManageCiWizard(orgNode) {
+        const orgId = orgNode.id;
+        this.expandPathToOrg(orgId);
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: 'myschool.manage.ci.relations.wizard',
@@ -653,10 +986,17 @@ export class ObjectBrowserClient extends Component {
             context: {
                 default_org_id: orgNode.id,
             },
+        }, {
+            onClose: async () => {
+                await this.loadData();
+                this.expandPathToOrg(orgId);
+            }
         });
     }
     
     openLinkRoleWizard(orgNode) {
+        const orgId = orgNode.id;
+        this.expandPathToOrg(orgId);
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: 'myschool.link.role.org.wizard',
@@ -665,6 +1005,11 @@ export class ObjectBrowserClient extends Component {
             context: {
                 default_org_id: orgNode.id,
             },
+        }, {
+            onClose: async () => {
+                await this.loadData();
+                this.expandPathToOrg(orgId);
+            }
         });
     }
     
@@ -834,8 +1179,10 @@ export class ObjectBrowserClient extends Component {
                 [personNode.id, personNode.org_id]
             );
             this.notification.add('Person removed from organization', { type: 'success' });
+            const orgId = personNode.org_id;
             this.state.activeNode = null;
-            this.loadData();
+            await this.loadData();
+            if (orgId) this.expandPathToOrg(orgId);
         } catch (error) {
             this.notification.add('Error removing person', { type: 'danger' });
         }
@@ -846,6 +1193,7 @@ export class ObjectBrowserClient extends Component {
             return;
         }
         
+        const orgId = personNode.org_id;
         try {
             await this.orm.call(
                 'myschool.object.browser',
@@ -854,7 +1202,8 @@ export class ObjectBrowserClient extends Component {
             );
             this.notification.add('Person deactivated successfully', { type: 'success' });
             this.state.activeNode = null;
-            this.loadData();
+            await this.loadData();
+            if (orgId) this.expandPathToOrg(orgId);
         } catch (error) {
             let message = 'Error deactivating person';
             if (error.data && error.data.message) {
@@ -871,6 +1220,7 @@ export class ObjectBrowserClient extends Component {
             return;
         }
         
+        const orgId = personNode.org_id;
         try {
             await this.orm.call(
                 'myschool.object.browser',
@@ -879,7 +1229,8 @@ export class ObjectBrowserClient extends Component {
             );
             this.notification.add('Person deleted successfully', { type: 'success' });
             this.state.activeNode = null;
-            this.loadData();
+            await this.loadData();
+            if (orgId) this.expandPathToOrg(orgId);
         } catch (error) {
             let message = 'Error deleting person';
             if (error.data && error.data.message) {
@@ -896,6 +1247,9 @@ export class ObjectBrowserClient extends Component {
             return;
         }
         
+        // Get parent org id for org nodes, or org_id for person nodes
+        const orgId = node.type === 'org' ? node.parent_id : node.org_id;
+        
         try {
             await this.orm.call(
                 'myschool.object.browser',
@@ -904,7 +1258,8 @@ export class ObjectBrowserClient extends Component {
             );
             this.notification.add('Deleted successfully', { type: 'success' });
             this.state.activeNode = null;
-            this.loadData();
+            await this.loadData();
+            if (orgId) this.expandPathToOrg(orgId);
         } catch (error) {
             // Extract the error message from various possible locations in Odoo's error structure
             let message = 'Error deleting';

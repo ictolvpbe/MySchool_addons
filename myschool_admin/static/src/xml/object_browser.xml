@@ -50,7 +50,7 @@
                 <!-- Toggle Button -->
                 <t t-if="hasChildren">
                     <span class="ob-toggle" t-on-click.stop="toggle">
-                        <i t-att-class="state.expanded ? 'fa fa-caret-down' : 'fa fa-caret-right'"/>
+                        <i t-att-class="isExpanded ? 'fa fa-caret-down' : 'fa fa-caret-right'"/>
                     </span>
                 </t>
                 <t t-else="">
@@ -89,7 +89,7 @@
             </div>
             
             <!-- Children (if expanded) -->
-            <t t-if="state.expanded and hasChildren">
+            <t t-if="isExpanded and hasChildren">
                 <div class="ob-children">
                     <!-- Child Organizations -->
                     <t t-if="props.node.children">
@@ -105,7 +105,9 @@
                                       onDragOver="props.onDragOver"
                                       onDrop="props.onDrop"
                                       selectedIds="props.selectedIds"
-                                      draggedNode="props.draggedNode"/>
+                                      draggedNode="props.draggedNode"
+                                      expandedIds="props.expandedIds"
+                                      onToggleExpand="props.onToggleExpand"/>
                         </t>
                     </t>
                     
@@ -123,7 +125,9 @@
                                       onDragOver="props.onDragOver"
                                       onDrop="props.onDrop"
                                       selectedIds="props.selectedIds"
-                                      draggedNode="props.draggedNode"/>
+                                      draggedNode="props.draggedNode"
+                                      expandedIds="props.expandedIds"
+                                      onToggleExpand="props.onToggleExpand"/>
                         </t>
                     </t>
                 </div>
@@ -158,28 +162,49 @@
                     </div>
                 </t>
                 <t t-else="">
+                    <!-- Filter Search -->
+                    <div class="ob-members-filter">
+                        <i class="fa fa-filter ob-members-filter-icon"/>
+                        <input type="text" 
+                               class="ob-members-filter-input"
+                               placeholder="Filter members..."
+                               t-att-value="state.filterText"
+                               t-on-input="onFilterInput"/>
+                        <t t-if="state.filterText">
+                            <i class="fa fa-times ob-members-filter-clear" t-on-click="clearFilter"/>
+                        </t>
+                    </div>
+                    
                     <!-- Persons Section -->
                     <div class="ob-members-section">
                         <div class="ob-members-section-header">
                             <i class="fa fa-user"/>
                             Persons
-                            <span class="ob-members-count" t-if="props.members?.persons?.length">
-                                (<t t-esc="props.members.persons.length"/>)
-                            </span>
                         </div>
                         <div class="ob-members-list">
-                            <t t-if="props.members?.persons?.length">
-                                <t t-foreach="props.members.persons" t-as="person" t-key="person.id">
-                                    <div class="ob-member-item" t-on-click="onMemberClick" t-att-data-model="person.model" t-att-data-id="person.id">
+                            <t t-if="filteredPersons.length">
+                                <t t-foreach="filteredPersons" t-as="person" t-key="person.id">
+                                    <div class="ob-member-item" 
+                                         t-att-class="{ 'ob-member-item-selected': props.selectedMemberId === person.id and props.selectedMemberType === 'person' }"
+                                         t-on-click="onMemberClick" 
+                                         t-on-contextmenu="onMemberContextMenu"
+                                         t-att-data-model="person.model" 
+                                         t-att-data-id="person.id"
+                                         t-att-data-name="person.name"
+                                         t-att-data-type="'person'">
                                         <i class="fa fa-user ob-member-icon"/>
                                         <div class="ob-member-info">
                                             <div class="ob-member-name"><t t-esc="person.name"/></div>
-                                            <div class="ob-member-detail" t-if="person.email">
-                                                <t t-esc="person.email"/>
-                                            </div>
-                                            <div class="ob-member-roles" t-if="person.roles?.length">
-                                                <t t-foreach="person.roles" t-as="role" t-key="role">
-                                                    <span class="ob-role-badge"><t t-esc="role"/></span>
+                                            <div class="ob-member-actions">
+                                                <button class="ob-password-btn" 
+                                                        t-on-click.stop="(ev) => this.onPasswordClick(ev, person)"
+                                                        title="Manage password">
+                                                    <i class="fa fa-key"/> Password
+                                                </button>
+                                                <t t-if="person.roles?.length">
+                                                    <t t-foreach="person.roles" t-as="role" t-key="role">
+                                                        <span class="ob-role-badge"><t t-esc="role"/></span>
+                                                    </t>
                                                 </t>
                                             </div>
                                         </div>
@@ -187,7 +212,10 @@
                                 </t>
                             </t>
                             <t t-else="">
-                                <div class="ob-members-none">No persons in this organization</div>
+                                <div class="ob-members-none">
+                                    <t t-if="state.filterText">No persons matching filter</t>
+                                    <t t-else="">No persons in this organization</t>
+                                </div>
                             </t>
                         </div>
                     </div>
@@ -197,14 +225,18 @@
                         <div class="ob-members-section-header">
                             <i class="fa fa-users"/>
                             Person Groups
-                            <span class="ob-members-count" t-if="props.members?.persongroups?.length">
-                                (<t t-esc="props.members.persongroups.length"/>)
-                            </span>
                         </div>
                         <div class="ob-members-list">
-                            <t t-if="props.members?.persongroups?.length">
-                                <t t-foreach="props.members.persongroups" t-as="group" t-key="group.id">
-                                    <div class="ob-member-item" t-on-click="onMemberClick" t-att-data-model="group.model" t-att-data-id="group.id">
+                            <t t-if="filteredPersongroups.length">
+                                <t t-foreach="filteredPersongroups" t-as="group" t-key="group.id">
+                                    <div class="ob-member-item" 
+                                         t-att-class="{ 'ob-member-item-selected': props.selectedMemberId === group.id and props.selectedMemberType === 'org' }"
+                                         t-on-click="onMemberClick" 
+                                         t-on-contextmenu="onMemberContextMenu"
+                                         t-att-data-model="group.model" 
+                                         t-att-data-id="group.id"
+                                         t-att-data-name="group.name"
+                                         t-att-data-type="'org'">
                                         <i class="fa fa-users ob-member-icon ob-member-icon-group"/>
                                         <div class="ob-member-info">
                                             <div class="ob-member-name"><t t-esc="group.name"/></div>
@@ -216,7 +248,10 @@
                                 </t>
                             </t>
                             <t t-else="">
-                                <div class="ob-members-none">No person groups</div>
+                                <div class="ob-members-none">
+                                    <t t-if="state.filterText">No person groups matching filter</t>
+                                    <t t-else="">No person groups</t>
+                                </div>
                             </t>
                         </div>
                     </div>
@@ -353,24 +388,30 @@
                         <button class="ob-action-btn" t-on-click="onAddChildOrgClick">
                             <i class="fa fa-plus-circle"/> Add Sub-Organization
                         </button>
+                        <button class="ob-action-btn" t-on-click="onManageOrgRolesClick">
+                            <i class="fa fa-id-badge"/> Roles
+                        </button>
                         <button class="ob-action-btn" t-on-click="onConfigurationClick">
                             <i class="fa fa-sliders"/> Configuration
                         </button>
                         <button class="ob-action-btn" t-on-click="onMoveOrgClick">
                             <i class="fa fa-arrows"/> Move
                         </button>
+                        <button class="ob-action-btn ob-action-btn-danger" t-on-click="onDeleteOrgClick">
+                            <i class="fa fa-trash"/> Delete
+                        </button>
                     </t>
                     <t t-if="props.node.type === 'person'">
-                        <button class="ob-action-btn" t-on-click="onAssignRoleClick">
-                            <i class="fa fa-id-badge"/> Assign Role
+                        <button class="ob-action-btn" t-on-click="onManagePersonRolesClick">
+                            <i class="fa fa-id-badge"/> Manage Roles
                         </button>
                         <button class="ob-action-btn" t-on-click="onMovePersonClick">
                             <i class="fa fa-arrows"/> Move to Org
                         </button>
-                        <button class="ob-action-btn" t-on-click="onDeactivatePersonClick">
+                        <button class="ob-action-btn ob-action-btn-danger" t-on-click="onDeactivatePersonClick">
                             <i class="fa fa-ban"/> Deactivate
                         </button>
-                        <button class="ob-action-btn" t-on-click="onDeletePersonClick">
+                        <button class="ob-action-btn ob-action-btn-danger" t-on-click="onDeletePersonClick">
                             <i class="fa fa-trash"/> Delete
                         </button>
                     </t>
@@ -384,13 +425,38 @@
         <div class="ob-container" t-ref="container">
             <!-- Header -->
             <div class="ob-header">
-                <h2><i class="fa fa-sitemap me-2"/>MySchool Admin</h2>
+                <div class="ob-header-left">
+                    <h2><i class="fa fa-sitemap me-2"/>MySchool Admin</h2>
+                    <div class="ob-global-search-wrapper">
+                        <i class="fa fa-search ob-global-search-icon"/>
+                        <input type="text" 
+                               class="ob-global-search" 
+                               placeholder="Search all objects..."
+                               t-att-value="state.globalSearchText"
+                               t-on-input="onGlobalSearchInput"
+                               t-on-keydown="onGlobalSearchKeydown"/>
+                        <t t-if="state.globalSearchResults?.length > 0">
+                            <div class="ob-global-search-results">
+                                <t t-foreach="state.globalSearchResults" t-as="result" t-key="result.id + '_' + result.type">
+                                    <div class="ob-global-search-item" 
+                                         t-on-click="() => this.onGlobalSearchResultClick(result)">
+                                        <i t-att-class="result.type === 'org' ? 'fa fa-building' : 'fa fa-user'"/>
+                                        <div class="ob-global-search-item-info">
+                                            <div class="ob-global-search-item-name"><t t-esc="result.name"/></div>
+                                            <div class="ob-global-search-item-type"><t t-esc="result.type === 'org' ? 'Organization' : 'Person'"/></div>
+                                        </div>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+                    </div>
+                </div>
                 <div class="ob-toolbar">
                     <div class="ob-search-wrapper">
                         <i class="fa fa-search ob-search-icon"/>
                         <input type="text" 
                                class="ob-search" 
-                               placeholder="Search..." 
+                               placeholder="Filter tree..." 
                                t-att-value="state.searchText"
                                t-on-input="onSearchInput"/>
                     </div>
@@ -494,7 +560,9 @@
                                           onDragOver="onDragOver"
                                           onDrop="onDrop"
                                           selectedIds="state.selectionMode ? state.selectedIds : null"
-                                          draggedNode="state.draggedNode"/>
+                                          draggedNode="state.draggedNode"
+                                          expandedIds="state.expandedIds"
+                                          onToggleExpand="onToggleExpand"/>
                             </t>
                         </t>
                     </div>
@@ -502,10 +570,15 @@
                 
                 <!-- Members Panel -->
                 <MembersPanel 
-                    node="state.activeNode"
+                    node="state.activeOrgNode"
                     members="state.membersData"
                     loading="state.membersLoading"
-                    onOpenRecord="openRecord"/>
+                    onOpenRecord="openRecord"
+                    onMemberContextMenu="onMemberContextMenu"
+                    onMemberSelect="onMemberSelect"
+                    onPasswordClick="onPasswordClick"
+                    selectedMemberId="state.activeNode?.id"
+                    selectedMemberType="state.activeNode?.type"/>
                 
                 <!-- Details Panel -->
                 <DetailsPanel node="state.activeNode"

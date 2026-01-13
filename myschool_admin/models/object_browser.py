@@ -59,10 +59,12 @@ class ObjectBrowser(models.TransientModel):
         # Build parent-child map from proprelation
         org_children = {}
         org_parent = {}
+        processed_relations = set()  # Track processed child-parent pairs to avoid duplicates
         
         if 'myschool.proprelation' in self.env:
             PropRelation = self.env['myschool.proprelation']
             
+            # Pattern 1: id_org (child) + id_org_parent (parent)
             relations = PropRelation.search([
                 ('id_org', '!=', False),
                 ('id_org_parent', '!=', False),
@@ -78,6 +80,12 @@ class ObjectBrowser(models.TransientModel):
                     if child_id == parent_id:
                         continue
                     
+                    # Skip if already processed this child-parent pair
+                    pair_key = (child_id, parent_id)
+                    if pair_key in processed_relations:
+                        continue
+                    processed_relations.add(pair_key)
+                    
                     if child_id in all_org_ids:
                         org_parent[child_id] = parent_id
                         if parent_id not in org_children:
@@ -85,7 +93,7 @@ class ObjectBrowser(models.TransientModel):
                         if child_id not in org_children[parent_id]:
                             org_children[parent_id].append(child_id)
             
-            # Also check id_org_child -> id_org_parent
+            # Pattern 2: id_org_child (child) + id_org_parent (parent)
             relations2 = PropRelation.search([
                 ('id_org_child', '!=', False),
                 ('id_org_parent', '!=', False),
@@ -100,6 +108,12 @@ class ObjectBrowser(models.TransientModel):
                     # Skip self-references
                     if child_id == parent_id:
                         continue
+                    
+                    # Skip if already processed this child-parent pair
+                    pair_key = (child_id, parent_id)
+                    if pair_key in processed_relations:
+                        continue
+                    processed_relations.add(pair_key)
                     
                     if child_id in all_org_ids:
                         org_parent[child_id] = parent_id
@@ -741,6 +755,7 @@ class ObjectBrowser(models.TransientModel):
         return result
 
     @api.model
+    @api.model
     def get_members_for_org(self, org_id):
         """
         Get all persons and persongroup orgs related to the selected org.
@@ -752,18 +767,27 @@ class ObjectBrowser(models.TransientModel):
         }
         
         if not org_id:
+            _logger.info("get_members_for_org called with no org_id")
             return result
         
-        PropRelation = self.env.get('myschool.proprelation')
-        if not PropRelation:
+        _logger.info(f"get_members_for_org called for org_id={org_id}")
+        
+        # Check if proprelation model exists
+        if 'myschool.proprelation' not in self.env:
+            _logger.warning("myschool.proprelation model not found in env")
             return result
         
-        # Get persons linked to this org
+        PropRelation = self.env['myschool.proprelation']
+        
+        # Get persons linked to this org via proprelation
+        # Pattern: id_org = org_id AND id_person != False
         person_rels = PropRelation.search([
             ('id_org', '=', org_id),
             ('id_person', '!=', False),
             ('is_active', '=', True),
         ])
+        
+        _logger.info(f"Found {len(person_rels)} person relations for org {org_id}")
         
         person_dict = {}
         for rel in person_rels:
@@ -782,7 +806,9 @@ class ObjectBrowser(models.TransientModel):
                     name = f"{person.first_name} {person.name}"
                 
                 email = ''
-                if hasattr(person, 'email') and person.email:
+                if hasattr(person, 'email_cloud') and person.email_cloud:
+                    email = person.email_cloud
+                elif hasattr(person, 'email') and person.email:
                     email = person.email
                 
                 person_dict[pid] = {
@@ -801,35 +827,55 @@ class ObjectBrowser(models.TransientModel):
                     person_dict[pid]['roles'].append(role_name)
         
         result['persons'] = list(person_dict.values())
+        _logger.info(f"Returning {len(result['persons'])} persons")
         
         # Get persongroup orgs linked to this org
-        # Persongroups are orgs with org_type.name = 'PERSONGROUP'
-        OrgType = self.env.get('myschool.org.type')
-        Org = self.env.get('myschool.org')
-        
-        if OrgType and Org:
-            persongroup_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+        # Persongroups are orgs with org_type.name = 'PERSONGROUP' that are children of this org
+        if 'myschool.org.type' in self.env and 'myschool.org' in self.env:
+            OrgType = self.env['myschool.org.type']
+            Org = self.env['myschool.org']
+            
+            persongroup_type = OrgType.search([('name', '=ilike', 'PERSONGROUP')], limit=1)
+            _logger.info(f"PERSONGROUP type found: {persongroup_type.id if persongroup_type else 'NOT FOUND'}")
             
             if persongroup_type:
-                # Find orgs that are persongroups and linked to this org
-                # Check both id_org and id_org_child fields
+                # Find orgs that are persongroups and are children of this org
+                # Pattern 1: id_org (child) + id_org_parent (parent) = org_id
                 pg_rels = PropRelation.search([
-                    '|',
                     ('id_org_parent', '=', org_id),
-                    ('id_org', '=', org_id),
+                    ('id_org', '!=', False),
                     ('is_active', '=', True),
                 ])
                 
+                _logger.info(f"Found {len(pg_rels)} potential persongroup relations (pattern 1)")
+                
                 persongroup_ids = set()
                 for rel in pg_rels:
-                    # Check if id_org is a persongroup
-                    if rel.id_org and rel.id_org.id != org_id:
-                        if rel.id_org.org_type_id and rel.id_org.org_type_id.id == persongroup_type.id:
-                            persongroup_ids.add(rel.id_org.id)
-                    # Check id_org_child if exists
+                    child_org = rel.id_org
+                    if child_org and child_org.id != org_id:
+                        # Check if this org is a persongroup
+                        if hasattr(child_org, 'org_type_id') and child_org.org_type_id:
+                            if child_org.org_type_id.id == persongroup_type.id:
+                                persongroup_ids.add(child_org.id)
+                                _logger.info(f"Found persongroup: {child_org.name} (id={child_org.id})")
+                
+                # Pattern 2: id_org_child + id_org_parent = org_id
+                pg_rels2 = PropRelation.search([
+                    ('id_org_parent', '=', org_id),
+                    ('id_org_child', '!=', False),
+                    ('is_active', '=', True),
+                ])
+                
+                _logger.info(f"Found {len(pg_rels2)} potential persongroup relations (pattern 2)")
+                
+                for rel in pg_rels2:
                     if hasattr(rel, 'id_org_child') and rel.id_org_child:
-                        if rel.id_org_child.org_type_id and rel.id_org_child.org_type_id.id == persongroup_type.id:
-                            persongroup_ids.add(rel.id_org_child.id)
+                        child_org = rel.id_org_child
+                        if child_org.id != org_id:
+                            if hasattr(child_org, 'org_type_id') and child_org.org_type_id:
+                                if child_org.org_type_id.id == persongroup_type.id:
+                                    persongroup_ids.add(child_org.id)
+                                    _logger.info(f"Found persongroup (pattern 2): {child_org.name} (id={child_org.id})")
                 
                 if persongroup_ids:
                     persongroups = Org.browse(list(persongroup_ids))
@@ -847,5 +893,85 @@ class ObjectBrowser(models.TransientModel):
                             'full_name': pg.name,
                             'model': 'myschool.org',
                         })
+        else:
+            _logger.warning("myschool.org.type or myschool.org model not found")
         
+        _logger.info(f"Returning {len(result['persongroups'])} persongroups")
         return result
+    
+    @api.model
+    def global_search(self, query):
+        """
+        Search all object types (orgs, persons, roles) for the given query.
+        Returns a list of matching results with type, id, name, and model.
+        """
+        results = []
+        
+        if not query or len(query) < 2:
+            return results
+        
+        query_lower = query.lower()
+        limit_per_type = 10
+        
+        # Search organizations
+        if 'myschool.org' in self.env:
+            Org = self.env['myschool.org']
+            orgs = Org.search([
+                '|', '|',
+                ('name', 'ilike', query),
+                ('name_short', 'ilike', query),
+                ('inst_nr', 'ilike', query),
+            ], limit=limit_per_type)
+            
+            for org in orgs:
+                display_name = org.name_short if hasattr(org, 'name_short') and org.name_short else org.name
+                results.append({
+                    'id': org.id,
+                    'name': display_name,
+                    'full_name': org.name,
+                    'type': 'org',
+                    'model': 'myschool.org',
+                })
+        
+        # Search persons
+        if 'myschool.person' in self.env:
+            Person = self.env['myschool.person']
+            persons = Person.search([
+                '|', '|', '|',
+                ('name', 'ilike', query),
+                ('first_name', 'ilike', query),
+                ('email_cloud', 'ilike', query),
+                ('sap_ref', 'ilike', query),
+            ], limit=limit_per_type)
+            
+            for person in persons:
+                name = person.name or 'Unknown'
+                if hasattr(person, 'first_name') and person.first_name:
+                    name = f"{person.first_name} {person.name}"
+                results.append({
+                    'id': person.id,
+                    'name': name,
+                    'type': 'person',
+                    'model': 'myschool.person',
+                })
+        
+        # Search roles
+        if 'myschool.role' in self.env:
+            Role = self.env['myschool.role']
+            roles = Role.search([
+                '|',
+                ('name', 'ilike', query),
+                ('shortname', 'ilike', query),
+            ], limit=limit_per_type)
+            
+            for role in roles:
+                display_name = role.shortname if hasattr(role, 'shortname') and role.shortname else role.name
+                results.append({
+                    'id': role.id,
+                    'name': display_name,
+                    'full_name': role.name,
+                    'type': 'role',
+                    'model': 'myschool.role',
+                })
+        
+        return results
