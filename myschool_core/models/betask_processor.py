@@ -94,10 +94,7 @@ class BeTaskProcessor(models.AbstractModel):
         :param task_type: Task type record
         :return: True if all tasks processed successfully, False if any error
         """
-        if not task_type:
-            self._log_error('BETASK-900', 'No task type specified for processing')
-            return False
-        
+
         # Log start
         self._log_event('BETASK-002', f'START PROCESSING TASKS: {task_type.name}')
         
@@ -361,6 +358,10 @@ class BeTaskProcessor(models.AbstractModel):
         data = self._parse_task_data(task.data)
         
         # TODO: Implement role creation logic
+        new_role = self.env['myschool.role']
+
+        new_role.create(data)
+        #new_role.register_or_update_role(data)
         
         return True
     

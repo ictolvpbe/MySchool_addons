@@ -214,8 +214,8 @@ class BeTask(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
-            if vals.get('name', _('New')) == _('New'):
-                vals['name'] = self.env['ir.sequence'].next_by_code('myschool.betask') or _('New')
+            if vals.get('status', _('new')) == _('new'):
+                vals['status'] = self.env['ir.sequence'].next_by_code('myschool.betask') or _('new')
         return super().create(vals_list)
     
     # ==========================================================================

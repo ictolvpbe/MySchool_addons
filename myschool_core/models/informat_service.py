@@ -66,7 +66,7 @@ class InformatService(models.AbstractModel):
     BETASK_TYPE_MODEL = 'myschool.betask.type'  # Change if your model is named differently
     
     # Field names on BeTask model - ADJUST TO MATCH YOUR be_task.py!
-    BETASK_TYPE_FIELD = 'be_task_type_id'   # The Many2one field to BeTaskType
+    BETASK_TYPE_FIELD = 'betasktype_id'   # The Many2one field to BeTaskType
     BETASK_STATUS_FIELD = 'status'          # The status/state field
     BETASK_DATA_FIELD = 'data'              # The JSON data field
     BETASK_DATA2_FIELD = 'data2'            # The secondary JSON data field
@@ -77,8 +77,8 @@ class InformatService(models.AbstractModel):
     BETASKTYPE_ACTION_FIELD = 'action'      # e.g., 'ADD', 'UPD', 'DEACT'
     
     # Status values - ADJUST TO MATCH YOUR model's selection values!
-    STATUS_NEW = 'new'                       # Could be: 'NEW', 'draft', 'pending'
-    STATUS_COMPLETED = 'completed'           # Could be: 'COMPLETED_OK', 'done'
+    STATUS_NEW = 'new'                       # Could be: 'new', 'draft', 'pending'
+    STATUS_COMPLETED = 'completed_ok'           # Could be: 'completed_ok', 'done'
 
     # =========================================================================
     # Storage Path Management
@@ -247,6 +247,8 @@ class InformatService(models.AbstractModel):
         @param dev_mode: If True, uses local dev files instead of API calls
         @return: True if successful, False if errors occurred
         """
+
+        dev_mode = True
         _logger.info("SAPSYNC-001: Starting Informat sync process")
 
 
@@ -263,16 +265,8 @@ class InformatService(models.AbstractModel):
         #
         #
         #
-        #SysEvent = self.env.get('myschool.sys.event.service')
-
-        self._create_sys_error("SAPSYNC-900", "Error in getEmployeesFromInformat")
-
-
-        # SysEvent.create_sys_event("SAPSYNC-001", "Start importing Employee information",True)
-
-
-
-
+        SysEvent = self.env.get('myschool.sys.event.service')
+        SysEvent.create_sys_event("SAPSYNC-001", "Start Syncing Employee information",True)
 
         try:
             # Ensure storage directories exist
@@ -304,14 +298,15 @@ class InformatService(models.AbstractModel):
             
             # Analyze and create employee roles
             self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
-            
-            # Check for manual role tasks
-            if self._check_manual_role_tasks():
-                return False
+
+            # # Check for manual role tasks  : TODO: remove code as workflow changed
+            # if self._check_manual_role_tasks():
+            #     self._create_sys_error("SAPSYNC-900", "A manual Role ADD task is found, please update the corresponding database task")
+            #     return False
             
             # Process role tasks
             self._process_betasks('DB', 'ROLE', 'ADD')
-            
+            return
             # Analyze and create employee role-org relations
             self._analyze_employee_assignments_and_create_role_org_relations(all_imported_employee_assignments)
             
@@ -322,48 +317,48 @@ class InformatService(models.AbstractModel):
             self._process_betasks('ALL', 'ROLE', 'UPD')
             
             # Create required OUs for employees
-            self._process_betasks('LDAP', 'ORG', 'ADD')
+            ##self._process_betasks('LDAP', 'ORG', 'ADD')
             
             # Process employee tasks in order
             self._process_betasks('DB', 'EMPLOYEE', 'ADD')
-            self._process_betasks('LDAP', 'EMPLOYEE', 'ADD')
+            ##self._process_betasks('LDAP', 'EMPLOYEE', 'ADD')
             self._process_betasks('DB', 'EMPLOYEE', 'UPD')
-            self._process_betasks('LDAP', 'EMPLOYEE', 'UPD')
+            ##self._process_betasks('LDAP', 'EMPLOYEE', 'UPD')
             self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
-            self._process_betasks('LDAP', 'EMPLOYEE', 'DEACT')
+            ##self._process_betasks('LDAP', 'EMPLOYEE', 'DEACT')
             
             # =====================================================
             # PHASE 2: Student Processing
             # =====================================================
             
             # Retrieve Registration and Student information
-            all_imported_registrations = self._get_registrations_from_informat('', dev_mode)
-            all_imported_students = self._get_students_from_informat('', '', dev_mode)
-            
-            if all_imported_registrations is None:
-                self._create_sys_error("SAPSYNC-900", "Error in getRegistrationsFromInformat")
-                return False
-                
-            if all_imported_students is None:
-                self._create_sys_error("SAPSYNC-900", "Error in getStudentsFromInformat")
-                return False
-            
+            # all_imported_registrations = self._get_registrations_from_informat('', dev_mode)
+            # all_imported_students = self._get_students_from_informat('', '', dev_mode)
+            #
+            # if all_imported_registrations is None:
+            #     self._create_sys_error("SAPSYNC-900", "Error in getRegistrationsFromInformat")
+            #     return False
+            #
+            # if all_imported_students is None:
+            #     self._create_sys_error("SAPSYNC-900", "Error in getStudentsFromInformat")
+            #     return False
+            #
             # Process Org (class groups) tasks
-            self._analyze_student_data_and_create_org_tasks(all_imported_registrations)
-            self._process_betasks('DB', 'ORG', 'ADD')
-            self._process_betasks('DB', 'ORG', 'UPDATE')
-            
-            # Process Relations
-            self._analyze_data_and_create_relation_tasks(all_imported_students)
-            self._process_betasks('DB', 'RELATION', 'ADD')
-            self._process_betasks('DB', 'RELATION', 'UPD')
-            
-            # Process Students
-            self._analyze_data_and_create_student_tasks(all_imported_registrations, all_imported_students)
-            self._process_betasks('DB', 'STUDENT', 'ADD')
-            self._process_betasks('LDAP', 'STUDENT', 'ADD')
-            self._process_betasks('DB', 'STUDENT', 'UPD')
-            
+            # self._analyze_student_data_and_create_org_tasks(all_imported_registrations)
+            # self._process_betasks('DB', 'ORG', 'ADD')
+            # self._process_betasks('DB', 'ORG', 'UPDATE')
+            #
+            # # Process Relations
+            # self._analyze_data_and_create_relation_tasks(all_imported_students)
+            # self._process_betasks('DB', 'RELATION', 'ADD')
+            # self._process_betasks('DB', 'RELATION', 'UPD')
+            #
+            # # Process Students
+            # self._analyze_data_and_create_student_tasks(all_imported_registrations, all_imported_students)
+            # self._process_betasks('DB', 'STUDENT', 'ADD')
+            # self._process_betasks('LDAP', 'STUDENT', 'ADD')
+            # self._process_betasks('DB', 'STUDENT', 'UPD')
+            #
             self._create_sys_event("SAPSYNC", "All tasks processed without errors")
             return True
             
@@ -1095,8 +1090,10 @@ class InformatService(models.AbstractModel):
         """
         Analyze employee assignments and create new roles if needed.
         
-        Equivalent to Java: AnalyzeInformatEmployeeAssignmentsAndCreateEmployeeRoles()
-        
+        For informat: just create the SapRoles via a DB-ADD-ROLE Task. When a new role is added, create a sysevent
+        informing the admin that a new SAPROLE is create and that is should be linked to a BackendRole
+
+
         @param all_assignments: Dict with assignment data
         @return: True if successful
         """
@@ -1108,6 +1105,7 @@ class InformatService(models.AbstractModel):
         
         try:
             Role = self.env['myschool.role']
+            BeTask = self.env['myschool.betask.service']
             processed_assignments: List[str] = []
             first_task = True
             
@@ -1119,6 +1117,8 @@ class InformatService(models.AbstractModel):
                 # Get HoofdAmbt (main position) details
                 hoofd_ambt_name = assignment.get('ambt', '')
                 hoofd_ambt_code = assignment.get('ambtCode', '')
+                role_type = self.env['myschool.role.type'].search(
+                    [('name', '=', 'SAP')], limit=1)
                 
                 if hoofd_ambt_code not in processed_assignments:
                     # Check if role exists
@@ -1127,27 +1127,33 @@ class InformatService(models.AbstractModel):
                     if not existing_roles:
                         # Create role task
                         task_data = {
-                            'sapRoleName': hoofd_ambt_name,
-                            'sapRoleShortName': hoofd_ambt_code,
-                            'createNewBeRole': 'true/false',
-                            'beRoleName': 'ADAPT',
-                            'beRoleShortName': 'ADAPT',
-                            'existingBeRoleId': ''
+                            'name': hoofd_ambt_name,
+                            'shortname': hoofd_ambt_code,
+                            'automatic_sync': True,
+                            'is_active': True,
+                            'role_type_id': role_type.id,
                         }
-                        
-                        if first_task:
-                            message = ("A DB-ROLE-ADD task has been created. Please update the field in the JSON String "
-                                      "to reflect the new name and position in the Org Structure. "
-                                      "Set The Status to COMPLETED_OK when done")
-                            self._create_betask('ALL', 'ROLE', 'MANUAL', message, '')
-                            first_task = False
-                        
+                            # 'createNewBeRole': 'true/false',
+                            # 'beRoleName': 'ADAPT',
+                            # 'beRoleShortName': 'ADAPT',
+                            # 'existingBeRoleId': ''
+                        #}
+                        #  15.01.26: TODO : remove code after testing
+                        # if first_task:
+                        #     message = ("A DB-ROLE-ADD task has been created. Please update the field in the JSON String "
+                        #               "to reflect the new name and position in the Org Structure. "
+                        #               "Set The Status to COMPLETED_OK when done")
+                        #     # self._create_betask('ALL', 'ROLE', 'MANUAL', message, '')
+                        #     BeTask.create_task('ALL', 'ROLE', 'MANUAL', message, '')
+                        #     first_task = False
+                        #
                         self._create_betask('DB', 'ROLE', 'ADD', json.dumps(task_data), '')
-                    
-                    elif len(existing_roles) > 1:
-                        self._create_sys_error("ROLE-ADD", 
-                            f"{len(existing_roles)} relations for {hoofd_ambt_name} found. Please correct")
-                        return False
+                        self._create_sys_event("BETASK-001", f"a New SapRole is create. Link manual to a BackendRole and link this BR to one or moge Orgs: {assignment_key}")
+
+                    # elif len(existing_roles) > 1:
+                    #     # self._create_sys_error("ROLE-ADD",
+                    #     #     f"{len(existing_roles)} relations for {hoofd_ambt_name} found. Please correct")
+                    #     return False
                 
                 processed_assignments.append(hoofd_ambt_code)
             
@@ -1284,11 +1290,7 @@ class InformatService(models.AbstractModel):
         """Check for manual role tasks."""
         BeTask = self.env.get(self.BETASK_MODEL)
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
-        
-        if not BeTask or not BeTaskType:  #todo : aanpassen zoals def hierboven na test
-            _logger.warning(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
-            return False
-        
+
         manual_task_type = BeTaskType.search([
             (self.BETASKTYPE_TARGET_FIELD, '=', 'ALL'),
             (self.BETASKTYPE_OBJECT_FIELD, '=', 'ROLE'),
@@ -1308,6 +1310,7 @@ class InformatService(models.AbstractModel):
         
         return False
 
+    ## LOOT VIA TASKPROCESSOR
     def _process_betasks(self, target: str, obj: str, action: str) -> None:
         """
         Process BeTasks of a specific type.
@@ -1316,21 +1319,17 @@ class InformatService(models.AbstractModel):
         @param obj: Task object (STUDENT, EMPLOYEE, ORG, ROLE, etc.)
         @param action: Task action (ADD, UPD, DEACT, etc.)
         """
-        BeTaskProcessor = self.env.get('myschool.be.task.processor')
+        BeTaskProcessor = self.env.get('myschool.betask.processor')
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
-        
-        if not BeTaskType:
-            _logger.warning(f"BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
-            return
-        
+
         task_type = BeTaskType.search([
             (self.BETASKTYPE_TARGET_FIELD, '=', target),
             (self.BETASKTYPE_OBJECT_FIELD, '=', obj),
             (self.BETASKTYPE_ACTION_FIELD, '=', action)
         ], limit=1)
-        
-        if task_type and BeTaskProcessor:
-            BeTaskProcessor.process_betasks(task_type)
+
+        if task_type.exists():
+            BeTaskProcessor.process_tasks_by_type(task_type)
         elif task_type:
             _logger.info(f"Task type found for {target}-{obj}-{action}, but no processor available")
 
@@ -1345,18 +1344,18 @@ class InformatService(models.AbstractModel):
         @param data2: Additional JSON data
         @return: Created BeTask record
         """
-        BeTaskService = self.env.get('myschool.be.task.service')
-        if BeTaskService and hasattr(BeTaskService, 'create_betask'):
-            return BeTaskService.create_betask(target, obj, action, data, data2)
-        
-        # Fallback: create directly
+        # BeTaskService = self.env.get('myschool.betask.service')
+        # if BeTaskService and hasattr(BeTaskService, 'create_betask'):
+        #     return BeTaskService.create_betask(target, obj, action, data, data2)
+        #
+        # # Fallback: create directly
         BeTask = self.env.get(self.BETASK_MODEL)
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
-        
-        if not BeTask or not BeTaskType:
-            _logger.error(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
-            return None
-        
+        #
+        # if not BeTask or not BeTaskType:
+        #     _logger.error(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
+        #     return None
+        #
         task_type = BeTaskType.search([
             (self.BETASKTYPE_TARGET_FIELD, '=', target),
             (self.BETASKTYPE_OBJECT_FIELD, '=', obj),

@@ -13,8 +13,10 @@ from . import proprelation
 from . import config_item
 from . import ci_relation
 from . import betask_type
+from . import betask_type_service
 from . import betask
 from . import betask_service
+from . import betask_processor
 from . import sys_event_type
 from . import sys_event_type_service
 from . import sys_event

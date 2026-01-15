@@ -262,10 +262,19 @@ class Role(models.Model):
         @param vals: Dictionary with role values
         @return: Created or updated Role
         """
-        shortname = vals.get('shortname')
+        shortname = vals.get('sapRoleShortName')
         if not shortname:
             raise ValidationError(_("Role shortname is required"))
-        
+
+        #
+        # new_vals=['name',vals.get('sapRoleName'),
+        #           'shortname',vals.get('sapRoleShortName'),
+        #           'role_type_id', vals.get('sapRoleShortName'),
+        #           'role_type_name', vals.get('sapRoleShortName'),
+        #           'is_active', vals.get('sapRoleShortName'),
+        #           'automatic_sync', vals.get('sapRoleShortName'),
+        # ]
+
         existing = self.search([('shortname', '=', shortname)], limit=1)
         
         if existing:
@@ -273,6 +282,7 @@ class Role(models.Model):
             return existing
         else:
             return self.create(vals)
+
 
     # =========================================================================
     # Person Role Methods (from RoleServiceImpl.java)
