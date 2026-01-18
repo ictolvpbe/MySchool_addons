@@ -22,7 +22,7 @@ class BeTask(models.Model):
     _inherit = ['mail.thread']
 
     name = fields.Char(
-        string='Task Reference',
+        string='Task Name',
         required=True,
         copy=False,
         readonly=True,

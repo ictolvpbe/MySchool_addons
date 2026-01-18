@@ -279,13 +279,13 @@
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <!-- Sub Menu: Log Viewer -->
-    <menuitem id="menu_myschool_log_viewer"
-              name="Log Viewer"
-              parent="menu_myschool_root"
-              action="action_log_viewer"
-              sequence="95"
-              groups="myschool_core.group_myschool_core_admin"/>
+<!--    &lt;!&ndash; Sub Menu: Log Viewer &ndash;&gt;-->
+<!--    <menuitem id="menu_myschool_log_viewer"-->
+<!--              name="Log Viewer"-->
+<!--              parent="menu_myschool_root"-->
+<!--              action="action_log_viewer"-->
+<!--              sequence="95"-->
+<!--              groups="myschool_core.group_myschool_core_admin"/>-->
 
 
 <!--    &lt;!&ndash; Action: Log Viewer &ndash;&gt;-->

@@ -2,7 +2,7 @@
 <templates xml:space="preserve">
 
     <!-- Context Menu Template -->
-    <t t-name="myschool_admin.ContextMenu" owl="1">
+    <t t-name="myschool_admin.ContextMenu" >
         <div class="ob-context-menu" t-att-style="'left: ' + props.x + 'px; top: ' + props.y + 'px;'">
             <div class="ob-context-menu-header">
                 <t t-esc="props.node.name"/>
@@ -25,7 +25,7 @@
     </t>
 
     <!-- Tree Node Template -->
-    <t t-name="myschool_admin.TreeNode" owl="1">
+    <t t-name="myschool_admin.TreeNode" >
         <div class="ob-node" 
              t-att-style="'padding-left: ' + (level * 12) + 'px;'"
              t-att-class="{ 'ob-node-dragging': isDragging, 'ob-node-drag-over': state.dragOver, 'ob-node-active': isActiveNode }"
@@ -136,7 +136,7 @@
     </t>
 
     <!-- Members Panel Template -->
-    <t t-name="myschool_admin.MembersPanel" owl="1">
+    <t t-name="myschool_admin.MembersPanel" >
         <div class="ob-members">
             <div class="ob-members-header">
                 <i class="fa fa-users" style="margin-right: 6px;"/>
@@ -261,7 +261,7 @@
     </t>
 
     <!-- Details Panel Template -->
-    <t t-name="myschool_admin.DetailsPanel" owl="1">
+    <t t-name="myschool_admin.DetailsPanel" >
         <div class="ob-details">
             <t t-if="!props.node">
                 <div class="ob-details-empty">
@@ -421,7 +421,7 @@
     </t>
 
     <!-- Main Object Browser Template -->
-    <t t-name="myschool_admin.ObjectBrowserClient" owl="1">
+    <t t-name="myschool_admin.ObjectBrowserClient" >
         <div class="ob-container" t-ref="container">
             <!-- Header -->
             <div class="ob-header">

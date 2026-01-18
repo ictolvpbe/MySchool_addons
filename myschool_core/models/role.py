@@ -256,7 +256,10 @@ class Role(models.Model):
 
     @api.model
     def register_or_update_role(self, vals: dict) -> 'Role':
+
         """
+        TODO: 15-01-2026: method nodig.?  Volstaat gebruik van betask.create(vals)?
+
         Register a new Role or update an existing one.
         
         @param vals: Dictionary with role values
@@ -265,15 +268,6 @@ class Role(models.Model):
         shortname = vals.get('sapRoleShortName')
         if not shortname:
             raise ValidationError(_("Role shortname is required"))
-
-        #
-        # new_vals=['name',vals.get('sapRoleName'),
-        #           'shortname',vals.get('sapRoleShortName'),
-        #           'role_type_id', vals.get('sapRoleShortName'),
-        #           'role_type_name', vals.get('sapRoleShortName'),
-        #           'is_active', vals.get('sapRoleShortName'),
-        #           'automatic_sync', vals.get('sapRoleShortName'),
-        # ]
 
         existing = self.search([('shortname', '=', shortname)], limit=1)
         

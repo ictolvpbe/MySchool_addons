@@ -42,11 +42,9 @@
         'views/sys_event_views.xml',
         'views/sys_event_type_views.xml',
         'views/betask_type_views.xml',
-        'views/betask_views.xml',
         'views/informat_service_config_views.xml',
-        'views/log_viewer_views.xml',
+        # 'views/log_viewer_views.xml',
         'views/object_browser_views.xml',
-        'views/wizard_views.xml',
 
         # Menus
         'views/menu_views.xml',
@@ -66,8 +64,8 @@
             'myschool_admin/static/src/css/object_browser.css',
             'myschool_admin/static/src/js/object_browser.js',
             'myschool_admin/static/src/xml/object_browser.xml',
-            'myschool_admin/static/src/js/log_viewer.js',
-            'myschool_admin/static/src/xml/log_viewer.xml',
+            # 'myschool_admin/static/src/js/log_viewer.js',
+            # 'myschool_admin/static/src/xml/log_viewer.xml',
         ],
     },
     'demo': [],

@@ -421,7 +421,7 @@ export class ContextMenu extends Component {
 /**
  * Main ObjectBrowserClient component
  */
-export class ObjectBrowserClient extends Component {
+export class ObjectBrowser extends Component {
     static template = "myschool_admin.ObjectBrowserClient";
     static components = { TreeNode, ContextMenu, DetailsPanel, MembersPanel };
     
@@ -1419,4 +1419,4 @@ export class ObjectBrowserClient extends Component {
 }
 
 // Register the client action
-registry.category("actions").add("myschool_object_browser", ObjectBrowserClient);
+registry.category("actions").add("myschool_object_browser", ObjectBrowser);

@@ -18,6 +18,7 @@
                 <field name="syseventtype_id"/>
                 <field name="eventcode"/>
                 <field name="source"/>
+                <field name="data"/>
                 <field name="priority" widget="priority"/>
                 <field name="is_blocking" column_invisible="1"/>
                 <field name="status" widget="badge" 
