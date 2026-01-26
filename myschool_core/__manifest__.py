@@ -16,7 +16,7 @@
     'author': 'MySchool OLVP',
     'website': 'https://www.yourcompany.com',
     'license': 'LGPL-3',
-    'depends': ['base', 'mail'],
+    'depends': ['base', 'mail','hr'],
     'data': [
         # Securityaccount_analytic_applicability
         'security/myschool_security.xml',

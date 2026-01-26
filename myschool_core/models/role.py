@@ -6,6 +6,8 @@ Role Model and Service for Odoo 19
 Role defines the various roles that persons can have in the system,
 such as EMPLOYEE, STUDENT, GUARDIAN, TEACHER, etc.
 
+Includes Odoo Group integration for automatic security group assignment.
+
 Converted from Java:
 - Role.java (Entity)
 - RoleDao.java (Repository)
@@ -13,7 +15,7 @@ Converted from Java:
 - RoleServiceImpl.java (Implementation)
 
 @author: Converted to Odoo 19
-@version: 0.1
+@version: 0.2
 """
 
 from odoo import models, fields, api, _
@@ -36,6 +38,10 @@ class Role(models.Model):
     - EMPLOYEE_PARTNER
     - EMPLOYEE_CHILD
     
+    Includes Odoo Group integration: when has_odoo_group is True and
+    odoo_group_id is set, users with this role will automatically be
+    added to the specified Odoo security group.
+    
     Equivalent to Java: Role.java + RoleServiceImpl.java
     """
     _name = 'myschool.role'
@@ -51,13 +57,13 @@ class Role(models.Model):
         string='Name',
         required=True,
         index=True,
-        help="Full name of the role"
+        help='Full name of the role'
     )
 
     shortname = fields.Char(
         string='Short Name',
         index=True,
-        help="Short code for the role (used in SAP systems)"
+        help='Short code for the role (used in SAP systems)'
     )
 
     # Role Type relation
@@ -66,7 +72,7 @@ class Role(models.Model):
         string='Role Type',
         ondelete='restrict',
         index=True,
-        help="Type/category of this role (BACKEND, SAP, UI)"
+        help='Type/category of this role (BACKEND, SAP, UI)'
     )
 
     role_type_name = fields.Char(
@@ -80,50 +86,78 @@ class Role(models.Model):
     has_ui_access = fields.Boolean(
         string='Has UI Access',
         default=True,
-        help="Whether this role grants access to the user interface"
+        help='Whether this role grants access to the user interface'
     )
 
     has_group = fields.Boolean(
         string='Has Group',
         default=False,
-        help="Whether this role requires Org creation per School"
+        help='Whether this role requires Org creation per School'
     )
 
     has_accounts = fields.Boolean(
         string='Has Accounts',
         default=False,
-        help="Whether this role requires account creation"
+        help='Whether this role requires account creation'
     )
 
     # Priority for account creation (highest priority role determines the account)
     priority = fields.Integer(
         string='Priority',
         default=0,
-        help="Priority determines which role is used for account creation in AD. Highest priority wins."
+        help='Priority determines which role is used for account creation in AD. '
+             'Highest priority wins. Also used for PERSON-TREE placement (lowest = highest priority).'
     )
 
     is_active = fields.Boolean(
         string='Active',
         default=True,
         index=True,
-        help="Whether this role is currently active"
+        help='Whether this role is currently active'
     )
 
     automatic_sync = fields.Boolean(
         string='Automatic Sync',
         default=True,
-        help="Whether this role should be automatically synchronized"
+        help='Whether this role should be automatically synchronized'
     )
 
     # Legacy field for migration
     old_id = fields.Char(
         string='Old ID',
-        help="ID from legacy system for migration purposes"
+        help='ID from legacy system for migration purposes'
     )
 
     description = fields.Text(
         string='Description',
-        help="Description of this role and its permissions"
+        help='Description of this role and its permissions'
+    )
+
+    # =========================================================================
+    # ODOO GROUP INTEGRATION FIELDS
+    # =========================================================================
+    
+    has_odoo_group = fields.Boolean(
+        string='Has Odoo Group',
+        default=False,
+        help='If enabled, employees with this role will be added to the linked Odoo security group'
+    )
+    
+    odoo_group_id = fields.Many2one(
+        'res.groups',
+        string='Odoo Group',
+        ondelete='set null',
+        index=True,
+        help='Odoo security group linked to this role. '
+             'Employees with this role will be added to this group.'
+    )
+    
+    odoo_group_name = fields.Char(
+        string='Odoo Group Name',
+        related='odoo_group_id.full_name',
+        readonly=True,
+        store=True,
+        help='Full name of the linked Odoo security group'
     )
 
     # =========================================================================
@@ -133,6 +167,31 @@ class Role(models.Model):
     _sql_constraints = [
         ('shortname_unique', 'UNIQUE(shortname)', 'Role short name must be unique!'),
     ]
+
+    @api.constrains('has_odoo_group', 'odoo_group_id')
+    def _check_odoo_group_consistency(self):
+        """Warn if has_odoo_group is True but no group is set."""
+        for record in self:
+            if record.has_odoo_group and not record.odoo_group_id:
+                _logger.warning(
+                    f'Role {record.name} has has_odoo_group=True but no odoo_group_id set'
+                )
+
+    # =========================================================================
+    # Onchange Methods
+    # =========================================================================
+    
+    @api.onchange('has_odoo_group')
+    def _onchange_has_odoo_group(self):
+        """Clear odoo_group_id when has_odoo_group is disabled."""
+        if not self.has_odoo_group:
+            self.odoo_group_id = False
+    
+    @api.onchange('odoo_group_id')
+    def _onchange_odoo_group_id(self):
+        """Set has_odoo_group when a group is selected."""
+        if self.odoo_group_id:
+            self.has_odoo_group = True
 
     # =========================================================================
     # Service Methods (from RoleServiceImpl.java)
@@ -235,6 +294,19 @@ class Role(models.Model):
             ('is_active', '=', is_active)
         ])
 
+    @api.model
+    def find_all_with_odoo_group(self) -> 'Role':
+        """
+        Find all Roles that have an Odoo group configured.
+        
+        @return: Recordset of Roles with Odoo groups
+        """
+        return self.search([
+            ('has_odoo_group', '=', True),
+            ('odoo_group_id', '!=', False),
+            ('is_active', '=', True)
+        ])
+
     def delete(self) -> bool:
         """
         Delete this Role.
@@ -245,7 +317,7 @@ class Role(models.Model):
         """
         self.ensure_one()
         # Check if role is used in any relations
-        PropRelation = self.env.get('myschool.prop.relation')
+        PropRelation = self.env.get('myschool.proprelation')
         if PropRelation:
             relations = PropRelation.search([('id_role', '=', self.id)], limit=1)
             if relations:
@@ -256,16 +328,13 @@ class Role(models.Model):
 
     @api.model
     def register_or_update_role(self, vals: dict) -> 'Role':
-
         """
-        TODO: 15-01-2026: method nodig.?  Volstaat gebruik van betask.create(vals)?
-
         Register a new Role or update an existing one.
         
         @param vals: Dictionary with role values
         @return: Created or updated Role
         """
-        shortname = vals.get('sapRoleShortName')
+        shortname = vals.get('shortname') or vals.get('sapRoleShortName')
         if not shortname:
             raise ValidationError(_("Role shortname is required"))
 
@@ -277,6 +346,133 @@ class Role(models.Model):
         else:
             return self.create(vals)
 
+    # =========================================================================
+    # Odoo Group Integration Actions
+    # =========================================================================
+
+    def action_sync_group_members(self):
+        """
+        Manual action to sync all employees with this role to the Odoo group.
+        Can be called from a button in the form view.
+        """
+        self.ensure_one()
+        
+        if not self.has_odoo_group or not self.odoo_group_id:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Info',
+                    'message': 'Deze rol heeft geen Odoo groep geconfigureerd.',
+                    'type': 'info',
+                }
+            }
+        
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        
+        # Find PPSBR type
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        
+        if not ppsbr_type:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Fout',
+                    'message': 'PPSBR PropRelationType niet gevonden.',
+                    'type': 'danger',
+                }
+            }
+        
+        # Find all active PPSBR with this role
+        ppsbr_records = PropRelation.search([
+            ('id_role', '=', self.id),
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('is_active', '=', True),
+            ('id_person', '!=', False)
+        ])
+        
+        added_count = 0
+        for ppsbr in ppsbr_records:
+            person = ppsbr.id_person
+            if person and person.odoo_user_id:
+                user = person.odoo_user_id
+                if self.odoo_group_id not in user.groups_id:
+                    user.write({'groups_id': [(4, self.odoo_group_id.id)]})
+                    added_count += 1
+        
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Succes',
+                'message': f'{added_count} gebruikers toegevoegd aan groep {self.odoo_group_id.full_name}.',
+                'type': 'success',
+            }
+        }
+    
+    def action_view_group_members(self):
+        """Action to view all users in the linked Odoo group."""
+        self.ensure_one()
+        
+        if not self.odoo_group_id:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Info',
+                    'message': 'Geen Odoo groep gekoppeld aan deze rol.',
+                    'type': 'info',
+                }
+            }
+        
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Gebruikers in {self.odoo_group_id.full_name}',
+            'res_model': 'res.users',
+            'view_mode': 'tree,form',
+            'domain': [('groups_id', 'in', [self.odoo_group_id.id])],
+            'target': 'current',
+        }
+
+    def action_remove_all_group_members(self):
+        """
+        Remove all users from this role's Odoo group.
+        Use with caution!
+        """
+        self.ensure_one()
+        
+        if not self.has_odoo_group or not self.odoo_group_id:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Info',
+                    'message': 'Deze rol heeft geen Odoo groep geconfigureerd.',
+                    'type': 'info',
+                }
+            }
+        
+        # Find all users in this group
+        users_in_group = self.env['res.users'].search([
+            ('groups_id', 'in', [self.odoo_group_id.id])
+        ])
+        
+        removed_count = 0
+        for user in users_in_group:
+            user.write({'groups_id': [(3, self.odoo_group_id.id)]})
+            removed_count += 1
+        
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Succes',
+                'message': f'{removed_count} gebruikers verwijderd uit groep {self.odoo_group_id.full_name}.',
+                'type': 'success',
+            }
+        }
 
     # =========================================================================
     # Person Role Methods (from RoleServiceImpl.java)
@@ -293,7 +489,7 @@ class Role(models.Model):
         @param exclude_roles: List of role names to exclude (e.g., ['EMPLOYEE_CHILD'])
         @return: Recordset of Roles
         """
-        PropRelation = self.env.get('myschool.prop.relation')
+        PropRelation = self.env.get('myschool.proprelation')
         if not PropRelation:
             _logger.warning("PropRelation model not found")
             return self.browse()
@@ -327,10 +523,10 @@ class Role(models.Model):
         @param person_id: ID of the person
         @return: Dictionary mapping role_id -> org_id
         """
-        PropRelation = self.env.get('myschool.prop.relation')
-        # if not PropRelation:
-        #     _logger.warning("PropRelation model not found")
-        #     return {}
+        PropRelation = self.env.get('myschool.proprelation')
+        if not PropRelation:
+            _logger.warning("PropRelation model not found")
+            return {}
         
         # Roles to exclude (from Java code)
         exclude_role_names = ['GUARDIAN', 'EMPLOYEE_PARTNER', 'EMPLOYEE_CHILD', 'STUDENT']
@@ -364,12 +560,12 @@ class Role(models.Model):
         @param person_id: ID of the person
         @return: Dictionary mapping role_id -> org_id for BACKEND roles
         """
-        PropRelation = self.env.get('myschool.prop.relation')
+        PropRelation = self.env.get('myschool.proprelation')
         RoleType = self.env.get('myschool.role.type')
         
-        # if not PropRelation or not RoleType:
-        #     _logger.warning("PropRelation or RoleType model not found")
-        #     return {}
+        if not PropRelation or not RoleType:
+            _logger.warning("PropRelation or RoleType model not found")
+            return {}
         
         # Get role types
         backend_role_type = RoleType.search([('name', '=', 'BACKEND')], limit=1)
@@ -426,6 +622,8 @@ class Role(models.Model):
                 'role_name': role.name,
                 'role_shortname': role.shortname,
                 'role_type': role.role_type_id.name if role.role_type_id else None,
+                'has_odoo_group': role.has_odoo_group,
+                'odoo_group_name': role.odoo_group_name,
                 'org_id': org_id,
                 'org_name': org.name if org else None,
                 'org_short_name': org.name_short if org and hasattr(org, 'name_short') else None,
@@ -454,6 +652,8 @@ class Role(models.Model):
                 name = f"{record.name} ({record.shortname})"
             if record.role_type_id:
                 name = f"[{record.role_type_id.name}] {name}"
+            if record.has_odoo_group:
+                name = f"{name} 🔐"
             if not record.is_active:
                 name = f"{name} [Inactive]"
             result.append((record.id, name))

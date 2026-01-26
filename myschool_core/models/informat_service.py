@@ -298,41 +298,16 @@ class InformatService(models.AbstractModel):
 
             
             # Analyze and create employee roles
-            # self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
+            #self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
 
-
-              # NEW: Analyze employee data and create employee DB tasks (ADD/UPD/DEACT)
-            if not self._analyze_informat_data_and_create_employee_db_tasks(
+            # NEW: Analyze employee data and create employee DB tasks (ADD/UPD/DEACT)
+            if not self._sync_employees(
                 all_imported_employees,
                 all_imported_employee_assignments
             ):
-                self._create_sys_error("SAPSYNC-900", "Error in _analyze_informat_data_and_create_employee_db_tasks")
+                self._create_sys_error("SAPSYNC-900", "Error in _sync_employees")
                 return False
 
-
-            # Process role tasks
-            # self._process_betasks('DB', 'ROLE', 'ADD')
-
-            # Analyze and create employee role-org relations
-            self._analyze_employee_assignments_and_create_role_org_relations(all_imported_employee_assignments)
-            
-            # Check again for manual role tasks
-            if self._check_manual_role_tasks():
-                return False
-            
-            self._process_betasks('ALL', 'ROLE', 'UPD')
-            
-            # Create required OUs for employees
-            ##self._process_betasks('LDAP', 'ORG', 'ADD')
-            
-            # Process employee tasks in order
-            self._process_betasks('DB', 'EMPLOYEE', 'ADD')
-            ##self._process_betasks('LDAP', 'EMPLOYEE', 'ADD')
-            self._process_betasks('DB', 'EMPLOYEE', 'UPD')
-            ##self._process_betasks('LDAP', 'EMPLOYEE', 'UPD')
-            self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
-            ##self._process_betasks('LDAP', 'EMPLOYEE', 'DEACT')
-            
             # =====================================================
             # PHASE 2: Student Processing
             # =====================================================
@@ -841,363 +816,629 @@ class InformatService(models.AbstractModel):
     # =========================================================================
 
     # =============================================================================
-    # INTEGRATION INSTRUCTIONS FOR informat_service.py
+    # EMPLOYEE SYNC TWO-PHASE EMPLOYEE SYNC APPROACH
     # =============================================================================
     #
-    # 1. Add the new method `_analyze_informat_data_and_create_employee_db_tasks`
-    #    to your InformatService class (after the existing analysis methods,
-    #    around line 1250)
+    # Phase 1: _sync_employee_persons()
+    #   - Synchronize Person objects based on all_imported_employee_data
+    #   - Creates ADD/UPD/DEACT tasks for Person records
     #
-    # 2. Update execute_sync() to call the new method (around line 307)
+    # Phase 2: _sync_employee_proprelations()
+    #   - For each ACTIVE employee in database
+    #   - Sync PropRelation objects based on all_imported_employee_assignments
+    #   - Creates ADD/UPD/DEACT tasks for PropRelation records
     #
     # =============================================================================
-
-    # -----------------------------------------------------------------------------
-    # STEP 1: Add this line in execute_sync() after line 307
-    #         (after _analyze_employee_assignments_and_create_role_org_relations)
-    # -----------------------------------------------------------------------------
-
-    """
-    In execute_sync(), after line 307, add:
-
-                # Analyze and create employee role-org relations
-                self._analyze_employee_assignments_and_create_role_org_relations(all_imported_employee_assignments)
-
-                # NEW: Analyze employee data and create employee DB tasks (ADD/UPD/DEACT)
-                if not self._analyze_informat_data_and_create_employee_db_tasks(
-                    all_imported_employees, 
-                    all_imported_employee_assignments
-                ):
-                    self._create_sys_error("SAPSYNC-900", "Error in _analyze_informat_data_and_create_employee_db_tasks")
-                    return False
-
-                # Check again for manual role tasks
-                if self._check_manual_role_tasks():
-                    return False
-    """
-
-    # -----------------------------------------------------------------------------
-    # STEP 2: Add this complete method to the InformatService class
-    #         (add it in the "Analysis and Task Creation Methods" section)
-    # -----------------------------------------------------------------------------
-
-    def _analyze_informat_data_and_create_employee_db_tasks(
+    def _sync_employees(
             self,
             all_imported_employee_data: Dict[str, str],
-            all_imported_employee_assignments: Optional[Dict[str, str]] = None
+            all_imported_employee_assignments: Dict[str, str]
     ) -> bool:
         """
-        Analyze imported Informat employee data and create Employee DB tasks.
+        Main employee synchronization method - two phase approach.
 
-        Equivalent to Java: AnalyzeInformatDataAndCreateEmployeeDbTasks()
+        Phase 1: Sync Person objects (ADD/UPD/DEACT)
+        Phase 2: Sync PPSBR PropRelation objects for active employees
+
+        @param all_imported_employee_data: Dict with personId&instNr as key, employee JSON as value
+        @param all_imported_employee_assignments: Dict with personId&instNr as key, assignment JSON as value
+        @return: True if successful
+        """
+        procedure_name = '_sync_employees'
+        self._create_sys_event("BETASK-001", f"{procedure_name} started")
+
+        try:
+            # =====================================================
+            # PHASE 1: Sync Person Objects
+            # =====================================================
+            self._create_sys_event("BETASK-001", "Phase 1: Syncing Person objects")
+
+            if not self._sync_employee_persons(all_imported_employee_data):
+                self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 1 (Person sync)")
+                return False
+
+            # Process Person tasks before Phase 2
+            self._process_betasks('DB', 'EMPLOYEE', 'ADD')
+            self._process_betasks('DB', 'EMPLOYEE', 'UPD')
+            self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
+
+            # =====================================================
+            # PHASE 2: Sync PPSBR PropRelation Objects
+            # =====================================================
+            self._create_sys_event("BETASK-001", "Phase 2: Syncing PPSBR PropRelation objects")
+
+            if not self._sync_employee_proprelations(all_imported_employee_assignments):
+                self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 2 (PPSBR sync)")
+                return False
+
+            # Process PropRelation tasks
+            # The processor will create PPSBR records and determine PERSON-TREE positions
+            self._process_betasks('DB', 'PROPRELATION', 'ADD')
+            self._process_betasks('DB', 'PROPRELATION', 'UPD')
+            self._process_betasks('DB', 'PROPRELATION', 'DEACT')
+
+            self._create_sys_event("BETASK-001", f"{procedure_name} completed successfully")
+            return True
+
+        except Exception as e:
+            self._create_sys_error("BETASK-900", f"{procedure_name}: {traceback.format_exc()}")
+            return False
+
+    # =========================================================================
+    # PHASE 1: Person Synchronization
+    # =========================================================================
+
+    def _sync_employee_persons(self, all_imported_employee_data: Dict[str, str]) -> bool:
+        """
+        Phase 1: Synchronize Person objects based on imported employee data.
 
         Logic:
-        - Loop through imported employee data
-        - Check if person exists in database
-        - Create ADD tasks for new employees
-        - Create UPDATE tasks for existing employees with changes
-        - Create DEACT tasks for employees to be deactivated
-        - Handle reactivation scenarios
+        - Loop through imported employees
+        - For each unique person (by sap_person_uuid):
+          - If not in DB and pension_date OK: CREATE (ADD task)
+          - If in DB: compare and UPDATE if changed (UPD task)
+          - If in DB but should be deactivated: DEACT task
+        - For persons in DB but not in import: DEACT task
 
-        @param all_imported_employee_data: Dict with personId&instNr as key and JSON string as value
-        @param all_imported_employee_assignments: Dict with assignment data (optional)
-        @return: True if successful, False if errors occurred
+        @param all_imported_employee_data: Dict with personId&instNr as key, employee JSON as value
+        @return: True if successful
         """
-        procedure_name = '_analyze_informat_data_and_create_employee_db_tasks'
+        procedure_name = '_sync_employee_persons'
 
-        # [CHECK IF PARAMETERS ARE OK]
         if not all_imported_employee_data:
-            self._create_sys_error("BETASK-900", f"{procedure_name}: parameter is empty", "ERROR-BLOCKING")
+            self._create_sys_error("BETASK-900", f"{procedure_name}: parameter is empty")
             return False
 
         self._create_sys_event("BETASK-001", f"{procedure_name} started")
 
         try:
-            # [GLOBAL VARIABLES]
             Person = self.env['myschool.person']
             PersonDetails = self.env['myschool.person.details']
 
-            # Map of employees added during this loop: {person_uuid: inst_nr}
-            added_employees: Dict[str, str] = {}
-
-            # Date formatter for comparisons
-            date_format = '%Y-%m-%dT%H:%M:%S'
             today = datetime.now().date()
 
-            # 1. Loop through the entries in all_imported_employee_data
-            for employee_key, employee_value in all_imported_employee_data.items():
-                self._create_sys_event("BETASK-001", f"Key={employee_key}, Value={employee_value[:100]}...")
+            # Track processed person UUIDs to detect persons to deactivate
+            processed_person_uuids = set()
 
-                # Parse the key: EmployeeID&InstNR
+            # Track persons added in this run (to handle multiple instNrs)
+            added_persons = {}  # {person_uuid: first_inst_nr}
+
+            # =====================================================
+            # Process each imported employee
+            # =====================================================
+            for employee_key, employee_value in all_imported_employee_data.items():
+
+                # Parse key: personId&instNr
                 key_parts = employee_key.split('&')
                 if len(key_parts) != 2:
-                    self._create_sys_error("BETASK-900", f"{procedure_name}: Invalid key format: {employee_key}")
+                    self._create_sys_event("BETASK-900", f"Invalid key format: {employee_key}")
                     continue
 
-                employee_id = key_parts[0]  # Person UUID from SAP
-                employee_inst_nr = key_parts[1]  # Institution number
+                person_uuid = key_parts[0]
+                inst_nr = key_parts[1]
 
-                # Convert employee_value to a dict
-                employee_imported = json.loads(employee_value)
-                employee_imported['instNr'] = employee_inst_nr
+                # Parse employee JSON
+                employee_json = json.loads(employee_value)
+                employee_json['instNr'] = inst_nr
 
-                # Get key fields for decision logic
-                is_active = employee_imported.get('isActive', True)
-                pension_date_str = employee_imported.get('pensioendatum')
-                is_overleden = employee_imported.get('isOverleden', False)
+                # Get key fields
+                is_active_import = employee_json.get('isActive', True)
+                pension_date = self._parse_date_safe(employee_json.get('pensioendatum'))
+                is_overleden = employee_json.get('isOverleden', False)
 
-                # Parse pension date
-                pension_date = None
-                if pension_date_str and pension_date_str != 'null':
-                    try:
-                        pension_date = datetime.strptime(pension_date_str, date_format).date()
-                    except (ValueError, TypeError):
-                        pension_date = None
+                # Track this person UUID
+                processed_person_uuids.add(person_uuid)
 
-                # Build employee JSON with instNr
-                employee_value_json = json.loads(employee_value)
-                employee_value_json['instNr'] = employee_inst_nr
+                # Check if person exists in database
+                person_in_db = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
 
-                # Get assignments for this employee and instNr
-                assignments_in_import = []
-                if all_imported_employee_assignments:
-                    for assignment_key, assignment_value in all_imported_employee_assignments.items():
-                        if employee_key in assignment_key:  # Match on personId&InstNr
-                            assignment_details = json.loads(assignment_value)
-                            assignment_details['instNr'] = employee_inst_nr
-                            assignments_in_import.append(assignment_details)
-
-                imported_assignment_count = len(assignments_in_import)
-
-                # Add assignments to the employee JSON
-                employee_value_json['assignments'] = assignments_in_import
-
-                # 1.1 Check if there are already corresponding Person objects in the database
-                persons_in_db = Person.search([('sap_person_uuid', '=', employee_id)])
-
-                # 1.2 If person is NOT in DB and pension date is null or in the future
-                if not persons_in_db:
+                # =====================================================
+                # SCENARIO 1: Person NOT in database
+                # =====================================================
+                if not person_in_db:
+                    # Check if pension date allows creation
                     pension_ok = pension_date is None or pension_date > today
 
-                    if pension_ok:
-                        # If the person was not added earlier in this loop (for another InstNr/Org)
-                        if employee_id not in added_employees:
-                            # ADD-NEW: Create a new person object
+                    if pension_ok and is_active_import and not is_overleden:
+                        # Check if already added in this run (for another instNr)
+                        if person_uuid not in added_persons:
+                            # CREATE: New person
                             self._create_betask(
                                 'DB', 'EMPLOYEE', 'ADD',
-                                json.dumps(employee_value_json),
+                                json.dumps(employee_json),
                                 None
                             )
-                            added_employees[employee_id] = employee_inst_nr
-                            continue
+                            added_persons[person_uuid] = inst_nr
+                            self._create_sys_event("BETASK-001", f"ADD task created for new person: {person_uuid}")
                         else:
-                            # ADD-PROPR: Person was added earlier, add properties for new instNr
-                            # Check if this person-InstNr combination was not processed earlier
-                            if added_employees.get(employee_id) != employee_inst_nr:
-                                data2_json = {'action': 'ADD-PROPR'}
-                                self._create_betask(
-                                    'DB', 'EMPLOYEE', 'UPD',
-                                    json.dumps(employee_value_json),
-                                    json.dumps(data2_json)
-                                )
-                                added_employees[employee_id] = employee_inst_nr
+                            # Person already added, just need to create PersonDetails
+                            # This will be handled by the UPD task with ADD-DETAILS action
+                            data2 = {'action': 'ADD-DETAILS', 'instNr': inst_nr}
+                            self._create_betask(
+                                'DB', 'EMPLOYEE', 'UPD',
+                                json.dumps(employee_json),
+                                json.dumps(data2)
+                            )
                     continue
 
-                elif len(persons_in_db) == 1:
-                    # Person exists once in DB - check for updates/deactivation/reactivation
-                    person_in_db = persons_in_db[0]
+                # =====================================================
+                # SCENARIO 2: Person EXISTS in database
+                # =====================================================
+                person_is_active_db = person_in_db.is_active
 
-                    """
-                    Update scenarios:
-                    - Add hoofdambt (null to X): via update task
-                    - Add assignments (from null to X): via update task
-                    - Change hoofdambt and/or assignment: via update
-                    - Assignments (X to null): via deact task
-                    - Hoofdambt (X to null): via deact task
-                    - Pension date in import not in future: deact task
-                    - Pension date in db in past, pension date in import null or in future: reactivate
-                    - IsActive in db = true/null and in import = false: deactivate
-                    - IsActive in db = false and in import = null or true: reactivate
-                    - IsOverleden in dB == null (EndDate != null) and in import = true: deactivate
-                    """
+                # Check for PersonDetails for this instNr
+                person_details = PersonDetails.search([
+                    ('person_id', '=', person_in_db.id),
+                    ('extra_field_1', '=', inst_nr)
+                ], limit=1)
 
-                    # Find PersonDetails for this person and instNr
-                    person_details_list = PersonDetails.search([
-                        ('person_id', '=', person_in_db.id),
-                        ('extra_field_1', '=', employee_inst_nr),  # instNr stored in extra_field_1
-                        ('is_active', '=', True)
-                    ])
+                # -----------------------------------------------------
+                # SCENARIO 2a: Should DEACTIVATE
+                # -----------------------------------------------------
+                should_deactivate = (
+                        (not is_active_import) or
+                        (is_overleden) or
+                        (pension_date and pension_date <= today)
+                )
 
-                    if len(person_details_list) == 0:
-                        # Employee exists in db but not yet for this instNr -> add instNr
-                        data2_json = {'action': 'ADD-PROPR'}
-                        self._create_betask(
-                            'DB', 'EMPLOYEE', 'UPD',
-                            json.dumps(employee_value_json),
-                            json.dumps(data2_json)
-                        )
-                        added_employees[employee_id] = employee_inst_nr
-                        continue
-
-                    elif len(person_details_list) == 1:
-                        # Exists and has an active PersonDetails record for this instNr
-                        person_details = person_details_list[0]
-                    else:
-                        # Has > 1 active PersonDetails record for this instNr -> error
-                        self._create_sys_error(
-                            "BETASK-900",
-                            f"{procedure_name}: PersonDetails != 1 for {employee_value}",
-                            "ERROR-BLOCKING"
-                        )
-                        continue
-
-                    # Get pension date currently stored in database
-                    full_json_data_in_db = {}
-                    pension_date_in_db = None
-                    if person_details.full_json_string:
-                        try:
-                            full_json_data_in_db = json.loads(person_details.full_json_string)
-                            pension_date_str_db = full_json_data_in_db.get('pensioendatum')
-                            if pension_date_str_db and pension_date_str_db != 'null':
-                                pension_date_in_db = datetime.strptime(pension_date_str_db, date_format).date()
-                        except (json.JSONDecodeError, ValueError, TypeError):
-                            pass
-
-                    # Get assignments currently in database
-                    assignments_in_db = []
-                    current_assignment_count = 0
-                    if person_details.assignments:
-                        try:
-                            assignments_in_db = json.loads(person_details.assignments)
-                            current_assignment_count = len(assignments_in_db)
-                        except json.JSONDecodeError:
-                            pass
-
-                    # Compare the full JSON strings - if not equal, update the employee
-                    current_person_details_json = {}
-                    if person_details.full_json_string:
-                        try:
-                            current_person_details_json = json.loads(person_details.full_json_string)
-                        except json.JSONDecodeError:
-                            pass
-
-                    new_person_details_json = json.loads(employee_value)
-                    new_person_details_json['assignments'] = assignments_in_db
-                    new_person_details_json['instNr'] = employee_inst_nr
-
-                    if json.dumps(current_person_details_json, sort_keys=True) != json.dumps(new_person_details_json,
-                                                                                             sort_keys=True):
-                        data2_json = {'action': 'UPDATE'}
-                        self._create_betask(
-                            'DB', 'EMPLOYEE', 'UPD',
-                            json.dumps(employee_value_json),
-                            json.dumps(data2_json)
-                        )
-                        continue
-
-                    # Check for DEACTIVATION conditions
-                    should_deactivate = False
-
-                    # Get values for comparison
-                    person_is_active_db = getattr(person_in_db, 'is_active', True)
-                    person_end_date_db = getattr(person_in_db, 'end_date', None)
-                    hoofd_ambt_db = getattr(person_details, 'hoofd_ambt', None)
-                    hoofd_ambt_import = employee_value_json.get('hoofdAmbt')
-                    is_active_import_str = str(employee_value_json.get('isActive', '')).lower()
-
-                    # Deactivation conditions
-                    if (
-                            (person_is_active_db and not is_active) or  # IsActive in db = true and in import = false
-                            (person_end_date_db is None and is_overleden) or  # IsOverleden in import = true
-                            (person_is_active_db and is_active_import_str == 'false') or  # IsActive string check
-                            (
-                                    person_is_active_db and pension_date and pension_date <= today) or  # Pension date not in future
-                            (current_assignment_count > 0 and imported_assignment_count == 0) or  # Assignments X to 0
-                            (hoofd_ambt_db and not hoofd_ambt_import)  # Hoofdambt X to null
-                    ):
-                        should_deactivate = True
-
-                    if should_deactivate:
-                        new_employee_details_json = json.loads(employee_value)
-                        new_employee_details_json['instNr'] = employee_inst_nr
-                        self._create_betask(
-                            'DB', 'EMPLOYEE', 'DEACT',
-                            json.dumps(new_employee_details_json),
-                            None
-                        )
-                        continue
-
-                    # Check for REACTIVATION conditions
-                    should_reactivate = False
-
-                    if (
-                            (not person_is_active_db and pension_date is None) or  # Person inactive, no pension date
-                            (
-                                    pension_date_in_db and pension_date_in_db < today and pension_date_str == 'null') or  # Pension in past, import null
-                            (
-                                    pension_date_in_db and pension_date_in_db < today and pension_date and pension_date > today) or  # Pension in past, import in future
-                            (not person_is_active_db and is_active_import_str in ('false', 'null', ''))
-                    # IsActive db=false, import=null/true
-                    ):
-                        should_reactivate = True
-
-                    if should_reactivate:
-                        data2_json = {'action': 'REACTIVATE'}
-                        self._create_betask(
-                            'DB', 'EMPLOYEE', 'UPD',
-                            json.dumps(employee_value_json),
-                            json.dumps(data2_json)
-                        )
-                        added_employees[employee_id] = employee_inst_nr
-
-                elif len(persons_in_db) > 1:
-                    # Multiple persons found with same UUID - error
-                    self._create_sys_error(
-                        "BETASK-900",
-                        f"{procedure_name}: {persons_in_db[0].sap_person_uuid} is more than one time in the database.",
-                        "ERROR-BLOCKING"
+                if should_deactivate and person_is_active_db:
+                    self._create_betask(
+                        'DB', 'EMPLOYEE', 'DEACT',
+                        json.dumps(employee_json),
+                        None
                     )
+                    self._create_sys_event("BETASK-001", f"DEACT task created for: {person_uuid}")
+                    continue
 
+                # -----------------------------------------------------
+                # SCENARIO 2b: Should REACTIVATE
+                # -----------------------------------------------------
+                should_reactivate = (
+                        not person_is_active_db and
+                        is_active_import and
+                        not is_overleden and
+                        (pension_date is None or pension_date > today)
+                )
+
+                if should_reactivate:
+                    data2 = {'action': 'REACTIVATE'}
+                    self._create_betask(
+                        'DB', 'EMPLOYEE', 'UPD',
+                        json.dumps(employee_json),
+                        json.dumps(data2)
+                    )
+                    self._create_sys_event("BETASK-001", f"REACTIVATE task created for: {person_uuid}")
+                    continue
+
+                # -----------------------------------------------------
+                # SCENARIO 2c: No PersonDetails for this instNr - ADD-DETAILS
+                # -----------------------------------------------------
+                if not person_details:
+                    data2 = {'action': 'ADD-DETAILS', 'instNr': inst_nr}
+                    self._create_betask(
+                        'DB', 'EMPLOYEE', 'UPD',
+                        json.dumps(employee_json),
+                        json.dumps(data2)
+                    )
+                    self._create_sys_event("BETASK-001",
+                                           f"ADD-DETAILS task created for: {person_uuid}, instNr: {inst_nr}")
+                    continue
+
+                # -----------------------------------------------------
+                # SCENARIO 2d: Compare and UPDATE if changed
+                # -----------------------------------------------------
+                if person_details and person_details.full_json_string:
+                    try:
+                        current_json = json.loads(person_details.full_json_string)
+                        # Remove fields that shouldn't trigger update
+                        compare_current = {k: v for k, v in current_json.items()
+                                           if k not in ['instNr', 'assignments']}
+                        compare_new = {k: v for k, v in employee_json.items()
+                                       if k not in ['instNr', 'assignments']}
+
+                        if compare_current != compare_new:
+                            data2 = {'action': 'UPDATE'}
+                            self._create_betask(
+                                'DB', 'EMPLOYEE', 'UPD',
+                                json.dumps(employee_json),
+                                json.dumps(data2)
+                            )
+                            self._create_sys_event("BETASK-001", f"UPDATE task created for: {person_uuid}")
+                    except json.JSONDecodeError:
+                        # If we can't parse, update anyway
+                        data2 = {'action': 'UPDATE'}
+                        self._create_betask(
+                            'DB', 'EMPLOYEE', 'UPD',
+                            json.dumps(employee_json),
+                            json.dumps(data2)
+                        )
+
+            # =====================================================
+            # Check for persons to DEACTIVATE (in DB but not in import)
+            # =====================================================
+            # Only check employees that are synced automatically
+            active_synced_persons = Person.search([
+                ('is_active', '=', True),
+                ('automatic_sync', '=', True),
+                ('person_type_id.name', '=', 'EMPLOYEE')  # Only employees
+            ])
+
+            for person in active_synced_persons:
+                if person.sap_person_uuid and person.sap_person_uuid not in processed_person_uuids:
+                    # Person is in DB but not in import - deactivate
+                    deact_data = {
+                        'personId': person.sap_person_uuid,
+                        'reason': 'Not in import'
+                    }
+                    self._create_betask(
+                        'DB', 'EMPLOYEE', 'DEACT',
+                        json.dumps(deact_data),
+                        None
+                    )
+                    self._create_sys_event("BETASK-001",
+                                           f"DEACT task created for person not in import: {person.sap_person_uuid}")
+
+            self._create_sys_event("BETASK-001", f"{procedure_name} completed")
             return True
 
         except Exception as e:
-            self._create_sys_error(
-                "BETASK-900",
-                f"{procedure_name}: {traceback.format_exc()}",
-                "ERROR-BLOCKING"
-            )
+            self._create_sys_error("BETASK-900", f"{procedure_name}: {traceback.format_exc()}")
             return False
 
-    # =============================================================================
-    # FIELD MAPPING NOTES
-    # =============================================================================
-    #
-    # This method assumes the following field names in your Odoo models.
-    # Adjust if your models use different field names:
-    #
-    # myschool.person model:
-    #   - sap_person_uuid: The SAP person UUID (string)
-    #   - is_active: Boolean field for active status
-    #   - end_date: Date field for person end date
-    #
-    # myschool.person.details model:
-    #   - person_id: Many2one to myschool.person
-    #   - extra_field_1: Stores the institution number (instNr)
-    #   - is_active: Boolean field for active status
-    #   - full_json_string: Text field storing the complete JSON data
-    #   - assignments: Text field storing assignments as JSON array
-    #   - hoofd_ambt: Field for main position (hoofdambt)
-    #
-    # If your field names differ, update the following in the method:
-    #   - Person.search([('sap_person_uuid', '=', employee_id)])
-    #   - PersonDetails.search([('person_id', '=', ...), ('extra_field_1', '=', ...), ...])
-    #   - getattr(person_in_db, 'is_active', True)
-    #   - getattr(person_in_db, 'end_date', None)
-    #   - person_details.full_json_string
-    #   - person_details.assignments
-    #   - getattr(person_details, 'hoofd_ambt', None)
-    #
-    # =============================================================================
+    # =========================================================================
+    # PHASE 2: PropRelation Synchronization
+    # =========================================================================
+
+    # =========================================================================
+    # PropRelation Type Constants (add to class level)
+    # =========================================================================
+
+    PROPRELATION_TYPE_PERSON_TREE = 'PERSON-TREE'
+    PROPRELATION_TYPE_PPSBR = 'PPSBR'
+    PROPRELATION_TYPE_SR_BR = 'SR-BR'
+    PROPRELATION_TYPE_BRSO = 'BRSO'
+
+    # =========================================================================
+    # PHASE 2: PropRelation Synchronization (UPDATED)
+    # =========================================================================
+
+    def _sync_employee_proprelations(self, all_imported_employee_assignments: Dict[str, str]) -> bool:
+        """
+        Phase 2: Synchronize PropRelation objects (PPSBR) for active employees.
+
+        Creates PPSBR (Person-Period-School-BackendRole) records based on assignments.
+        The BeTask processor will then determine the PERSON-TREE position.
+
+        Logic:
+        - Get all ACTIVE employees from database
+        - For each active employee:
+          - Get their assignments from the import
+          - Compare with existing PPSBR PropRelations
+          - CREATE new PPSBR for new assignments
+          - DEACTIVATE PPSBR for removed assignments
+
+        @param all_imported_employee_assignments: Dict with personId&instNr as key, assignment JSON as value
+        @return: True if successful
+        """
+        procedure_name = '_sync_employee_proprelations'
+
+        self._create_sys_event("BETASK-001", f"{procedure_name} started")
+
+        try:
+            Person = self.env['myschool.person']
+            PropRelation = self.env['myschool.proprelation']
+            PropRelationType = self.env['myschool.proprelation.type']
+            Org = self.env['myschool.org']
+            Role = self.env['myschool.role']
+            Period = self.env['myschool.period']
+
+            # -----------------------------------------------------------------
+            # Get PropRelation types
+            # -----------------------------------------------------------------
+
+            # PPSBR: Person-Period-School-BackendRole
+            ppsbr_type = PropRelationType.search([
+                ('name', '=', self.PROPRELATION_TYPE_PPSBR)
+            ], limit=1)
+
+            if not ppsbr_type:
+                self._create_sys_event("BETASK-001", f"Creating PPSBR PropRelationType")
+                ppsbr_type = PropRelationType.create({
+                    'name': self.PROPRELATION_TYPE_PPSBR,
+                    'usage': 'Person-Period-School-BackendRole relation',
+                    'is_active': True
+                })
+
+            # SR-BR: SapRole to BackendRole mapping
+            sr_br_type = PropRelationType.search([
+                ('name', '=', self.PROPRELATION_TYPE_SR_BR)
+            ], limit=1)
+
+            # Get current active period
+            current_period = Period.search([('is_active', '=', True)], limit=1)
+
+            # -----------------------------------------------------------------
+            # Build lookup dict for assignments by personId
+            # Structure: {personId: {instNr: [assignment1, assignment2, ...]}}
+            # -----------------------------------------------------------------
+            assignments_by_person = {}
+
+            if all_imported_employee_assignments:
+                for assignment_key, assignment_value in all_imported_employee_assignments.items():
+                    key_parts = assignment_key.split('&')
+                    if len(key_parts) != 2:
+                        continue
+
+                    person_uuid = key_parts[0]
+                    inst_nr = key_parts[1]
+
+                    assignment_json = json.loads(assignment_value)
+                    assignment_json['instNr'] = inst_nr
+
+                    if person_uuid not in assignments_by_person:
+                        assignments_by_person[person_uuid] = {}
+
+                    if inst_nr not in assignments_by_person[person_uuid]:
+                        assignments_by_person[person_uuid][inst_nr] = []
+
+                    assignments_by_person[person_uuid][inst_nr].append(assignment_json)
+
+            self._create_sys_event("BETASK-001",
+                                   f"Loaded assignments for {len(assignments_by_person)} persons")
+
+            # -----------------------------------------------------------------
+            # Process each ACTIVE employee in database
+            # -----------------------------------------------------------------
+            active_employees = Person.search([
+                ('is_active', '=', True),
+                ('automatic_sync', '=', True),
+                ('person_type_id.name', '=', 'EMPLOYEE')
+            ])
+
+            self._create_sys_event("BETASK-001",
+                                   f"Processing {len(active_employees)} active employees")
+
+            for person in active_employees:
+                person_uuid = person.sap_person_uuid
+
+                if not person_uuid:
+                    continue
+
+                # Get imported assignments for this person
+                imported_assignments = assignments_by_person.get(person_uuid, {})
+
+                # Get existing active PPSBR PropRelations for this person
+                existing_ppsbr = PropRelation.search([
+                    ('id_person', '=', person.id),
+                    ('proprelation_type_id', '=', ppsbr_type.id),
+                    ('is_active', '=', True),
+                    ('automatic_sync', '=', True)
+                ])
+
+                # Track which PPSBR we've processed (to detect ones to deactivate)
+                processed_ppsbr_keys = set()
+
+                # -----------------------------------------------------
+                # Process imported assignments
+                # -----------------------------------------------------
+                for inst_nr, assignments in imported_assignments.items():
+                    # Find the school org for this instNr
+                    school_org = Org.search([
+                        ('inst_nr', '=', inst_nr),
+                        ('is_active', '=', True),
+                        ('org_type_id.name', '=', 'SCHOOL')
+                    ], limit=1)
+
+                    if not school_org:
+                        school_org = Org.search([
+                            ('inst_nr', '=', inst_nr),
+                            ('is_active', '=', True)
+                        ], limit=1)
+
+                    for assignment in assignments:
+                        # Get role info from assignment
+                        hoofd_ambt_code = assignment.get('ambtCode', '')
+                        hoofd_ambt_name = assignment.get('ambt', '')
+
+                        if not hoofd_ambt_code:
+                            continue
+
+                        # Find the SAP Role
+                        sap_role = Role.search([('shortname', '=', hoofd_ambt_code)], limit=1)
+
+                        # Find Backend Role via SR-BR relation
+                        be_role = None
+                        if sap_role and sr_br_type:
+                            sr_br_relation = PropRelation.search([
+                                ('id_role', '=', sap_role.id),
+                                ('proprelation_type_id', '=', sr_br_type.id),
+                                ('is_active', '=', True)
+                            ], limit=1)
+
+                            if sr_br_relation and sr_br_relation.id_role_parent:
+                                be_role = sr_br_relation.id_role_parent
+
+                        # Use Backend Role if found, otherwise SAP Role
+                        role_to_use = be_role if be_role else sap_role
+
+                        if not role_to_use:
+                            continue
+
+                        # Create unique key for this PPSBR
+                        # Key: person_id + org_id + role_id + period_id
+                        period_id = current_period.id if current_period else ''
+                        ppsbr_key = f"{person.id}_{school_org.id if school_org else ''}_{role_to_use.id}_{period_id}"
+                        processed_ppsbr_keys.add(ppsbr_key)
+
+                        # Check if PPSBR already exists
+                        search_domain = [
+                            ('id_person', '=', person.id),
+                            ('proprelation_type_id', '=', ppsbr_type.id),
+                            ('id_role', '=', role_to_use.id),
+                            ('is_active', '=', True)
+                        ]
+                        if school_org:
+                            search_domain.append(('id_org', '=', school_org.id))
+                        if current_period:
+                            search_domain.append(('id_period', '=', current_period.id))
+
+                        existing_ppsbr_record = PropRelation.search(search_domain, limit=1)
+
+                        if not existing_ppsbr_record:
+                            # CREATE new PPSBR via BeTask
+                            proprel_data = {
+                                'personId': person_uuid,
+                                'person_db_id': person.id,
+                                'instNr': inst_nr,
+                                'orgId': school_org.id if school_org else None,
+                                'roleCode': hoofd_ambt_code,
+                                'roleName': hoofd_ambt_name,
+                                'roleId': role_to_use.id,
+                                'sapRoleId': sap_role.id if sap_role else None,
+                                'beRoleId': be_role.id if be_role else None,
+                                'periodId': current_period.id if current_period else None,
+                                'assignment': assignment
+                            }
+                            self._create_betask(
+                                'DB', 'PROPRELATION', 'ADD',
+                                json.dumps(proprel_data),
+                                None
+                            )
+                            self._create_sys_event("BETASK-001",
+                                                   f"PPSBR ADD task for {person.name} - {hoofd_ambt_code} - {inst_nr}")
+
+                # -----------------------------------------------------
+                # Deactivate PPSBR not in import
+                # -----------------------------------------------------
+                for ppsbr in existing_ppsbr:
+                    # Build key from existing record
+                    period_id = ppsbr.id_period.id if ppsbr.id_period else ''
+                    existing_key = f"{ppsbr.id_person.id}_{ppsbr.id_org.id if ppsbr.id_org else ''}_{ppsbr.id_role.id if ppsbr.id_role else ''}_{period_id}"
+
+                    if existing_key not in processed_ppsbr_keys:
+                        # This PPSBR is no longer in import - deactivate
+                        deact_data = {
+                            'proprelation_id': ppsbr.id,
+                            'personId': person_uuid,
+                            'reason': 'Assignment removed from import'
+                        }
+                        self._create_betask(
+                            'DB', 'PROPRELATION', 'DEACT',
+                            json.dumps(deact_data),
+                            None
+                        )
+                        self._create_sys_event("BETASK-001",
+                                               f"PPSBR DEACT task for {person.name}, ppsbr_id: {ppsbr.id}")
+
+            self._create_sys_event("BETASK-001", f"{procedure_name} completed")
+            return True
+
+        except Exception as e:
+            self._create_sys_error("BETASK-900", f"{procedure_name}: {traceback.format_exc()}")
+            return False
+
+    # =========================================================================
+    # Helper: Safe Date Parsing
+    # =========================================================================
+
+    def _parse_date_safe(self, date_string: str):
+        """
+        Safely parse a date string trying multiple formats.
+
+        @param date_string: Date string to parse
+        @return: date object or None if parsing fails
+        """
+        if not date_string or date_string in ('null', 'None', ''):
+            return None
+
+        date_formats = [
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M:%S.%f',
+            '%Y-%m-%dT%H:%M:%SZ',
+            '%Y-%m-%d',
+            '%d-%m-%Y',
+            '%d/%m/%Y',
+        ]
+
+        for fmt in date_formats:
+            try:
+                return datetime.strptime(date_string, fmt).date()
+            except (ValueError, TypeError):
+                continue
+
+        _logger.warning(f"Could not parse date: {date_string}")
+        return None
+
+# =============================================================================
+# UPDATE execute_sync() TO USE NEW METHOD
+# =============================================================================
+#
+# Replace the call to _analyze_informat_data_and_create_employee_db_tasks with:
+#
+#     # =====================================================
+#     # PHASE 1 & 2: Employee Processing (two-phase approach)
+#     # =====================================================
+#
+#     # Get Employee related information
+#     all_imported_employees = self._get_employees_from_informat('', dev_mode)
+#     all_imported_employee_assignments = self._get_employee_assignments_from_informat(dev_mode)
+#
+#     if all_imported_employees is None:
+#         self._create_sys_error("SAPSYNC-900", "Error in getEmployeesFromInformat")
+#         return False
+#
+#     if all_imported_employee_assignments is None:
+#         self._create_sys_error("SAPSYNC-900", "Error in getEmployeeAssignmentsFromInformat")
+#         return False
+#
+#     # Two-phase employee sync
+#     if not self._sync_employees(all_imported_employees, all_imported_employee_assignments):
+#         self._create_sys_error("SAPSYNC-900", "Error in _sync_employees")
+#         return False
+#
+# =============================================================================
+
+# =============================================================================
+# BETASK TYPES NEEDED
+# =============================================================================
+#
+# Make sure these BeTaskTypes exist in your database:
+#
+# | Target | Object       | Action |
+# |--------|--------------|--------|
+# | DB     | EMPLOYEE     | ADD    |
+# | DB     | EMPLOYEE     | UPD    |
+# | DB     | EMPLOYEE     | DEACT  |
+# | DB     | PROPRELATION | ADD    |
+# | DB     | PROPRELATION | UPD    |
+# | DB     | PROPRELATION | DEACT  |
+#
+# =============================================================================
+
+
+
+
+
 
 
 
@@ -1735,10 +1976,12 @@ class InformatService(models.AbstractModel):
                 json_data = json.loads(data)
 
 
-                if task_type.display_name == "DB_EMPLOYEE_ADD":
+                if task_type.object == "EMPLOYEE":
                    taskname = action + " " + obj + ": " + json_data["sortName"]
-                else:
+                elif task_type.object == "ROLE":
                     taskname = action + " " + obj + ": " + json_data["name"]
+                elif task_type.object == "PROPRELATION":
+                    taskname = action + " " + obj + ": " + str(json_data["person_db_id"])   #todo: naam aanpassen
 
                 vals = {
                     self.BETASK_TYPE_FIELD: task_type.id,

@@ -40,4 +40,5 @@ class PropRelation(models.Model):
     is_master = fields.Boolean(string='Is Master Relatie', default=False)
     is_active = fields.Boolean(string='Actief', default=True)
     start_date = fields.Datetime(string='Startdatum')
+    end_date = fields.Datetime(string='Einddatum')
     automatic_sync = fields.Boolean(string='Auto Sync', default=True, required=True)

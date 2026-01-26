@@ -27,3 +27,4 @@ class PersonDetails(models.Model):
 
     hoofd_ambt = fields.Char(string='Hoofd Ambt')
     extra_field_1 = fields.Char(string='Extra Veld 1 / InstNr') # Mapped from extraField1 in Java
+    is_active = fields.Boolean(string='Is Actief', default=False)

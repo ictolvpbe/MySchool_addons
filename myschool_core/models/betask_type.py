@@ -29,6 +29,7 @@ class BeTaskType(models.Model):
     target = fields.Selection(
         selection=[
             ('DB', 'Database'),
+            ('ODOO', 'Odoo'),
             ('LDAP', 'LDAP/Active Directory'),
             ('AD', 'Active Directory'),
             ('CLOUD', 'Cloud Service'),
@@ -47,11 +48,12 @@ class BeTaskType(models.Model):
         selection=[
             ('ORG', 'Organization'),
             ('PERSON', 'Person'),
+            ('GROUPMEMBER','Groupmember'),
             ('STUDENT', 'Student'),
             ('EMPLOYEE', 'Employee'),
             ('ROLE', 'Role'),
             ('PERIOD', 'Period'),
-            ('RELATION', 'Relation'),
+            ('PROPRELATION', 'Prop Relation'),
             ('COM_EMAIL', 'Email Address'),
             ('COM_ADDRESS', 'Physical Address'),
             ('COM_PHONE', 'Phone Number'),
@@ -69,8 +71,9 @@ class BeTaskType(models.Model):
         selection=[
             ('ADD', 'Add/Create'),
             ('UPD', 'Update'),
-            ('UPDATE', 'Update'),  # Alias for compatibility
+            #('UPDATE', 'Update _'),  # Alias for compatibility
             ('DEL', 'Delete'),
+            ('REMOVE', 'Remove'),
             ('DEACT', 'Deactivate'),
             ('ARC', 'Archive'),
             ('SYNC', 'Synchronize'),

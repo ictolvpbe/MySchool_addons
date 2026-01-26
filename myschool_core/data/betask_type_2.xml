@@ -1,0 +1,30 @@
+<odoo>
+    <data noupdate="1">
+        <record id="betasktype_db_proprelation_add" model="myschool.betask.type">
+            <field name="name">DB-PROPRELATION-ADD</field>
+            <field name="target">DB</field>
+            <field name="object">PROPRELATION</field>
+            <field name="action">ADD</field>
+            <field name="auto_process">True</field>
+            <field name="priority">50</field>
+        </record>
+
+        <record id="betasktype_db_proprelation_upd" model="myschool.betask.type">
+            <field name="name">DB-PROPRELATION-UPD</field>
+            <field name="target">DB</field>
+            <field name="object">PROPRELATION</field>
+            <field name="action">UPD</field>
+            <field name="auto_process">True</field>
+            <field name="priority">51</field>
+        </record>
+
+        <record id="betasktype_db_proprelation_deact" model="myschool.betask.type">
+            <field name="name">DB-PROPRELATION-DEACT</field>
+            <field name="target">DB</field>
+            <field name="object">PROPRELATION</field>
+            <field name="action">DEACT</field>
+            <field name="auto_process">True</field>
+            <field name="priority">52</field>
+        </record>
+    </data>
+</odoo>
