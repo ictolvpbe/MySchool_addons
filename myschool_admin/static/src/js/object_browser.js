@@ -23,6 +23,7 @@ export class TreeNode extends Component {
         onDragOver: { type: Function, optional: true },
         onDrop: { type: Function, optional: true },
         selectedIds: { type: Object, optional: true },
+        selectionMode: { type: Boolean, optional: true },
         draggedNode: { type: Object, optional: true },
         expandedIds: { type: Object, optional: true },
         onToggleExpand: { type: Function, optional: true },
@@ -421,7 +422,7 @@ export class ContextMenu extends Component {
 /**
  * Main ObjectBrowserClient component
  */
-export class ObjectBrowser extends Component {
+export class ObjectBrowserClient extends Component {
     static template = "myschool_admin.ObjectBrowserClient";
     static components = { TreeNode, ContextMenu, DetailsPanel, MembersPanel };
     
@@ -1419,4 +1420,4 @@ export class ObjectBrowser extends Component {
 }
 
 // Register the client action
-registry.category("actions").add("myschool_object_browser", ObjectBrowser);
+registry.category("actions").add("myschool_object_browser", ObjectBrowserClient);

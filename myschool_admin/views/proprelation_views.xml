@@ -124,4 +124,41 @@
             </p>
         </field>
     </record>
+
+
+
+    <data>
+        <!-- Server Action for Update All Proprelation Names (appears in Action dropdown) -->
+        <record id="action_server_update_all_proprelation_names" model="ir.actions.server">
+            <field name="name">Update All Proprelation Names</field>
+            <field name="model_id" ref="myschool_core.model_myschool_proprelation"/>
+            <field name="binding_model_id" ref="myschool_core.model_myschool_proprelation"/>
+            <field name="binding_view_types">list,form</field>
+            <field name="state">code</field>
+            <field name="code">
+result = env['myschool.proprelation'].update_all_proprelation_names()
+if result and isinstance(result, dict):
+    action = result
+            </field>
+        </record>
+        
+        <!-- Server Action for Update All Proprelation Names (used by menu item) -->
+        <record id="action_update_all_proprelation_names" model="ir.actions.server">
+            <field name="name">Update All Proprelation Names</field>
+            <field name="model_id" ref="myschool_core.model_myschool_proprelation"/>
+            <field name="state">code</field>
+            <field name="code">
+result = env['myschool.proprelation'].update_all_proprelation_names()
+if result and isinstance(result, dict):
+    action = result
+            </field>
+        </record>
+        
+<!--        &lt;!&ndash; Menu Item for Update All Proprelation Names under Relaties menu &ndash;&gt;-->
+<!--        <menuitem id="menu_update_all_proprelation_names"-->
+<!--                  name="Update All Proprelation Names"-->
+<!--                  action="action_update_all_proprelation_names"-->
+<!--                  parent="menu_myschool_relations"-->
+<!--                  sequence="100"/>-->
+    </data>
 </odoo>

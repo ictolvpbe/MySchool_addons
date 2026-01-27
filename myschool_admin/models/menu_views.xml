@@ -150,13 +150,13 @@
               action="action_myschool_proprelation_type"
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
-              action="action_myschool_proprelation_type"
 
-    <menuitem id="menu_update_all_proprelation_names"
-              name="Update All Proprelation Names"
-              action="action_update_all_proprelation_names"
+    <menuitem id="menu_myschool_proprelation_type"
+              name="Namen updaten"
               parent="menu_myschool_relations"
-              sequence="100"/>
+              action="action_myschool_proprelation_type"
+              sequence="30"
+              groups="action_server_update_all_proprelation_names"/>
 
         <!-- Configuration Menu -->
     <menuitem id="menu_myschool_config_item"

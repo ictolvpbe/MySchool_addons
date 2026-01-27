@@ -5,6 +5,7 @@
     <record id="action_object_browser_client" model="ir.actions.client">
         <field name="name">Organisation Manager</field>
         <field name="tag">myschool_object_browser</field>
+<!--        <field name="groups_id" eval="[(4, ref('myschool_core.group_myschool_admin'))]"/>-->
     </record>
     
 </odoo>

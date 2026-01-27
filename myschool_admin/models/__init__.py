@@ -2,6 +2,6 @@
 from . import app
 from . import object_browser
 from . import org_extension
+from . import proprelation_extension
 from . import role_lines
 from . import wizards
-from . import log_viewer

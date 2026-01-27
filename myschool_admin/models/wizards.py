@@ -12,6 +12,218 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
+def build_proprelation_name(proprelation_type_name, **kwargs):
+    """
+    Build a standardized proprelation name.
+    
+    Format: TYPE:Abbr1=value1,Abbr2=value2,...
+    Example: BRSO:Ro=EMPLOYEE,OrP=int.olvp.bawa,Or=int.olvp.bawa.pers.lkr
+    
+    Field abbreviations:
+        id_org -> Or (uses name_tree)
+        id_org_parent -> OrP (uses name_tree)
+        id_org_child -> OrC (uses name_tree)
+        id_period -> Pd (uses name)
+        id_period_parent -> PdP (uses name)
+        id_period_child -> PdC (uses name)
+        id_role -> Ro (uses name)
+        id_role_parent -> RoP (uses name)
+        id_role_child -> RoC (uses name)
+        id_person -> Pn (uses name)
+        id_person_parent -> PnP (uses name)
+        id_person_child -> PnC (uses name)
+    
+    Args:
+        proprelation_type_name: The type name (e.g., 'BRSO', 'ORG-TREE', 'PERSON-TREE')
+        **kwargs: Field values, can be:
+            - id_org, id_org_parent, id_org_child: Org records
+            - id_role, id_role_parent, id_role_child: Role records
+            - id_person, id_person_parent, id_person_child: Person records
+            - id_period, id_period_parent, id_period_child: Period records
+    
+    Returns:
+        String like 'BRSO:Ro=EMPLOYEE,OrP=int.olvp.bawa'
+    """
+    # Field mapping: field_name -> (abbreviation, value_field)
+    field_map = {
+        'id_org': ('Or', 'name_tree', 'name'),
+        'id_org_parent': ('OrP', 'name_tree', 'name'),
+        'id_org_child': ('OrC', 'name_tree', 'name'),
+        'id_period': ('Pd', 'name', 'name'),
+        'id_period_parent': ('PdP', 'name', 'name'),
+        'id_period_child': ('PdC', 'name', 'name'),
+        'id_role': ('Ro', 'name', 'name'),
+        'id_role_parent': ('RoP', 'name', 'name'),
+        'id_role_child': ('RoC', 'name', 'name'),
+        'id_person': ('Pn', 'name', 'name'),
+        'id_person_parent': ('PnP', 'name', 'name'),
+        'id_person_child': ('PnC', 'name', 'name'),
+    }
+    
+    # Order of fields in the name (for consistent output)
+    field_order = [
+        'id_role', 'id_role_parent', 'id_role_child',
+        'id_org_parent', 'id_org', 'id_org_child',
+        'id_person', 'id_person_parent', 'id_person_child',
+        'id_period', 'id_period_parent', 'id_period_child',
+    ]
+    
+    parts = []
+    
+    for field_name in field_order:
+        if field_name in kwargs and kwargs[field_name]:
+            record = kwargs[field_name]
+            abbr, primary_field, fallback_field = field_map[field_name]
+            
+            # Get value from record
+            value = None
+            if hasattr(record, primary_field) and getattr(record, primary_field):
+                value = getattr(record, primary_field)
+            elif hasattr(record, fallback_field) and getattr(record, fallback_field):
+                value = getattr(record, fallback_field)
+            elif hasattr(record, 'name'):
+                value = record.name
+            
+            if value:
+                parts.append(f"{abbr}={value}")
+    
+    # Build the full name
+    type_prefix = proprelation_type_name.upper() if proprelation_type_name else 'UNKNOWN'
+    
+    if parts:
+        return f"{type_prefix}:{','.join(parts)}"
+    return type_prefix
+
+
+def compute_name_tree(env, org, parent_org=None):
+    """
+    Compute the name_tree field for an organization.
+    
+    Format: Start with internal domain and walk down the tree.
+    Example: ou=pers,ou=bawa,dc=olvp,dc=int becomes int.olvp.bawa.pers
+    
+    Args:
+        env: Odoo environment
+        org: The organization record (or dict with name_short and ou_fqdn_internal)
+        parent_org: Optional parent organization (if org not yet saved)
+    
+    Returns:
+        String like 'int.olvp.bawa.pers' or None
+    """
+    # Helper to get value from org (could be record or dict)
+    def get_val(obj, key):
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None) if obj else None
+    
+    # If we have an ou_fqdn_internal, parse it
+    ou_fqdn = get_val(org, 'ou_fqdn_internal')
+    
+    if not ou_fqdn and parent_org:
+        # Build from parent's FQDN plus new org's name_short
+        parent_fqdn = get_val(parent_org, 'ou_fqdn_internal')
+        org_short = get_val(org, 'name_short')
+        if org_short and parent_fqdn:
+            ou_fqdn = f"ou={org_short},{parent_fqdn}"
+    
+    if not ou_fqdn:
+        return None
+    
+    # Parse the FQDN: ou=pers,ou=bawa,dc=olvp,dc=int
+    # Result should be: int.olvp.bawa.pers
+    components = ou_fqdn.lower().split(',')
+    
+    # Extract values, reversing DC components to come first
+    dc_parts = []
+    ou_parts = []
+    
+    for comp in components:
+        comp = comp.strip()
+        if comp.startswith('dc='):
+            dc_parts.append(comp[3:])  # Remove 'dc='
+        elif comp.startswith('ou='):
+            ou_parts.append(comp[3:])  # Remove 'ou='
+        elif comp.startswith('cn='):
+            ou_parts.append(comp[3:])  # Remove 'cn='
+    
+    # Reverse DC parts (they go from specific to general in LDAP, but we want domain first)
+    dc_parts.reverse()
+    
+    # Build name_tree: dc parts first, then ou parts (already in correct order - leaf to root)
+    # But we want root to leaf for tree display, so reverse ou_parts
+    parts = dc_parts + list(reversed(ou_parts))
+    
+    if parts:
+        return '.'.join(parts)
+    return None
+
+
+def update_name_tree_for_org_and_descendants(env, org_id):
+    """
+    Update name_tree for an organization and all its descendants.
+    Also updates role names that reference this org.
+    
+    Args:
+        env: Odoo environment
+        org_id: The organization ID to start from
+    """
+    if 'myschool.org' not in env or 'myschool.proprelation' not in env:
+        return
+    
+    Org = env['myschool.org']
+    PropRelation = env['myschool.proprelation']
+    
+    org = Org.browse(org_id)
+    if not org.exists():
+        return
+    
+    # Update this org's name_tree
+    new_name_tree = compute_name_tree(env, org)
+    if new_name_tree and org.name_tree != new_name_tree:
+        org.write({'name_tree': new_name_tree})
+        _logger.info(f"Updated name_tree for org {org.name_short}: {new_name_tree}")
+    
+    # Find and update all child orgs recursively
+    child_rels = PropRelation.search([
+        ('id_org_parent', '=', org_id),
+        ('id_org', '!=', False),
+        ('is_active', '=', True),
+    ])
+    
+    for rel in child_rels:
+        if rel.id_org:
+            update_name_tree_for_org_and_descendants(env, rel.id_org.id)
+    
+    # Update role names that reference this org
+    update_role_names_for_org(env, org)
+
+
+def update_role_names_for_org(env, org):
+    """
+    Update role names that contain references to this org.
+    
+    Args:
+        env: Odoo environment
+        org: The organization record
+    """
+    if 'myschool.role' not in env:
+        return
+    
+    Role = env['myschool.role']
+    org_short = org.name_short if hasattr(org, 'name_short') and org.name_short else org.name
+    
+    # Find roles that might reference this org in their name
+    roles = Role.search([
+        '|',
+        ('name', 'ilike', org_short),
+        ('shortname', 'ilike', org_short),
+    ])
+    
+    # Log found roles for debugging
+    if roles:
+        _logger.info(f"Found {len(roles)} roles potentially referencing org {org_short}")
+
+
 class CreatePersonWizard(models.TransientModel):
     """Wizard to create a new person and add to an organization."""
     _name = 'myschool.create.person.wizard'
@@ -357,8 +569,14 @@ class CreatePersonWizard(models.TransientModel):
             ], limit=1)
             
             if not existing:
+                # Create with standardized name
+                rel_name = build_proprelation_name(
+                    'PPSBR',
+                    id_role=role,
+                    id_person=person
+                )
                 PropRelation.create({
-                    'name': f"PPSBR:{role.name}-{person_name}",
+                    'name': rel_name,
                     'proprelation_type_id': ppsbr_type.id,
                     'id_person': person.id,
                     'id_role': role.id,
@@ -493,6 +711,7 @@ class CreatePersonWizard(models.TransientModel):
         
         # Handle Odoo user linking/creation
         user = None
+        hr_employee = None
         if self.link_existing_user and self.existing_user_id:
             user = self.existing_user_id
         elif self.create_odoo_user:
@@ -511,6 +730,15 @@ class CreatePersonWizard(models.TransientModel):
                 'login': login,
                 'email': self.email_cloud or login,
             })
+            
+            # Create HR employee for employees
+            if self.person_type == 'employee' and 'hr.employee' in self.env:
+                hr_employee = self.env['hr.employee'].create({
+                    'name': f"{self.first_name} {self.last_name}",
+                    'user_id': user.id,
+                    'work_email': self.email_cloud or login,
+                })
+                _logger.info(f"Created HR employee {hr_employee.name} with id={hr_employee.id}")
         
         # Link user if available
         if user and 'user_id' in Person._fields:
@@ -533,9 +761,13 @@ class CreatePersonWizard(models.TransientModel):
         # Get or create PERSON-TREE relation type
         relation_type = self._get_or_create_proprelation_type('PERSON-TREE')
         
-        # Build proprelation name: Pn=firstname.lastname,Or=OrgShortName
-        org_short_name = self.org_id.short_name if hasattr(self.org_id, 'short_name') and self.org_id.short_name else self.org_id.name
-        proprel_name = f"Pn={self.first_name}.{self.last_name},Or={org_short_name}"
+        # Build proprelation name using standardized format
+        proprel_name = build_proprelation_name(
+            'PERSON-TREE',
+            id_person=person,
+            id_org=self.org_id,
+            id_role=role
+        )
         
         # Create proprelation to org
         proprel_vals = {
@@ -632,6 +864,7 @@ class CreatePersonWizard(models.TransientModel):
         
         # Handle Odoo user
         user = None
+        hr_employee = None
         if self.link_existing_user and self.existing_user_id:
             user = self.existing_user_id
         elif self.create_odoo_user:
@@ -648,6 +881,15 @@ class CreatePersonWizard(models.TransientModel):
                 'login': login,
                 'email': self.email_cloud or login,
             })
+            
+            # Create HR employee for employees
+            if self.person_type == 'employee' and 'hr.employee' in self.env:
+                hr_employee = self.env['hr.employee'].create({
+                    'name': f"{self.first_name} {self.last_name}",
+                    'user_id': user.id,
+                    'work_email': self.email_cloud or login,
+                })
+                _logger.info(f"Created HR employee {hr_employee.name} with id={hr_employee.id}")
         
         if user and 'user_id' in Person._fields:
             person_vals['user_id'] = user.id
@@ -666,9 +908,13 @@ class CreatePersonWizard(models.TransientModel):
         # Get or create PERSON-TREE relation type
         relation_type = self._get_or_create_proprelation_type('PERSON-TREE')
         
-        # Build proprelation name: Pn=firstname.lastname,Or=OrgShortName
-        org_short_name = self.org_id.short_name if hasattr(self.org_id, 'short_name') and self.org_id.short_name else self.org_id.name
-        proprel_name = f"Pn={self.first_name}.{self.last_name},Or={org_short_name}"
+        # Build proprelation name using standardized format
+        proprel_name = build_proprelation_name(
+            'PERSON-TREE',
+            id_person=person,
+            id_org=self.org_id,
+            id_role=role
+        )
         
         proprel_vals = {
             'name': proprel_name,
@@ -1138,6 +1384,12 @@ class AddChildOrgWizard(models.TransientModel):
             org_vals['has_comgroup'] = self.new_org_has_comgroup
             org_vals['has_secgroup'] = self.new_org_has_secgroup
             
+            # Compute and set name_tree from ou_fqdn_internal
+            if self.new_org_ou_fqdn_intern:
+                name_tree = compute_name_tree(self.env, {'name_short': self.new_org_name_short, 'ou_fqdn_internal': self.new_org_ou_fqdn_intern}, None)
+                if name_tree:
+                    org_vals['name_tree'] = name_tree
+            
             if self.new_org_type_id:
                 org_vals['org_type_id'] = self.new_org_type_id.id
             if self.new_org_description and 'description' in Org._fields:
@@ -1168,20 +1420,22 @@ class AddChildOrgWizard(models.TransientModel):
         if old_parent:
             old_parent.write({'is_active': False})
         
-        # Get or create OrgTree proprelation type
+        # Get or create ORG-TREE proprelation type
         PropRelationType = self.env['myschool.proprelation.type']
-        org_tree_type = PropRelationType.search([('name', '=', 'OrgTree')], limit=1)
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
         if not org_tree_type:
             org_tree_type = PropRelationType.create({
-                'name': 'OrgTree',
+                'name': 'ORG-TREE',
                 'usage': 'Organization hierarchy relationship',
                 'is_active': True,
             })
         
-        # Build the relation name: Or=<child_short>.OrP<parent_short>
-        child_short = child_org.name_short if hasattr(child_org, 'name_short') and child_org.name_short else child_org.name
-        parent_short = self.parent_org_id.name_short if hasattr(self.parent_org_id, 'name_short') and self.parent_org_id.name_short else self.parent_org_id.name
-        relation_name = f"Or={child_short}.OrP={parent_short}"
+        # Build the relation name using standardized format
+        relation_name = build_proprelation_name(
+            'ORG-TREE',
+            id_org=child_org,
+            id_org_parent=self.parent_org_id
+        )
         
         # Create new parent relation
         PropRelation.create({
@@ -1258,6 +1512,12 @@ class AddChildOrgWizard(models.TransientModel):
             org_vals['has_comgroup'] = self.new_org_has_comgroup
             org_vals['has_secgroup'] = self.new_org_has_secgroup
             
+            # Compute and set name_tree from ou_fqdn_internal
+            if self.new_org_ou_fqdn_intern:
+                name_tree = compute_name_tree(self.env, {'name_short': self.new_org_name_short, 'ou_fqdn_internal': self.new_org_ou_fqdn_intern}, None)
+                if name_tree:
+                    org_vals['name_tree'] = name_tree
+            
             if self.new_org_type_id:
                 org_vals['org_type_id'] = self.new_org_type_id.id
             if self.new_org_description and 'description' in Org._fields:
@@ -1285,20 +1545,22 @@ class AddChildOrgWizard(models.TransientModel):
         if old_parent:
             old_parent.write({'is_active': False})
         
-        # Get or create OrgTree proprelation type
+        # Get or create ORG-TREE proprelation type
         PropRelationType = self.env['myschool.proprelation.type']
-        org_tree_type = PropRelationType.search([('name', '=', 'OrgTree')], limit=1)
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
         if not org_tree_type:
             org_tree_type = PropRelationType.create({
-                'name': 'OrgTree',
+                'name': 'ORG-TREE',
                 'usage': 'Organization hierarchy relationship',
                 'is_active': True,
             })
         
-        # Build the relation name: Or=<child_short>.OrP<parent_short>
-        child_short = child_org.name_short if hasattr(child_org, 'name_short') and child_org.name_short else child_org.name
-        parent_short = self.parent_org_id.name_short if hasattr(self.parent_org_id, 'name_short') and self.parent_org_id.name_short else self.parent_org_id.name
-        relation_name = f"Or={child_short}.OrP={parent_short}"
+        # Build the relation name using standardized format
+        relation_name = build_proprelation_name(
+            'ORG-TREE',
+            id_org=child_org,
+            id_org_parent=self.parent_org_id
+        )
         
         PropRelation.create({
             'name': relation_name,
@@ -1937,10 +2199,12 @@ class AddSRBRWizard(models.TransientModel):
         if existing:
             raise UserError('This relation already exists.')
         
-        # Build relation name: SRBR.Ro={sap_role}.RoP={backend_role}
-        sap_name = self.sap_role_id.shortname or self.sap_role_id.name
-        backend_name = self.backend_role_id.shortname or self.backend_role_id.name
-        rel_name = f"SRBR.Ro={sap_name}.RoP={backend_name}"
+        # Build relation name using standardized format
+        rel_name = build_proprelation_name(
+            'SRBR',
+            id_role=self.sap_role_id,
+            id_role_parent=self.backend_role_id
+        )
         
         # Create the relation
         PropRelation.create({
@@ -2037,11 +2301,13 @@ class AddBRSOWizard(models.TransientModel):
         if existing:
             raise UserError('This relation already exists.')
         
-        # Build relation name: BRSO.Ro={role}.OrP={school}.Or={dept}
-        role_name = self.backend_role_id.shortname or self.backend_role_id.name
-        school_name = self.school_id.name_short if hasattr(self.school_id, 'name_short') and self.school_id.name_short else self.school_id.name
-        dept_name = self.department_id.name_short if hasattr(self.department_id, 'name_short') and self.department_id.name_short else self.department_id.name
-        rel_name = f"BRSO.Ro={role_name}.OrP={school_name}.Or={dept_name}"
+        # Build relation name using standardized format
+        rel_name = build_proprelation_name(
+            'BRSO',
+            id_role=self.backend_role_id,
+            id_org_parent=self.school_id,
+            id_org=self.department_id
+        )
         
         # Create the relation
         # id_org = department (where person created), id_org_parent = school (higher level)
@@ -2155,15 +2421,15 @@ class AddPPBRSOWizard(models.TransientModel):
         if existing:
             raise UserError('This relation already exists.')
         
-        # Build relation name: PPBRSO.Pn={person}.Pd={period}.Ro={role}.Or={dept}.OrP={school}
-        person_name = self.person_id.name
-        if hasattr(self.person_id, 'first_name') and self.person_id.first_name:
-            person_name = f"{self.person_id.first_name} {person_name}"
-        period_name = self.period_id.name
-        role_name = self.backend_role_id.shortname or self.backend_role_id.name
-        school_name = self.school_id.name_short if hasattr(self.school_id, 'name_short') and self.school_id.name_short else self.school_id.name
-        dept_name = self.department_id.name_short if hasattr(self.department_id, 'name_short') and self.department_id.name_short else self.department_id.name
-        rel_name = f"PPBRSO.Pn={person_name}.Pd={period_name}.Ro={role_name}.Or={dept_name}.OrP={school_name}"
+        # Build relation name using standardized format
+        rel_name = build_proprelation_name(
+            'PPBRSO',
+            id_role=self.backend_role_id,
+            id_org_parent=self.school_id,
+            id_org=self.department_id,
+            id_person=self.person_id,
+            id_period=self.period_id
+        )
         
         # Create the relation
         # id_org = department, id_org_parent = school (higher level)
@@ -2329,11 +2595,13 @@ class LinkRoleToOrgWizard(models.TransientModel):
         if existing:
             raise UserError('This relation already exists.')
         
-        # Build relation name: BRSO.Ro={role}.OrP={school}.Or={dept}
-        role_name = self.backend_role_id.shortname or self.backend_role_id.name
-        school_name = self.school_id.name_short if hasattr(self.school_id, 'name_short') and self.school_id.name_short else self.school_id.name
-        org_name = self.org_id.name_short if hasattr(self.org_id, 'name_short') and self.org_id.name_short else self.org_id.name
-        rel_name = f"BRSO.Ro={role_name}.OrP={school_name}.Or={org_name}"
+        # Build relation name using standardized format
+        rel_name = build_proprelation_name(
+            'BRSO',
+            id_role=self.backend_role_id,
+            id_org_parent=self.school_id,
+            id_org=self.org_id
+        )
         
         # Create the relation
         PropRelation.create({
@@ -2414,10 +2682,14 @@ class AddBRSORoleWizard(models.TransientModel):
             inactive.write({'is_active': True})
             _logger.info(f"Reactivated BRSO relation: role {self.role_id.name} to org {self.org_id.name}")
         else:
-            # Create the relation
-            org_short = self.org_id.name_short if hasattr(self.org_id, 'name_short') and self.org_id.name_short else self.org_id.name
+            # Create the relation with standardized name
+            rel_name = build_proprelation_name(
+                'BRSO',
+                id_role=self.role_id,
+                id_org=self.org_id
+            )
             PropRelation.create({
-                'name': f"BRSO:{self.role_id.name}-{org_short}",
+                'name': rel_name,
                 'proprelation_type_id': brso_type.id,
                 'id_org': self.org_id.id,
                 'id_role': self.role_id.id,
@@ -2520,9 +2792,14 @@ class ManageOrgRolesWizard(models.TransientModel):
         if inactive:
             inactive.write({'is_active': True})
         else:
-            org_short = self.org_id.name_short if hasattr(self.org_id, 'name_short') and self.org_id.name_short else self.org_id.name
+            # Create with standardized name
+            rel_name = build_proprelation_name(
+                'BRSO',
+                id_role=self.new_role_id,
+                id_org=self.org_id
+            )
             PropRelation.create({
-                'name': f"BRSO:{self.new_role_id.name}-{org_short}",
+                'name': rel_name,
                 'proprelation_type_id': brso_type.id,
                 'id_org': self.org_id.id,
                 'id_role': self.new_role_id.id,
@@ -2637,11 +2914,14 @@ class ManagePersonRolesWizard(models.TransientModel):
         if inactive:
             inactive.write({'is_active': True})
         else:
-            person_name = self.person_id.name
-            if hasattr(self.person_id, 'first_name') and self.person_id.first_name:
-                person_name = f"{self.person_id.first_name} {person_name}"
+            # Create with standardized name
+            rel_name = build_proprelation_name(
+                'PPSBR',
+                id_role=self.new_role_id,
+                id_person=self.person_id
+            )
             PropRelation.create({
-                'name': f"PPSBR:{self.new_role_id.name}-{person_name}",
+                'name': rel_name,
                 'proprelation_type_id': ppsbr_type.id,
                 'id_person': self.person_id.id,
                 'id_role': self.new_role_id.id,

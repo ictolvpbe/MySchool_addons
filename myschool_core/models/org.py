@@ -14,6 +14,7 @@ class Org(models.Model):
 
     name = fields.Char(string='Naam', required=True)
     name_short = fields.Char(string='Korte Naam', required=True)
+    name_tree = fields.Char(string='Full Tree name', required=False)
     inst_nr = fields.Char(string='Instellingsnummer', required=True, size=10)
     is_active = fields.Boolean(string='Actief', default=True, required=True)
     automatic_sync = fields.Boolean(string='Auto Sync', default=True, required=True)

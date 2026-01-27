@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
+    
     <!-- Organization list View -->
     <record id="view_myschool_org_list" model="ir.ui.view">
         <field name="name">myschool.org.list</field>
         <field name="model">myschool.org</field>
         <field name="arch" type="xml">
             <list>
+                <field name="name_tree" string="Full Tree Name"/>
                 <field name="name"/>
                 <field name="name_short"/>
-                <field name="OldId"/>
                 <field name="inst_nr"/>
                 <field name="org_type_id"/>
                 <field name="is_active"/>
@@ -23,12 +24,16 @@
         <field name="model">myschool.org</field>
         <field name="arch" type="xml">
             <form string="Organisatie">
+                <header>
+                    <button name="action_update_name_tree" type="object" string="Update Name Tree" class="btn-secondary" icon="fa-refresh"/>
+                </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box"/>
                     <group>
                         <group>
                             <field name="name"/>
                             <field name="name_short"/>
+                            <field name="name_tree" readonly="1"/>
                             <field name="inst_nr"/>
                             <field name="org_type_id"/>
                             <field name="is_active"/>
@@ -73,6 +78,7 @@
                                 </group>
                                 <group string="Opties">
                                     <field name="has_ou"/>
+                                    <field name="has_role"/>
                                     <field name="has_comgroup"/>
                                     <field name="has_secgroup"/>
                                 </group>
@@ -110,8 +116,8 @@
             <search string="Zoek Organisaties">
                 <field name="name"/>
                 <field name="name_short"/>
+                <field name="name_tree"/>
                 <field name="inst_nr"/>
-                <field name="OldId"/>
                 <field name="org_type_id"/>
                 <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
                 <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
@@ -129,6 +135,32 @@
             <p class="o_view_nocontent_smiling_face">
                 Maak een nieuwe organisatie aan
             </p>
+        </field>
+    </record>
+    
+    <!-- Server Action for Update All Name Trees (appears in Action dropdown) -->
+    <record id="action_server_update_all_name_trees" model="ir.actions.server">
+        <field name="name">Update All Org Name Trees</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="binding_model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="binding_view_types">list,form</field>
+        <field name="state">code</field>
+        <field name="code">
+result = env['myschool.org'].update_all_name_trees_cron()
+if result and isinstance(result, dict):
+    action = result
+        </field>
+    </record>
+    
+    <!-- Server Action for Update All Name Trees (used by menu item) -->
+    <record id="action_update_all_org_name_trees" model="ir.actions.server">
+        <field name="name">Update All Organization Name Trees</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="state">code</field>
+        <field name="code">
+result = env['myschool.org'].update_all_name_trees_cron()
+if result and isinstance(result, dict):
+    action = result
         </field>
     </record>
 

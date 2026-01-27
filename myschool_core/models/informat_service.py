@@ -298,7 +298,9 @@ class InformatService(models.AbstractModel):
 
             
             # Analyze and create employee roles
-            #self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
+            # self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
+            # self._process_betasks('DB', 'ROLE', 'ADD')
+            # self._process_betasks('DB', 'ROLE', 'UPD')
 
             # NEW: Analyze employee data and create employee DB tasks (ADD/UPD/DEACT)
             if not self._sync_employees(
@@ -838,11 +840,9 @@ class InformatService(models.AbstractModel):
         Main employee synchronization method - two phase approach.
 
         Phase 1: Sync Person objects (ADD/UPD/DEACT)
+        Phase 1b: Sync Odoo Users for new/updated persons
         Phase 2: Sync PPSBR PropRelation objects for active employees
-
-        @param all_imported_employee_data: Dict with personId&instNr as key, employee JSON as value
-        @param all_imported_employee_assignments: Dict with personId&instNr as key, assignment JSON as value
-        @return: True if successful
+        Phase 2b: Sync Odoo Group memberships based on roles
         """
         procedure_name = '_sync_employees'
         self._create_sys_event("BETASK-001", f"{procedure_name} started")
@@ -857,10 +857,20 @@ class InformatService(models.AbstractModel):
                 self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 1 (Person sync)")
                 return False
 
-            # Process Person tasks before Phase 2
+            # Process DB-EMPLOYEE tasks
             self._process_betasks('DB', 'EMPLOYEE', 'ADD')
             self._process_betasks('DB', 'EMPLOYEE', 'UPD')
             self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
+
+            # =====================================================
+            # PHASE 1b: Sync Odoo Users (NEW!)
+            # =====================================================
+            self._create_sys_event("BETASK-001", "Phase 1b: Syncing Odoo Users")
+
+            # Process ODOO-PERSON tasks (creates res.users and hr.employee)
+            self._process_betasks('ODOO', 'PERSON', 'ADD')
+            self._process_betasks('ODOO', 'PERSON', 'UPD')
+            self._process_betasks('ODOO', 'PERSON', 'DEACT')
 
             # =====================================================
             # PHASE 2: Sync PPSBR PropRelation Objects
@@ -871,11 +881,19 @@ class InformatService(models.AbstractModel):
                 self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 2 (PPSBR sync)")
                 return False
 
-            # Process PropRelation tasks
-            # The processor will create PPSBR records and determine PERSON-TREE positions
+            # Process DB-PROPRELATION tasks
             self._process_betasks('DB', 'PROPRELATION', 'ADD')
             self._process_betasks('DB', 'PROPRELATION', 'UPD')
             self._process_betasks('DB', 'PROPRELATION', 'DEACT')
+
+            # =====================================================
+            # PHASE 2b: Sync Odoo Group Memberships (NEW!)
+            # =====================================================
+            self._create_sys_event("BETASK-001", "Phase 2b: Syncing Odoo Group memberships")
+
+            # Process ODOO-GROUPMEMBER tasks (adds/removes users from groups)
+            self._process_betasks('ODOO', 'GROUPMEMBER', 'ADD')
+            self._process_betasks('ODOO', 'GROUPMEMBER', 'REMOVE')
 
             self._create_sys_event("BETASK-001", f"{procedure_name} completed successfully")
             return True

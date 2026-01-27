@@ -7,6 +7,7 @@ Backend model that provides tree data as JSON and handles operations.
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError
+from .wizards import build_proprelation_name
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -312,19 +313,21 @@ class ObjectBrowser(models.TransientModel):
         if self._would_create_cycle(org_id, new_parent_id):
             raise UserError("Cannot move: would create circular reference")
         
-        # Get or create OrgTree proprelation type
-        org_tree_type = PropRelationType.search([('name', '=', 'OrgTree')], limit=1)
+        # Get or create ORG-TREE proprelation type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
         if not org_tree_type:
             org_tree_type = PropRelationType.create({
-                'name': 'OrgTree',
+                'name': 'ORG-TREE',
                 'usage': 'Organization hierarchy relationship',
                 'is_active': True,
             })
         
-        # Build the relation name: Or=<org_short>.OrP<parent_short>
-        org_short = org.name_short if hasattr(org, 'name_short') and org.name_short else org.name
-        parent_short = new_parent.name_short if hasattr(new_parent, 'name_short') and new_parent.name_short else new_parent.name
-        relation_name = f"Or={org_short}.OrP={parent_short}"
+        # Build the relation name using standardized format
+        relation_name = build_proprelation_name(
+            'ORG-TREE',
+            id_org=org,
+            id_org_parent=new_parent
+        )
         
         # Find existing parent relation
         existing = PropRelation.search([
@@ -350,8 +353,115 @@ class ObjectBrowser(models.TransientModel):
                 'is_active': True,
             })
         
+        # Update ou_fqdn fields based on new parent
+        org_short = org.name_short if hasattr(org, 'name_short') and org.name_short else org.name
+        if hasattr(new_parent, 'ou_fqdn_internal') and new_parent.ou_fqdn_internal:
+            new_ou_internal = f"ou={org_short.lower()},{new_parent.ou_fqdn_internal.lower()}"
+            org.write({'ou_fqdn_internal': new_ou_internal})
+        
+        if hasattr(new_parent, 'ou_fqdn_external') and new_parent.ou_fqdn_external:
+            new_ou_external = f"ou={org_short.lower()},{new_parent.ou_fqdn_external.lower()}"
+            org.write({'ou_fqdn_external': new_ou_external})
+        
+        # Update name_tree for this org and all descendants
+        self._update_name_tree_recursive(org_id)
+        
+        # Update role names that reference this org
+        self._update_roles_for_org(org)
+        
         _logger.info(f"Moved org {org.name} under {new_parent.name}")
         return True
+    
+    def _update_name_tree_recursive(self, org_id):
+        """Update name_tree for an org and all its descendants."""
+        Org = self.env['myschool.org']
+        PropRelation = self.env['myschool.proprelation']
+        
+        org = Org.browse(org_id)
+        if not org.exists():
+            return
+        
+        # Compute new name_tree from ou_fqdn_internal
+        if hasattr(org, 'ou_fqdn_internal') and org.ou_fqdn_internal:
+            # Parse the FQDN: ou=pers,ou=bawa,dc=olvp,dc=int
+            # Result should be: int.olvp.bawa.pers
+            ou_fqdn = org.ou_fqdn_internal.lower()
+            components = ou_fqdn.split(',')
+            
+            dc_parts = []
+            ou_parts = []
+            
+            for comp in components:
+                comp = comp.strip()
+                if comp.startswith('dc='):
+                    dc_parts.append(comp[3:])
+                elif comp.startswith('ou='):
+                    ou_parts.append(comp[3:])
+                elif comp.startswith('cn='):
+                    ou_parts.append(comp[3:])
+            
+            # Reverse DC parts and ou_parts
+            dc_parts.reverse()
+            ou_parts.reverse()
+            
+            # Build name_tree: dc parts first, then ou parts
+            parts = dc_parts + ou_parts
+            
+            if parts:
+                name_tree = '.'.join(parts)
+                if org.name_tree != name_tree:
+                    org.write({'name_tree': name_tree})
+                    _logger.info(f"Updated name_tree for org {org.name_short}: {name_tree}")
+        
+        # Update all child orgs recursively
+        child_rels = PropRelation.search([
+            ('id_org_parent', '=', org_id),
+            ('id_org', '!=', False),
+            ('is_active', '=', True),
+        ])
+        
+        for rel in child_rels:
+            if rel.id_org:
+                # First update child's ou_fqdn based on this org's new ou_fqdn
+                child = rel.id_org
+                child_short = child.name_short if hasattr(child, 'name_short') and child.name_short else child.name
+                
+                if hasattr(org, 'ou_fqdn_internal') and org.ou_fqdn_internal:
+                    new_child_ou_internal = f"ou={child_short.lower()},{org.ou_fqdn_internal.lower()}"
+                    child.write({'ou_fqdn_internal': new_child_ou_internal})
+                
+                if hasattr(org, 'ou_fqdn_external') and org.ou_fqdn_external:
+                    new_child_ou_external = f"ou={child_short.lower()},{org.ou_fqdn_external.lower()}"
+                    child.write({'ou_fqdn_external': new_child_ou_external})
+                
+                # Then recursively update name_tree
+                self._update_name_tree_recursive(child.id)
+    
+    def _update_roles_for_org(self, org):
+        """Update role names that reference this org."""
+        if 'myschool.role' not in self.env:
+            return
+        
+        Role = self.env['myschool.role']
+        org_short = org.name_short if hasattr(org, 'name_short') and org.name_short else org.name
+        
+        # Find roles linked to this org via proprelation
+        if 'myschool.proprelation' in self.env:
+            PropRelation = self.env['myschool.proprelation']
+            role_rels = PropRelation.search([
+                ('id_org', '=', org.id),
+                ('id_role', '!=', False),
+                ('is_active', '=', True),
+            ])
+            
+            for rel in role_rels:
+                if rel.id_role:
+                    role = rel.id_role
+                    # Update proprelation name to reflect new org position
+                    if rel.name and 'Or=' in rel.name:
+                        new_name = f"Ro={role.shortname if hasattr(role, 'shortname') and role.shortname else role.name}.Or={org_short}"
+                        rel.write({'name': new_name})
+                        _logger.info(f"Updated proprelation name for role {role.name}: {new_name}")
 
     def _would_create_cycle(self, org_id, new_parent_id):
         """Check if moving org under new_parent would create a cycle."""
@@ -617,6 +727,25 @@ class ObjectBrowser(models.TransientModel):
                 if relations:
                     relations.write({'is_active': False})
                     _logger.info(f"Deactivated {len(relations)} proprelations for person {node_id}")
+                
+                # Remove linked Odoo user and HR employee
+                if 'user_id' in record._fields and record.user_id:
+                    user = record.user_id
+                    _logger.info(f"Found linked Odoo user {user.login} (id={user.id}) for person {node_id}")
+                    
+                    # Remove HR employee linked to this user
+                    if 'hr.employee' in self.env:
+                        hr_employees = self.env['hr.employee'].search([('user_id', '=', user.id)])
+                        if hr_employees:
+                            _logger.info(f"Removing {len(hr_employees)} HR employee(s) linked to user {user.id}")
+                            hr_employees.unlink()
+                    
+                    # Archive/deactivate the Odoo user
+                    try:
+                        user.write({'active': False})
+                        _logger.info(f"Deactivated Odoo user {user.login} (id={user.id})")
+                    except Exception as e:
+                        _logger.warning(f"Could not deactivate user {user.id}: {e}")
             
             elif node_type == 'role':
                 # Deactivate all proprelations where this role is involved
