@@ -160,16 +160,25 @@ class ObjectBrowser(models.TransientModel):
         child_ids = org_children.get(org.id, [])
         child_ids = [cid for cid in child_ids if cid in org_dict]
         
-        # Get persons
+        # Get persons - only from PERSON-TREE proprelations
         person_count = 0
         persons = []
-        if 'myschool.proprelation' in self.env:
+        if 'myschool.proprelation' in self.env and 'myschool.proprelation.type' in self.env:
             PropRelation = self.env['myschool.proprelation']
+            PropRelationType = self.env['myschool.proprelation.type']
+            
+            # Get PERSON-TREE type
+            person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
             
             person_rel_domain = [
                 ('id_org', '=', org.id),
                 ('id_person', '!=', False),
             ]
+            
+            # Filter by PERSON-TREE type if it exists
+            if person_tree_type:
+                person_rel_domain.append(('proprelation_type_id', '=', person_tree_type.id))
+            
             if not show_inactive:
                 person_rel_domain.append(('is_active', '=', True))
             
@@ -221,10 +230,14 @@ class ObjectBrowser(models.TransientModel):
         # Use short_name for display
         display_name = self._get_display_name(org)
         
+        # Get name_tree for full tree path
+        name_tree = org.name_tree if hasattr(org, 'name_tree') and org.name_tree else org.name
+        
         node = {
             'id': org.id,
             'name': display_name,
             'full_name': org.name,  # Keep full name for tooltips/details
+            'name_tree': name_tree,  # Full tree path for display in wizards
             'type': 'org',
             'model': 'myschool.org',
             'child_count': len(child_ids),
@@ -495,13 +508,14 @@ class ObjectBrowser(models.TransientModel):
 
     @api.model
     def move_person_to_org(self, person_id, new_org_id):
-        """Move a person to a different organization."""
+        """Move a person to a different organization by updating PERSON-TREE relation."""
         if 'myschool.proprelation' not in self.env:
             raise UserError("PropRelation model not found")
         
         Person = self.env['myschool.person']
         Org = self.env['myschool.org']
         PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
         
         person = Person.browse(person_id)
         new_org = Org.browse(new_org_id)
@@ -511,45 +525,68 @@ class ObjectBrowser(models.TransientModel):
         if not new_org.exists():
             raise UserError("Organization not found")
         
-        # Find existing org relations for this person
-        existing = PropRelation.search([
+        # Get PERSON-TREE type
+        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        
+        # Find existing PERSON-TREE relation for this person
+        search_domain = [
             ('id_person', '=', person_id),
             ('id_org', '!=', False),
             ('is_active', '=', True),
-        ])
+        ]
+        if person_tree_type:
+            search_domain.append(('proprelation_type_id', '=', person_tree_type.id))
+        
+        existing = PropRelation.search(search_domain)
         
         if existing:
-            # Update existing relations to new org
-            existing.write({'id_org': new_org_id})
-        else:
-            # Create new relation
-            PropRelation.create({
-                'id_person': person_id,
-                'id_org': new_org_id,
-                'is_active': True,
-            })
+            # Deactivate old PERSON-TREE relations
+            existing.write({'is_active': False})
+            _logger.info(f"Deactivated {len(existing)} old PERSON-TREE relations for person {person.name}")
+        
+        # Create new PERSON-TREE relation
+        rel_name = f"PERSON-TREE:Pn={person.name},Or={new_org.name_tree or new_org.name}"
+        
+        proprel_vals = {
+            'name': rel_name,
+            'id_person': person_id,
+            'id_org': new_org_id,
+            'is_active': True,
+        }
+        if person_tree_type:
+            proprel_vals['proprelation_type_id'] = person_tree_type.id
+        
+        PropRelation.create(proprel_vals)
         
         _logger.info(f"Moved person {person.name} to org {new_org.name}")
         return True
 
     @api.model
     def remove_person_from_org(self, person_id, org_id):
-        """Remove a person from an organization (deactivate proprelation)."""
+        """Remove a person from an organization (deactivate PERSON-TREE proprelation)."""
         if 'myschool.proprelation' not in self.env:
             raise UserError("PropRelation model not found")
         
         PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
         
-        # Find and deactivate relations
-        relations = PropRelation.search([
+        # Get PERSON-TREE type
+        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        
+        # Find and deactivate PERSON-TREE relations
+        search_domain = [
             ('id_person', '=', person_id),
             ('id_org', '=', org_id),
             ('is_active', '=', True),
-        ])
+        ]
+        if person_tree_type:
+            search_domain.append(('proprelation_type_id', '=', person_tree_type.id))
+        
+        relations = PropRelation.search(search_domain)
         
         if relations:
             relations.write({'is_active': False})
-            _logger.info(f"Removed person {person_id} from org {org_id}")
+            _logger.info(f"Removed person {person_id} from org {org_id} ({len(relations)} PERSON-TREE relations deactivated)")
         
         return True
 

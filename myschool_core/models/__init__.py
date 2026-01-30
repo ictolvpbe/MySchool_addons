@@ -10,6 +10,7 @@ from . import period_type
 from . import period
 from . import proprelation_type
 from . import proprelation
+from . import proprelation_service
 from . import config_item
 from . import ci_relation
 from . import betask_type

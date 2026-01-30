@@ -381,10 +381,10 @@
                             <group>
                                 <field name="srbr_count" string="Active Relations" readonly="1"/>
                             </group>
-                            <footer>
+                            <group>
                                 <button name="action_add_srbr" type="object" string="Add SRBR Relation" class="btn-primary" icon="fa-plus"/>
                                 <button name="action_view_srbr" type="object" string="View All SRBR" class="btn-secondary" icon="fa-list"/>
-                            </footer>
+                            </group>
                         </page>
                         
                         <!-- BRSO Tab -->
@@ -398,27 +398,10 @@
                             <group>
                                 <field name="brso_count" string="Active Relations" readonly="1"/>
                             </group>
-                            <footer>
+                            <group>
                                 <button name="action_add_brso" type="object" string="Add BRSO Relation" class="btn-primary" icon="fa-plus"/>
                                 <button name="action_view_brso" type="object" string="View All BRSO" class="btn-secondary" icon="fa-list"/>
-                            </footer>
-                        </page>
-                        
-                        <!-- PPBRSO Tab -->
-                        <page string="Person/Period BRSO (PPBRSO)" name="ppbrso">
-                            <group>
-                                <div class="alert alert-info" role="alert">
-                                    <strong>PPBRSO Relations</strong> are like BRSO but also include a person and period.
-                                    Used for person-specific role assignments within a time period.
-                                </div>
                             </group>
-                            <group>
-                                <field name="ppbrso_count" string="Active Relations" readonly="1"/>
-                            </group>
-                            <footer>
-                                <button name="action_add_ppbrso" type="object" string="Add PPBRSO Relation" class="btn-primary" icon="fa-plus"/>
-                                <button name="action_view_ppbrso" type="object" string="View All PPBRSO" class="btn-secondary" icon="fa-list"/>
-                            </footer>
                         </page>
                     </notebook>
                 </sheet>
@@ -472,44 +455,6 @@
                 </group>
                 <group>
                     <field name="backend_role_id" options="{'no_create': True}"/>
-                </group>
-                <group>
-                    <group>
-                        <field name="school_id" options="{'no_create': True}"/>
-                    </group>
-                    <group>
-                        <field name="department_id" options="{'no_create': True}"/>
-                    </group>
-                </group>
-                <footer>
-                    <button name="action_add" type="object" string="Add" class="btn-primary"/>
-                    <button name="action_add_and_new" type="object" string="Add &amp; New" class="btn-secondary"/>
-                    <button string="Cancel" class="btn-secondary" special="cancel"/>
-                </footer>
-            </form>
-        </field>
-    </record>
-
-    <!-- Add PPBRSO Wizard -->
-    <record id="view_add_ppbrso_wizard_form" model="ir.ui.view">
-        <field name="name">myschool.add.ppbrso.wizard.form</field>
-        <field name="model">myschool.add.ppbrso.wizard</field>
-        <field name="arch" type="xml">
-            <form string="Add Person/Period Backend-Role to School/Department Relation">
-                <group>
-                    <div class="alert alert-info" role="alert">
-                        Link a <strong>Person</strong> and <strong>Period</strong> with a <strong>Backend Role</strong>, 
-                        <strong>School</strong> and <strong>Department</strong>.
-                    </div>
-                </group>
-                <group>
-                    <group>
-                        <field name="person_id" options="{'no_create': True}"/>
-                        <field name="period_id" options="{'no_create': True}"/>
-                    </group>
-                    <group>
-                        <field name="backend_role_id" options="{'no_create': True}"/>
-                    </group>
                 </group>
                 <group>
                     <group>
@@ -591,6 +536,37 @@
                 <footer>
                     <button name="action_save_password" type="object" string="Save Password" class="btn-primary"/>
                     <button name="action_clear_password" type="object" string="Clear Password" class="btn-warning"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Add BRSO Role Wizard (Quick Action) -->
+    <record id="view_add_brso_role_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.add.brso.role.wizard.form</field>
+        <field name="model">myschool.add.brso.role.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add Role to Organization">
+                <group>
+                    <div class="alert alert-info" role="alert">
+                        Add a <strong>Backend Role</strong> to this organization.
+                        This creates a BRSO relation.
+                    </div>
+                </group>
+                <group>
+                    <group>
+                        <field name="org_id" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="school_id" string="School" options="{'no_create': True}" required="1"/>
+                    </group>
+                </group>
+                <group>
+                    <field name="role_id" string="Role" options="{'no_create': True}" required="1"/>
+                </group>
+                <footer>
+                    <button name="action_add_role" type="object" string="Add Role" class="btn-primary"/>
                     <button string="Cancel" special="cancel" class="btn-secondary"/>
                 </footer>
             </form>

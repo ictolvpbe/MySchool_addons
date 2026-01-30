@@ -186,6 +186,7 @@ if result and isinstance(result, dict):
                 <group>
                     <field name="org_id" invisible="1"/>
                     <field name="org_name" string="Organization"/>
+                    <field name="school_id" string="School" options="{'no_create': True}"/>
                 </group>
                 <separator string="Current Roles (BRSO)"/>
                 <field name="line_ids" nolabel="1" widget="one2many"/>

@@ -14,7 +14,6 @@ access_remove_ci_relation_wizard,myschool.remove.ci.relation.wizard,model_myscho
 access_role_relations_manager,myschool.role.relations.manager,model_myschool_role_relations_manager,myschool_core.group_myschool_core_admin,1,1,1,1
 access_add_srbr_wizard,myschool.add.srbr.wizard,model_myschool_add_srbr_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_add_brso_wizard,myschool.add.brso.wizard,model_myschool_add_brso_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
-access_add_ppbrso_wizard,myschool.add.ppbrso.wizard,model_myschool_add_ppbrso_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_link_role_org_wizard,myschool.link.role.org.wizard,model_myschool_link_role_org_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_add_brso_role_wizard,myschool.add.brso.role.wizard,model_myschool_add_brso_role_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_manage_org_roles_wizard,myschool.manage.org.roles.wizard,model_myschool_manage_org_roles_wizard,myschool_core.group_myschool_core_admin,1,1,1,1

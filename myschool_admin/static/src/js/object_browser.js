@@ -906,7 +906,7 @@ export class ObjectBrowserClient extends Component {
             target: 'new',
             context: {
                 default_org_id: orgNode.id,
-                default_org_name: orgNode.name,
+                default_org_name: orgNode.name_tree || orgNode.name,
             },
         }, {
             onClose: async () => {
@@ -946,7 +946,7 @@ export class ObjectBrowserClient extends Component {
             target: 'new',
             context: {
                 default_org_id: orgNode.id,
-                default_org_name: orgNode.name,
+                default_org_name: orgNode.name_tree || orgNode.name,
             },
         }, {
             onClose: async () => {

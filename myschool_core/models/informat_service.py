@@ -298,9 +298,9 @@ class InformatService(models.AbstractModel):
 
             
             # Analyze and create employee roles
-            # self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
-            # self._process_betasks('DB', 'ROLE', 'ADD')
-            # self._process_betasks('DB', 'ROLE', 'UPD')
+            self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
+            #self._process_betasks('DB', 'ROLE', 'ADD')
+            #self._process_betasks('DB', 'ROLE', 'UPD')
 
             # NEW: Analyze employee data and create employee DB tasks (ADD/UPD/DEACT)
             if not self._sync_employees(
