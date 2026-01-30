@@ -73,7 +73,13 @@ class BeTask(models.Model):
         string='Data 2',
         help='Secondary/additional data for task processing'
     )
-    
+
+    changes = fields.Text(
+        string='Applied Changes',
+        readonly=True,
+        help='Overview of changes applied by this task (for troubleshooting)'
+    )
+
     lastrun = fields.Datetime(
         string='Last Run',
         readonly=True,
@@ -232,7 +238,7 @@ class BeTask(models.Model):
             })
             _logger.info(f'BeTask {record.name} set to PROCESSING')
     
-    def action_set_completed(self, result_data=None):
+    def action_set_completed(self, result_data=None, changes=None):
         """Set task status to Completed"""
         now = fields.Datetime.now()
         for record in self:
@@ -244,6 +250,8 @@ class BeTask(models.Model):
             }
             if result_data:
                 vals['data2'] = str(result_data)
+            if changes:
+                vals['changes'] = changes
             record.write(vals)
             _logger.info(f'BeTask {record.name} COMPLETED')
     

@@ -15,6 +15,7 @@ Supported task types:
 - ROLE: ADD, UPD
 - PROPRELATION: ADD, UPD, DEACT
 - RELATION: ADD, UPD
+- ODOO: PERSON, GROUPMEMBER
 - LDAP variants
 
 PropRelation Types:
@@ -38,6 +39,89 @@ from datetime import datetime
 from typing import Dict, Optional, Any, List
 
 _logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# PROPRELATION NAME BUILDER FUNCTION
+# =============================================================================
+
+def build_proprelation_name(proprelation_type_name: str, **kwargs) -> str:
+    """
+    Build a standardized proprelation name.
+    
+    Format: TYPE:Abbr1=value1,Abbr2=value2,...
+    Example: PPSBR:Ro=EMPLOYEE,Or=int.olvp.bawa,Pn=Demeyer
+    
+    Field abbreviations:
+        id_org -> Or (uses name_tree or name)
+        id_org_parent -> OrP (uses name_tree or name)
+        id_org_child -> OrC (uses name_tree or name)
+        id_period -> Pd (uses name)
+        id_period_parent -> PdP (uses name)
+        id_period_child -> PdC (uses name)
+        id_role -> Ro (uses name)
+        id_role_parent -> RoP (uses name)
+        id_role_child -> RoC (uses name)
+        id_person -> Pn (uses name)
+        id_person_parent -> PnP (uses name)
+        id_person_child -> PnC (uses name)
+    
+    Args:
+        proprelation_type_name: The type name (e.g., 'BRSO', 'ORG-TREE', 'PERSON-TREE')
+        **kwargs: Field values as records
+    
+    Returns:
+        String like 'PPSBR:Ro=EMPLOYEE,Or=int.olvp.bawa,Pn=Demeyer'
+    """
+    # Field mapping: field_name -> (abbreviation, primary_field, fallback_field)
+    field_map = {
+        'id_org': ('Or', 'name_tree', 'name'),
+        'id_org_parent': ('OrP', 'name_tree', 'name'),
+        'id_org_child': ('OrC', 'name_tree', 'name'),
+        'id_period': ('Pd', 'name', 'name'),
+        'id_period_parent': ('PdP', 'name', 'name'),
+        'id_period_child': ('PdC', 'name', 'name'),
+        'id_role': ('Ro', 'name', 'name'),
+        'id_role_parent': ('RoP', 'name', 'name'),
+        'id_role_child': ('RoC', 'name', 'name'),
+        'id_person': ('Pn', 'name', 'name'),
+        'id_person_parent': ('PnP', 'name', 'name'),
+        'id_person_child': ('PnC', 'name', 'name'),
+    }
+    
+    # Order of fields in the name (for consistent output)
+    field_order = [
+        'id_role', 'id_role_parent', 'id_role_child',
+        'id_org_parent', 'id_org', 'id_org_child',
+        'id_person', 'id_person_parent', 'id_person_child',
+        'id_period', 'id_period_parent', 'id_period_child',
+    ]
+    
+    parts = []
+    
+    for field_name in field_order:
+        if field_name in kwargs and kwargs[field_name]:
+            record = kwargs[field_name]
+            abbr, primary_field, fallback_field = field_map[field_name]
+            
+            # Get value from record
+            value = None
+            if hasattr(record, primary_field) and getattr(record, primary_field):
+                value = getattr(record, primary_field)
+            elif hasattr(record, fallback_field) and getattr(record, fallback_field):
+                value = getattr(record, fallback_field)
+            elif hasattr(record, 'name'):
+                value = record.name
+            
+            if value:
+                parts.append(f"{abbr}={value}")
+    
+    # Build the full name
+    type_prefix = proprelation_type_name.upper() if proprelation_type_name else 'UNKNOWN'
+    
+    if parts:
+        return f"{type_prefix}:{','.join(parts)}"
+    return type_prefix
 
 
 class BeTaskProcessor(models.AbstractModel):
@@ -125,11 +209,7 @@ class BeTaskProcessor(models.AbstractModel):
     # -------------------------------------------------------------------------
     # PropRelation Type Constants (UPDATED NAMES)
     # -------------------------------------------------------------------------
-
-    # PERSON-TREE: Defines where a Person resides in the Org tree
-    PROPRELATION_TYPE_ORG_TREE = 'OrgTree'
-
-
+    
     # PERSON-TREE: Defines where a Person resides in the Org tree
     PROPRELATION_TYPE_PERSON_TREE = 'PERSON-TREE'
     
@@ -137,7 +217,7 @@ class BeTaskProcessor(models.AbstractModel):
     PROPRELATION_TYPE_PPSBR = 'PPSBR'
     
     # SR-BR: SapRole to BackendRole mapping
-    PROPRELATION_TYPE_SR_BR = 'SR-BR'
+    PROPRELATION_TYPE_SR_BR = 'SRBR'
     
     # BRSO: BackendRole to School Org mapping
     PROPRELATION_TYPE_BRSO = 'BRSO'
@@ -173,6 +253,57 @@ class BeTaskProcessor(models.AbstractModel):
         
         _logger.warning(f"Could not parse date: {date_string}")
         return None
+
+    # =========================================================================
+    # FIELD CHANGE TRACKING HELPER
+    # =========================================================================
+
+    def _get_field_changes(self, record, new_vals: dict, exclude_fields: list = None) -> List[str]:
+        """
+        Compare current record values with new values and return list of changes.
+
+        Args:
+            record: Odoo record to compare against
+            new_vals: Dictionary of new field values
+            exclude_fields: List of field names to exclude from comparison
+
+        Returns:
+            List of change descriptions like "field_name: 'old_value' → 'new_value'"
+        """
+        changes = []
+        exclude = exclude_fields or []
+
+        for field_name, new_value in new_vals.items():
+            if field_name in exclude:
+                continue
+
+            # Get old value from record
+            old_value = getattr(record, field_name, None)
+
+            # Handle Many2one fields - compare IDs
+            if hasattr(old_value, 'id'):
+                old_value = old_value.id
+
+            # Normalize values for comparison
+            old_str = str(old_value) if old_value not in (None, False, '') else ''
+            new_str = str(new_value) if new_value not in (None, False, '') else ''
+
+            # Skip if values are the same
+            if old_str == new_str:
+                continue
+
+            # Format the change description
+            old_display = old_str[:50] + '...' if len(old_str) > 50 else old_str
+            new_display = new_str[:50] + '...' if len(new_str) > 50 else new_str
+
+            if not old_display:
+                changes.append(f"  {field_name}: (empty) → '{new_display}'")
+            elif not new_display:
+                changes.append(f"  {field_name}: '{old_display}' → (empty)")
+            else:
+                changes.append(f"  {field_name}: '{old_display}' → '{new_display}'")
+
+        return changes
 
     # =========================================================================
     # JSON TO ODOO MAPPING METHODS - EMPLOYEE
@@ -377,12 +508,13 @@ class BeTaskProcessor(models.AbstractModel):
         new_person = Person.create(person_vals)
         
         details_vals = self._map_employee_json_to_person_details_vals(
-            employee_json, 
+            employee_json,
             new_person.id,
             inst_nr
         )
+        details_vals['is_active'] = True  # First version is active
         PersonDetails.create(details_vals)
-        
+
         _logger.info(f"Created employee {new_person.name} (ID: {new_person.id})")
         
         # Trigger ODOO-PERSON-ADD task to create Odoo User and HR Employee
@@ -403,41 +535,75 @@ class BeTaskProcessor(models.AbstractModel):
         return new_person
 
     def _update_person_from_employee_json(
-        self, 
-        person, 
-        employee_json: dict, 
+        self,
+        person,
+        employee_json: dict,
         inst_nr: str = '',
         action: str = 'UPDATE'
-    ) -> bool:
-        """Update a Person and PersonDetails record from employee JSON."""
+    ) -> dict:
+        """Update a Person and PersonDetails record from employee JSON.
+
+        Returns:
+            dict with 'success' and 'field_changes' keys
+        """
         PersonDetails = self.env['myschool.person.details']
-        
+        field_changes = []
+
         person_vals = self._map_employee_json_to_person_vals(employee_json)
-        
+
         if action == 'REACTIVATE':
             person_vals['is_active'] = True
             _logger.info(f"Reactivating employee {person.name}")
-        
+
+        # Track field changes before writing
+        person_changes = self._get_field_changes(person, person_vals)
+        if person_changes:
+            field_changes.append(f"Person fields changed:")
+            field_changes.extend(person_changes)
+
         person.write(person_vals)
-        
+
+        # Search for current ACTIVE PersonDetails record
         existing_details = PersonDetails.search([
             ('person_id', '=', person.id),
-            ('extra_field_1', '=', inst_nr)
+            ('extra_field_1', '=', inst_nr),
+            ('is_active', '=', True)
         ], limit=1)
-        
+
         details_vals = self._map_employee_json_to_person_details_vals(
             employee_json,
             person.id,
             inst_nr
         )
-        
+        details_vals['is_active'] = True  # New records are always active
+
         if existing_details:
-            existing_details.write(details_vals)
-            _logger.info(f"Updated PersonDetails for {person.name}, instNr {inst_nr}")
+            # Track detail changes (exclude large JSON fields)
+            detail_changes = self._get_field_changes(
+                existing_details, details_vals,
+                exclude_fields=['full_json_string', 'person_id', 'is_active']
+            )
+            if detail_changes:
+                # Changes detected - create new version, deactivate old
+                field_changes.append(f"PersonDetails version created (previous deactivated):")
+                field_changes.extend(detail_changes)
+
+                # Deactivate the current record
+                existing_details.write({'is_active': False})
+                _logger.info(f"Deactivated PersonDetails ID {existing_details.id} for {person.name}")
+
+                # Create new active version
+                new_details = PersonDetails.create(details_vals)
+                _logger.info(f"Created new PersonDetails version ID {new_details.id} for {person.name}, instNr {inst_nr}")
+            else:
+                field_changes.append(f"PersonDetails unchanged - no new version created")
+                _logger.info(f"No changes in PersonDetails for {person.name}, instNr {inst_nr}")
         else:
+            # No active record exists - create first version
             PersonDetails.create(details_vals)
-            _logger.info(f"Created new PersonDetails for {person.name}, instNr {inst_nr}")
-        
+            field_changes.append(f"Created first PersonDetails version for instNr {inst_nr}")
+            _logger.info(f"Created first PersonDetails for {person.name}, instNr {inst_nr}")
+
         # Trigger ODOO-PERSON-UPD task if person has Odoo user
         if person.odoo_user_id:
             odoo_task_data = {
@@ -452,8 +618,8 @@ class BeTaskProcessor(models.AbstractModel):
                 None
             )
             _logger.info(f'Created ODOO-PERSON-UPD task for {person.name}')
-        
-        return True
+
+        return {'success': True, 'field_changes': field_changes}
 
     def _deactivate_person(self, person, data_json: dict = None, inst_nr: str = '') -> bool:
         """Deactivate a Person record and their PropRelations."""
@@ -538,49 +704,86 @@ class BeTaskProcessor(models.AbstractModel):
             new_person.id,
             inst_nr or registration_json.get('instelnr', '')
         )
+        details_vals['is_active'] = True  # First version is active
         PersonDetails.create(details_vals)
-        
+
         _logger.info(f"Created student {new_person.name} (ID: {new_person.id})")
         return new_person
 
     def _update_person_from_student_json(
-        self, 
+        self,
         person,
-        registration_json: dict, 
+        registration_json: dict,
         student_json: dict = None,
         inst_nr: str = '',
         action: str = 'UPDATE'
-    ) -> bool:
-        """Update a Person and PersonDetails record from student JSON."""
+    ) -> dict:
+        """Update a Person and PersonDetails record from student JSON.
+
+        Returns:
+            dict with 'success' and 'field_changes' keys
+        """
         PersonDetails = self.env['myschool.person.details']
-        
+        field_changes = []
+
         person_vals = self._map_student_json_to_person_vals(registration_json, student_json)
-        
+
         if action == 'REACTIVATE':
             person_vals['is_active'] = True
             person_vals['reg_end_date'] = None
             _logger.info(f"Reactivating student {person.name}")
-        
+
+        # Track field changes before writing
+        person_changes = self._get_field_changes(person, person_vals)
+        if person_changes:
+            field_changes.append(f"Person fields changed:")
+            field_changes.extend(person_changes)
+
         person.write(person_vals)
-        
+
+        # Search for current ACTIVE PersonDetails record
         existing_details = PersonDetails.search([
             ('person_id', '=', person.id),
-            ('extra_field_1', '=', inst_nr)
+            ('extra_field_1', '=', inst_nr),
+            ('is_active', '=', True)
         ], limit=1)
-        
+
         details_vals = self._map_student_json_to_person_details_vals(
             registration_json,
             student_json or {},
             person.id,
             inst_nr
         )
-        
+        details_vals['is_active'] = True  # New records are always active
+
         if existing_details:
-            existing_details.write(details_vals)
+            # Track detail changes (exclude large JSON fields)
+            detail_changes = self._get_field_changes(
+                existing_details, details_vals,
+                exclude_fields=['full_json_string', 'person_id', 'is_active']
+            )
+            if detail_changes:
+                # Changes detected - create new version, deactivate old
+                field_changes.append(f"PersonDetails version created (previous deactivated):")
+                field_changes.extend(detail_changes)
+
+                # Deactivate the current record
+                existing_details.write({'is_active': False})
+                _logger.info(f"Deactivated PersonDetails ID {existing_details.id} for {person.name}")
+
+                # Create new active version
+                new_details = PersonDetails.create(details_vals)
+                _logger.info(f"Created new PersonDetails version ID {new_details.id} for {person.name}, instNr {inst_nr}")
+            else:
+                field_changes.append(f"PersonDetails unchanged - no new version created")
+                _logger.info(f"No changes in PersonDetails for {person.name}, instNr {inst_nr}")
         else:
+            # No active record exists - create first version
             PersonDetails.create(details_vals)
-        
-        return True
+            field_changes.append(f"Created first PersonDetails version for instNr {inst_nr}")
+            _logger.info(f"Created first PersonDetails for {person.name}, instNr {inst_nr}")
+
+        return {'success': True, 'field_changes': field_changes}
 
     # =========================================================================
     # ORG CRUD METHODS
@@ -598,12 +801,21 @@ class BeTaskProcessor(models.AbstractModel):
         _logger.info(f"Created org {new_org.name} (ID: {new_org.id})")
         return new_org
 
-    def _update_org_from_json(self, org, org_json: dict) -> bool:
-        """Update an Org record from JSON."""
+    def _update_org_from_json(self, org, org_json: dict) -> dict:
+        """Update an Org record from JSON.
+
+        Returns:
+            dict with 'success' and 'field_changes' keys
+        """
         org_vals = self._map_org_json_to_org_vals(org_json)
+
+        # Track field changes before writing
+        field_changes = self._get_field_changes(org, org_vals)
+
         org.write(org_vals)
         _logger.info(f"Updated org {org.name}")
-        return True
+
+        return {'success': True, 'field_changes': field_changes}
 
     def _deactivate_org(self, org) -> bool:
         """Deactivate an Org record."""
@@ -616,9 +828,9 @@ class BeTaskProcessor(models.AbstractModel):
     # =========================================================================
     
     @api.model
-    def _register_task_success(self, task, result_data=None):
+    def _register_task_success(self, task, result_data=None, changes=None):
         """Mark task as successfully completed."""
-        task.action_set_completed(result_data)
+        task.action_set_completed(result_data, changes)
         _logger.info(f'Task {task.name} completed successfully')
         return True
     
@@ -681,26 +893,43 @@ class BeTaskProcessor(models.AbstractModel):
     
     @api.model
     def process_single_task(self, task):
-        """Process a single task."""
+        """Process a single task.
+
+        Processor methods can return:
+        - True/False: simple success/failure
+        - dict with 'success' and optional 'changes': detailed result
+        - string: treated as changes description (success=True)
+        """
         if not task:
             return False
-        
+
         if task.status not in ['new', 'error']:
             _logger.warning(f'Task {task.name} is not in processable status: {task.status}')
             return False
-        
+
         task.action_set_processing()
-        
+
         try:
             processor_method = task.betasktype_id.processor_method
-            
+
             if processor_method and hasattr(self, processor_method):
                 method = getattr(self, processor_method)
                 result = method(task)
             else:
                 result = self._process_task_generic(task)
-            
-            if result:
+
+            # Handle different return types
+            if isinstance(result, dict):
+                success = result.get('success', True)
+                changes = result.get('changes')
+                if success:
+                    return self._register_task_success(task, changes=changes)
+                else:
+                    return self._register_task_error(task, result.get('error', 'Processing failed'))
+            elif isinstance(result, str):
+                # String result means success with changes description
+                return self._register_task_success(task, changes=result)
+            elif result:
                 return self._register_task_success(task)
             else:
                 return self._register_task_error(task, 'Processing returned False')
@@ -837,25 +1066,33 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_employee_add(self, task):
         """Process DB EMPLOYEE ADD task - Create new employee."""
         _logger.info(f'Processing DB_EMPLOYEE_ADD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-510', f'No data in task {task.name}')
             return False
-        
+
         inst_nr = data.get('instNr', '')
         person_uuid = data.get('personId')
-        
+
         if person_uuid:
             Person = self.env['myschool.person']
             existing = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
             if existing:
                 _logger.warning(f'Employee {person_uuid} already exists, converting to UPDATE')
-                return self._update_person_from_employee_json(existing, data, inst_nr, 'UPDATE')
-        
+                changes.append(f"Employee {person_uuid} already exists - converted to UPDATE")
+                result = self._update_person_from_employee_json(existing, data, inst_nr, 'UPDATE')
+                changes.append(f"Updated person: {existing.name} (ID: {existing.id})")
+                if result.get('field_changes'):
+                    changes.extend(result['field_changes'])
+                return {'success': True, 'changes': '\n'.join(changes)}
+
         try:
             new_person = self._create_person_from_employee_json(data, inst_nr)
-            return True
+            changes.append(f"Created person: {new_person.name} (ID: {new_person.id})")
+            changes.append(f"Created ODOO-PERSON-ADD task for user/employee creation")
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-511', f'Error creating employee: {str(e)}')
             raise
@@ -864,41 +1101,55 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_employee_upd(self, task):
         """
         Process DB EMPLOYEE UPD task - Update existing employee.
-        
+
         Handles actions: UPDATE, ADD-DETAILS, REACTIVATE
         """
         _logger.info(f'Processing DB_EMPLOYEE_UPD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         data2 = self._parse_task_data(task.data2)
-        
+
         if not data:
             self._log_error('BETASK-520', f'No data in task {task.name}')
             return False
-        
+
         action = 'UPDATE'
         if data2 and isinstance(data2, dict):
             action = data2.get('action', 'UPDATE')
-        
+
         inst_nr = data.get('instNr', '')
         person_uuid = data.get('personId')
-        
+
         _logger.info(f'Employee UPD action: {action}, instNr: {inst_nr}')
-        
+
         Person = self.env['myschool.person']
         person = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
-        
+
         if not person:
             _logger.warning(f'Employee {person_uuid} not found, converting to ADD')
-            return self._create_person_from_employee_json(data, inst_nr) is not None
-        
+            changes.append(f"Employee {person_uuid} not found - converted to ADD")
+            new_person = self._create_person_from_employee_json(data, inst_nr)
+            if new_person:
+                changes.append(f"Created person: {new_person.name} (ID: {new_person.id})")
+            return {'success': new_person is not None, 'changes': '\n'.join(changes)}
+
         try:
             if action == 'REACTIVATE':
-                return self._update_person_from_employee_json(person, data, inst_nr, 'REACTIVATE')
+                result = self._update_person_from_employee_json(person, data, inst_nr, 'REACTIVATE')
+                changes.append(f"Reactivated person: {person.name} (ID: {person.id})")
             elif action == 'ADD-DETAILS':
-                return self._update_person_from_employee_json(person, data, inst_nr, 'UPDATE')
+                result = self._update_person_from_employee_json(person, data, inst_nr, 'UPDATE')
+                changes.append(f"Added details for person: {person.name} (ID: {person.id})")
             else:
-                return self._update_person_from_employee_json(person, data, inst_nr, 'UPDATE')
+                result = self._update_person_from_employee_json(person, data, inst_nr, 'UPDATE')
+                changes.append(f"Updated person: {person.name} (ID: {person.id})")
+            # Include field-level changes
+            if result.get('field_changes'):
+                changes.extend(result['field_changes'])
+            if person.odoo_user_id:
+                changes.append(f"Created ODOO-PERSON-UPD task for Odoo user update")
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-521', f'Error updating employee: {str(e)}')
             raise
@@ -907,25 +1158,32 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_employee_deact(self, task):
         """Process DB EMPLOYEE DEACT task - Deactivate employee."""
         _logger.info(f'Processing DB_EMPLOYEE_DEACT: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-530', f'No data in task {task.name}')
             return False
-        
+
         inst_nr = data.get('instNr', '')
         person_uuid = data.get('personId')
-        
+
         Person = self.env['myschool.person']
         person = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
-        
+
         if not person:
             _logger.warning(f'Employee {person_uuid} not found for DEACT')
-            return True
-        
+            changes.append(f"Employee {person_uuid} not found - nothing to deactivate")
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         try:
+            had_odoo_user = bool(person.odoo_user_id)
             self._deactivate_person(person, data, inst_nr)
-            return True
+            changes.append(f"Deactivated person: {person.name} (ID: {person.id})")
+            changes.append(f"Deactivated related PropRelations")
+            if had_odoo_user:
+                changes.append(f"Created ODOO-PERSON-DEACT task for Odoo user deactivation")
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-531', f'Error deactivating employee: {str(e)}')
             raise
@@ -938,25 +1196,32 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_student_add(self, task):
         """Process DB STUDENT ADD task - Create new student."""
         _logger.info(f'Processing DB_STUDENT_ADD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-540', f'No data in task {task.name}')
             return False
-        
+
         inst_nr = data.get('instelnr', '') or data.get('instNr', '')
         person_uuid = data.get('persoonId') or data.get('personId')
-        
+
         if person_uuid:
             Person = self.env['myschool.person']
             existing = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
             if existing:
                 _logger.warning(f'Student {person_uuid} already exists, converting to UPDATE')
-                return self._update_person_from_student_json(existing, data, data, inst_nr, 'UPDATE')
-        
+                changes.append(f"Student {person_uuid} already exists - converted to UPDATE")
+                result = self._update_person_from_student_json(existing, data, data, inst_nr, 'UPDATE')
+                changes.append(f"Updated person: {existing.name} (ID: {existing.id})")
+                if result.get('field_changes'):
+                    changes.extend(result['field_changes'])
+                return {'success': True, 'changes': '\n'.join(changes)}
+
         try:
             new_person = self._create_person_from_student_json(data, data, inst_nr)
-            return True
+            changes.append(f"Created student: {new_person.name} (ID: {new_person.id})")
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-541', f'Error creating student: {str(e)}')
             raise
@@ -965,31 +1230,40 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_student_upd(self, task):
         """Process DB STUDENT UPD task - Update existing student."""
         _logger.info(f'Processing DB_STUDENT_UPD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         data2 = self._parse_task_data(task.data2)
-        
+
         if not data:
             self._log_error('BETASK-550', f'No data in task {task.name}')
             return False
-        
+
         action = 'UPDATE'
         if data2 and isinstance(data2, dict):
             action = data2.get('action', 'UPDATE')
-        
+
         inst_nr = data.get('instelnr', '') or data.get('instNr', '')
         person_uuid = data.get('persoonId') or data.get('personId')
-        
+
         Person = self.env['myschool.person']
         person = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
-        
+
         if not person:
             _logger.warning(f'Student {person_uuid} not found, converting to ADD')
-            return self._create_person_from_student_json(data, data, inst_nr) is not None
-        
+            changes.append(f"Student {person_uuid} not found - converted to ADD")
+            new_person = self._create_person_from_student_json(data, data, inst_nr)
+            if new_person:
+                changes.append(f"Created student: {new_person.name} (ID: {new_person.id})")
+            return {'success': new_person is not None, 'changes': '\n'.join(changes)}
+
         try:
-            self._update_person_from_student_json(person, data, data, inst_nr, action)
-            return True
+            result = self._update_person_from_student_json(person, data, data, inst_nr, action)
+            changes.append(f"Updated student: {person.name} (ID: {person.id})")
+            changes.append(f"Action: {action}")
+            if result.get('field_changes'):
+                changes.extend(result['field_changes'])
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-551', f'Error updating student: {str(e)}')
             raise
@@ -998,31 +1272,36 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_student_deact(self, task):
         """Process DB STUDENT DEACT task - Deactivate student."""
         _logger.info(f'Processing DB_STUDENT_DEACT: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-560', f'No data in task {task.name}')
             return False
-        
+
         inst_nr = data.get('instelnr', '') or data.get('instNr', '')
         person_uuid = data.get('persoonId') or data.get('personId')
-        
+
         Person = self.env['myschool.person']
         person = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
-        
+
         if not person:
             _logger.warning(f'Student {person_uuid} not found for DEACT')
-            return True
-        
+            changes.append(f"Student {person_uuid} not found - nothing to deactivate")
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         try:
             reg_end_date = data.get('regEndDate') or data.get('einddatum')
             if reg_end_date:
                 parsed_date = self._parse_date_safe(reg_end_date)
                 if parsed_date:
                     person.write({'reg_end_date': parsed_date.strftime('%Y-%m-%d')})
-            
+                    changes.append(f"Set registration end date: {parsed_date.strftime('%Y-%m-%d')}")
+
             self._deactivate_person(person, data, inst_nr)
-            return True
+            changes.append(f"Deactivated student: {person.name} (ID: {person.id})")
+            changes.append(f"Deactivated related PropRelations")
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-561', f'Error deactivating student: {str(e)}')
             raise
@@ -1035,29 +1314,36 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_org_add(self, task):
         """Process DB ORG ADD task - Create new organization/class."""
         _logger.info(f'Processing DB_ORG_ADD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-570', f'No data in task {task.name}')
             return False
-        
+
         org_name = data.get('name', '')
         inst_nr = data.get('instnr', '')
-        
+
         Org = self.env['myschool.org']
         existing = Org.search([
             ('name_short', '=', org_name),
             ('inst_nr', '=', inst_nr),
             ('is_active', '=', True)
         ], limit=1)
-        
+
         if existing:
             _logger.warning(f'Org {org_name} already exists, converting to UPDATE')
-            return self._update_org_from_json(existing, data)
-        
+            changes.append(f"Org {org_name} already exists - converted to UPDATE")
+            result = self._update_org_from_json(existing, data)
+            changes.append(f"Updated org: {existing.name} (ID: {existing.id})")
+            if result.get('field_changes'):
+                changes.extend(result['field_changes'])
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         try:
             new_org = self._create_org_from_json(data)
-            return True
+            changes.append(f"Created org: {new_org.name} (ID: {new_org.id})")
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-571', f'Error creating org: {str(e)}')
             raise
@@ -1066,18 +1352,19 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_org_upd(self, task):
         """Process DB ORG UPD task - Update existing organization."""
         _logger.info(f'Processing DB_ORG_UPD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-580', f'No data in task {task.name}')
             return False
-        
+
         org_id = data.get('orgId')
         org_name = data.get('name', '')
         inst_nr = data.get('instnr', '')
-        
+
         Org = self.env['myschool.org']
-        
+
         if org_id:
             org = Org.browse(org_id)
         else:
@@ -1085,14 +1372,21 @@ class BeTaskProcessor(models.AbstractModel):
                 ('name_short', '=', org_name),
                 ('inst_nr', '=', inst_nr)
             ], limit=1)
-        
+
         if not org:
             _logger.warning(f'Org not found, converting to ADD')
-            return self._create_org_from_json(data) is not None
-        
+            changes.append(f"Org not found - converted to ADD")
+            new_org = self._create_org_from_json(data)
+            if new_org:
+                changes.append(f"Created org: {new_org.name} (ID: {new_org.id})")
+            return {'success': new_org is not None, 'changes': '\n'.join(changes)}
+
         try:
-            self._update_org_from_json(org, data)
-            return True
+            result = self._update_org_from_json(org, data)
+            changes.append(f"Updated org: {org.name} (ID: {org.id})")
+            if result.get('field_changes'):
+                changes.extend(result['field_changes'])
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-581', f'Error updating org: {str(e)}')
             raise
@@ -1101,18 +1395,19 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_org_deact(self, task):
         """Process DB ORG DEACT task - Deactivate organization."""
         _logger.info(f'Processing DB_ORG_DEACT: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-590', f'No data in task {task.name}')
             return False
-        
+
         org_id = data.get('orgId')
         org_name = data.get('name', '')
         inst_nr = data.get('instnr', '')
-        
+
         Org = self.env['myschool.org']
-        
+
         if org_id:
             org = Org.browse(org_id)
         else:
@@ -1121,14 +1416,16 @@ class BeTaskProcessor(models.AbstractModel):
                 ('inst_nr', '=', inst_nr),
                 ('is_active', '=', True)
             ], limit=1)
-        
+
         if not org:
             _logger.warning(f'Org not found for DEACT')
-            return True
-        
+            changes.append(f"Org not found - nothing to deactivate")
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         try:
             self._deactivate_org(org)
-            return True
+            changes.append(f"Deactivated org: {org.name} (ID: {org.id})")
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-591', f'Error deactivating org: {str(e)}')
             raise
@@ -1141,28 +1438,31 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_role_add(self, task):
         """Process DB ROLE ADD task."""
         _logger.info(f'Processing DB_ROLE_ADD: {task.name}')
+        changes = []
         data = self._parse_task_data(task.data)
-        
+
         if not data:
             return False
-        
+
         Role = self.env['myschool.role']
-        
+
         try:
             new_role = Role.create(data)
             _logger.info(f'Created role: {new_role.name}')
-            return True
+            changes.append(f"Created role: {new_role.name} (ID: {new_role.id})")
+            return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-600', f'Error creating role: {str(e)}')
             raise
-    
+
     @api.model
     def process_db_role_upd(self, task):
         """Process DB ROLE UPD task."""
         _logger.info(f'Processing DB_ROLE_UPD: {task.name}')
+        changes = []
         data = self._parse_task_data(task.data)
-        # TODO: Implement role update logic
-        return True
+        changes.append("Role update - no changes implemented yet")
+        return {'success': True, 'changes': '\n'.join(changes)}
 
     # =========================================================================
     # DB PROPRELATION TASK PROCESSORS
@@ -1172,10 +1472,10 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_proprelation_add(self, task):
         """
         Process DB PROPRELATION ADD task - Create new PropRelation (PPSBR).
-        
+
         Creates a PPSBR record linking Person-Period-School-BackendRole.
         After creating PPSBR records, determines the Person's position in Org tree.
-        
+
         Expected data structure:
         {
             "personId": "uuid",
@@ -1190,12 +1490,13 @@ class BeTaskProcessor(models.AbstractModel):
         }
         """
         _logger.info(f'Processing DB_PROPRELATION_ADD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-700', f'No data in task {task.name}')
             return False
-        
+
         try:
             PropRelation = self.env['myschool.proprelation']
             PropRelationType = self.env['myschool.proprelation.type']
@@ -1244,40 +1545,83 @@ class BeTaskProcessor(models.AbstractModel):
                     ], limit=1)
             
             # -----------------------------------------------------------------
-            # Step 3: Get Role (SAP Role -> Backend Role via SR-BR)
+            # Step 3: Get Backend Role via SR-BR lookup
+            # Task data contains SAP Role info (roleCode = shortname, roleName = name)
+            # We need to find the SAP Role first, then lookup Backend Role via SR-BR
+            # The PPSBR must contain the BACKEND Role, not the SAP Role!
             # -----------------------------------------------------------------
-            role = None
-            be_role = None
+            sap_role = None
+            backend_role = None
             role_id = data.get('roleId')
-            role_code = data.get('roleCode')
+            role_code = data.get('roleCode')  # SAP Role shortname
+            role_name = data.get('roleName')  # SAP Role name
             
+            _logger.debug(f'[PPSBR] Role lookup - roleId: {role_id}, roleCode: {role_code}, roleName: {role_name}')
+            
+            # Step 3a: Find the SAP Role from task data
             if role_id:
-                role = Role.browse(role_id)
+                sap_role = Role.browse(role_id)
             elif role_code:
-                role = Role.search([('shortname', '=', role_code)], limit=1)
+                # roleCode corresponds to Role.shortname
+                sap_role = Role.search([('shortname', '=', role_code)], limit=1)
+            elif role_name:
+                # roleName corresponds to Role.name
+                sap_role = Role.search([('name', '=', role_name)], limit=1)
             
-            # Find Backend Role via SR-BR relation
-            if role:
+            if sap_role:
+                _logger.debug(f'[PPSBR] Found SAP Role: {sap_role.name} (shortname: {sap_role.shortname}, ID: {sap_role.id})')
+            else:
+                _logger.warning(f'[PPSBR] SAP Role not found for roleCode={role_code}, roleName={role_name}')
+            
+            # Step 3b: Find Backend Role via SR-BR relation
+            # SR-BR maps SAP Role -> Backend Role
+            # SR-BR.id_role or SR-BR.id_role_child = SAP Role
+            # SR-BR.id_role_parent = Backend Role
+            if sap_role:
                 sr_br_type = PropRelationType.search([
                     ('name', '=', self.PROPRELATION_TYPE_SR_BR)
                 ], limit=1)
                 
                 if sr_br_type:
+                    # Search for SR-BR relation where SAP Role is linked
                     sr_br_relation = PropRelation.search([
-                        ('id_role', '=', role.id),
                         ('proprelation_type_id', '=', sr_br_type.id),
-                        ('is_active', '=', True)
+                        ('is_active', '=', True),
+                        ('id_role_parent', '!=', False),
+                        '|',
+                        ('id_role', '=', sap_role.id),
+                        ('id_role_child', '=', sap_role.id)
                     ], limit=1)
                     
                     if sr_br_relation and sr_br_relation.id_role_parent:
-                        be_role = sr_br_relation.id_role_parent
-                        _logger.info(f'Found Backend Role {be_role.name} for SAP Role {role.name}')
+                        backend_role = sr_br_relation.id_role_parent
+                        _logger.info(
+                            f'[PPSBR] Found Backend Role via SR-BR: {backend_role.name} (ID: {backend_role.id}) '
+                            f'for SAP Role {sap_role.name} (ID: {sap_role.id})'
+                        )
+                    else:
+                        _logger.warning(
+                            f'[PPSBR] No SR-BR relation found for SAP Role {sap_role.name}. '
+                            f'Cannot determine Backend Role!'
+                        )
+                else:
+                    _logger.warning(f'[PPSBR] SR-BR PropRelationType not found!')
             
-            role_to_use = be_role if be_role else role
-            
-            if not role_to_use:
-                self._log_error('BETASK-703', f'No role found for task {task.name}')
+            # The role to use in PPSBR MUST be the Backend Role
+            # If we couldn't find a Backend Role, log an error
+            if not backend_role:
+                if sap_role:
+                    self._log_error(
+                        'BETASK-703', 
+                        f'No Backend Role found for SAP Role {sap_role.name} (roleCode={role_code}). '
+                        f'Please ensure SR-BR mapping exists. Task: {task.name}'
+                    )
+                else:
+                    self._log_error('BETASK-703', f'No role found for task {task.name}')
                 return False
+            
+            # Use backend_role for PPSBR (never use sap_role directly!)
+            role_to_use = backend_role
             
             # -----------------------------------------------------------------
             # Step 4: Get Period (optional)
@@ -1324,22 +1668,27 @@ class BeTaskProcessor(models.AbstractModel):
             if existing:
                 _logger.info(f'PPSBR PropRelation already exists for {person.name}')
                 self._update_person_tree_position(person)
-                return True
+                changes.append(f"PPSBR already exists for {person.name}")
+                changes.append(f"Updated PERSON-TREE position")
+                return {'success': True, 'changes': '\n'.join(changes)}
             
             # -----------------------------------------------------------------
-            # Step 7: Create PPSBR PropRelation
+            # Step 7: Create PPSBR PropRelation with standardized name
             # -----------------------------------------------------------------
-            relation_name = f'{person.name} - {role_to_use.name}'
+            # Build standardized name using build_proprelation_name
+            name_kwargs = {'id_person': person, 'id_role': role_to_use}
             if org:
-                relation_name += f' - {org.name}'
+                name_kwargs['id_org'] = org
             if period:
-                relation_name += f' ({period.name})'
+                name_kwargs['id_period'] = period
+            
+            relation_name = build_proprelation_name(self.PROPRELATION_TYPE_PPSBR, **name_kwargs)
             
             proprel_vals = {
                 'name': relation_name,
                 'proprelation_type_id': ppsbr_type.id,
                 'id_person': person.id,
-                'id_role': role_to_use.id,
+                'id_role': role_to_use.id,  # This is the BACKEND Role
                 'is_active': True,
                 'is_organisational': True,
                 'automatic_sync': True,
@@ -1353,22 +1702,31 @@ class BeTaskProcessor(models.AbstractModel):
             if period:
                 proprel_vals['id_period'] = period.id
             
-            if be_role and role:
-                proprel_vals['id_role_child'] = role.id
+            # Note: We do NOT store the SAP Role in PPSBR
+            # The PPSBR only contains the Backend Role in id_role
+            # The SAP Role mapping is maintained separately in SR-BR relations
             
             if role_to_use and hasattr(role_to_use, 'priority'):
                 proprel_vals['priority'] = role_to_use.priority
             
             new_proprel = PropRelation.create(proprel_vals)
-            _logger.info(f'Created PPSBR PropRelation: {relation_name} (ID: {new_proprel.id})')
-            
+            _logger.info(f'Created PPSBR PropRelation: {relation_name} (ID: {new_proprel.id}), Backend Role: {role_to_use.name}')
+            changes.append(f"Created PPSBR: {relation_name} (ID: {new_proprel.id})")
+            changes.append(f"Person: {person.name}")
+            changes.append(f"Backend Role: {role_to_use.name}")
+            if org:
+                changes.append(f"Org: {org.name}")
+            if period:
+                changes.append(f"Period: {period.name}")
+
             # -----------------------------------------------------------------
             # Step 8: Update Person's position in Org tree
             # -----------------------------------------------------------------
             self._update_person_tree_position(person)
-            
-            return True
-            
+            changes.append(f"Updated PERSON-TREE position")
+
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         except Exception as e:
             self._log_error('BETASK-709', f'Error creating PropRelation: {str(e)}')
             raise
@@ -1377,12 +1735,13 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_proprelation_upd(self, task):
         """Process DB PROPRELATION UPD task - Update existing PropRelation."""
         _logger.info(f'Processing DB_PROPRELATION_UPD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-710', f'No data in task {task.name}')
             return False
-        
+
         try:
             PropRelation = self.env['myschool.proprelation']
             
@@ -1432,18 +1791,23 @@ class BeTaskProcessor(models.AbstractModel):
             if update_vals:
                 proprel.write(update_vals)
                 _logger.info(f'Updated PropRelation: {proprel.name}')
-            
+                changes.append(f"Updated PropRelation: {proprel.name} (ID: {proprel.id})")
+                changes.append(f"Updated fields: {', '.join(update_vals.keys())}")
+            else:
+                changes.append(f"No updates needed for PropRelation: {proprel.name}")
+
             # Always recalculate tree position after PPSBR update
             ppsbr_type = PropRelationType.search([
                 ('name', '=', self.PROPRELATION_TYPE_PPSBR)
             ], limit=1)
-            
+
             if proprel.id_person and ppsbr_type and proprel.proprelation_type_id.id == ppsbr_type.id:
                 _logger.info(f'[TREE-POS] PPSBR updated, recalculating tree position for {proprel.id_person.name}')
                 self._update_person_tree_position(proprel.id_person)
-            
-            return True
-            
+                changes.append(f"Recalculated PERSON-TREE for {proprel.id_person.name}")
+
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         except Exception as e:
             self._log_error('BETASK-719', f'Error updating PropRelation: {str(e)}')
             raise
@@ -1452,16 +1816,17 @@ class BeTaskProcessor(models.AbstractModel):
     def process_db_proprelation_deact(self, task):
         """
         Process DB PROPRELATION DEACT task - Deactivate PropRelation.
-        
+
         After deactivating a PPSBR, recalculates the Person's tree position.
         """
         _logger.info(f'Processing DB_PROPRELATION_DEACT: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-720', f'No data in task {task.name}')
             return False
-        
+
         try:
             PropRelation = self.env['myschool.proprelation']
             PropRelationType = self.env['myschool.proprelation.type']
@@ -1501,30 +1866,35 @@ class BeTaskProcessor(models.AbstractModel):
             
             if not proprel or not proprel.exists():
                 _logger.warning(f'PropRelation not found for DEACT - may already be deactivated')
-                return True
-            
+                changes.append("PropRelation not found - may already be deactivated")
+                return {'success': True, 'changes': '\n'.join(changes)}
+
             if not proprel.is_active:
                 _logger.info(f'PropRelation already inactive: {proprel.name}')
-                return True
-            
+                changes.append(f"PropRelation already inactive: {proprel.name}")
+                return {'success': True, 'changes': '\n'.join(changes)}
+
             if not person and proprel.id_person:
                 person = proprel.id_person
-            
+
             proprel.write({'is_active': False})
             reason = data.get('reason', 'Deactivated by sync')
             _logger.info(f'Deactivated PropRelation: {proprel.name}, reason: {reason}')
-            
+            changes.append(f"Deactivated PropRelation: {proprel.name} (ID: {proprel.id})")
+            changes.append(f"Reason: {reason}")
+
             # Recalculate Person's tree position if this was a PPSBR
             ppsbr_type = PropRelationType.search([
                 ('name', '=', self.PROPRELATION_TYPE_PPSBR)
             ], limit=1)
-            
+
             if person and ppsbr_type and proprel.proprelation_type_id.id == ppsbr_type.id:
                 _logger.info(f'PPSBR deactivated, recalculating tree position for {person.name}')
                 self._update_person_tree_position(person)
-            
-            return True
-            
+                changes.append(f"Recalculated PERSON-TREE for {person.name}")
+
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         except Exception as e:
             self._log_error('BETASK-729', f'Error deactivating PropRelation: {str(e)}')
             raise
@@ -1681,6 +2051,8 @@ class BeTaskProcessor(models.AbstractModel):
             
             # -----------------------------------------------------------------
             # Step 5: Find Org via BRSO PropRelation
+            # NOTE: BRSO relations are ALWAYS linked to Backend Roles, never SAP Roles.
+            # The id_role in PPSBR should already be a Backend Role.
             # -----------------------------------------------------------------
             _logger.debug(f'[TREE-POS] Step 5: Looking for BRSO PropRelationType...')
             
@@ -1693,6 +2065,20 @@ class BeTaskProcessor(models.AbstractModel):
             if brso_type:
                 _logger.debug(f'[TREE-POS] Found BRSO type: ID={brso_type.id}')
                 
+                # Validate: Check if selected_role is a Backend Role (optional safety check)
+                # Backend Roles typically have role_type_id.name = 'BACKEND'
+                if selected_role.role_type_id:
+                    role_type_name = selected_role.role_type_id.name
+                    if role_type_name and role_type_name.upper() == 'SAP':
+                        _logger.warning(
+                            f'[TREE-POS] WARNING: selected_role {selected_role.name} appears to be a SAP Role '
+                            f'(role_type={role_type_name}). BRSO lookup may fail. '
+                            f'PPSBR.id_role should contain Backend Roles, not SAP Roles!'
+                        )
+                    else:
+                        _logger.debug(f'[TREE-POS] Role type: {role_type_name}')
+                
+                # Search BRSO using the Backend Role from PPSBR
                 brso_search_domain = [
                     ('id_role', '=', selected_role.id),
                     ('proprelation_type_id', '=', brso_type.id),
@@ -1810,8 +2196,19 @@ class BeTaskProcessor(models.AbstractModel):
             # -----------------------------------------------------------------
             _logger.debug(f'[TREE-POS] Step 8: Preparing PERSON-TREE values...')
             
+            # Build standardized name
+            name_kwargs = {
+                'id_person': person,
+                'id_org': target_org,
+                'id_role': selected_role
+            }
+            if selected_ppsbr.id_period:
+                name_kwargs['id_period'] = selected_ppsbr.id_period
+            
+            tree_name = build_proprelation_name(self.PROPRELATION_TYPE_PERSON_TREE, **name_kwargs)
+            
             tree_vals = {
-                'name': f'{person.name} -> {target_org.name}',
+                'name': tree_name,
                 'proprelation_type_id': person_tree_type.id,
                 'id_person': person.id,
                 'id_org': target_org.id,
@@ -2029,12 +2426,13 @@ class BeTaskProcessor(models.AbstractModel):
         }
         """
         _logger.info(f'Processing ODOO_PERSON_ADD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-800', f'No data in task {task.name}')
             return False
-        
+
         try:
             Person = self.env['myschool.person']
             ResUsers = self.env['res.users']
@@ -2064,7 +2462,9 @@ class BeTaskProcessor(models.AbstractModel):
                 _logger.info(f'Person {person.name} already has Odoo user: {person.odoo_user_id.login}')
                 # Still sync group memberships
                 self._sync_person_group_memberships(person)
-                return True
+                changes.append(f"Person {person.name} already has Odoo user: {person.odoo_user_id.login}")
+                changes.append("Synced group memberships")
+                return {'success': True, 'changes': '\n'.join(changes)}
             
             # Prepare user data
             email = data.get('email') or person.email_cloud or person.email_private
@@ -2080,23 +2480,26 @@ class BeTaskProcessor(models.AbstractModel):
             if existing_user:
                 _logger.info(f'User with login {login} already exists, linking to person')
                 person.write({'odoo_user_id': existing_user.id})
-                
+                changes.append(f"Linked existing Odoo user: {existing_user.login} (ID: {existing_user.id})")
+
                 # Link HR employee if exists, hr module installed, AND person is EMPLOYEE type
                 is_employee_type = (
-                    person.person_type_id and 
-                    person.person_type_id.name and 
+                    person.person_type_id and
+                    person.person_type_id.name and
                     person.person_type_id.name.upper() == 'EMPLOYEE'
                 )
-                
+
                 if hr_installed and is_employee_type:
                     existing_employee = HrEmployee.search([('user_id', '=', existing_user.id)], limit=1)
                     if existing_employee:
                         person.write({'odoo_employee_id_int': existing_employee.id})
                         _logger.info(f'Linked existing HR Employee: {existing_employee.name}')
-                
+                        changes.append(f"Linked existing HR Employee: {existing_employee.name}")
+
                 # Sync group memberships
                 self._sync_person_group_memberships(person)
-                return True
+                changes.append("Synced group memberships")
+                return {'success': True, 'changes': '\n'.join(changes)}
             
             # Create new Odoo user (without password - Odoo will handle it)
             user_vals = {
@@ -2108,9 +2511,11 @@ class BeTaskProcessor(models.AbstractModel):
             
             new_user = ResUsers.create(user_vals)
             _logger.info(f'Created Odoo user: {new_user.login} (ID: {new_user.id})')
-            
+            changes.append(f"Created Odoo user: {new_user.login} (ID: {new_user.id})")
+
             # Link user to person
             person.write({'odoo_user_id': new_user.id})
+            changes.append(f"Linked to person: {person.name}")
             
             # Create HR Employee only for EMPLOYEE person types (not for students)
             is_employee_type = (
@@ -2140,20 +2545,24 @@ class BeTaskProcessor(models.AbstractModel):
                 
                 new_employee = HrEmployee.create(employee_vals)
                 _logger.info(f'Created HR Employee: {new_employee.name} (ID: {new_employee.id}, company_id: {new_employee.company_id.id if new_employee.company_id else None})')
-                
+                changes.append(f"Created HR Employee: {new_employee.name} (ID: {new_employee.id})")
+
                 # Link employee to person (using integer field)
                 person.write({'odoo_employee_id_int': new_employee.id})
             elif not hr_installed:
                 _logger.info('HR module not installed - skipping HR Employee creation')
+                changes.append("HR module not installed - skipped HR Employee creation")
             elif not is_employee_type:
                 person_type_name = person.person_type_id.name if person.person_type_id else 'None'
                 _logger.info(f'Person type is {person_type_name} (not EMPLOYEE) - skipping HR Employee creation')
-            
+                changes.append(f"Person type {person_type_name} - skipped HR Employee creation")
+
             # Sync group memberships based on roles
             self._sync_person_group_memberships(person)
-            
-            return True
-            
+            changes.append("Synced group memberships")
+
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         except Exception as e:
             self._log_error('BETASK-809', f'Error creating Odoo user: {str(e)}')
             _logger.exception(f'Exception in process_odoo_person_add')
@@ -2173,12 +2582,13 @@ class BeTaskProcessor(models.AbstractModel):
         }
         """
         _logger.info(f'Processing ODOO_PERSON_UPD: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-810', f'No data in task {task.name}')
             return False
-        
+
         try:
             Person = self.env['myschool.person']
             
@@ -2216,6 +2626,7 @@ class BeTaskProcessor(models.AbstractModel):
                 if user_updates:
                     person.odoo_user_id.write(user_updates)
                     _logger.info(f'Updated Odoo user {person.odoo_user_id.login}: {user_updates}')
+                    changes.append(f"Updated Odoo user {person.odoo_user_id.login}: {', '.join(user_updates.keys())}")
             
             # Update HR Employee if exists (and hr module installed)
             hr_installed = 'hr.employee' in self.env
@@ -2243,12 +2654,17 @@ class BeTaskProcessor(models.AbstractModel):
                     if employee_updates:
                         employee.write(employee_updates)
                         _logger.info(f'Updated HR Employee {employee.name}')
-            
+                        changes.append(f"Updated HR Employee {employee.name}: {', '.join(employee_updates.keys())}")
+
             # Sync group memberships (roles may have changed)
             self._sync_person_group_memberships(person)
-            
-            return True
-            
+            changes.append("Synced group memberships")
+
+            if not changes:
+                changes.append(f"No updates needed for {person.name}")
+
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         except Exception as e:
             self._log_error('BETASK-819', f'Error updating Odoo user: {str(e)}')
             raise
@@ -2266,12 +2682,13 @@ class BeTaskProcessor(models.AbstractModel):
         }
         """
         _logger.info(f'Processing ODOO_PERSON_DEACT: {task.name}')
-        
+        changes = []
+
         data = self._parse_task_data(task.data)
         if not data:
             self._log_error('BETASK-820', f'No data in task {task.name}')
             return False
-        
+
         try:
             Person = self.env['myschool.person']
             
@@ -2289,10 +2706,11 @@ class BeTaskProcessor(models.AbstractModel):
             
             if not person or not person.exists():
                 _logger.warning(f'Person not found for DEACT task - may already be deleted')
-                return True
-            
+                changes.append("Person not found - may already be deleted")
+                return {'success': True, 'changes': '\n'.join(changes)}
+
             reason = data.get('reason', 'Deactivated by sync')
-            
+
             # IMPORTANT: Deactivate HR Employee FIRST (before User, due to FK constraint)
             hr_installed = 'hr.employee' in self.env
             if hr_installed and person.odoo_employee_id_int:
@@ -2301,18 +2719,22 @@ class BeTaskProcessor(models.AbstractModel):
                 if employee.exists() and employee.active:
                     employee.write({'active': False})
                     _logger.info(f'Archived HR Employee: {employee.name}, reason: {reason}')
-            
+                    changes.append(f"Archived HR Employee: {employee.name}")
+
             # Remove from all Odoo groups
             if person.odoo_user_id:
                 self._remove_user_from_all_role_groups(person.odoo_user_id)
-            
+                changes.append("Removed user from all role groups")
+
             # Deactivate Odoo User (after HR Employee is archived)
             if person.odoo_user_id and person.odoo_user_id.active:
                 person.odoo_user_id.write({'active': False})
                 _logger.info(f'Archived Odoo user: {person.odoo_user_id.login}, reason: {reason}')
-            
-            return True
-            
+                changes.append(f"Archived Odoo user: {person.odoo_user_id.login}")
+
+            changes.append(f"Reason: {reason}")
+            return {'success': True, 'changes': '\n'.join(changes)}
+
         except Exception as e:
             self._log_error('BETASK-829', f'Error deactivating Odoo user: {str(e)}')
             raise
@@ -2692,6 +3114,256 @@ class BeTaskProcessor(models.AbstractModel):
             )
         except Exception:
             _logger.error(f'SysError [{code}]: {message}')
+
+    # =========================================================================
+    # GENERIC PROPRELATION HELPERS
+    # =========================================================================
+    
+    # Parameter name mapping: friendly names -> PropRelation field names
+    PARAM_TO_FIELD_MAP = {
+        # Org mappings
+        'org': 'id_org', 'organization': 'id_org', 'id_org': 'id_org',
+        'org_parent': 'id_org_parent', 'parent_org': 'id_org_parent', 'id_org_parent': 'id_org_parent',
+        'org_child': 'id_org_child', 'child_org': 'id_org_child', 'id_org_child': 'id_org_child',
+        # Role mappings
+        'role': 'id_role', 'id_role': 'id_role',
+        'role_parent': 'id_role_parent', 'parent_role': 'id_role_parent', 'id_role_parent': 'id_role_parent',
+        'role_child': 'id_role_child', 'child_role': 'id_role_child', 'id_role_child': 'id_role_child',
+        # Person mappings
+        'person': 'id_person', 'id_person': 'id_person',
+        'person_parent': 'id_person_parent', 'parent_person': 'id_person_parent', 'id_person_parent': 'id_person_parent',
+        'person_child': 'id_person_child', 'child_person': 'id_person_child', 'id_person_child': 'id_person_child',
+        # Period mappings
+        'period': 'id_period', 'id_period': 'id_period',
+        'period_parent': 'id_period_parent', 'parent_period': 'id_period_parent', 'id_period_parent': 'id_period_parent',
+        'period_child': 'id_period_child', 'child_period': 'id_period_child', 'id_period_child': 'id_period_child',
+        # Other fields
+        'priority': 'priority', 'is_active': 'is_active', 'active': 'is_active',
+    }
+
+    def _translate_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Translate friendly parameter names to PropRelation field names.
+        
+        @param params: Dict with friendly names (e.g., {'person': record, 'role': record})
+        @return: Dict with field names (e.g., {'id_person': record, 'id_role': record})
+        """
+        translated = {}
+        for key, value in params.items():
+            field_name = self.PARAM_TO_FIELD_MAP.get(key, key)
+            translated[field_name] = value
+        return translated
+
+    def _get_or_create_proprelation_type(self, type_name: str, usage: str = None):
+        """
+        Get or create a PropRelationType by name.
+        
+        @param type_name: Type name (e.g., 'PPSBR', 'BRSO', 'PERSON-TREE')
+        @param usage: Optional usage description
+        @return: PropRelationType record
+        """
+        PropRelationType = self.env['myschool.proprelation.type']
+        
+        rel_type = PropRelationType.search([('name', '=', type_name)], limit=1)
+        
+        if not rel_type:
+            vals = {'name': type_name, 'is_active': True}
+            if usage:
+                vals['usage'] = usage
+            rel_type = PropRelationType.create(vals)
+            _logger.info(f'Created PropRelationType: {type_name}')
+        
+        return rel_type
+
+    def _create_proprelation(
+        self,
+        type_name: str,
+        auto_name: bool = True,
+        **kwargs
+    ):
+        """
+        Create a new PropRelation with standardized name.
+        
+        @param type_name: PropRelation type name (e.g., 'PPSBR', 'BRSO')
+        @param auto_name: If True, generate standardized name automatically
+        @param kwargs: Field values using friendly names:
+            - person, person_parent, person_child
+            - org, org_parent, org_child  
+            - role, role_parent, role_child
+            - period, period_parent, period_child
+            - priority, is_active
+        @return: Created PropRelation record
+        
+        Example:
+            proprel = self._create_proprelation(
+                'PPSBR',
+                person=person_record,
+                role=role_record,
+                org=org_record,
+                period=period_record,
+                priority=10
+            )
+        """
+        PropRelation = self.env['myschool.proprelation']
+        
+        # Get or create the type
+        rel_type = self._get_or_create_proprelation_type(type_name)
+        
+        # Translate parameters to field names
+        translated = self._translate_params(kwargs)
+        
+        # Build values dict
+        vals = {
+            'proprelation_type_id': rel_type.id,
+            'is_active': True,
+        }
+        
+        # Add translated fields, converting records to IDs
+        name_kwargs = {}
+        for field_name, value in translated.items():
+            if field_name.startswith('id_'):
+                # This is a relation field
+                if value:
+                    record_id = value.id if hasattr(value, 'id') else value
+                    vals[field_name] = record_id
+                    name_kwargs[field_name] = value  # Keep record for name building
+            elif field_name in ('priority', 'is_active'):
+                vals[field_name] = value
+        
+        # Generate name if auto_name
+        if auto_name:
+            vals['name'] = build_proprelation_name(type_name, **name_kwargs)
+        elif 'name' in kwargs:
+            vals['name'] = kwargs['name']
+        else:
+            vals['name'] = type_name
+        
+        # Create the record
+        proprel = PropRelation.create(vals)
+        _logger.info(f'Created PropRelation: {proprel.name} (ID: {proprel.id})')
+        
+        return proprel
+
+    def _find_proprelation(
+        self,
+        type_name: str,
+        active_only: bool = True,
+        **kwargs
+    ):
+        """
+        Find a PropRelation by type and field values.
+        
+        @param type_name: PropRelation type name
+        @param active_only: If True, only search active records
+        @param kwargs: Field values to match (friendly names allowed)
+        @return: PropRelation record or None
+        
+        Example:
+            proprel = self._find_proprelation(
+                'PPSBR',
+                person=person_record,
+                role=role_record,
+                org=org_record
+            )
+        """
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        
+        rel_type = PropRelationType.search([('name', '=', type_name)], limit=1)
+        if not rel_type:
+            return None
+        
+        domain = [('proprelation_type_id', '=', rel_type.id)]
+        
+        if active_only:
+            domain.append(('is_active', '=', True))
+        
+        translated = self._translate_params(kwargs)
+        for field_name, value in translated.items():
+            if field_name.startswith('id_') and value:
+                record_id = value.id if hasattr(value, 'id') else value
+                domain.append((field_name, '=', record_id))
+        
+        return PropRelation.search(domain, limit=1) or None
+
+    def _find_or_create_proprelation(
+        self,
+        type_name: str,
+        auto_name: bool = True,
+        **kwargs
+    ) -> tuple:
+        """
+        Find existing PropRelation or create new one.
+        
+        @param type_name: PropRelation type name
+        @param auto_name: Generate standardized name if creating
+        @param kwargs: Field values (friendly names allowed)
+        @return: Tuple (PropRelation record, created: bool)
+        
+        Example:
+            proprel, created = self._find_or_create_proprelation(
+                'PPSBR',
+                person=person_record,
+                role=role_record
+            )
+        """
+        # Try to find existing active
+        existing = self._find_proprelation(type_name, active_only=True, **kwargs)
+        if existing:
+            return existing, False
+        
+        # Check for inactive that can be reactivated
+        inactive = self._find_proprelation(type_name, active_only=False, **kwargs)
+        if inactive and not inactive.is_active:
+            # Reactivate and update name
+            update_vals = {'is_active': True}
+            if auto_name:
+                translated = self._translate_params(kwargs)
+                name_kwargs = {k: v for k, v in translated.items() if k.startswith('id_') and v}
+                update_vals['name'] = build_proprelation_name(type_name, **name_kwargs)
+            inactive.write(update_vals)
+            _logger.info(f'Reactivated PropRelation: {inactive.name} (ID: {inactive.id})')
+            return inactive, False
+        
+        # Create new
+        new_proprel = self._create_proprelation(type_name, auto_name=auto_name, **kwargs)
+        return new_proprel, True
+
+    def _update_proprelation_name(self, proprel) -> bool:
+        """
+        Update the name of a PropRelation to the standardized format.
+        
+        @param proprel: PropRelation record
+        @return: True if name was updated
+        """
+        if not proprel or not proprel.exists() or not proprel.proprelation_type_id:
+            return False
+        
+        type_name = proprel.proprelation_type_id.name
+        
+        # Build kwargs from existing fields
+        kwargs = {}
+        field_names = [
+            'id_org', 'id_org_parent', 'id_org_child',
+            'id_role', 'id_role_parent', 'id_role_child',
+            'id_person', 'id_person_parent', 'id_person_child',
+            'id_period', 'id_period_parent', 'id_period_child',
+        ]
+        
+        for field_name in field_names:
+            if hasattr(proprel, field_name):
+                value = getattr(proprel, field_name)
+                if value:
+                    kwargs[field_name] = value
+        
+        if kwargs:
+            new_name = build_proprelation_name(type_name, **kwargs)
+            if proprel.name != new_name:
+                proprel.write({'name': new_name})
+                _logger.debug(f'Updated PropRelation name: {new_name}')
+                return True
+        
+        return False
 
     # =========================================================================
     # CRON JOB ENTRY POINT

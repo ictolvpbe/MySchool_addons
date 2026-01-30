@@ -28,6 +28,7 @@
                 <field name="retry_count" optional="hide"/>
                 <field name="create_date" string="Created"/>
                 <field name="lastrun" string="Last Run" optional="show"/>
+                <field name="changes" string="Applied Changes" optional="hide"/>
                 <field name="error_description" optional="hide"/>
                 <field name="active" column_invisible="1"/>
             </list>
@@ -126,6 +127,11 @@
                                 <field name="data2" widget="ace" options="{'mode': 'json'}" placeholder="Secondary task data (JSON)..."/>
                             </group>
                         </page>
+                        <page string="Applied Changes" name="changes" invisible="not changes">
+                            <group>
+                                <field name="changes" readonly="1" nolabel="1"/>
+                            </group>
+                        </page>
                         <page string="Error" name="error" invisible="not error_description">
                             <group>
                                 <field name="error_description" readonly="1"/>
@@ -199,6 +205,7 @@
                 <field name="name"/>
                 <field name="betasktype_id"/>
                 <field name="data"/>
+                <field name="changes"/>
                 <field name="error_description"/>
                 <separator/>
                 <!-- Status Filters -->
