@@ -3007,7 +3007,368 @@ class PasswordWizard(models.TransientModel):
     def action_clear_password(self):
         """Clear the password."""
         self.ensure_one()
-        
+
         self.person_id.write({'password': False})
-        
+
         return {'type': 'ir.actions.act_window_close'}
+
+
+# =============================================================================
+# BACKEND TASK ROLLBACK WIZARD
+# =============================================================================
+
+class BackendTaskRollbackWizard(models.TransientModel):
+    """
+    Wizard to rollback backend task changes to a specific point in time.
+
+    This wizard:
+    1. Rolls back PersonDetails to their state at the rollback point
+    2. Creates reversal tasks for external systems (LDAP/AD)
+    3. Marks affected backend tasks as rolled back
+    """
+    _name = 'myschool.betask.rollback.wizard'
+    _description = 'Backend Task Rollback Wizard'
+
+    rollback_datetime = fields.Datetime(
+        string='Rollback To',
+        required=True,
+        default=fields.Datetime.now,
+        help='All changes made after this datetime will be rolled back'
+    )
+
+    include_person_details = fields.Boolean(
+        string='Rollback PersonDetails',
+        default=True,
+        help='Rollback PersonDetails versions to their state at the rollback point'
+    )
+
+    include_external_systems = fields.Boolean(
+        string='Create Reversal Tasks',
+        default=True,
+        help='Create reversal backend tasks for external systems (LDAP/AD)'
+    )
+
+    reset_tasks = fields.Boolean(
+        string='Reset Backend Tasks',
+        default=False,
+        help='Reset affected backend tasks to "new" status for reprocessing'
+    )
+
+    # Preview fields
+    preview_mode = fields.Boolean(
+        string='Preview Mode',
+        default=True
+    )
+
+    affected_tasks_count = fields.Integer(
+        string='Affected Tasks',
+        compute='_compute_preview',
+        store=False
+    )
+
+    affected_person_details_count = fields.Integer(
+        string='PersonDetails Versions to Rollback',
+        compute='_compute_preview',
+        store=False
+    )
+
+    affected_persons_count = fields.Integer(
+        string='Affected Persons',
+        compute='_compute_preview',
+        store=False
+    )
+
+    preview_text = fields.Text(
+        string='Preview',
+        compute='_compute_preview',
+        store=False
+    )
+
+    rollback_log = fields.Text(
+        string='Rollback Log',
+        readonly=True
+    )
+
+    @api.depends('rollback_datetime', 'include_person_details', 'include_external_systems')
+    def _compute_preview(self):
+        for wizard in self:
+            if not wizard.rollback_datetime:
+                wizard.affected_tasks_count = 0
+                wizard.affected_person_details_count = 0
+                wizard.affected_persons_count = 0
+                wizard.preview_text = "Select a rollback datetime."
+                continue
+
+            # Find affected backend tasks
+            BeTask = self.env['myschool.betask']
+            affected_tasks = BeTask.search([
+                ('status', '=', 'completed_ok'),
+                ('processing_end', '>', wizard.rollback_datetime)
+            ])
+            wizard.affected_tasks_count = len(affected_tasks)
+
+            # Find affected PersonDetails versions
+            PersonDetails = self.env['myschool.person.details']
+            affected_details = PersonDetails.search([
+                ('create_date', '>', wizard.rollback_datetime),
+                ('is_active', '=', True)
+            ])
+            wizard.affected_person_details_count = len(affected_details)
+
+            # Count affected persons
+            affected_person_ids = affected_details.mapped('person_id.id')
+            wizard.affected_persons_count = len(set(affected_person_ids))
+
+            # Build preview text
+            preview_lines = [
+                f"=== ROLLBACK PREVIEW ===",
+                f"Rollback point: {wizard.rollback_datetime}",
+                f"",
+                f"Affected items:",
+                f"  - Backend tasks completed after rollback point: {wizard.affected_tasks_count}",
+                f"  - PersonDetails versions to deactivate: {wizard.affected_person_details_count}",
+                f"  - Persons affected: {wizard.affected_persons_count}",
+                f"",
+            ]
+
+            # Show task breakdown by type
+            if affected_tasks:
+                preview_lines.append("Tasks by type:")
+                task_types = {}
+                for task in affected_tasks:
+                    type_name = task.betasktype_id.name if task.betasktype_id else 'Unknown'
+                    task_types[type_name] = task_types.get(type_name, 0) + 1
+                for type_name, count in sorted(task_types.items()):
+                    preview_lines.append(f"  - {type_name}: {count}")
+                preview_lines.append("")
+
+            # Show what will happen
+            preview_lines.append("Actions to be performed:")
+            if wizard.include_person_details:
+                preview_lines.append("  ✓ Deactivate PersonDetails created after rollback point")
+                preview_lines.append("  ✓ Reactivate previous PersonDetails versions")
+            if wizard.include_external_systems:
+                preview_lines.append("  ✓ Create reversal tasks for LDAP/AD changes")
+            if wizard.reset_tasks:
+                preview_lines.append("  ✓ Reset backend tasks to 'new' status")
+
+            wizard.preview_text = '\n'.join(preview_lines)
+
+    def action_preview(self):
+        """Refresh the preview."""
+        self.ensure_one()
+        self.preview_mode = True
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
+    def action_execute_rollback(self):
+        """Execute the rollback."""
+        self.ensure_one()
+
+        if not self.rollback_datetime:
+            raise UserError("Please select a rollback datetime.")
+
+        log_lines = [
+            f"=== ROLLBACK EXECUTED ===",
+            f"Rollback point: {self.rollback_datetime}",
+            f"Executed by: {self.env.user.name}",
+            f"Executed at: {fields.Datetime.now()}",
+            f"",
+        ]
+
+        rollback_stats = {
+            'person_details_deactivated': 0,
+            'person_details_reactivated': 0,
+            'reversal_tasks_created': 0,
+            'tasks_reset': 0,
+        }
+
+        # 1. Rollback PersonDetails
+        if self.include_person_details:
+            stats = self._rollback_person_details()
+            rollback_stats.update(stats)
+            log_lines.append(f"PersonDetails rollback:")
+            log_lines.append(f"  - Versions deactivated: {stats['person_details_deactivated']}")
+            log_lines.append(f"  - Previous versions reactivated: {stats['person_details_reactivated']}")
+            log_lines.append("")
+
+        # 2. Create reversal tasks for external systems
+        if self.include_external_systems:
+            stats = self._create_reversal_tasks()
+            rollback_stats['reversal_tasks_created'] = stats['reversal_tasks_created']
+            log_lines.append(f"Reversal tasks created: {stats['reversal_tasks_created']}")
+            log_lines.append("")
+
+        # 3. Reset backend tasks
+        if self.reset_tasks:
+            stats = self._reset_backend_tasks()
+            rollback_stats['tasks_reset'] = stats['tasks_reset']
+            log_lines.append(f"Backend tasks reset to 'new': {stats['tasks_reset']}")
+            log_lines.append("")
+
+        log_lines.append("=== ROLLBACK COMPLETE ===")
+
+        self.rollback_log = '\n'.join(log_lines)
+        self.preview_mode = False
+
+        # Create a system event for the rollback
+        self._log_rollback_event(rollback_stats)
+
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
+    def _rollback_person_details(self):
+        """Rollback PersonDetails to their state at the rollback point."""
+        PersonDetails = self.env['myschool.person.details']
+
+        stats = {
+            'person_details_deactivated': 0,
+            'person_details_reactivated': 0,
+        }
+
+        # Find PersonDetails versions created after rollback point that are active
+        new_versions = PersonDetails.search([
+            ('create_date', '>', self.rollback_datetime),
+            ('is_active', '=', True)
+        ])
+
+        # Group by person_id and extra_field_1 (instNr)
+        person_inst_groups = {}
+        for detail in new_versions:
+            key = (detail.person_id.id, detail.extra_field_1 or '')
+            if key not in person_inst_groups:
+                person_inst_groups[key] = []
+            person_inst_groups[key].append(detail)
+
+        for (person_id, inst_nr), details_to_deactivate in person_inst_groups.items():
+            # Deactivate the new versions
+            for detail in details_to_deactivate:
+                detail.write({'is_active': False})
+                stats['person_details_deactivated'] += 1
+                _logger.info(f"Rollback: Deactivated PersonDetails ID {detail.id}")
+
+            # Find and reactivate the most recent version before the rollback point
+            previous_version = PersonDetails.search([
+                ('person_id', '=', person_id),
+                ('extra_field_1', '=', inst_nr),
+                ('create_date', '<=', self.rollback_datetime),
+                ('is_active', '=', False)
+            ], order='create_date desc', limit=1)
+
+            if previous_version:
+                previous_version.write({'is_active': True})
+                stats['person_details_reactivated'] += 1
+                _logger.info(f"Rollback: Reactivated PersonDetails ID {previous_version.id}")
+
+        return stats
+
+    def _create_reversal_tasks(self):
+        """Create reversal backend tasks for external systems."""
+        BeTask = self.env['myschool.betask']
+        BeTaskType = self.env['myschool.betask.type']
+
+        stats = {
+            'reversal_tasks_created': 0,
+        }
+
+        # Find completed tasks after rollback point that affect external systems
+        external_tasks = BeTask.search([
+            ('status', '=', 'completed_ok'),
+            ('processing_end', '>', self.rollback_datetime),
+            ('target', 'in', ['LDAP', 'ALL'])
+        ])
+
+        # Map of actions to their reversal
+        action_reversal_map = {
+            'ADD': 'DEACT',
+            'UPD': 'UPD',  # UPD reversal needs the old data
+            'DEACT': 'ADD',  # Reactivate
+        }
+
+        for task in external_tasks:
+            reversal_action = action_reversal_map.get(task.action)
+            if not reversal_action:
+                continue
+
+            # Find or create the reversal task type
+            reversal_type = BeTaskType.search([
+                ('target', '=', task.target),
+                ('object', '=', task.object_type),
+                ('action', '=', reversal_action)
+            ], limit=1)
+
+            if not reversal_type:
+                _logger.warning(f"Rollback: No reversal task type found for {task.target}-{task.object_type}-{reversal_action}")
+                continue
+
+            # Create reversal task with reference to original
+            reversal_data = {
+                'rollback_of_task': task.name,
+                'original_data': task.data,
+                'rollback_datetime': str(self.rollback_datetime),
+            }
+
+            BeTask.create({
+                'betasktype_id': reversal_type.id,
+                'data': str(reversal_data),
+                'data2': task.data,  # Original data for reference
+                'status': 'new',
+                'automatic_sync': False,  # Manual review recommended
+            })
+
+            stats['reversal_tasks_created'] += 1
+            _logger.info(f"Rollback: Created reversal task for {task.name}")
+
+        return stats
+
+    def _reset_backend_tasks(self):
+        """Reset backend tasks completed after rollback point to 'new' status."""
+        BeTask = self.env['myschool.betask']
+
+        stats = {
+            'tasks_reset': 0,
+        }
+
+        tasks_to_reset = BeTask.search([
+            ('status', '=', 'completed_ok'),
+            ('processing_end', '>', self.rollback_datetime)
+        ])
+
+        for task in tasks_to_reset:
+            task.write({
+                'status': 'new',
+                'processing_start': False,
+                'processing_end': False,
+                'changes': f"[ROLLBACK] Reset by rollback to {self.rollback_datetime}\nOriginal changes:\n{task.changes or 'N/A'}",
+            })
+            stats['tasks_reset'] += 1
+            _logger.info(f"Rollback: Reset task {task.name} to 'new'")
+
+        return stats
+
+    def _log_rollback_event(self, stats):
+        """Log the rollback as a system event."""
+        SysEvent = self.env.get('myschool.sys.event')
+        if SysEvent:
+            try:
+                SysEvent.create({
+                    'name': 'ROLLBACK',
+                    'event_type': 'ROLLBACK',
+                    'data': str({
+                        'rollback_datetime': str(self.rollback_datetime),
+                        'executed_by': self.env.user.name,
+                        'stats': stats,
+                    }),
+                })
+            except Exception as e:
+                _logger.warning(f"Could not create rollback system event: {e}")

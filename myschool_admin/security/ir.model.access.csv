@@ -24,3 +24,4 @@ access_password_wizard,myschool.password.wizard,model_myschool_password_wizard,m
 access_myschool_org_role_line,myschool.org.role.line,model_myschool_org_role_line,myschool_core.group_myschool_core_admin,1,1,1,1
 access_myschool_person_role_line,myschool.person.role.line,model_myschool_person_role_line,myschool_core.group_myschool_core_admin,1,1,1,1
 access_myschool_password_wizard,myschool.password.wizard,model_myschool_password_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_betask_rollback_wizard,myschool.betask.rollback.wizard,model_myschool_betask_rollback_wizard,myschool_core.group_myschool_core_admin,1,1,1,1

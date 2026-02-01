@@ -76,7 +76,9 @@
 
                         <page string="Details" name="details">
                             <field name="person_details_set">
-                                <list>
+                                <list decoration-muted="not is_active">
+                                    <field name="create_date" string="Created"/>
+                                    <field name="is_active" widget="boolean"/>
                                     <field name="hoofd_ambt"/>
                                     <field name="extra_field_1"/>
                                 </list>

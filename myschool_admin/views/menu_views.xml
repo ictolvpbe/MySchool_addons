@@ -87,12 +87,12 @@
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_myschool_role_manager"
-              name="Roll Manager"
-              parent="menu_myschool_roles"
-              action="myschool_admin.action_role_relations_manager"
-              sequence="5"
-              groups="myschool_core.group_myschool_core_admin"/>
+<!--    <menuitem id="menu_myschool_role_manager"-->
+<!--              name="Roll Manager"-->
+<!--              parent="menu_myschool_roles"-->
+<!--              action="myschool_admin.action_role_relations_manager"-->
+<!--              sequence="5"-->
+<!--              groups="myschool_core.group_myschool_core_admin"/>-->
 
 
     <menuitem id="menu_myschool_role"
@@ -275,6 +275,13 @@
               parent="menu_betask_config"
               action="action_betask_type"
               sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_betask_rollback"
+              name="Rollback Tasks"
+              parent="menu_betask_config"
+              action="action_betask_rollback_wizard"
+              sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- Informat Sync Configuration -->
