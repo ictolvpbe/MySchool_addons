@@ -12,11 +12,15 @@
         * Roles and Role Types
         * Periods and Period Types
         * Relations between persons, roles, organizations and periods
+        * LDAP/Active Directory integration
     """,
     'author': 'MySchool OLVP',
     'website': 'https://www.yourcompany.com',
     'license': 'LGPL-3',
     'depends': ['base', 'mail','hr'],
+    'external_dependencies': {
+        'python': ['ldap3'],
+    },
     'data': [
         # Securityaccount_analytic_applicability
         'security/myschool_security.xml',
@@ -52,6 +56,7 @@
         #demo data
         'data/sequence.xml',
         'data/sys_event_data.xml',
+        'data/ldap_task_types.xml',
 
         #Services
         #'services/data/ir_cron_data.xml',

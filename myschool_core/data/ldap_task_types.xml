@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- ========================================= -->
+        <!-- LDAP USER TASK TYPES -->
+        <!-- ========================================= -->
+
+        <!-- LDAP User Add -->
+        <record id="betasktype_ldap_user_add" model="myschool.betask.type">
+            <field name="name">LDAP_USER_ADD</field>
+            <field name="target">LDAP</field>
+            <field name="object">USER</field>
+            <field name="action">ADD</field>
+            <field name="description">Create a new user account in Active Directory/LDAP</field>
+            <field name="auto_process">True</field>
+            <field name="requires_confirmation">False</field>
+            <field name="priority">40</field>
+            <field name="processor_method">process_ldap_user_add</field>
+        </record>
+
+        <!-- LDAP User Update -->
+        <record id="betasktype_ldap_user_upd" model="myschool.betask.type">
+            <field name="name">LDAP_USER_UPD</field>
+            <field name="target">LDAP</field>
+            <field name="object">USER</field>
+            <field name="action">UPD</field>
+            <field name="description">Update an existing user account in Active Directory/LDAP</field>
+            <field name="auto_process">True</field>
+            <field name="requires_confirmation">False</field>
+            <field name="priority">41</field>
+            <field name="processor_method">process_ldap_user_upd</field>
+        </record>
+
+        <!-- LDAP User Deactivate -->
+        <record id="betasktype_ldap_user_deact" model="myschool.betask.type">
+            <field name="name">LDAP_USER_DEACT</field>
+            <field name="target">LDAP</field>
+            <field name="object">USER</field>
+            <field name="action">DEACT</field>
+            <field name="description">Deactivate (disable) a user account in Active Directory/LDAP</field>
+            <field name="auto_process">True</field>
+            <field name="requires_confirmation">False</field>
+            <field name="priority">42</field>
+            <field name="processor_method">process_ldap_user_deact</field>
+        </record>
+
+        <!-- LDAP User Delete -->
+        <record id="betasktype_ldap_user_del" model="myschool.betask.type">
+            <field name="name">LDAP_USER_DEL</field>
+            <field name="target">LDAP</field>
+            <field name="object">USER</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete a user account from Active Directory/LDAP (requires confirmation)</field>
+            <field name="auto_process">False</field>
+            <field name="requires_confirmation">True</field>
+            <field name="priority">43</field>
+            <field name="processor_method">process_ldap_user_del</field>
+        </record>
+
+        <!-- ========================================= -->
+        <!-- LDAP GROUP TASK TYPES -->
+        <!-- ========================================= -->
+
+        <!-- LDAP Group Add -->
+        <record id="betasktype_ldap_group_add" model="myschool.betask.type">
+            <field name="name">LDAP_GROUP_ADD</field>
+            <field name="target">LDAP</field>
+            <field name="object">GROUP</field>
+            <field name="action">ADD</field>
+            <field name="description">Create a new group in Active Directory/LDAP</field>
+            <field name="auto_process">True</field>
+            <field name="requires_confirmation">False</field>
+            <field name="priority">35</field>
+            <field name="processor_method">process_ldap_group_add</field>
+        </record>
+
+        <!-- LDAP Group Update -->
+        <record id="betasktype_ldap_group_upd" model="myschool.betask.type">
+            <field name="name">LDAP_GROUP_UPD</field>
+            <field name="target">LDAP</field>
+            <field name="object">GROUP</field>
+            <field name="action">UPD</field>
+            <field name="description">Update an existing group in Active Directory/LDAP</field>
+            <field name="auto_process">True</field>
+            <field name="requires_confirmation">False</field>
+            <field name="priority">36</field>
+            <field name="processor_method">process_ldap_group_upd</field>
+        </record>
+
+        <!-- LDAP Group Deactivate (rarely used, but included for completeness) -->
+        <record id="betasktype_ldap_group_deact" model="myschool.betask.type">
+            <field name="name">LDAP_GROUP_DEACT</field>
+            <field name="target">LDAP</field>
+            <field name="object">GROUP</field>
+            <field name="action">DEACT</field>
+            <field name="description">Deactivate a group in Active Directory/LDAP (move to disabled container)</field>
+            <field name="auto_process">True</field>
+            <field name="requires_confirmation">False</field>
+            <field name="priority">37</field>
+            <field name="processor_method">process_ldap_group_deact</field>
+        </record>
+
+        <!-- LDAP Group Delete -->
+        <record id="betasktype_ldap_group_del" model="myschool.betask.type">
+            <field name="name">LDAP_GROUP_DEL</field>
+            <field name="target">LDAP</field>
+            <field name="object">GROUP</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete a group from Active Directory/LDAP (requires confirmation)</field>
+            <field name="auto_process">False</field>
+            <field name="requires_confirmation">True</field>
+            <field name="priority">38</field>
+            <field name="processor_method">process_ldap_group_del</field>
+        </record>
+
+        <!-- ========================================= -->
+        <!-- LDAP GROUP MEMBERSHIP TASK TYPES -->
+        <!-- ========================================= -->
+
+        <!-- LDAP Group Member Add -->
+        <record id="betasktype_ldap_groupmember_add" model="myschool.betask.type">
+            <field name="name">LDAP_GROUPMEMBER_ADD</field>
+            <field name="target">LDAP</field>
+            <field name="object">GROUPMEMBER</field>
+            <field name="action">ADD</field>
+            <field name="description">Add a user to a group in Active Directory/LDAP</field>
+            <field name="auto_process">True</field>
+            <field name="requires_confirmation">False</field>
+            <field name="priority">45</field>
+            <field name="processor_method">process_ldap_groupmember_add</field>
+        </record>
+
+        <!-- LDAP Group Member Remove -->
+        <record id="betasktype_ldap_groupmember_remove" model="myschool.betask.type">
+            <field name="name">LDAP_GROUPMEMBER_REMOVE</field>
+            <field name="target">LDAP</field>
+            <field name="object">GROUPMEMBER</field>
+            <field name="action">REMOVE</field>
+            <field name="description">Remove a user from a group in Active Directory/LDAP</field>
+            <field name="auto_process">True</field>
+            <field name="requires_confirmation">False</field>
+            <field name="priority">46</field>
+            <field name="processor_method">process_ldap_groupmember_remove</field>
+        </record>
+
+    </data>
+</odoo>

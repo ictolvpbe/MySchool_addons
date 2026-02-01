@@ -45,6 +45,7 @@
         'views/informat_service_config_views.xml',
         # 'views/log_viewer_views.xml',
         'views/object_browser_views.xml',
+        'views/ldap_server_config_views.xml',
 
         # Menus
         'views/menu_views.xml',

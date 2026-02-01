@@ -1032,12 +1032,21 @@ class BeTaskProcessor(models.AbstractModel):
             ('ODOO', 'GROUPMEMBER', 'ADD'): self.process_odoo_groupmember_add,
             ('ODOO', 'GROUPMEMBER', 'REMOVE'): self.process_odoo_groupmember_remove,
             
-            # LDAP handlers
-            ('LDAP', 'EMPLOYEE', 'ADD'): self.process_ldap_employee_add,
-            ('LDAP', 'EMPLOYEE', 'UPD'): self.process_ldap_employee_upd,
-            ('LDAP', 'EMPLOYEE', 'DEACT'): self.process_ldap_employee_deact,
-            ('LDAP', 'STUDENT', 'ADD'): self.process_ldap_student_add,
-            ('LDAP', 'ORG', 'ADD'): self.process_ldap_org_add,
+            # LDAP USER handlers
+            ('LDAP', 'USER', 'ADD'): self.process_ldap_user_add,
+            ('LDAP', 'USER', 'UPD'): self.process_ldap_user_upd,
+            ('LDAP', 'USER', 'DEACT'): self.process_ldap_user_deact,
+            ('LDAP', 'USER', 'DEL'): self.process_ldap_user_del,
+
+            # LDAP GROUP handlers
+            ('LDAP', 'GROUP', 'ADD'): self.process_ldap_group_add,
+            ('LDAP', 'GROUP', 'UPD'): self.process_ldap_group_upd,
+            ('LDAP', 'GROUP', 'DEACT'): self.process_ldap_group_deact,
+            ('LDAP', 'GROUP', 'DEL'): self.process_ldap_group_del,
+
+            # LDAP GROUPMEMBER handlers
+            ('LDAP', 'GROUPMEMBER', 'ADD'): self.process_ldap_groupmember_add,
+            ('LDAP', 'GROUPMEMBER', 'REMOVE'): self.process_ldap_groupmember_remove,
         }
         
         handler = handler_map.get((target, obj, action))
@@ -2368,43 +2377,593 @@ class BeTaskProcessor(models.AbstractModel):
         return True
 
     # =========================================================================
-    # LDAP TASK PROCESSORS (Placeholders)
+    # LDAP TASK PROCESSORS
     # =========================================================================
-    
+
+    def _get_ldap_config_for_task(self, task, org_id=None):
+        """
+        Get the LDAP server configuration for a task.
+
+        Args:
+            task: Backend task record
+            org_id: Optional organization ID
+
+        Returns:
+            ldap.server.config record or raises error
+        """
+        ldap_config_model = self.env['ldap.server.config']
+
+        if org_id:
+            config = ldap_config_model.get_server_for_org(org_id)
+        else:
+            # Try to get from task data
+            data = self._parse_task_data(task.data)
+            if data and data.get('org_id'):
+                config = ldap_config_model.get_server_for_org(data.get('org_id'))
+            else:
+                # Get first active config
+                config = ldap_config_model.search([('active', '=', True)], limit=1)
+
+        if not config:
+            raise ValidationError(_('No LDAP server configured. Please configure an LDAP server first.'))
+
+        return config
+
     @api.model
-    def process_ldap_org_add(self, task):
-        """Process LDAP ORG ADD task."""
-        _logger.info(f'Processing LDAP_ORG_ADD: {task.name}')
-        # TODO: Implement LDAP organization creation
-        return True
-    
+    def process_ldap_user_add(self, task):
+        """
+        Process LDAP USER ADD task - Create user in Active Directory.
+
+        Expected data structure:
+        {
+            "person_id": 123,
+            "org_id": 456,
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_USER_ADD: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            person_id = data.get('person_id')
+            org_id = data.get('org_id')
+            dry_run = data.get('dry_run', False)
+
+            if not person_id:
+                raise ValidationError(_('person_id is required in task data'))
+
+            person = self.env['myschool.person'].browse(person_id)
+            if not person.exists():
+                raise ValidationError(_('Person with id %s not found') % person_id)
+
+            org = None
+            if org_id:
+                org = self.env['myschool.org'].browse(org_id)
+                if not org.exists():
+                    raise ValidationError(_('Organization with id %s not found') % org_id)
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, org_id)
+            changes.append(f"Using LDAP server: {config.name}")
+
+            # Call LDAP service
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.create_user(config, person, org, dry_run=dry_run)
+
+            if result.get('success'):
+                changes.append(f"User created: {result.get('dn', 'N/A')}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_USER_ADD failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
     @api.model
-    def process_ldap_employee_add(self, task):
-        """Process LDAP EMPLOYEE ADD task."""
-        _logger.info(f'Processing LDAP_EMPLOYEE_ADD: {task.name}')
-        # TODO: Implement LDAP employee creation
-        return True
-    
+    def process_ldap_user_upd(self, task):
+        """
+        Process LDAP USER UPD task - Update user in Active Directory.
+
+        Expected data structure:
+        {
+            "person_id": 123,
+            "org_id": 456,
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_USER_UPD: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            person_id = data.get('person_id')
+            org_id = data.get('org_id')
+            dry_run = data.get('dry_run', False)
+
+            if not person_id:
+                raise ValidationError(_('person_id is required in task data'))
+
+            person = self.env['myschool.person'].browse(person_id)
+            if not person.exists():
+                raise ValidationError(_('Person with id %s not found') % person_id)
+
+            org = None
+            if org_id:
+                org = self.env['myschool.org'].browse(org_id)
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, org_id)
+            changes.append(f"Using LDAP server: {config.name}")
+
+            # Call LDAP service
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.update_user(config, person, org, dry_run=dry_run)
+
+            if result.get('success'):
+                changes.append(f"User updated: {result.get('dn', 'N/A')}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_USER_UPD failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
     @api.model
-    def process_ldap_employee_upd(self, task):
-        """Process LDAP EMPLOYEE UPD task."""
-        _logger.info(f'Processing LDAP_EMPLOYEE_UPD: {task.name}')
-        # TODO: Implement LDAP employee update
-        return True
-    
+    def process_ldap_user_deact(self, task):
+        """
+        Process LDAP USER DEACT task - Deactivate user in Active Directory.
+
+        Expected data structure:
+        {
+            "person_id": 123,
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_USER_DEACT: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            person_id = data.get('person_id')
+            dry_run = data.get('dry_run', False)
+
+            if not person_id:
+                raise ValidationError(_('person_id is required in task data'))
+
+            person = self.env['myschool.person'].browse(person_id)
+            if not person.exists():
+                raise ValidationError(_('Person with id %s not found') % person_id)
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using LDAP server: {config.name}")
+
+            # Call LDAP service
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.deactivate_user(config, person, dry_run=dry_run)
+
+            if result.get('success'):
+                changes.append(f"User deactivated: {result.get('dn', 'N/A')}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_USER_DEACT failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
     @api.model
-    def process_ldap_employee_deact(self, task):
-        """Process LDAP EMPLOYEE DEACT task."""
-        _logger.info(f'Processing LDAP_EMPLOYEE_DEACT: {task.name}')
-        # TODO: Implement LDAP employee deactivation
-        return True
-    
+    def process_ldap_user_del(self, task):
+        """
+        Process LDAP USER DEL task - Delete user from Active Directory.
+
+        Expected data structure:
+        {
+            "person_id": 123,
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_USER_DEL: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            person_id = data.get('person_id')
+            dry_run = data.get('dry_run', False)
+
+            if not person_id:
+                raise ValidationError(_('person_id is required in task data'))
+
+            person = self.env['myschool.person'].browse(person_id)
+            if not person.exists():
+                raise ValidationError(_('Person with id %s not found') % person_id)
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using LDAP server: {config.name}")
+
+            # Call LDAP service
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.delete_user(config, person, dry_run=dry_run)
+
+            if result.get('success'):
+                changes.append(f"User deleted: {result.get('dn', 'N/A')}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_USER_DEL failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
     @api.model
-    def process_ldap_student_add(self, task):
-        """Process LDAP STUDENT ADD task."""
-        _logger.info(f'Processing LDAP_STUDENT_ADD: {task.name}')
-        # TODO: Implement LDAP student creation
-        return True
+    def process_ldap_group_add(self, task):
+        """
+        Process LDAP GROUP ADD task - Create group in Active Directory.
+
+        Expected data structure:
+        {
+            "group_name": "MyGroup",
+            "org_id": 456,
+            "description": "Group description",
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_GROUP_ADD: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            group_name = data.get('group_name')
+            org_id = data.get('org_id')
+            description = data.get('description')
+            dry_run = data.get('dry_run', False)
+
+            if not group_name:
+                raise ValidationError(_('group_name is required in task data'))
+
+            org = None
+            if org_id:
+                org = self.env['myschool.org'].browse(org_id)
+                if not org.exists():
+                    org = None
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, org_id)
+            changes.append(f"Using LDAP server: {config.name}")
+
+            # Call LDAP service
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.create_group(config, group_name, org, description, dry_run=dry_run)
+
+            if result.get('success'):
+                changes.append(f"Group created: {result.get('dn', 'N/A')}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_GROUP_ADD failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_ldap_group_upd(self, task):
+        """
+        Process LDAP GROUP UPD task - Update group in Active Directory.
+
+        Expected data structure:
+        {
+            "group_dn": "CN=MyGroup,OU=Groups,DC=school,DC=local",
+            "changes": {"description": "New description"},
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_GROUP_UPD: {task.name}')
+        changes_log = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            group_dn = data.get('group_dn')
+            attribute_changes = data.get('changes', {})
+            dry_run = data.get('dry_run', False)
+
+            if not group_dn:
+                raise ValidationError(_('group_dn is required in task data'))
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, data.get('org_id'))
+            changes_log.append(f"Using LDAP server: {config.name}")
+
+            # Call LDAP service
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.update_group(config, group_dn, attribute_changes, dry_run=dry_run)
+
+            if result.get('success'):
+                changes_log.append(f"Group updated: {group_dn}")
+                changes_log.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes_log)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_GROUP_UPD failed: {task.name}')
+            changes_log.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes_log)})
+            raise
+
+    @api.model
+    def process_ldap_group_deact(self, task):
+        """
+        Process LDAP GROUP DEACT task - Deactivate group in Active Directory.
+
+        Note: AD doesn't have native group deactivation. This task can be used
+        to move the group to a disabled container or rename it with a prefix.
+
+        Expected data structure:
+        {
+            "group_dn": "CN=MyGroup,OU=Groups,DC=school,DC=local",
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_GROUP_DEACT: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            group_dn = data.get('group_dn')
+            dry_run = data.get('dry_run', False)
+
+            if not group_dn:
+                raise ValidationError(_('group_dn is required in task data'))
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using LDAP server: {config.name}")
+
+            # For group deactivation, we rename by adding a prefix
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.update_group(
+                config,
+                group_dn,
+                {'description': 'DEACTIVATED - ' + (data.get('description', ''))},
+                dry_run=dry_run
+            )
+
+            if result.get('success'):
+                changes.append(f"Group deactivated: {group_dn}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_GROUP_DEACT failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_ldap_group_del(self, task):
+        """
+        Process LDAP GROUP DEL task - Delete group from Active Directory.
+
+        Expected data structure:
+        {
+            "group_dn": "CN=MyGroup,OU=Groups,DC=school,DC=local",
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_GROUP_DEL: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            group_dn = data.get('group_dn')
+            dry_run = data.get('dry_run', False)
+
+            if not group_dn:
+                raise ValidationError(_('group_dn is required in task data'))
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using LDAP server: {config.name}")
+
+            # Call LDAP service
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.delete_group(config, group_dn, dry_run=dry_run)
+
+            if result.get('success'):
+                changes.append(f"Group deleted: {group_dn}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_GROUP_DEL failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_ldap_groupmember_add(self, task):
+        """
+        Process LDAP GROUPMEMBER ADD task - Add member to group.
+
+        Expected data structure:
+        {
+            "group_dn": "CN=MyGroup,OU=Groups,DC=school,DC=local",
+            "member_dn": "CN=JohnDoe,OU=Users,DC=school,DC=local",
+            OR
+            "person_id": 123,
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_GROUPMEMBER_ADD: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            group_dn = data.get('group_dn')
+            member_dn = data.get('member_dn')
+            person_id = data.get('person_id')
+            dry_run = data.get('dry_run', False)
+
+            if not group_dn:
+                raise ValidationError(_('group_dn is required in task data'))
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using LDAP server: {config.name}")
+
+            ldap_service = self.env['myschool.ldap.service']
+
+            # If member_dn not provided, find it from person_id
+            if not member_dn and person_id:
+                person = self.env['myschool.person'].browse(person_id)
+                if not person.exists():
+                    raise ValidationError(_('Person with id %s not found') % person_id)
+                member_dn = ldap_service._find_user_dn(config, person)
+                if not member_dn:
+                    raise ValidationError(_('User not found in LDAP: %s') % person.name)
+
+            if not member_dn:
+                raise ValidationError(_('member_dn or person_id is required in task data'))
+
+            # Call LDAP service
+            result = ldap_service.add_group_member(config, group_dn, member_dn, dry_run=dry_run)
+
+            if result.get('success'):
+                changes.append(f"Member added to group: {member_dn}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_GROUPMEMBER_ADD failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_ldap_groupmember_remove(self, task):
+        """
+        Process LDAP GROUPMEMBER REMOVE task - Remove member from group.
+
+        Expected data structure:
+        {
+            "group_dn": "CN=MyGroup,OU=Groups,DC=school,DC=local",
+            "member_dn": "CN=JohnDoe,OU=Users,DC=school,DC=local",
+            OR
+            "person_id": 123,
+            "dry_run": false
+        }
+        """
+        _logger.info(f'Processing LDAP_GROUPMEMBER_REMOVE: {task.name}')
+        changes = []
+
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+
+            group_dn = data.get('group_dn')
+            member_dn = data.get('member_dn')
+            person_id = data.get('person_id')
+            dry_run = data.get('dry_run', False)
+
+            if not group_dn:
+                raise ValidationError(_('group_dn is required in task data'))
+
+            # Get LDAP configuration
+            config = self._get_ldap_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using LDAP server: {config.name}")
+
+            ldap_service = self.env['myschool.ldap.service']
+
+            # If member_dn not provided, find it from person_id
+            if not member_dn and person_id:
+                person = self.env['myschool.person'].browse(person_id)
+                if not person.exists():
+                    raise ValidationError(_('Person with id %s not found') % person_id)
+                member_dn = ldap_service._find_user_dn(config, person)
+                if not member_dn:
+                    raise ValidationError(_('User not found in LDAP: %s') % person.name)
+
+            if not member_dn:
+                raise ValidationError(_('member_dn or person_id is required in task data'))
+
+            # Call LDAP service
+            result = ldap_service.remove_group_member(config, group_dn, member_dn, dry_run=dry_run)
+
+            if result.get('success'):
+                changes.append(f"Member removed from group: {member_dn}")
+                changes.append(result.get('message', ''))
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            else:
+                raise ValidationError(result.get('message', 'Unknown error'))
+
+        except Exception as e:
+            _logger.exception(f'LDAP_GROUPMEMBER_REMOVE failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
 
     # =========================================================================
     # ODOO PERSON TASK PROCESSORS (User/Employee Management)

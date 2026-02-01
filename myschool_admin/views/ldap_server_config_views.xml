@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ========================================= -->
+    <!-- LDAP SERVER CONFIGURATION VIEWS -->
+    <!-- ========================================= -->
+
+    <!-- List View -->
+    <record id="view_ldap_server_config_list" model="ir.ui.view">
+        <field name="name">ldap.server.config.list</field>
+        <field name="model">ldap.server.config</field>
+        <field name="arch" type="xml">
+            <list string="LDAP Servers">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="server_url"/>
+                <field name="port"/>
+                <field name="use_ssl"/>
+                <field name="is_active_directory"/>
+                <field name="org_count"/>
+                <field name="last_test_result" widget="badge"
+                       decoration-success="last_test_result == 'success'"
+                       decoration-danger="last_test_result == 'failed'"/>
+                <field name="last_test_date"/>
+                <field name="active" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_ldap_server_config_form" model="ir.ui.view">
+        <field name="name">ldap.server.config.form</field>
+        <field name="model">ldap.server.config</field>
+        <field name="arch" type="xml">
+            <form string="LDAP Server Configuration">
+                <header>
+                    <button name="action_test_connection"
+                            string="Test Connection"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-plug"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button"
+                                icon="fa-building"
+                                type="object"
+                                name="action_view_organizations">
+                            <field name="org_count" widget="statinfo" string="Organizations"/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="e.g., Main AD Server"/>
+                        </h1>
+                    </div>
+
+                    <group>
+                        <group string="Connection Settings" name="connection">
+                            <field name="server_url" placeholder="ldap.school.local"/>
+                            <field name="port"/>
+                            <field name="use_ssl"/>
+                            <field name="use_tls" invisible="use_ssl"/>
+                            <field name="timeout"/>
+                        </group>
+                        <group string="Directory Settings" name="directory">
+                            <field name="base_dn" placeholder="DC=school,DC=local"/>
+                            <field name="user_base_dn" placeholder="Leave empty to use Base DN"/>
+                            <field name="group_base_dn" placeholder="Leave empty to use Base DN"/>
+                        </group>
+                    </group>
+
+                    <group>
+                        <group string="Bind Credentials" name="credentials" groups="base.group_system">
+                            <field name="bind_dn" placeholder="CN=ldap-service,OU=Service Accounts,DC=school,DC=local"/>
+                            <field name="bind_password" password="True"/>
+                        </group>
+                        <group string="Active Directory Settings" name="ad_settings">
+                            <field name="is_active_directory"/>
+                            <field name="ad_domain" placeholder="school.local" invisible="not is_active_directory"/>
+                            <field name="upn_suffix" placeholder="@school.local" invisible="not is_active_directory"/>
+                        </group>
+                    </group>
+
+                    <group string="Container Settings" name="containers" invisible="not is_active_directory">
+                        <group>
+                            <field name="default_user_container" placeholder="OU=Users,OU=MySchool"/>
+                            <field name="default_group_container" placeholder="OU=Groups,OU=MySchool"/>
+                        </group>
+                        <group>
+                            <field name="disabled_users_container" placeholder="OU=Disabled,OU=Users"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Organizations" name="organizations">
+                            <field name="org_ids" widget="many2many_tags">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="name_tree"/>
+                                    <field name="inst_nr"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Status" name="status">
+                            <group>
+                                <group>
+                                    <field name="last_test_date"/>
+                                    <field name="last_test_result" widget="badge"
+                                           decoration-success="last_test_result == 'success'"
+                                           decoration-danger="last_test_result == 'failed'"/>
+                                </group>
+                                <group>
+                                    <field name="active"/>
+                                    <field name="sequence"/>
+                                </group>
+                            </group>
+                            <group string="Last Test Message" invisible="not last_test_message">
+                                <field name="last_test_message" nolabel="1" readonly="1"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_ldap_server_config_search" model="ir.ui.view">
+        <field name="name">ldap.server.config.search</field>
+        <field name="model">ldap.server.config</field>
+        <field name="arch" type="xml">
+            <search string="Search LDAP Servers">
+                <field name="name"/>
+                <field name="server_url"/>
+                <field name="ad_domain"/>
+                <separator/>
+                <filter name="filter_active" string="Active" domain="[('active', '=', True)]"/>
+                <filter name="filter_archived" string="Archived" domain="[('active', '=', False)]"/>
+                <separator/>
+                <filter name="filter_ad" string="Active Directory" domain="[('is_active_directory', '=', True)]"/>
+                <filter name="filter_ssl" string="SSL/TLS" domain="['|', ('use_ssl', '=', True), ('use_tls', '=', True)]"/>
+                <separator/>
+                <filter name="filter_test_success" string="Test Successful" domain="[('last_test_result', '=', 'success')]"/>
+                <filter name="filter_test_failed" string="Test Failed" domain="[('last_test_result', '=', 'failed')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_by_ad" string="Active Directory" context="{'group_by': 'is_active_directory'}"/>
+                    <filter name="group_by_test_result" string="Test Result" context="{'group_by': 'last_test_result'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_ldap_server_config" model="ir.actions.act_window">
+        <field name="name">LDAP Servers</field>
+        <field name="res_model">ldap.server.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ldap_server_config_search"/>
+        <field name="context">{'search_default_filter_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure your first LDAP/Active Directory server
+            </p>
+            <p>
+                LDAP server configurations define connection settings for
+                Active Directory or other LDAP servers. You can assign
+                organizations to servers for multi-server support.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu Item (under Configuration) -->
+    <menuitem id="menu_ldap_server_config"
+              name="LDAP Servers"
+              parent="myschool_admin.menu_betask_config"
+              action="action_ldap_server_config"
+              sequence="30"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+</odoo>
