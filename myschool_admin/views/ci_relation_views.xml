@@ -148,5 +148,21 @@
             </list>
         </field>
     </record>
-    
+
+    <!-- ===================================================================== -->
+    <!-- Server Actions                                                        -->
+    <!-- ===================================================================== -->
+
+    <!-- Server Action for Update All CI Relation Names (used by menu item) -->
+    <record id="action_update_all_ci_relation_names" model="ir.actions.server">
+        <field name="name">Update All CI Relation Names</field>
+        <field name="model_id" ref="myschool_core.model_myschool_ci_relation"/>
+        <field name="state">code</field>
+        <field name="code">
+result = env['myschool.ci.relation'].action_update_all_ci_relation_names()
+if result and isinstance(result, dict):
+    action = result
+        </field>
+    </record>
+
 </odoo>

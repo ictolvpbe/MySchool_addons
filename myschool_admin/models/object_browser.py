@@ -958,39 +958,45 @@ class ObjectBrowser(models.TransientModel):
         return result
 
     @api.model
-    @api.model
     def get_members_for_org(self, org_id):
         """
         Get all persons and persongroup orgs related to the selected org.
-        Returns persons and persongroups linked via proprelation.
+        Returns persons linked via PERSON-TREE proprelation and persongroups via ORG-TREE.
         """
         result = {
             'persons': [],
             'persongroups': [],
         }
-        
+
         if not org_id:
             _logger.info("get_members_for_org called with no org_id")
             return result
-        
+
         _logger.info(f"get_members_for_org called for org_id={org_id}")
-        
+
         # Check if proprelation model exists
         if 'myschool.proprelation' not in self.env:
             _logger.warning("myschool.proprelation model not found in env")
             return result
-        
+
         PropRelation = self.env['myschool.proprelation']
-        
-        # Get persons linked to this org via proprelation
-        # Pattern: id_org = org_id AND id_person != False
-        person_rels = PropRelation.search([
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        # Get PERSON-TREE type for filtering persons
+        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+
+        # Get persons linked to this org via PERSON-TREE proprelation only
+        person_search_domain = [
             ('id_org', '=', org_id),
             ('id_person', '!=', False),
             ('is_active', '=', True),
-        ])
-        
-        _logger.info(f"Found {len(person_rels)} person relations for org {org_id}")
+        ]
+        if person_tree_type:
+            person_search_domain.append(('proprelation_type_id', '=', person_tree_type.id))
+
+        person_rels = PropRelation.search(person_search_domain)
+
+        _logger.info(f"Found {len(person_rels)} PERSON-TREE relations for org {org_id}")
         
         person_dict = {}
         for rel in person_rels:

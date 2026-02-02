@@ -157,16 +157,16 @@ class CiRelation(models.Model):
     def _compute_name(self):
         """
         Compute the name based on linked entities.
-        
+
         Equivalent to Java: CiRelationServiceImpl.registerOrUpdateCiRelation()
-        Format: CI=name.Pn=name-firstname.Ro=name.Or=shortname.Pd=name
+        Format: CI=name.Pn=name-firstname.Ro=name.Or=name_tree.Pd=name
         """
         for record in self:
             name_parts = []
-            
+
             if record.id_ci:
                 name_parts.append(f"CI={record.id_ci.name}")
-            
+
             if record.id_person:
                 person_name = f"{record.id_person.name or ''}"
                 if hasattr(record.id_person, 'first_name') and record.id_person.first_name:
@@ -174,20 +174,21 @@ class CiRelation(models.Model):
                 elif hasattr(record.id_person, 'firstname') and record.id_person.firstname:
                     person_name += f"-{record.id_person.firstname}"
                 name_parts.append(f"Pn={person_name}")
-            
+
             if record.id_role:
                 name_parts.append(f"Ro={record.id_role.name or ''}")
-            
+
             if record.id_org:
-                org_name = record.id_org.name_short if hasattr(record.id_org, 'name_short') else record.id_org.name
+                # Use name_tree for org identification (e.g., "int.olvp.bawa")
+                org_name = record.id_org.name_tree if hasattr(record.id_org, 'name_tree') and record.id_org.name_tree else record.id_org.name
                 name_parts.append(f"Or={org_name or ''}")
-            
+
             if record.id_period:
                 name_parts.append(f"Pd={record.id_period.name or ''}")
-            
+
             # if record.id_sysmodule:
             #     name_parts.append(f"Sm={record.id_sysmodule.name or ''}")
-            
+
             record.name = '.'.join(name_parts) if name_parts else 'New Relation'
 
     # =========================================================================
@@ -497,3 +498,50 @@ class CiRelation(models.Model):
     def activate(self):
         """Activate this relation."""
         self.write({'isactive': True})
+
+    # =========================================================================
+    # Maintenance Actions
+    # =========================================================================
+
+    @api.model
+    def action_update_all_ci_relation_names(self):
+        """
+        Update names for ALL CI relations in the system.
+        This recalculates the computed name field for all records.
+
+        @return: Notification action with update count
+        """
+        CiRelation = self.env['myschool.ci.relation']
+
+        # Get all CI relations
+        all_relations = CiRelation.search([])
+
+        updated_count = 0
+        skipped_count = 0
+
+        for rel in all_relations:
+            try:
+                old_name = rel.name
+                # Trigger recomputation of the name field
+                rel._compute_name()
+                if rel.name != old_name:
+                    updated_count += 1
+                    _logger.debug(f"Updated CI relation {rel.id}: {old_name} -> {rel.name}")
+                else:
+                    skipped_count += 1
+            except Exception as e:
+                _logger.warning(f"Error updating CI relation {rel.id}: {e}")
+                skipped_count += 1
+
+        _logger.info(f"Updated {updated_count} CI relation names, skipped {skipped_count}")
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'CI Relation Names Update Complete',
+                'message': f'Updated {updated_count} CI relation names ({skipped_count} unchanged/skipped).',
+                'type': 'success',
+                'sticky': False,
+            }
+        }

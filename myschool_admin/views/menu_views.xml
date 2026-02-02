@@ -190,6 +190,13 @@
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_update_ci_relation_names"
+              name="Update CI Relation Names"
+              parent="menu_config_items_root"
+              action="action_update_all_ci_relation_names"
+              sequence="100"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <!-- ========================================= -->
     <!-- CONFIGURATION (sequence: 90) -->
     <!-- ========================================= -->
