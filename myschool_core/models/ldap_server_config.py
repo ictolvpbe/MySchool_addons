@@ -22,7 +22,7 @@ class LdapServerConfig(models.Model):
     Stores connection settings for LDAP/Active Directory servers.
     Supports multiple servers for different organizations.
     """
-    _name = 'ldap.server.config'
+    _name = 'myschool.ldap.server.config'
     _description = 'LDAP Server Configuration'
     _rec_name = 'name'
     _order = 'sequence, name'
@@ -82,6 +82,34 @@ class LdapServerConfig(models.Model):
         string='Connection Timeout',
         default=30,
         help='Connection timeout in seconds'
+    )
+
+    # =========================================================================
+    # Certificate Settings
+    # =========================================================================
+
+    validate_cert = fields.Boolean(
+        string='Validate Certificate',
+        default=True,
+        help='Validate server SSL/TLS certificate. Disable only for testing with self-signed certificates.'
+    )
+
+    ca_cert_file = fields.Char(
+        string='CA Certificate File',
+        help='Path to CA certificate file (PEM format) for validating server certificate. '
+             'Example: /etc/ssl/certs/ca-certificates.crt or /path/to/your/ca.pem'
+    )
+
+    client_cert_file = fields.Char(
+        string='Client Certificate File',
+        groups='base.group_system',
+        help='Path to client certificate file (PEM format) for mutual TLS authentication'
+    )
+
+    client_key_file = fields.Char(
+        string='Client Key File',
+        groups='base.group_system',
+        help='Path to client private key file (PEM format) for mutual TLS authentication'
     )
 
     # =========================================================================

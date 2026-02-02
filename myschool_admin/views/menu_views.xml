@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Main Menu -->
+    <!-- ========================================= -->
+    <!-- MAIN MENU -->
+    <!-- ========================================= -->
+
     <menuitem id="menu_myschool_root"
               name="MySchool Admin"
               sequence="10"
@@ -8,233 +11,71 @@
               web_icon="school,static/description/icon.png"
               groups="myschool_core.group_myschool_core_admin"/>
 
-      <!-- Sub Menu: Object Browser -->
-<!--    <menuitem id="menu_myschool_object_browser"-->
-<!--              name="Object Browser"-->
-<!--              parent="menu_myschool_root"-->
-<!--              action="action_object_browser_client"-->
-<!--              sequence="5"-->
-<!--              groups="myschool_core.group_myschool_core_admin"/>-->
+    <!-- ========================================= -->
+    <!-- MASTER DATA (sequence: 10) -->
+    <!-- ========================================= -->
 
-<!--    &lt;!&ndash; Sub Menu: LDAP Configuration &ndash;&gt;-->
-<!--    <menuitem id="menu_myschool_ldap_config"-->
-<!--              name="LDAP Configuration"-->
-<!--              parent="menu_myschool_root"-->
-<!--              action="action_ldap_config"-->
-<!--              sequence="6"-->
-<!--              groups="myschool_core.group_myschool_core_admin"/>-->
-
-
-    <!-- Organizations Menu -->
-    <menuitem id="menu_myschool_organization"
-              name="Organisaties"
+    <menuitem id="menu_master_data"
+              name="Master Data"
               parent="menu_myschool_root"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_myschool_org"
-              name="Organisaties"
-              parent="menu_myschool_organization"
+              name="Organizations"
+              parent="menu_master_data"
               action="action_myschool_org"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_myschool_org_type"
-              name="Organisatie Types"
-              parent="menu_myschool_organization"
-              action="action_myschool_org_type"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_update_all_org_name_trees"
-              name="Update All Org Name Trees"
-              action="action_update_all_org_name_trees"
-              parent="menu_myschool_organization"
-              sequence="100"/>
-
-    <!-- Persons Menu -->
-    <menuitem id="menu_myschool_persons"
-              name="Personen"
-              parent="menu_myschool_root"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-
     <menuitem id="menu_myschool_person"
-              name="Personen"
-              parent="menu_myschool_persons"
+              name="Persons"
+              parent="menu_master_data"
               action="action_myschool_person"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_myschool_person_type"
-              name="Persoon Types"
-              parent="menu_myschool_persons"
-              action="action_myschool_person_type"
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_myschool_person_details"
-              name="Persoon Details"
-              parent="menu_myschool_persons"
-              action="action_myschool_person_details"
-              sequence="30"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- Roles Menu -->
-    <menuitem id="menu_myschool_roles"
-              name="Rollen"
-              parent="menu_myschool_root"
-              sequence="30"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-<!--    <menuitem id="menu_myschool_role_manager"-->
-<!--              name="Roll Manager"-->
-<!--              parent="menu_myschool_roles"-->
-<!--              action="myschool_admin.action_role_relations_manager"-->
-<!--              sequence="5"-->
-<!--              groups="myschool_core.group_myschool_core_admin"/>-->
-
 
     <menuitem id="menu_myschool_role"
-              name="Rollen"
-              parent="menu_myschool_roles"
+              name="Roles"
+              parent="menu_master_data"
               action="action_myschool_role"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_myschool_role_type"
-              name="Rol Types"
-              parent="menu_myschool_roles"
-              action="action_myschool_role_type"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- Periods Menu -->
-    <menuitem id="menu_myschool_periods"
-              name="Periodes"
-              parent="menu_myschool_root"
-              sequence="40"
+              sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_myschool_period"
-              name="Periodes"
-              parent="menu_myschool_periods"
+              name="Periods"
+              parent="menu_master_data"
               action="action_myschool_period"
-              sequence="10"
+              sequence="40"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_myschool_period_type"
-              name="Periode Types"
-              parent="menu_myschool_periods"
-              action="action_myschool_period_type"
+    <!-- ========================================= -->
+    <!-- RELATIONS (sequence: 20) -->
+    <!-- ========================================= -->
+
+    <menuitem id="menu_relations"
+              name="Relations"
+              parent="menu_myschool_root"
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <!-- Relations Menu -->
-    <menuitem id="menu_myschool_relations"
-              name="Relaties"
-              parent="menu_myschool_root"
-              sequence="50"
-              groups="myschool_core.group_myschool_core_admin"/>
-
     <menuitem id="menu_myschool_proprelation"
-              name="Relaties"
-              parent="menu_myschool_relations"
+              name="All Relations"
+              parent="menu_relations"
               action="action_myschool_proprelation"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_myschool_proprelation_type"
-              name="Relatie Types"
-              parent="menu_myschool_relations"
-              action="action_myschool_proprelation_type"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-              action="action_myschool_proprelation_type"
+    <!-- ========================================= -->
+    <!-- BACKEND TASKS (sequence: 30) -->
+    <!-- ========================================= -->
 
-    <menuitem id="menu_update_all_proprelation_names"
-              name="Update All Proprelation Names"
-              action="action_update_all_proprelation_names"
-              parent="menu_myschool_relations"
-              sequence="100"/>
-
-        <!-- Configuration Menu -->
-    <menuitem id="menu_myschool_config_item"
-              name="Configuration"
+    <menuitem id="menu_betask_root"
+              name="Backend Tasks"
               parent="menu_myschool_root"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- Config Item Menu -->
-    <menuitem id="menu_config_item"
-              name="Configuration Items"
-              parent="menu_myschool_config_item"
-              action="action_config_item"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- CI Relations Menu -->
-    <menuitem id="menu_ci_relation"
-              name="CI Relations"
-              parent="menu_myschool_config_item"
-              action="action_ci_relation"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-   <!-- Events Menu -->
-    <menuitem id="menu_sys_event_events"
-              name="SysEvents"
-              parent="menu_myschool_root"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_sys_event_all"
-              name="All Events"
-              parent="menu_sys_event_events"
-              action="action_sys_event_all"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_sys_event_new"
-              name="New Events"
-              parent="menu_sys_event_events"
-              action="action_sys_event_new"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_sys_event_errors"
-              name="Errors"
-              parent="menu_sys_event_events"
-              action="action_sys_event_errors"
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <!-- Configuration Menu -->
-    <menuitem id="menu_sys_event_config"
-              name="Configuration"
-              parent="menu_sys_event_events"
-              sequence="90"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_sys_event_type"
-              name="Event Types"
-              parent="menu_sys_event_events"
-              action="action_sys_event_type"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-       <!-- ========================================= -->
-    <!-- BACKEND TASK MENU STRUCTURE -->
-    <!-- ========================================= -->
-
-    <!-- Main Menu -->
-    <menuitem id="menu_betask_root"
-              parent="menu_myschool_root"
-              name="Backend Tasks"
-              sequence="80"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- Tasks Submenu -->
     <menuitem id="menu_betask_all"
               name="All Tasks"
               parent="menu_betask_root"
@@ -263,64 +104,156 @@
               sequence="40"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <!-- Betask Configuration -->
-    <menuitem id="menu_betask_config"
-              name="Configuration"
+    <menuitem id="menu_betask_rollback"
+              name="Task Rollback"
               parent="menu_betask_root"
-              sequence="90"
+              action="action_betask_rollback_wizard"
+              sequence="50"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_betask_types"
-              name="Task Types"
-              parent="menu_betask_config"
-              action="action_betask_type"
+    <!-- ========================================= -->
+    <!-- SYSTEM EVENTS (sequence: 40) -->
+    <!-- ========================================= -->
+
+    <menuitem id="menu_sys_events"
+              name="System Events"
+              parent="menu_myschool_root"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_sys_event_all"
+              name="All Events"
+              parent="menu_sys_events"
+              action="action_sys_event_all"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_betask_rollback"
-              name="Rollback Tasks"
-              parent="menu_betask_config"
-              action="action_betask_rollback_wizard"
+    <menuitem id="menu_sys_event_new"
+              name="New Events"
+              parent="menu_sys_events"
+              action="action_sys_event_new"
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <!-- Informat Sync Configuration -->
-
-    <menuitem id="menu_informat_service_root"
-              parent="menu_myschool_root"
-              name="Informat Sync"
-              sequence="99"
+    <menuitem id="menu_sys_event_errors"
+              name="Errors"
+              parent="menu_sys_events"
+              action="action_sys_event_errors"
+              sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_informat_service_config"
-              name="Configuration"
-              parent="menu_informat_service_root"
-              action="action_informat_service_config"
+    <!-- ========================================= -->
+    <!-- INTEGRATIONS (sequence: 50) -->
+    <!-- ========================================= -->
+
+    <menuitem id="menu_integrations"
+              name="Integrations"
+              parent="menu_myschool_root"
+              sequence="50"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_ldap_servers"
+              name="LDAP Servers"
+              parent="menu_integrations"
+              action="action_ldap_server_config"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
-<!--    &lt;!&ndash; Sub Menu: Log Viewer &ndash;&gt;-->
-<!--    <menuitem id="menu_myschool_log_viewer"-->
-<!--              name="Log Viewer"-->
-<!--              parent="menu_myschool_root"-->
-<!--              action="action_log_viewer"-->
-<!--              sequence="95"-->
-<!--              groups="myschool_core.group_myschool_core_admin"/>-->
+    <menuitem id="menu_informat_sync"
+              name="Informat Sync"
+              parent="menu_integrations"
+              action="action_informat_service_config"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
 
+    <!-- ========================================= -->
+    <!-- CONFIGURATION (sequence: 90) -->
+    <!-- ========================================= -->
 
-<!--    &lt;!&ndash; Action: Log Viewer &ndash;&gt;-->
-<!--    <record id="action_log_viewer" model="ir.actions.act_window">-->
-<!--        <field name="name">Log Viewer</field>-->
-<!--        <field name="res_model">myschool.log.viewer</field>-->
-<!--        <field name="view_mode">form</field>-->
-<!--        <field name="target">current</field>-->
-<!--        <field name="context">{-->
-<!--            'form_view_initial_mode': 'edit',-->
-<!--            'default_num_lines': 100,-->
-<!--            'default_filter_level': 'all'-->
-<!--        }</field>-->
-<!--    </record>-->
+    <menuitem id="menu_configuration"
+              name="Configuration"
+              parent="menu_myschool_root"
+              sequence="90"
+              groups="myschool_core.group_myschool_core_admin"/>
 
+    <!-- Types -->
+    <menuitem id="menu_org_types"
+              name="Organization Types"
+              parent="menu_configuration"
+              action="action_myschool_org_type"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_person_types"
+              name="Person Types"
+              parent="menu_configuration"
+              action="action_myschool_person_type"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_role_types"
+              name="Role Types"
+              parent="menu_configuration"
+              action="action_myschool_role_type"
+              sequence="30"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_period_types"
+              name="Period Types"
+              parent="menu_configuration"
+              action="action_myschool_period_type"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_relation_types"
+              name="Relation Types"
+              parent="menu_configuration"
+              action="action_myschool_proprelation_type"
+              sequence="50"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_task_types"
+              name="Task Types"
+              parent="menu_configuration"
+              action="action_betask_type"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_event_types"
+              name="Event Types"
+              parent="menu_configuration"
+              action="action_sys_event_type"
+              sequence="70"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- Config Items -->
+    <menuitem id="menu_config_items"
+              name="Config Items"
+              parent="menu_configuration"
+              action="action_config_item"
+              sequence="80"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_ci_relations"
+              name="CI Relations"
+              parent="menu_configuration"
+              action="action_ci_relation"
+              sequence="90"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- Maintenance Actions -->
+    <menuitem id="menu_update_org_trees"
+              name="Update Org Name Trees"
+              parent="menu_configuration"
+              action="action_update_all_org_name_trees"
+              sequence="100"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_update_relation_names"
+              name="Update Relation Names"
+              parent="menu_configuration"
+              action="action_update_all_proprelation_names"
+              sequence="110"
+              groups="myschool_core.group_myschool_core_admin"/>
 
 </odoo>

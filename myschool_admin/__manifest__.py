@@ -45,15 +45,13 @@
         'views/informat_service_config_views.xml',
         # 'views/log_viewer_views.xml',
         'views/object_browser_views.xml',
-
-        # Menus
-        'views/menu_views.xml',
-
-        # Views that depend on menus
         'views/ldap_server_config_views.xml',
 
-        #Wizards
+        # Wizards (must load before menus that reference wizard actions)
         'views/wizard_views.xml',
+
+        # Menus (must load after all actions are defined)
+        'views/menu_views.xml',
 
         #demo data
         'data/sequence.xml',

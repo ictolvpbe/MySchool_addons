@@ -28,9 +28,10 @@ try:
     from ldap3 import (
         Server, Connection, ALL, NTLM, SIMPLE,
         SUBTREE, MODIFY_ADD, MODIFY_DELETE, MODIFY_REPLACE,
-        ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES
+        ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES, Tls
     )
     from ldap3.core.exceptions import LDAPException, LDAPBindError, LDAPSocketOpenError
+    import ssl
     LDAP3_AVAILABLE = True
 except ImportError:
     LDAP3_AVAILABLE = False
@@ -70,6 +71,37 @@ class LdapService(models.AbstractModel):
             ))
 
     @api.model
+    def _create_tls_config(self, config):
+        """
+        Create TLS configuration for LDAP connection.
+
+        Args:
+            config: ldap.server.config record
+
+        Returns:
+            ldap3.Tls object or None
+        """
+        if not config.use_ssl and not config.use_tls:
+            return None
+
+        # Determine certificate validation mode
+        if config.validate_cert:
+            validate = ssl.CERT_REQUIRED
+        else:
+            validate = ssl.CERT_NONE
+            _logger.warning('Certificate validation disabled for LDAP server: %s', config.name)
+
+        # Build TLS configuration
+        tls_config = Tls(
+            validate=validate,
+            ca_certs_file=config.ca_cert_file or None,
+            local_certificate_file=config.client_cert_file or None,
+            local_private_key_file=config.client_key_file or None,
+        )
+
+        return tls_config
+
+    @api.model
     def _create_server(self, config):
         """
         Create an ldap3 Server object from configuration.
@@ -89,10 +121,14 @@ class LdapService(models.AbstractModel):
         if use_ssl and port == 389:
             port = 636
 
+        # Create TLS configuration
+        tls_config = self._create_tls_config(config)
+
         server = Server(
             config.server_url,
             port=port,
             use_ssl=use_ssl,
+            tls=tls_config,
             get_info=ALL,
             connect_timeout=config.timeout
         )

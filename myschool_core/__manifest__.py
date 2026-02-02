@@ -56,7 +56,7 @@
         #demo data
         'data/sequence.xml',
         'data/sys_event_data.xml',
-        'data/ldap_task_types.xml',
+        # 'data/ldap_task_types.xml',
 
         #Services
         #'services/data/ir_cron_data.xml',

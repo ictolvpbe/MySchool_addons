@@ -70,6 +70,17 @@
                         </group>
                     </group>
 
+                    <group string="Certificate Settings" name="certificates" invisible="not use_ssl and not use_tls">
+                        <group>
+                            <field name="validate_cert"/>
+                            <field name="ca_cert_file" placeholder="/etc/ssl/certs/ca-certificates.crt"/>
+                        </group>
+                        <group groups="base.group_system">
+                            <field name="client_cert_file" placeholder="/path/to/client.pem"/>
+                            <field name="client_key_file" placeholder="/path/to/client.key"/>
+                        </group>
+                    </group>
+
                     <group>
                         <group string="Bind Credentials" name="credentials" groups="base.group_system">
                             <field name="bind_dn" placeholder="CN=ldap-service,OU=Service Accounts,DC=school,DC=local"/>
@@ -144,6 +155,7 @@
         <field name="name">LDAP Servers</field>
         <field name="res_model">myschool.ldap.server.config</field>
         <field name="view_mode">list,form</field>
+        <field name="view_id" ref="view_ldap_server_config_list"/>
         <field name="search_view_id" ref="view_ldap_server_config_search"/>
         <field name="context">{'search_default_filter_active': 1}</field>
         <field name="help" type="html">
@@ -158,12 +170,19 @@
         </field>
     </record>
 
-    <!-- Menu Item (under Configuration) -->
-    <menuitem id="menu_ldap_server_config"
-              name="LDAP Servers"
-              parent="myschool_admin.menu_betask_config"
-              action="action_ldap_server_config"
-              sequence="30"
-              groups="myschool_core.group_myschool_core_admin"/>
+    <!-- Explicit view bindings -->
+    <record id="action_ldap_server_config_view_list" model="ir.actions.act_window.view">
+        <field name="sequence">1</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="view_ldap_server_config_list"/>
+        <field name="act_window_id" ref="action_ldap_server_config"/>
+    </record>
+    <record id="action_ldap_server_config_view_form" model="ir.actions.act_window.view">
+        <field name="sequence">2</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="view_ldap_server_config_form"/>
+        <field name="act_window_id" ref="action_ldap_server_config"/>
+    </record>
+
 
 </odoo>

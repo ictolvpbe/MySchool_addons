@@ -22,8 +22,42 @@
         <field name="model">myschool.person</field>
         <field name="arch" type="xml">
             <form string="Persoon">
+                <header>
+                    <button name="action_deactivate_employee"
+                            string="Deactivate"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="not is_active"
+                            confirm="Are you sure? This will also deactivate the Odoo user, HR employee, and all relations."/>
+                    <button name="action_reactivate_employee"
+                            string="Reactivate"
+                            type="object"
+                            class="btn-primary"
+                            invisible="is_active"/>
+                    <button name="action_create_odoo_user"
+                            string="Create Odoo User"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="odoo_user_id"/>
+                </header>
                 <sheet>
-                    <div class="oe_button_box" name="button_box"/>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_odoo_user"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-user"
+                                invisible="not odoo_user_id">
+                            <field name="has_odoo_account" widget="boolean" string="Odoo User"/>
+                        </button>
+                        <button name="action_view_odoo_employee"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-id-card"
+                                invisible="not odoo_employee_id">
+                            <span>HR Employee</span>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="is_active"/>
                     <group>
                         <group string="Naamgegevens">
                             <field name="name"/>
@@ -34,6 +68,8 @@
                         <group string="Status &amp; Type">
                             <field name="person_type_id"/>
                             <field name="is_active"/>
+                            <field name="odoo_user_id" readonly="1"/>
+                            <field name="odoo_employee_id" readonly="1"/>
                         </group>
                     </group>
 

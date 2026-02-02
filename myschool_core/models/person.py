@@ -404,3 +404,166 @@ class Person(models.Model):
         """Check if this person is a student."""
         self.ensure_one()
         return self.person_type_id and self.person_type_id.name == 'STUDENT'
+
+    # =========================================================================
+    # Deactivation Logic
+    # =========================================================================
+
+    def write(self, vals):
+        """
+        Override write to handle deactivation cascading.
+
+        When is_active is set to False for an employee:
+        - Deactivate linked Odoo user
+        - Deactivate linked HR employee
+        - Deactivate all proprelations
+        """
+        # Check if we're deactivating
+        if 'is_active' in vals and vals['is_active'] is False:
+            for record in self:
+                if record.is_active:  # Was active, now being deactivated
+                    record._on_deactivate()
+
+        return super().write(vals)
+
+    def _on_deactivate(self):
+        """
+        Handle person deactivation - cascade to related records.
+
+        This method is called when a person is being deactivated.
+        It deactivates:
+        - Linked Odoo user (res.users)
+        - Linked HR employee (hr.employee)
+        - All proprelations where this person is involved
+        """
+        self.ensure_one()
+        _logger.info(f'Deactivating person: {self.name} (ID: {self.id})')
+
+        changes = []
+
+        # Deactivate Odoo user
+        if self.odoo_user_id:
+            try:
+                self.odoo_user_id.write({'active': False})
+                changes.append(f'Odoo user {self.odoo_user_id.login} deactivated')
+                _logger.info(f'Deactivated Odoo user: {self.odoo_user_id.login}')
+            except Exception as e:
+                _logger.error(f'Failed to deactivate Odoo user: {e}')
+                changes.append(f'ERROR deactivating Odoo user: {e}')
+
+        # Deactivate HR employee
+        if self.odoo_employee_id:
+            try:
+                self.odoo_employee_id.write({'active': False})
+                changes.append(f'HR employee {self.odoo_employee_id.name} deactivated')
+                _logger.info(f'Deactivated HR employee: {self.odoo_employee_id.name}')
+            except Exception as e:
+                _logger.error(f'Failed to deactivate HR employee: {e}')
+                changes.append(f'ERROR deactivating HR employee: {e}')
+
+        # Deactivate all proprelations where this person is involved
+        proprelation_count = self._deactivate_proprelations()
+        if proprelation_count > 0:
+            changes.append(f'{proprelation_count} proprelation(s) deactivated')
+
+        _logger.info(f'Deactivation complete for {self.name}: {", ".join(changes)}')
+        return changes
+
+    def _deactivate_proprelations(self):
+        """
+        Deactivate all proprelations where this person is involved.
+
+        Searches for proprelations where:
+        - id_person = this person
+        - id_person_parent = this person
+        - id_person_child = this person
+
+        Returns:
+            int: Number of proprelations deactivated
+        """
+        self.ensure_one()
+        PropRelation = self.env['myschool.proprelation']
+
+        # Find all proprelations involving this person
+        proprelations = PropRelation.search([
+            '|', '|',
+            ('id_person', '=', self.id),
+            ('id_person_parent', '=', self.id),
+            ('id_person_child', '=', self.id),
+            ('is_active', '=', True),
+        ])
+
+        count = len(proprelations)
+        if count > 0:
+            proprelations.write({'is_active': False})
+            _logger.info(f'Deactivated {count} proprelation(s) for person {self.name}')
+
+        return count
+
+    def action_deactivate_employee(self):
+        """
+        Manual action to deactivate an employee.
+
+        This will:
+        - Set is_active to False
+        - Deactivate Odoo user
+        - Deactivate HR employee
+        - Deactivate all proprelations
+        """
+        self.ensure_one()
+
+        if not self.is_active:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Info',
+                    'message': f'{self.name} is al gedeactiveerd.',
+                    'type': 'info',
+                }
+            }
+
+        # Deactivate - this will trigger _on_deactivate via write()
+        self.write({'is_active': False})
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Succes',
+                'message': f'{self.name} is gedeactiveerd. Odoo gebruiker, HR medewerker en relaties zijn ook gedeactiveerd.',
+                'type': 'success',
+            }
+        }
+
+    def action_reactivate_employee(self):
+        """
+        Manual action to reactivate an employee.
+
+        Note: This only reactivates the person, not the Odoo user/employee/proprelations.
+        Those should be reactivated manually or via separate tasks if needed.
+        """
+        self.ensure_one()
+
+        if self.is_active:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Info',
+                    'message': f'{self.name} is al actief.',
+                    'type': 'info',
+                }
+            }
+
+        self.write({'is_active': True})
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Succes',
+                'message': f'{self.name} is geheractiveerd. Let op: Odoo gebruiker en HR medewerker moeten apart geheractiveerd worden.',
+                'type': 'warning',
+            }
+        }
