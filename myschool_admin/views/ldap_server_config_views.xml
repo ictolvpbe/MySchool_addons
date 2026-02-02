@@ -18,9 +18,7 @@
                 <field name="use_ssl"/>
                 <field name="is_active_directory"/>
                 <field name="org_count"/>
-                <field name="last_test_result" widget="badge"
-                       decoration-success="last_test_result == 'success'"
-                       decoration-danger="last_test_result == 'failed'"/>
+                <field name="last_test_result"/>
                 <field name="last_test_date"/>
                 <field name="active" column_invisible="1"/>
             </list>
@@ -96,21 +94,13 @@
 
                     <notebook>
                         <page string="Organizations" name="organizations">
-                            <field name="org_ids" widget="many2many_tags">
-                                <list>
-                                    <field name="name"/>
-                                    <field name="name_tree"/>
-                                    <field name="inst_nr"/>
-                                </list>
-                            </field>
+                            <field name="org_ids" widget="many2many_tags"/>
                         </page>
                         <page string="Status" name="status">
                             <group>
                                 <group>
                                     <field name="last_test_date"/>
-                                    <field name="last_test_result" widget="badge"
-                                           decoration-success="last_test_result == 'success'"
-                                           decoration-danger="last_test_result == 'failed'"/>
+                                    <field name="last_test_result"/>
                                 </group>
                                 <group>
                                     <field name="active"/>
