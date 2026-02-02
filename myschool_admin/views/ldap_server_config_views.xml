@@ -7,8 +7,8 @@
 
     <!-- List View -->
     <record id="view_ldap_server_config_list" model="ir.ui.view">
-        <field name="name">ldap.server.config.list</field>
-        <field name="model">ldap.server.config</field>
+        <field name="name">myschool.ldap.server.config.list</field>
+        <field name="model">myschool.ldap.server.config</field>
         <field name="arch" type="xml">
             <list string="LDAP Servers">
                 <field name="sequence" widget="handle"/>
@@ -29,8 +29,8 @@
 
     <!-- Form View -->
     <record id="view_ldap_server_config_form" model="ir.ui.view">
-        <field name="name">ldap.server.config.form</field>
-        <field name="model">ldap.server.config</field>
+        <field name="name">myschool.ldap.server.config.form</field>
+        <field name="model">myschool.ldap.server.config</field>
         <field name="arch" type="xml">
             <form string="LDAP Server Configuration">
                 <header>
@@ -129,8 +129,8 @@
 
     <!-- Search View -->
     <record id="view_ldap_server_config_search" model="ir.ui.view">
-        <field name="name">ldap.server.config.search</field>
-        <field name="model">ldap.server.config</field>
+        <field name="name">myschool.ldap.server.config.search</field>
+        <field name="model">myschool.ldap.server.config</field>
         <field name="arch" type="xml">
             <search string="Search LDAP Servers">
                 <field name="name"/>
@@ -156,7 +156,7 @@
     <!-- Action -->
     <record id="action_ldap_server_config" model="ir.actions.act_window">
         <field name="name">LDAP Servers</field>
-        <field name="res_model">ldap.server.config</field>
+        <field name="res_model">myschool.ldap.server.config</field>
         <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="view_ldap_server_config_search"/>
         <field name="context">{'search_default_filter_active': 1}</field>

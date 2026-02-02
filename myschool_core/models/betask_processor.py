@@ -2391,7 +2391,7 @@ class BeTaskProcessor(models.AbstractModel):
         Returns:
             ldap.server.config record or raises error
         """
-        ldap_config_model = self.env['ldap.server.config']
+        ldap_config_model = self.env['myschool.ldap.server.config']
 
         if org_id:
             config = ldap_config_model.get_server_for_org(org_id)
