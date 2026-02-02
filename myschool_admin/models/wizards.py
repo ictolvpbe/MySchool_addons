@@ -162,33 +162,41 @@ def update_name_tree_for_org_and_descendants(env, org_id):
     """
     Update name_tree for an organization and all its descendants.
     Also updates role names that reference this org.
-    
+
     Args:
         env: Odoo environment
         org_id: The organization ID to start from
     """
     if 'myschool.org' not in env or 'myschool.proprelation' not in env:
         return
-    
+
     Org = env['myschool.org']
     PropRelation = env['myschool.proprelation']
-    
+    PropRelationType = env['myschool.proprelation.type']
+
     org = Org.browse(org_id)
     if not org.exists():
         return
-    
+
+    # Get ORG-TREE type
+    org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
     # Update this org's name_tree
     new_name_tree = compute_name_tree(env, org)
     if new_name_tree and org.name_tree != new_name_tree:
         org.write({'name_tree': new_name_tree})
         _logger.info(f"Updated name_tree for org {org.name_short}: {new_name_tree}")
-    
-    # Find and update all child orgs recursively
-    child_rels = PropRelation.search([
+
+    # Find and update all child orgs recursively (only via ORG-TREE relations)
+    child_search_domain = [
         ('id_org_parent', '=', org_id),
         ('id_org', '!=', False),
         ('is_active', '=', True),
-    ])
+    ]
+    if org_tree_type:
+        child_search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+    child_rels = PropRelation.search(child_search_domain)
     
     for rel in child_rels:
         if rel.id_org:
@@ -313,25 +321,34 @@ class CreatePersonWizard(models.TransientModel):
         return res
 
     def _get_parent_org_static(self, org, debug_lines=None):
-        """Get parent org via proprelation."""
+        """Get parent org via ORG-TREE proprelation."""
         if debug_lines is None:
             debug_lines = []
-            
+
         if not org:
             debug_lines.append("_get_parent_org: org is None")
             return None
-        
+
         debug_lines.append(f"_get_parent_org: Looking for parent of org.id={org.id}, org.name={org.name}")
-        
+
         try:
             PropRelation = self.env['myschool.proprelation']
-            # id_org = current org (child), id_org_parent = parent org
-            parent_rel = PropRelation.search([
+            PropRelationType = self.env['myschool.proprelation.type']
+
+            # Get ORG-TREE type
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+            # id_org = current org (child), id_org_parent = parent org (only via ORG-TREE)
+            search_domain = [
                 ('id_org', '=', org.id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ], limit=1)
-            
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            parent_rel = PropRelation.search(search_domain, limit=1)
+
             if parent_rel:
                 debug_lines.append(f"_get_parent_org: Found relation id={parent_rel.id}")
                 if parent_rel.id_org_parent:
@@ -340,12 +357,12 @@ class CreatePersonWizard(models.TransientModel):
                 else:
                     debug_lines.append("_get_parent_org: id_org_parent is empty")
             else:
-                debug_lines.append("_get_parent_org: No proprelation found with id_org_parent")
+                debug_lines.append("_get_parent_org: No ORG-TREE proprelation found with id_org_parent")
         except KeyError:
             debug_lines.append("_get_parent_org: PropRelation model not found")
         except Exception as e:
             debug_lines.append(f"_get_parent_org: Error - {str(e)}")
-        
+
         return None
 
     def _get_domain_external_static(self, org, debug_lines=None):
@@ -460,40 +477,48 @@ class CreatePersonWizard(models.TransientModel):
             return None
 
     def _get_parent_orgs(self, org):
-        """Get all parent organizations in the tree (including the org itself)."""
+        """Get all parent organizations in the tree (including the org itself) via ORG-TREE relations."""
         orgs = [org]
         PropRelation = self.env['myschool.proprelation']
-        
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        # Get ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
         current_org = org
         max_depth = 20  # Prevent infinite loops
         depth = 0
         visited_ids = {org.id}  # Track visited orgs to prevent cycles
-        
+
         _logger.info(f"Starting parent org search for: {org.name} (id={org.id})")
-        
+
         while current_org and depth < max_depth:
             parent_org = None
-            
-            # Pattern 1: id_org (child) + id_org_parent (parent) - primary pattern
-            parent_rel = PropRelation.search([
+
+            # Search for parent via ORG-TREE relation only
+            search_domain = [
                 ('id_org', '=', current_org.id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ], limit=1)
-            
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            parent_rel = PropRelation.search(search_domain, limit=1)
+
             _logger.info(f"Depth {depth}: Looking for parent of {current_org.name} (id={current_org.id})")
-            _logger.info(f"  Pattern 1 search result: {parent_rel.id if parent_rel else 'None'}")
-            
+            _logger.info(f"  ORG-TREE search result: {parent_rel.id if parent_rel else 'None'}")
+
             if parent_rel and parent_rel.id_org_parent:
                 parent_org = parent_rel.id_org_parent
-                _logger.info(f"  Found parent via Pattern 1: {parent_org.name} (id={parent_org.id})")
-            
+                _logger.info(f"  Found parent via ORG-TREE: {parent_org.name} (id={parent_org.id})")
+
             if parent_org:
                 # Avoid cycles
                 if parent_org.id in visited_ids:
                     _logger.info(f"  Cycle detected, stopping")
                     break
-                    
+
                 visited_ids.add(parent_org.id)
                 orgs.append(parent_org)
                 _logger.info(f"  Added parent org: {parent_org.name} (id={parent_org.id})")
@@ -502,7 +527,7 @@ class CreatePersonWizard(models.TransientModel):
                 _logger.info(f"  No more parents found, stopping")
                 break
             depth += 1
-        
+
         _logger.info(f"Final parent orgs list for {org.name}: {[o.name for o in orgs]}")
         return orgs
 
@@ -545,60 +570,68 @@ class CreatePersonWizard(models.TransientModel):
     def _find_school_org(self, start_org):
         """
         Find the first parent org of type SCHOOL where is_administrative=False.
-        
+
         Args:
             start_org: The organization to start searching from
-            
+
         Returns:
             The school org record or None if not found
         """
         PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
         OrgType = self.env['myschool.org.type']
-        
+
         # Get SCHOOL org type
         school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
         if not school_type:
             _logger.warning("SCHOOL org type not found")
             return None
-        
+
+        # Get ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
         # Check if start_org itself is a non-administrative school
-        if (start_org.org_type_id and 
-            start_org.org_type_id.id == school_type.id and 
+        if (start_org.org_type_id and
+            start_org.org_type_id.id == school_type.id and
             not start_org.is_administrative):
             return start_org
-        
-        # Walk up the tree to find a school
+
+        # Walk up the tree to find a school (only via ORG-TREE relations)
         current_org = start_org
         visited_ids = {current_org.id}
         max_depth = 20
-        
+
         for _ in range(max_depth):
-            # Find parent via ORG-TREE relation
-            parent_rel = PropRelation.search([
+            # Find parent via ORG-TREE relation only
+            search_domain = [
                 ('id_org', '=', current_org.id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ], limit=1)
-            
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            parent_rel = PropRelation.search(search_domain, limit=1)
+
             if not parent_rel or not parent_rel.id_org_parent:
                 break
-            
+
             parent_org = parent_rel.id_org_parent
-            
+
             # Avoid cycles
             if parent_org.id in visited_ids:
                 break
             visited_ids.add(parent_org.id)
-            
+
             # Check if this parent is a non-administrative school
-            if (parent_org.org_type_id and 
-                parent_org.org_type_id.id == school_type.id and 
+            if (parent_org.org_type_id and
+                parent_org.org_type_id.id == school_type.id and
                 not parent_org.is_administrative):
                 _logger.info(f"Found school org: {parent_org.name}")
                 return parent_org
-            
+
             current_org = parent_org
-        
+
         _logger.warning(f"No school org found for {start_org.name}")
         return None
 
@@ -1127,59 +1160,68 @@ class AddChildOrgWizard(models.TransientModel):
     
     def _build_group_name(self, prefix='grp-'):
         """Build group name from org hierarchy.
-        
+
         Format: <prefix><name_short>-<parent_short>-<grandparent_short>-...
         Excludes: is_administrative=True orgs and orgs with type 'SCHOOLBOARD'
-        
+
         Args:
             prefix: 'grp-' for communication group, 'bgrp-' for security group
         """
         self.ensure_one()
-        
+
         parts = []
-        
+
         # Add current org's name_short
         if self.new_org_name_short:
             parts.append(self.new_org_name_short.lower())
-        
-        # Walk up the parent chain
+
+        # Walk up the parent chain (only via ORG-TREE relations)
         PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        # Get ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
         current_org = self.parent_org_id
         visited = set()
-        
+
         while current_org and current_org.id not in visited:
             visited.add(current_org.id)
-            
+
             # Check if this org should be excluded
             should_exclude = False
-            
+
             # Exclude if is_administrative is True
             if hasattr(current_org, 'is_administrative') and current_org.is_administrative:
                 should_exclude = True
-            
+
             # Exclude if org_type is SCHOOLBOARD
             if hasattr(current_org, 'org_type_id') and current_org.org_type_id:
                 if current_org.org_type_id.name == 'SCHOOLBOARD':
                     should_exclude = True
-            
+
             # Add to parts if not excluded
             if not should_exclude:
                 short_name = current_org.name_short if hasattr(current_org, 'name_short') and current_org.name_short else current_org.name
                 if short_name:
                     parts.append(short_name.lower())
-            
-            # Find parent via proprelation
-            parent_rel = PropRelation.search([
+
+            # Find parent via ORG-TREE proprelation only
+            search_domain = [
                 ('id_org', '=', current_org.id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ], limit=1)
-            
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            parent_rel = PropRelation.search(search_domain, limit=1)
+
             if parent_rel and parent_rel.id_org_parent:
                 current_org = parent_rel.id_org_parent
             else:
                 break
-        
+
         if parts:
             return prefix + '-'.join(parts)
         return False
@@ -1264,36 +1306,44 @@ class AddChildOrgWizard(models.TransientModel):
         # Fallback: search directly in CiRelation
         if 'myschool.ci.relation' in self.env:
             CiRelation = self.env['myschool.ci.relation']
-            
-            # Walk up the org hierarchy to find the CI
+            PropRelationType = self.env['myschool.proprelation.type']
+
+            # Get ORG-TREE type
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+            # Walk up the org hierarchy to find the CI (only via ORG-TREE relations)
             current_org = self.parent_org_id
             visited = set()
-            
+
             while current_org and current_org.id not in visited:
                 visited.add(current_org.id)
-                
+
                 # Search for OuForGroups CI linked to this org
                 ci_relation = CiRelation.search([
                     ('id_org', '=', current_org.id),
                     ('id_ci.name', '=', 'OuForGroups'),
                     ('isactive', '=', True)
                 ], limit=1)
-                
+
                 if ci_relation and ci_relation.id_ci and ci_relation.id_ci.string_value:
                     return ci_relation.id_ci.string_value
-                
-                # Move to parent org
+
+                # Move to parent org via ORG-TREE relation only
                 try:
                     PropRelation = self.env['myschool.proprelation']
-                    parent_rel = PropRelation.search([
+                    search_domain = [
                         ('id_org', '=', current_org.id),
                         ('id_org_parent', '!=', False),
                         ('is_active', '=', True),
-                    ], limit=1)
+                    ]
+                    if org_tree_type:
+                        search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+                    parent_rel = PropRelation.search(search_domain, limit=1)
                     current_org = parent_rel.id_org_parent if parent_rel else None
                 except KeyError:
                     break
-        
+
         return None
     
     def _update_com_group_fqdns(self):
@@ -1475,29 +1525,41 @@ class AddChildOrgWizard(models.TransientModel):
         # Check for circular reference
         if child_org.id == self.parent_org_id.id:
             raise UserError("An organization cannot be its own parent")
-        
-        # Check if already a child
-        existing = PropRelation.search([
+
+        # Get or create ORG-TREE proprelation type (needed for the checks below)
+        PropRelationType = self.env['myschool.proprelation.type']
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        # Check if already a child (via ORG-TREE relation)
+        existing_domain = [
             ('id_org', '=', child_org.id),
             ('id_org_parent', '=', self.parent_org_id.id),
             ('is_active', '=', True),
-        ], limit=1)
-        
+        ]
+        if org_tree_type:
+            existing_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+        existing = PropRelation.search(existing_domain, limit=1)
+
         if existing:
             raise UserError(f"{child_org.name} is already a child of {self.parent_org_id.name}")
-        
-        # Deactivate any existing parent relation
-        old_parent = PropRelation.search([
+
+        # Deactivate any existing ORG-TREE parent relation
+        old_parent_domain = [
             ('id_org', '=', child_org.id),
             ('id_org_parent', '!=', False),
             ('is_active', '=', True),
-        ])
+        ]
+        if org_tree_type:
+            old_parent_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+        old_parent = PropRelation.search(old_parent_domain)
         if old_parent:
             old_parent.write({'is_active': False})
-        
-        # Get or create ORG-TREE proprelation type
-        PropRelationType = self.env['myschool.proprelation.type']
-        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        # Create ORG-TREE type if it doesn't exist
+        if not org_tree_type:
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
         if not org_tree_type:
             org_tree_type = PropRelationType.create({
                 'name': 'ORG-TREE',
@@ -1602,34 +1664,46 @@ class AddChildOrgWizard(models.TransientModel):
         
         if child_org.id == self.parent_org_id.id:
             raise UserError("An organization cannot be its own parent")
-        
-        existing = PropRelation.search([
+
+        # Get or create ORG-TREE proprelation type (needed for the checks below)
+        PropRelationType = self.env['myschool.proprelation.type']
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        # Check if already a child (via ORG-TREE relation)
+        existing_domain = [
             ('id_org', '=', child_org.id),
             ('id_org_parent', '=', self.parent_org_id.id),
             ('is_active', '=', True),
-        ], limit=1)
-        
+        ]
+        if org_tree_type:
+            existing_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+        existing = PropRelation.search(existing_domain, limit=1)
+
         if existing:
             raise UserError(f"{child_org.name} is already a child of {self.parent_org_id.name}")
-        
-        old_parent = PropRelation.search([
+
+        # Deactivate any existing ORG-TREE parent relation
+        old_parent_domain = [
             ('id_org', '=', child_org.id),
             ('id_org_parent', '!=', False),
             ('is_active', '=', True),
-        ])
+        ]
+        if org_tree_type:
+            old_parent_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+        old_parent = PropRelation.search(old_parent_domain)
         if old_parent:
             old_parent.write({'is_active': False})
-        
-        # Get or create ORG-TREE proprelation type
-        PropRelationType = self.env['myschool.proprelation.type']
-        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        # Create ORG-TREE type if it doesn't exist
         if not org_tree_type:
             org_tree_type = PropRelationType.create({
                 'name': 'ORG-TREE',
                 'usage': 'Organization hierarchy relationship',
                 'is_active': True,
             })
-        
+
         # Build the relation name using standardized format
         relation_name = build_proprelation_name(
             'ORG-TREE',
@@ -1661,16 +1735,24 @@ class MoveOrgWizard(models.TransientModel):
     def action_move(self):
         """Move the organization."""
         self.ensure_one()
-        
+
         PropRelation = self.env['myschool.proprelation']
-        
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        # Get ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
         if self.move_to_root:
-            # Remove parent relation
-            existing = PropRelation.search([
+            # Remove ORG-TREE parent relation only
+            search_domain = [
                 ('id_org', '=', self.org_id.id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ])
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            existing = PropRelation.search(search_domain)
             if existing:
                 existing.write({'is_active': False})
         else:
@@ -2463,39 +2545,47 @@ class LinkRoleToOrgWizard(models.TransientModel):
         return res
     
     def _find_school_in_hierarchy(self, org):
-        """Find the school in the organization hierarchy."""
+        """Find the school in the organization hierarchy (via ORG-TREE relations only)."""
         try:
             PropRelation = self.env['myschool.proprelation']
+            PropRelationType = self.env['myschool.proprelation.type']
         except KeyError:
             return None
-        
+
+        # Get ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
         # Check if current org is a school
         if org.org_type_id and org.org_type_id.name == 'SCHOOL':
             return org
-        
-        # Walk up the hierarchy to find a school
+
+        # Walk up the hierarchy to find a school (only via ORG-TREE relations)
         current_org = org
         visited = set()
-        
+
         while current_org and current_org.id not in visited:
             visited.add(current_org.id)
-            
+
             # Check if this org is a school
             if current_org.org_type_id and current_org.org_type_id.name == 'SCHOOL':
                 return current_org
-            
-            # Find parent
-            parent_rel = PropRelation.search([
+
+            # Find parent via ORG-TREE relation only
+            search_domain = [
                 ('id_org', '=', current_org.id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ], limit=1)
-            
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            parent_rel = PropRelation.search(search_domain, limit=1)
+
             if parent_rel and parent_rel.id_org_parent:
                 current_org = parent_rel.id_org_parent
             else:
                 break
-        
+
         return None
     
     def _get_or_create_relation_type(self, name, usage=''):
@@ -2593,21 +2683,30 @@ class AddBRSORoleWizard(models.TransientModel):
     
     @api.model
     def default_get(self, fields_list):
-        """Set default school from org's parent."""
+        """Set default school from org's parent (via ORG-TREE relation only)."""
         res = super().default_get(fields_list)
-        
+
         if 'org_id' in res and res['org_id']:
-            # Try to find parent org
+            # Try to find parent org via ORG-TREE relation
             PropRelation = self.env['myschool.proprelation']
-            parent_rel = PropRelation.search([
+            PropRelationType = self.env['myschool.proprelation.type']
+
+            # Get ORG-TREE type
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+            search_domain = [
                 ('id_org', '=', res['org_id']),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ], limit=1)
-            
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            parent_rel = PropRelation.search(search_domain, limit=1)
+
             if parent_rel and parent_rel.id_org_parent:
                 res['school_id'] = parent_rel.id_org_parent.id
-        
+
         return res
 
     def action_add_role(self):
@@ -2702,22 +2801,29 @@ class ManageOrgRolesWizard(models.TransientModel):
     def default_get(self, fields_list):
         """Load existing BRSO relations as lines and set default school."""
         res = super().default_get(fields_list)
-        
+
         if 'org_id' in res and res['org_id']:
             org_id = res['org_id']
             PropRelation = self.env['myschool.proprelation']
             PropRelationType = self.env['myschool.proprelation.type']
-            
-            # Try to find parent org (school)
-            parent_rel = PropRelation.search([
+
+            # Get ORG-TREE type
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+            # Try to find parent org (school) via ORG-TREE relation only
+            search_domain = [
                 ('id_org', '=', org_id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ], limit=1)
-            
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            parent_rel = PropRelation.search(search_domain, limit=1)
+
             if parent_rel and parent_rel.id_org_parent:
                 res['school_id'] = parent_rel.id_org_parent.id
-            
+
             brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
             if brso_type:
                 relations = PropRelation.search([
