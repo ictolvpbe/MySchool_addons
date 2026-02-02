@@ -719,13 +719,21 @@ class ObjectBrowser(models.TransientModel):
         # Check for child objects before deleting an organization
         if node_type == 'org' and 'myschool.proprelation' in self.env:
             PropRelation = self.env['myschool.proprelation']
-            
-            # Check for child organizations
-            child_orgs = PropRelation.search([
+            PropRelationType = self.env['myschool.proprelation.type']
+
+            # Get ORG-TREE type for checking child orgs
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+            # Check for child organizations (only via ORG-TREE relations)
+            child_org_domain = [
                 ('id_org_parent', '=', node_id),
                 ('id_org', '!=', False),
                 ('is_active', '=', True),
-            ])
+            ]
+            if org_tree_type:
+                child_org_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            child_orgs = PropRelation.search(child_org_domain)
             
             # Check for persons in this org
             persons_in_org = PropRelation.search([
@@ -1029,21 +1037,29 @@ class ObjectBrowser(models.TransientModel):
         if 'myschool.org.type' in self.env and 'myschool.org' in self.env:
             OrgType = self.env['myschool.org.type']
             Org = self.env['myschool.org']
-            
+            PropRelationType = self.env['myschool.proprelation.type']
+
             persongroup_type = OrgType.search([('name', '=ilike', 'PERSONGROUP')], limit=1)
             _logger.info(f"PERSONGROUP type found: {persongroup_type.id if persongroup_type else 'NOT FOUND'}")
-            
+
+            # Get ORG-TREE type for filtering
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
             if persongroup_type:
-                # Find orgs that are persongroups and are children of this org
+                # Find orgs that are persongroups and are children of this org (via ORG-TREE only)
                 # Pattern 1: id_org (child) + id_org_parent (parent) = org_id
-                pg_rels = PropRelation.search([
+                pg_search_domain = [
                     ('id_org_parent', '=', org_id),
                     ('id_org', '!=', False),
                     ('is_active', '=', True),
-                ])
-                
+                ]
+                if org_tree_type:
+                    pg_search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+                pg_rels = PropRelation.search(pg_search_domain)
+
                 _logger.info(f"Found {len(pg_rels)} potential persongroup relations (pattern 1)")
-                
+
                 persongroup_ids = set()
                 for rel in pg_rels:
                     child_org = rel.id_org
@@ -1053,16 +1069,20 @@ class ObjectBrowser(models.TransientModel):
                             if child_org.org_type_id.id == persongroup_type.id:
                                 persongroup_ids.add(child_org.id)
                                 _logger.info(f"Found persongroup: {child_org.name} (id={child_org.id})")
-                
+
                 # Pattern 2: id_org_child + id_org_parent = org_id
-                pg_rels2 = PropRelation.search([
+                pg_search_domain2 = [
                     ('id_org_parent', '=', org_id),
                     ('id_org_child', '!=', False),
                     ('is_active', '=', True),
-                ])
-                
+                ]
+                if org_tree_type:
+                    pg_search_domain2.append(('proprelation_type_id', '=', org_tree_type.id))
+
+                pg_rels2 = PropRelation.search(pg_search_domain2)
+
                 _logger.info(f"Found {len(pg_rels2)} potential persongroup relations (pattern 2)")
-                
+
                 for rel in pg_rels2:
                     if hasattr(rel, 'id_org_child') and rel.id_org_child:
                         child_org = rel.id_org_child
