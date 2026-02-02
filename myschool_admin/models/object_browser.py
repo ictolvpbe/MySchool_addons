@@ -36,12 +36,12 @@ class ObjectBrowser(models.TransientModel):
         return result
 
     def _get_org_tree(self, search_text='', show_inactive=False, show_administrative=False):
-        """Build organization tree using proprelation."""
+        """Build organization tree using ORG-TREE proprelations only."""
         if 'myschool.org' not in self.env:
             return []
-        
+
         Org = self.env['myschool.org']
-        
+
         # Get all orgs with filters
         domain = []
         if not show_inactive:
@@ -53,69 +53,82 @@ class ObjectBrowser(models.TransientModel):
             domain.append('|')
             domain.append(('name', 'ilike', search_text))
             domain.append(('name_short', 'ilike', search_text))
-        
+
         all_orgs = Org.search(domain, order='name')
         all_org_ids = set(all_orgs.ids)
-        
+
         # Build parent-child map from proprelation
         org_children = {}
         org_parent = {}
         processed_relations = set()  # Track processed child-parent pairs to avoid duplicates
-        
-        if 'myschool.proprelation' in self.env:
+
+        if 'myschool.proprelation' in self.env and 'myschool.proprelation.type' in self.env:
             PropRelation = self.env['myschool.proprelation']
-            
+            PropRelationType = self.env['myschool.proprelation.type']
+
+            # Get ORG-TREE type - only use this type for building the org hierarchy
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+            # Base domain for ORG-TREE relations
+            base_domain = []
+            if org_tree_type:
+                base_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+            else:
+                _logger.warning("ORG-TREE proprelation type not found, org tree may be incomplete")
+
             # Pattern 1: id_org (child) + id_org_parent (parent)
-            relations = PropRelation.search([
+            pattern1_domain = base_domain + [
                 ('id_org', '!=', False),
                 ('id_org_parent', '!=', False),
-            ])
-            
+            ]
+            relations = PropRelation.search(pattern1_domain)
+
             for rel in relations:
                 is_active = rel.is_active if hasattr(rel, 'is_active') else True
                 if is_active or show_inactive:
                     child_id = rel.id_org.id
                     parent_id = rel.id_org_parent.id
-                    
+
                     # Skip self-references
                     if child_id == parent_id:
                         continue
-                    
+
                     # Skip if already processed this child-parent pair
                     pair_key = (child_id, parent_id)
                     if pair_key in processed_relations:
                         continue
                     processed_relations.add(pair_key)
-                    
+
                     if child_id in all_org_ids:
                         org_parent[child_id] = parent_id
                         if parent_id not in org_children:
                             org_children[parent_id] = []
                         if child_id not in org_children[parent_id]:
                             org_children[parent_id].append(child_id)
-            
+
             # Pattern 2: id_org_child (child) + id_org_parent (parent)
-            relations2 = PropRelation.search([
+            pattern2_domain = base_domain + [
                 ('id_org_child', '!=', False),
                 ('id_org_parent', '!=', False),
-            ])
-            
+            ]
+            relations2 = PropRelation.search(pattern2_domain)
+
             for rel in relations2:
                 is_active = rel.is_active if hasattr(rel, 'is_active') else True
                 if is_active or show_inactive:
                     child_id = rel.id_org_child.id
                     parent_id = rel.id_org_parent.id
-                    
+
                     # Skip self-references
                     if child_id == parent_id:
                         continue
-                    
+
                     # Skip if already processed this child-parent pair
                     pair_key = (child_id, parent_id)
                     if pair_key in processed_relations:
                         continue
                     processed_relations.add(pair_key)
-                    
+
                     if child_id in all_org_ids:
                         org_parent[child_id] = parent_id
                         if parent_id not in org_children:
@@ -389,21 +402,25 @@ class ObjectBrowser(models.TransientModel):
         """Update name_tree for an org and all its descendants."""
         Org = self.env['myschool.org']
         PropRelation = self.env['myschool.proprelation']
-        
+        PropRelationType = self.env['myschool.proprelation.type']
+
         org = Org.browse(org_id)
         if not org.exists():
             return
-        
+
+        # Get ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
         # Compute new name_tree from ou_fqdn_internal
         if hasattr(org, 'ou_fqdn_internal') and org.ou_fqdn_internal:
             # Parse the FQDN: ou=pers,ou=bawa,dc=olvp,dc=int
             # Result should be: int.olvp.bawa.pers
             ou_fqdn = org.ou_fqdn_internal.lower()
             components = ou_fqdn.split(',')
-            
+
             dc_parts = []
             ou_parts = []
-            
+
             for comp in components:
                 comp = comp.strip()
                 if comp.startswith('dc='):
@@ -412,26 +429,30 @@ class ObjectBrowser(models.TransientModel):
                     ou_parts.append(comp[3:])
                 elif comp.startswith('cn='):
                     ou_parts.append(comp[3:])
-            
+
             # Reverse DC parts and ou_parts
             dc_parts.reverse()
             ou_parts.reverse()
-            
+
             # Build name_tree: dc parts first, then ou parts
             parts = dc_parts + ou_parts
-            
+
             if parts:
                 name_tree = '.'.join(parts)
                 if org.name_tree != name_tree:
                     org.write({'name_tree': name_tree})
                     _logger.info(f"Updated name_tree for org {org.name_short}: {name_tree}")
-        
-        # Update all child orgs recursively
-        child_rels = PropRelation.search([
+
+        # Update all child orgs recursively (only via ORG-TREE relations)
+        child_search_domain = [
             ('id_org_parent', '=', org_id),
             ('id_org', '!=', False),
             ('is_active', '=', True),
-        ])
+        ]
+        if org_tree_type:
+            child_search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+        child_rels = PropRelation.search(child_search_domain)
         
         for rel in child_rels:
             if rel.id_org:
@@ -480,30 +501,38 @@ class ObjectBrowser(models.TransientModel):
         """Check if moving org under new_parent would create a cycle."""
         if org_id == new_parent_id:
             return True
-        
+
         PropRelation = self.env['myschool.proprelation']
-        
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        # Get ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
         # Walk up from new_parent to see if we reach org_id
         current_id = new_parent_id
         visited = set()
-        
+
         while current_id and current_id not in visited:
             visited.add(current_id)
             if current_id == org_id:
                 return True
-            
-            # Find parent of current
-            rel = PropRelation.search([
+
+            # Find parent of current (only via ORG-TREE relations)
+            search_domain = [
                 ('id_org', '=', current_id),
                 ('id_org_parent', '!=', False),
                 ('is_active', '=', True),
-            ], limit=1)
-            
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            rel = PropRelation.search(search_domain, limit=1)
+
             if rel:
                 current_id = rel.id_org_parent.id
             else:
                 break
-        
+
         return False
 
     @api.model

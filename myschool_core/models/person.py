@@ -406,25 +406,87 @@ class Person(models.Model):
         return self.person_type_id and self.person_type_id.name == 'STUDENT'
 
     # =========================================================================
+    # Audit Trail - Create backend tasks for manual changes
+    # =========================================================================
+
+    # Fields to track for audit
+    _AUDIT_FIELDS = [
+        'name', 'first_name', 'short_name', 'abbreviation',
+        'person_type_id', 'is_active', 'gender', 'insz', 'birth_date',
+        'sap_ref', 'sap_person_uuid', 'stam_boek_nr',
+        'email_cloud', 'email_private',
+        'reg_start_date', 'reg_end_date', 'reg_inst_nr', 'reg_group_code',
+    ]
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Override create to log audit trail."""
+        records = super().create(vals_list)
+
+        for record in records:
+            record._create_audit_task('ADD', new_values=record._get_audit_values())
+
+        return records
+
+    # =========================================================================
     # Deactivation Logic
     # =========================================================================
 
     def write(self, vals):
         """
-        Override write to handle deactivation cascading.
+        Override write to handle deactivation cascading and audit trail.
 
         When is_active is set to False for an employee:
         - Deactivate linked Odoo user
         - Deactivate linked HR employee
         - Deactivate all proprelations
+        - Create audit task
         """
+        # Capture old values before write for audit
+        old_values_map = {}
+        for record in self:
+            old_values_map[record.id] = record._get_audit_values()
+
         # Check if we're deactivating
-        if 'is_active' in vals and vals['is_active'] is False:
+        is_deactivation = 'is_active' in vals and vals['is_active'] is False
+
+        if is_deactivation:
             for record in self:
                 if record.is_active:  # Was active, now being deactivated
                     record._on_deactivate()
 
-        return super().write(vals)
+        result = super().write(vals)
+
+        # Create audit tasks after write
+        for record in self:
+            old_values = old_values_map.get(record.id, {})
+            new_values = record._get_audit_values()
+
+            # Determine action type
+            if is_deactivation and old_values.get('is_active') is True:
+                action = 'DEACT'
+            else:
+                action = 'UPD'
+
+            # Only log if there are actual changes
+            changes = record._get_value_changes(old_values, new_values)
+            if changes:
+                record._create_audit_task(
+                    action,
+                    old_values=old_values,
+                    new_values=new_values,
+                    changes=changes
+                )
+
+        return result
+
+    def unlink(self):
+        """Override unlink to log audit trail before deletion."""
+        # Capture values before deletion
+        for record in self:
+            record._create_audit_task('DEL', old_values=record._get_audit_values())
+
+        return super().unlink()
 
     def _on_deactivate(self):
         """
@@ -567,3 +629,119 @@ class Person(models.Model):
                 'type': 'warning',
             }
         }
+
+    # =========================================================================
+    # Audit Trail Helper Methods
+    # =========================================================================
+
+    def _get_audit_values(self):
+        """Get current field values for audit logging."""
+        self.ensure_one()
+        values = {'id': self.id}
+
+        for field_name in self._AUDIT_FIELDS:
+            value = getattr(self, field_name, None)
+            # Handle Many2one fields
+            if hasattr(value, 'id'):
+                values[field_name] = value.id
+                values[f'{field_name}_name'] = value.name if value else None
+            else:
+                values[field_name] = value
+
+        return values
+
+    def _get_value_changes(self, old_values, new_values):
+        """Compare old and new values and return list of changes."""
+        changes = []
+
+        for field_name in self._AUDIT_FIELDS:
+            old_val = old_values.get(field_name)
+            new_val = new_values.get(field_name)
+
+            # Normalize for comparison
+            if old_val != new_val:
+                old_display = str(old_val) if old_val is not None else '(empty)'
+                new_display = str(new_val) if new_val is not None else '(empty)'
+                changes.append(f"{field_name}: {old_display} → {new_display}")
+
+        return changes
+
+    def _create_audit_task(self, action, old_values=None, new_values=None, changes=None):
+        """
+        Create a completed backend task for audit/rollback purposes.
+
+        Args:
+            action: 'ADD', 'UPD', 'DEACT', or 'DEL'
+            old_values: dict of values before the change
+            new_values: dict of values after the change
+            changes: list of change descriptions
+        """
+        self.ensure_one()
+
+        BeTask = self.env['myschool.betask']
+        BeTaskType = self.env['myschool.betask.type']
+
+        # Find or create the task type
+        task_type = BeTaskType.search([
+            ('target', '=', 'MANUAL'),
+            ('object', '=', 'PERSON'),
+            ('action', '=', action),
+        ], limit=1)
+
+        if not task_type:
+            # Create the task type if it doesn't exist
+            task_type = BeTaskType.create({
+                'name': f'MANUAL_PERSON_{action}',
+                'target': 'MANUAL',
+                'object': 'PERSON',
+                'action': action,
+                'description': f'Manual person {action.lower()} operation (audit trail)',
+                'auto_process': False,
+                'requires_confirmation': False,
+            })
+
+        # Prepare task data for potential rollback
+        task_data = {
+            'person_id': self.id,
+            'person_name': self.name,
+            'action': action,
+            'timestamp': fields.Datetime.now().isoformat(),
+            'user_id': self.env.user.id,
+            'user_name': self.env.user.name,
+        }
+
+        if old_values:
+            task_data['old_values'] = old_values
+        if new_values:
+            task_data['new_values'] = new_values
+
+        # Build changes description
+        changes_text = []
+        if action == 'ADD':
+            changes_text.append(f"Person created: {self.name}")
+            changes_text.append(f"First name: {self.first_name or 'N/A'}")
+            changes_text.append(f"Type: {self.person_type_id.name if self.person_type_id else 'N/A'}")
+            changes_text.append(f"SAP ref: {self.sap_ref or 'N/A'}")
+        elif action == 'DEL':
+            changes_text.append(f"Person deleted: {old_values.get('name', 'Unknown')}")
+            changes_text.append(f"SAP ref: {old_values.get('sap_ref', 'N/A')}")
+        elif action == 'DEACT':
+            changes_text.append(f"Person deactivated: {self.name}")
+            if self.odoo_user_id:
+                changes_text.append(f"Odoo user also deactivated: {self.odoo_user_id.login}")
+            if self.odoo_employee_id:
+                changes_text.append(f"HR employee also deactivated: {self.odoo_employee_id.name}")
+        elif action == 'UPD' and changes:
+            changes_text.append(f"Person updated: {self.name}")
+            changes_text.extend(changes)
+
+        # Create the task with completed status
+        BeTask.create({
+            'name': f'MANUAL_PERSON_{action}_{self.name}_{fields.Datetime.now().strftime("%Y%m%d%H%M%S")}',
+            'betasktype_id': task_type.id,
+            'status': 'completed_ok',
+            'data': json.dumps(task_data),
+            'changes': '\n'.join(changes_text),
+        })
+
+        _logger.info(f'Audit task created: MANUAL_PERSON_{action} for {self.name}')
