@@ -56,6 +56,12 @@
                                 invisible="not odoo_employee_id">
                             <span>HR Employee</span>
                         </button>
+                        <button name="action_view_proprelations"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-link">
+                            <field name="proprelation_count" widget="statinfo" string="Relations"/>
+                        </button>
                     </div>
                     <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="is_active"/>
                     <group>
@@ -117,6 +123,22 @@
                                     <field name="is_active" widget="boolean"/>
                                     <field name="hoofd_ambt"/>
                                     <field name="extra_field_1"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Relations" name="relations">
+                            <field name="proprelation_all_ids" readonly="1">
+                                <list decoration-muted="not is_active" decoration-info="is_active">
+                                    <field name="name"/>
+                                    <field name="proprelation_type_id"/>
+                                    <field name="id_role" optional="show"/>
+                                    <field name="id_org" optional="show"/>
+                                    <field name="id_org_parent" optional="hide"/>
+                                    <field name="id_period" optional="hide"/>
+                                    <field name="is_active" widget="boolean"/>
+                                    <field name="start_date" optional="hide"/>
+                                    <field name="end_date" optional="hide"/>
                                 </list>
                             </field>
                         </page>

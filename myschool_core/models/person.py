@@ -165,12 +165,35 @@ class Person(models.Model):
     # =========================================================================
     # Person Details (One2many)
     # =========================================================================
-    
+
     person_details_set = fields.One2many(
         'myschool.person.details',
         'person_id',
         string='Persoonsdetails',
         help='Gedetailleerde gegevens per instelling'
+    )
+
+    # =========================================================================
+    # Proprelations (Computed One2many)
+    # =========================================================================
+
+    proprelation_ids = fields.One2many(
+        'myschool.proprelation',
+        'id_person',
+        string='Relations (as Person)',
+        help='Proprelations where this person is the main person'
+    )
+
+    proprelation_all_ids = fields.Many2many(
+        'myschool.proprelation',
+        string='All Relations',
+        compute='_compute_proprelation_all_ids',
+        help='All proprelations involving this person (as person, parent, or child)'
+    )
+
+    proprelation_count = fields.Integer(
+        string='Relation Count',
+        compute='_compute_proprelation_all_ids',
     )
 
     # =========================================================================
@@ -236,6 +259,19 @@ class Person(models.Model):
         """Compute whether person has an Odoo account."""
         for record in self:
             record.has_odoo_account = bool(record.odoo_user_id)
+
+    def _compute_proprelation_all_ids(self):
+        """Compute all proprelations involving this person."""
+        PropRelation = self.env['myschool.proprelation']
+        for record in self:
+            relations = PropRelation.search([
+                '|', '|',
+                ('id_person', '=', record.id),
+                ('id_person_parent', '=', record.id),
+                ('id_person_child', '=', record.id),
+            ])
+            record.proprelation_all_ids = relations
+            record.proprelation_count = len(relations)
 
     # =========================================================================
     # Odoo Integration Actions
@@ -352,7 +388,25 @@ class Person(models.Model):
             'view_mode': 'form',
             'target': 'current',
         }
-    
+
+    def action_view_proprelations(self):
+        """Action to view all proprelations for this person."""
+        self.ensure_one()
+
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Relations - {self.name}',
+            'res_model': 'myschool.proprelation',
+            'view_mode': 'list,form',
+            'domain': [
+                '|', '|',
+                ('id_person', '=', self.id),
+                ('id_person_parent', '=', self.id),
+                ('id_person_child', '=', self.id),
+            ],
+            'context': {'default_id_person': self.id},
+        }
+
     def action_sync_group_memberships(self):
         """
         Manual action to sync Odoo group memberships based on roles.

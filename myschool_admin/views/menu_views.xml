@@ -167,6 +167,30 @@
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- ========================================= -->
+    <!-- CONFIG ITEMS (sequence: 60) -->
+    <!-- ========================================= -->
+
+    <menuitem id="menu_config_items_root"
+              name="Config Items"
+              parent="menu_myschool_root"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_config_items"
+              name="All Config Items"
+              parent="menu_config_items_root"
+              action="action_config_item"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_ci_relations"
+              name="CI Relations"
+              parent="menu_config_items_root"
+              action="action_ci_relation"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- ========================================= -->
     <!-- CONFIGURATION (sequence: 90) -->
     <!-- ========================================= -->
 
@@ -224,21 +248,6 @@
               parent="menu_configuration"
               action="action_sys_event_type"
               sequence="70"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- Config Items -->
-    <menuitem id="menu_config_items"
-              name="Config Items"
-              parent="menu_configuration"
-              action="action_config_item"
-              sequence="80"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_ci_relations"
-              name="CI Relations"
-              parent="menu_configuration"
-              action="action_ci_relation"
-              sequence="90"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- Maintenance Actions -->
