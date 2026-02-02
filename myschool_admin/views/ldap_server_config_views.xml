@@ -135,10 +135,6 @@
                 <separator/>
                 <filter name="filter_test_success" string="Test Successful" domain="[('last_test_result', '=', 'success')]"/>
                 <filter name="filter_test_failed" string="Test Failed" domain="[('last_test_result', '=', 'failed')]"/>
-                <group expand="0" string="Group By">
-                    <filter name="group_by_ad" string="Active Directory" context="{'group_by': 'is_active_directory'}"/>
-                    <filter name="group_by_test_result" string="Test Result" context="{'group_by': 'last_test_result'}"/>
-                </group>
             </search>
         </field>
     </record>
