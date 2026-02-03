@@ -766,10 +766,12 @@ class InformatService(models.AbstractModel):
                             # Replace "id" with "assignmentId" to avoid conflicts
                             if 'id' in assignment:
                                 assignment['assignmentId'] = assignment.pop('id')
-                            
+
                             person_id = assignment.get('personId')
+                            assignment_id = assignment.get('assignmentId', '')
                             if person_id:
-                                key = f"{person_id}&{institution_number}"
+                                # Include assignmentId in key to handle multiple assignments per person
+                                key = f"{person_id}&{institution_number}&{assignment_id}"
                                 all_assignments[key] = json.dumps(assignment)
                     else:
                         self._create_sys_event("SAPSYNC-900", f"File not found: {json_file_path}")
@@ -801,9 +803,15 @@ class InformatService(models.AbstractModel):
                         
                         assignments_data = response.json()
                         for assignment in assignments_data:
+                            # Replace "id" with "assignmentId" to avoid conflicts
+                            if 'id' in assignment:
+                                assignment['assignmentId'] = assignment.pop('id')
+
                             person_id = assignment.get('personId')
+                            assignment_id = assignment.get('assignmentId', '')
                             if person_id:
-                                key = f"{person_id}&{institution_number}"
+                                # Include assignmentId in key to handle multiple assignments per person
+                                key = f"{person_id}&{institution_number}&{assignment_id}"
                                 all_assignments[key] = json.dumps(assignment)
             
             self._create_sys_event("SAPSYNC-001", "Employee assignments retrieved successfully")
@@ -858,9 +866,9 @@ class InformatService(models.AbstractModel):
                 return False
 
             # Process DB-EMPLOYEE tasks
-            self._process_betasks('DB', 'EMPLOYEE', 'ADD')
-            self._process_betasks('DB', 'EMPLOYEE', 'UPD')
-            self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
+            # self._process_betasks('DB', 'EMPLOYEE', 'ADD')
+            # self._process_betasks('DB', 'EMPLOYEE', 'UPD')
+            # self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
 
             # =====================================================
             # PHASE 1b: Sync Odoo Users (NEW!)
@@ -868,9 +876,9 @@ class InformatService(models.AbstractModel):
             self._create_sys_event("BETASK-001", "Phase 1b: Syncing Odoo Users")
 
             # Process ODOO-PERSON tasks (creates res.users and hr.employee)
-            self._process_betasks('ODOO', 'PERSON', 'ADD')
-            self._process_betasks('ODOO', 'PERSON', 'UPD')
-            self._process_betasks('ODOO', 'PERSON', 'DEACT')
+            # self._process_betasks('ODOO', 'PERSON', 'ADD')
+            # self._process_betasks('ODOO', 'PERSON', 'UPD')
+            # self._process_betasks('ODOO', 'PERSON', 'DEACT')
 
             # =====================================================
             # PHASE 2: Sync PPSBR PropRelation Objects
@@ -882,9 +890,9 @@ class InformatService(models.AbstractModel):
                 return False
 
             # Process DB-PROPRELATION tasks
-            self._process_betasks('DB', 'PROPRELATION', 'ADD')
-            self._process_betasks('DB', 'PROPRELATION', 'UPD')
-            self._process_betasks('DB', 'PROPRELATION', 'DEACT')
+            # self._process_betasks('DB', 'PROPRELATION', 'ADD')
+            # self._process_betasks('DB', 'PROPRELATION', 'UPD')
+            # self._process_betasks('DB', 'PROPRELATION', 'DEACT')
 
             # =====================================================
             # PHASE 2b: Sync Odoo Group Memberships (NEW!)
@@ -1135,6 +1143,51 @@ class InformatService(models.AbstractModel):
     PROPRELATION_TYPE_PPSBR = 'PPSBR'
     PROPRELATION_TYPE_SR_BR = 'SR-BR'
     PROPRELATION_TYPE_BRSO = 'BRSO'
+    PROPRELATION_TYPE_ORG_TREE = 'ORG-TREE'
+
+    def _get_non_administrative_parent_org(self, org):
+        """
+        Find the parent non-administrative org for a given org.
+
+        If the org is administrative, traverse up the ORG-TREE until we find
+        a non-administrative org. Returns the original org if it's not administrative.
+
+        @param org: The org to check
+        @return: The non-administrative parent org, or the original org if not administrative
+        """
+        if not org or not org.is_administrative:
+            return org
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        org_tree_type = PropRelationType.search([
+            ('name', '=', self.PROPRELATION_TYPE_ORG_TREE)
+        ], limit=1)
+
+        if not org_tree_type:
+            return org
+
+        current_org = org
+        visited = set()  # Prevent infinite loops
+
+        while current_org and current_org.is_administrative and current_org.id not in visited:
+            visited.add(current_org.id)
+
+            # Find parent via ORG-TREE relation (current_org is the child)
+            org_tree_relation = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org_child', '=', current_org.id),
+                ('is_active', '=', True)
+            ], limit=1)
+
+            if org_tree_relation and org_tree_relation.id_org_parent:
+                current_org = org_tree_relation.id_org_parent
+            else:
+                # No parent found, return current
+                break
+
+        return current_org
 
     # =========================================================================
     # PHASE 2: PropRelation Synchronization (UPDATED)
@@ -1192,6 +1245,11 @@ class InformatService(models.AbstractModel):
                 ('name', '=', self.PROPRELATION_TYPE_SR_BR)
             ], limit=1)
 
+            # BRSO: BackendRole to School Org mapping
+            brso_type = PropRelationType.search([
+                ('name', '=', self.PROPRELATION_TYPE_BRSO)
+            ], limit=1)
+
             # Get current active period
             current_period = Period.search([('is_active', '=', True)], limit=1)
 
@@ -1204,7 +1262,8 @@ class InformatService(models.AbstractModel):
             if all_imported_employee_assignments:
                 for assignment_key, assignment_value in all_imported_employee_assignments.items():
                     key_parts = assignment_key.split('&')
-                    if len(key_parts) != 2:
+                    # Key format: personId&instNr&assignmentId (3 parts)
+                    if len(key_parts) < 2:
                         continue
 
                     person_uuid = key_parts[0]
@@ -1273,6 +1332,10 @@ class InformatService(models.AbstractModel):
                             ('is_active', '=', True)
                         ], limit=1)
 
+                    # If school_org is administrative, get the parent non-administrative org
+                    # for role lookups (roles are typically defined at the parent level)
+                    role_lookup_org = self._get_non_administrative_parent_org(school_org)
+
                     for assignment in assignments:
                         # Get role info from assignment
                         hoofd_ambt_code = assignment.get('ambtCode', '')
@@ -1296,10 +1359,29 @@ class InformatService(models.AbstractModel):
                             if sr_br_relation and sr_br_relation.id_role_parent:
                                 be_role = sr_br_relation.id_role_parent
 
+                        # If no backend role found via SR-BR, check BRSO with parent org
+                        # (roles might be defined at parent org level for administrative orgs)
+                        if not be_role and role_lookup_org and brso_type:
+                            brso_relation = PropRelation.search([
+                                ('proprelation_type_id', '=', brso_type.id),
+                                ('id_org', '=', role_lookup_org.id),
+                                ('is_active', '=', True)
+                            ], limit=1)
+                            if brso_relation and brso_relation.id_role:
+                                be_role = brso_relation.id_role
+                                self._create_sys_event(
+                                    "BETASK-001",
+                                    f"Found role via BRSO for parent org {role_lookup_org.name}: {be_role.name}"
+                                )
+
                         # Use Backend Role if found, otherwise SAP Role
                         role_to_use = be_role if be_role else sap_role
 
                         if not role_to_use:
+                            self._create_sys_event(
+                                "BETASK-001",
+                                f"No role found for ambtCode {hoofd_ambt_code} at org {inst_nr} - skipping"
+                            )
                             continue
 
                         # Create unique key for this PPSBR
