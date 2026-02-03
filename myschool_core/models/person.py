@@ -474,11 +474,13 @@ class Person(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Override create to log audit trail."""
+        """Override create to log audit trail for manual operations."""
         records = super().create(vals_list)
 
-        for record in records:
-            record._create_audit_task('ADD', new_values=record._get_audit_values())
+        # Only create MANUAL audit tasks when not processing backend tasks
+        if not self.env.context.get('skip_manual_audit'):
+            for record in records:
+                record._create_audit_task('ADD', new_values=record._get_audit_values())
 
         return records
 
@@ -511,34 +513,36 @@ class Person(models.Model):
 
         result = super().write(vals)
 
-        # Create audit tasks after write
-        for record in self:
-            old_values = old_values_map.get(record.id, {})
-            new_values = record._get_audit_values()
+        # Only create MANUAL audit tasks when not processing backend tasks
+        if not self.env.context.get('skip_manual_audit'):
+            for record in self:
+                old_values = old_values_map.get(record.id, {})
+                new_values = record._get_audit_values()
 
-            # Determine action type
-            if is_deactivation and old_values.get('is_active') is True:
-                action = 'DEACT'
-            else:
-                action = 'UPD'
+                # Determine action type
+                if is_deactivation and old_values.get('is_active') is True:
+                    action = 'DEACT'
+                else:
+                    action = 'UPD'
 
-            # Only log if there are actual changes
-            changes = record._get_value_changes(old_values, new_values)
-            if changes:
-                record._create_audit_task(
-                    action,
-                    old_values=old_values,
-                    new_values=new_values,
-                    changes=changes
-                )
+                # Only log if there are actual changes
+                changes = record._get_value_changes(old_values, new_values)
+                if changes:
+                    record._create_audit_task(
+                        action,
+                        old_values=old_values,
+                        new_values=new_values,
+                        changes=changes
+                    )
 
         return result
 
     def unlink(self):
-        """Override unlink to log audit trail before deletion."""
-        # Capture values before deletion
-        for record in self:
-            record._create_audit_task('DEL', old_values=record._get_audit_values())
+        """Override unlink to log audit trail for manual deletions."""
+        # Only create MANUAL audit tasks when not processing backend tasks
+        if not self.env.context.get('skip_manual_audit'):
+            for record in self:
+                record._create_audit_task('DEL', old_values=record._get_audit_values())
 
         return super().unlink()
 
@@ -699,6 +703,9 @@ class Person(models.Model):
             if hasattr(value, 'id'):
                 values[field_name] = value.id
                 values[f'{field_name}_name'] = value.name if value else None
+            # Handle date/datetime fields for JSON serialization
+            elif hasattr(value, 'isoformat'):
+                values[field_name] = value.isoformat()
             else:
                 values[field_name] = value
 

@@ -34,6 +34,8 @@ from odoo import models, fields, api, _
 from odoo.exceptions import ValidationError, UserError
 import logging
 import json
+import random
+import string
 import traceback
 from datetime import datetime
 from typing import Dict, Optional, Any, List
@@ -492,18 +494,22 @@ class BeTaskProcessor(models.AbstractModel):
 
     def _create_person_from_employee_json(self, employee_json: dict, inst_nr: str = ''):
         """Create a Person and PersonDetails record from employee JSON."""
-        Person = self.env['myschool.person']
+        Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
         PersonDetails = self.env['myschool.person.details']
-        
+
         person_vals = self._map_employee_json_to_person_vals(employee_json)
         person_vals['is_active'] = True
         person_vals['automatic_sync'] = True
-        
+
+        # Generate random password for new person
+        chars = string.ascii_letters + string.digits
+        person_vals['password'] = ''.join(random.choice(chars) for _ in range(8))
+
         PersonType = self.env['myschool.person.type']
         employee_type = PersonType.search([('name', '=', 'EMPLOYEE')], limit=1)
         if employee_type:
             person_vals['person_type_id'] = employee_type.id
-        
+
         _logger.info(f"Creating employee: {person_vals.get('name', 'Unknown')}")
         new_person = Person.create(person_vals)
         
@@ -546,6 +552,8 @@ class BeTaskProcessor(models.AbstractModel):
         Returns:
             dict with 'success' and 'field_changes' keys
         """
+        # Skip manual audit for backend task processing
+        person = person.with_context(skip_manual_audit=True)
         PersonDetails = self.env['myschool.person.details']
         field_changes = []
 
@@ -623,6 +631,8 @@ class BeTaskProcessor(models.AbstractModel):
 
     def _deactivate_person(self, person, data_json: dict = None, inst_nr: str = '') -> bool:
         """Deactivate a Person record and their PropRelations."""
+        # Skip manual audit for backend task processing
+        person = person.with_context(skip_manual_audit=True)
         PersonDetails = self.env['myschool.person.details']
         
         # Trigger ODOO-PERSON-DEACT task BEFORE deactivating (to capture user info)
@@ -679,22 +689,26 @@ class BeTaskProcessor(models.AbstractModel):
     # =========================================================================
 
     def _create_person_from_student_json(
-        self, 
-        registration_json: dict, 
+        self,
+        registration_json: dict,
         student_json: dict = None,
         inst_nr: str = ''
     ):
         """Create a Person and PersonDetails record from student JSON."""
-        Person = self.env['myschool.person']
+        Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
         PersonDetails = self.env['myschool.person.details']
-        
+
         person_vals = self._map_student_json_to_person_vals(registration_json, student_json)
-        
+
+        # Generate random password for new person
+        chars = string.ascii_letters + string.digits
+        person_vals['password'] = ''.join(random.choice(chars) for _ in range(8))
+
         PersonType = self.env['myschool.person.type']
         student_type = PersonType.search([('name', '=', 'STUDENT')], limit=1)
         if student_type:
             person_vals['person_type_id'] = student_type.id
-        
+
         _logger.info(f"Creating student: {person_vals.get('name', 'Unknown')}")
         new_person = Person.create(person_vals)
         
@@ -723,6 +737,8 @@ class BeTaskProcessor(models.AbstractModel):
         Returns:
             dict with 'success' and 'field_changes' keys
         """
+        # Skip manual audit for backend task processing
+        person = person.with_context(skip_manual_audit=True)
         PersonDetails = self.env['myschool.person.details']
         field_changes = []
 
@@ -1291,7 +1307,8 @@ class BeTaskProcessor(models.AbstractModel):
         inst_nr = data.get('instelnr', '') or data.get('instNr', '')
         person_uuid = data.get('persoonId') or data.get('personId')
 
-        Person = self.env['myschool.person']
+        # Skip manual audit for backend task processing
+        Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
         person = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
 
         if not person:
@@ -2993,17 +3010,18 @@ class BeTaskProcessor(models.AbstractModel):
             return False
 
         try:
-            Person = self.env['myschool.person']
+            # Skip manual audit for backend task processing
+            Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
             ResUsers = self.env['res.users']
-            
+
             # Check if hr module is installed
             hr_installed = 'hr.employee' in self.env
             HrEmployee = self.env['hr.employee'] if hr_installed else None
-            
+
             # Get the myschool.person record
             person_id = data.get('person_id')
             person_uuid = data.get('personId')
-            
+
             if person_id:
                 person = Person.browse(person_id)
             elif person_uuid:
@@ -3051,7 +3069,7 @@ class BeTaskProcessor(models.AbstractModel):
                 if hr_installed and is_employee_type:
                     existing_employee = HrEmployee.search([('user_id', '=', existing_user.id)], limit=1)
                     if existing_employee:
-                        person.write({'odoo_employee_id_int': existing_employee.id})
+                        person.write({'odoo_employee_id': existing_employee.id})
                         _logger.info(f'Linked existing HR Employee: {existing_employee.name}')
                         changes.append(f"Linked existing HR Employee: {existing_employee.name}")
 
@@ -3060,14 +3078,18 @@ class BeTaskProcessor(models.AbstractModel):
                 changes.append("Synced group memberships")
                 return {'success': True, 'changes': '\n'.join(changes)}
             
-            # Create new Odoo user (without password - Odoo will handle it)
+            # Create new Odoo user with person's password if available
             user_vals = {
                 'name': person.name or f"{data.get('first_name', '')} {data.get('name', '')}".strip(),
                 'login': login,
                 'email': email,
                 'active': True,
             }
-            
+
+            # Use the person's stored password if available
+            if person.password:
+                user_vals['password'] = person.password
+
             new_user = ResUsers.create(user_vals)
             _logger.info(f'Created Odoo user: {new_user.login} (ID: {new_user.id})')
             changes.append(f"Created Odoo user: {new_user.login} (ID: {new_user.id})")
@@ -3106,8 +3128,8 @@ class BeTaskProcessor(models.AbstractModel):
                 _logger.info(f'Created HR Employee: {new_employee.name} (ID: {new_employee.id}, company_id: {new_employee.company_id.id if new_employee.company_id else None})')
                 changes.append(f"Created HR Employee: {new_employee.name} (ID: {new_employee.id})")
 
-                # Link employee to person (using integer field)
-                person.write({'odoo_employee_id_int': new_employee.id})
+                # Link employee to person
+                person.write({'odoo_employee_id': new_employee.id})
             elif not hr_installed:
                 _logger.info('HR module not installed - skipping HR Employee creation')
                 changes.append("HR module not installed - skipped HR Employee creation")
@@ -3149,12 +3171,13 @@ class BeTaskProcessor(models.AbstractModel):
             return False
 
         try:
-            Person = self.env['myschool.person']
-            
+            # Skip manual audit for backend task processing
+            Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
+
             # Get the myschool.person record
             person_id = data.get('person_id')
             person_uuid = data.get('personId')
-            
+
             if person_id:
                 person = Person.browse(person_id)
             elif person_uuid:
@@ -3162,11 +3185,11 @@ class BeTaskProcessor(models.AbstractModel):
             else:
                 self._log_error('BETASK-811', f'No person identifier in task {task.name}')
                 return False
-            
+
             if not person or not person.exists():
                 self._log_error('BETASK-812', f'Person not found for task {task.name}')
                 return False
-            
+
             # Update Odoo User if exists
             if person.odoo_user_id:
                 user_updates = {}
@@ -3189,10 +3212,9 @@ class BeTaskProcessor(models.AbstractModel):
             
             # Update HR Employee if exists (and hr module installed)
             hr_installed = 'hr.employee' in self.env
-            if hr_installed and person.odoo_employee_id_int:
-                HrEmployee = self.env['hr.employee']
-                employee = HrEmployee.browse(person.odoo_employee_id_int)
-                
+            if hr_installed and person.odoo_employee_id:
+                employee = person.odoo_employee_id
+
                 if employee.exists():
                     employee_updates = {}
                     
@@ -3249,12 +3271,13 @@ class BeTaskProcessor(models.AbstractModel):
             return False
 
         try:
-            Person = self.env['myschool.person']
-            
+            # Skip manual audit for backend task processing
+            Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
+
             # Get the myschool.person record
             person_id = data.get('person_id')
             person_uuid = data.get('personId')
-            
+
             if person_id:
                 person = Person.browse(person_id)
             elif person_uuid:
@@ -3262,7 +3285,7 @@ class BeTaskProcessor(models.AbstractModel):
             else:
                 self._log_error('BETASK-821', f'No person identifier in task {task.name}')
                 return False
-            
+
             if not person or not person.exists():
                 _logger.warning(f'Person not found for DEACT task - may already be deleted')
                 changes.append("Person not found - may already be deleted")
@@ -3272,9 +3295,8 @@ class BeTaskProcessor(models.AbstractModel):
 
             # IMPORTANT: Deactivate HR Employee FIRST (before User, due to FK constraint)
             hr_installed = 'hr.employee' in self.env
-            if hr_installed and person.odoo_employee_id_int:
-                HrEmployee = self.env['hr.employee']
-                employee = HrEmployee.browse(person.odoo_employee_id_int)
+            if hr_installed and person.odoo_employee_id:
+                employee = person.odoo_employee_id
                 if employee.exists() and employee.active:
                     employee.write({'active': False})
                     _logger.info(f'Archived HR Employee: {employee.name}, reason: {reason}')
