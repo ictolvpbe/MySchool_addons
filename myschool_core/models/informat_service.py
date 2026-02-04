@@ -861,7 +861,7 @@ class InformatService(models.AbstractModel):
             # =====================================================
             self._create_sys_event("BETASK-001", "Phase 1: Syncing Person objects")
 
-            if not self._sync_employee_persons(all_imported_employee_data):
+            if not self._sync_employee_persons(all_imported_employee_data, all_imported_employee_assignments):
                 self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 1 (Person sync)")
                 return False
 
@@ -914,7 +914,11 @@ class InformatService(models.AbstractModel):
     # PHASE 1: Person Synchronization
     # =========================================================================
 
-    def _sync_employee_persons(self, all_imported_employee_data: Dict[str, str]) -> bool:
+    def _sync_employee_persons(
+            self,
+            all_imported_employee_data: Dict[str, str],
+            all_imported_employee_assignments: Dict[str, str] = None
+    ) -> bool:
         """
         Phase 1: Synchronize Person objects based on imported employee data.
 
@@ -927,6 +931,7 @@ class InformatService(models.AbstractModel):
         - For persons in DB but not in import: DEACT task
 
         @param all_imported_employee_data: Dict with personId&instNr as key, employee JSON as value
+        @param all_imported_employee_assignments: Dict with personId&instNr&assignmentId as key, assignment JSON as value
         @return: True if successful
         """
         procedure_name = '_sync_employee_persons'
@@ -966,6 +971,18 @@ class InformatService(models.AbstractModel):
                 # Parse employee JSON
                 employee_json = json.loads(employee_value)
                 employee_json['instNr'] = inst_nr
+
+                # Include assignments for this person and instNr
+                if all_imported_employee_assignments:
+                    person_assignments = []
+                    for assign_key, assign_value in all_imported_employee_assignments.items():
+                        # Key format: personId&instNr&assignmentId
+                        assign_parts = assign_key.split('&')
+                        if len(assign_parts) >= 2:
+                            if assign_parts[0] == person_uuid and assign_parts[1] == inst_nr:
+                                person_assignments.append(json.loads(assign_value))
+                    if person_assignments:
+                        employee_json['assignments'] = person_assignments
 
                 # Get key fields
                 is_active_import = employee_json.get('isActive', True)

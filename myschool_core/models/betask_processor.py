@@ -350,8 +350,8 @@ class BeTaskProcessor(models.AbstractModel):
         return vals
 
     def _map_employee_json_to_person_details_vals(
-        self, 
-        employee_json: dict, 
+        self,
+        employee_json: dict,
         person_id: int,
         inst_nr: str = ''
     ) -> dict:
@@ -361,7 +361,7 @@ class BeTaskProcessor(models.AbstractModel):
             'full_json_string': json.dumps(employee_json, ensure_ascii=False),
             'extra_field_1': inst_nr,
         }
-        
+
         for json_key, odoo_field in self.EMPLOYEE_DETAILS_FIELD_MAP.items():
             value = employee_json.get(json_key)
             if value is not None and value != 'null':
@@ -369,13 +369,18 @@ class BeTaskProcessor(models.AbstractModel):
                     vals[odoo_field] = json.dumps(value, ensure_ascii=False)
                 else:
                     vals[odoo_field] = str(value)
-        
+
         hoofd_ambt = employee_json.get('hoofdAmbt')
         if hoofd_ambt and isinstance(hoofd_ambt, dict):
             vals['hoofd_ambt'] = hoofd_ambt.get('code', '')
         elif hoofd_ambt:
             vals['hoofd_ambt'] = str(hoofd_ambt)
-        
+
+        # Include assignments if present in employee_json
+        assignments = employee_json.get('assignments')
+        if assignments:
+            vals['assignments'] = json.dumps(assignments, ensure_ascii=False)
+
         return vals
 
     # =========================================================================
