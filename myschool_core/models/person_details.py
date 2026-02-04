@@ -48,8 +48,15 @@ class PersonDetails(models.Model):
             return value
         try:
             parsed = json.loads(value)
+            # Check if result is still a string (double-encoded JSON)
+            if isinstance(parsed, str):
+                try:
+                    parsed = json.loads(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    pass
             return json.dumps(parsed, indent=2, ensure_ascii=False)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as e:
+            _logger.warning(f'Failed to parse JSON: {e}, value starts with: {value[:100] if value else "None"}')
             return value
 
     def action_reformat_json(self):
@@ -58,11 +65,15 @@ class PersonDetails(models.Model):
         updates = {}
         for field_name in self._JSON_FIELDS:
             value = getattr(self, field_name)
+            _logger.info(f'Checking field {field_name}: has_value={bool(value)}')
             if value:
                 reformatted = self._reformat_json_field(value)
-                if reformatted != value:
+                # Always update if we have a value (force reformat)
+                if reformatted and reformatted != value:
                     updates[field_name] = reformatted
+                    _logger.info(f'Field {field_name} will be updated')
 
+        _logger.info(f'Total fields to update: {len(updates)}')
         if updates:
             self.write(updates)
             _logger.info(f'Reformatted {len(updates)} JSON fields for PersonDetails {self.id}')
@@ -82,6 +93,9 @@ class PersonDetails(models.Model):
         """Reformat all JSON fields in ALL PersonDetails records."""
         all_records = self.search([])
         total_updated = 0
+        total_fields = 0
+
+        _logger.info(f'Starting JSON reformat for {len(all_records)} PersonDetails records')
 
         for record in all_records:
             updates = {}
@@ -89,21 +103,22 @@ class PersonDetails(models.Model):
                 value = getattr(record, field_name)
                 if value:
                     reformatted = record._reformat_json_field(value)
-                    if reformatted != value:
+                    if reformatted and reformatted != value:
                         updates[field_name] = reformatted
+                        total_fields += 1
 
             if updates:
                 record.write(updates)
                 total_updated += 1
 
-        _logger.info(f'Reformatted JSON in {total_updated} PersonDetails records')
+        _logger.info(f'Reformatted {total_fields} JSON fields in {total_updated} PersonDetails records')
 
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': _('JSON Reformatted'),
-                'message': _('Reformatted JSON in %d records.') % total_updated,
+                'message': _('Reformatted %d fields in %d records.') % (total_fields, total_updated),
                 'type': 'success',
             }
         }

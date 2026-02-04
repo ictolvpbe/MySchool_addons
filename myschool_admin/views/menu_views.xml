@@ -35,6 +35,13 @@
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_myschool_person_details"
+              name="Person Details"
+              parent="menu_master_data"
+              action="action_myschool_person_details"
+              sequence="25"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <menuitem id="menu_myschool_role"
               name="Roles"
               parent="menu_master_data"
