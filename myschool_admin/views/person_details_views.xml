@@ -19,6 +19,13 @@
         <field name="model">myschool.person.details</field>
         <field name="arch" type="xml">
             <form string="Persoon Details">
+                <header>
+                    <button name="action_reformat_json"
+                            string="Reformat JSON"
+                            type="object"
+                            class="btn-secondary"
+                            title="Pretty-print all JSON fields for better readability"/>
+                </header>
                 <sheet>
                     <group>
                         <field name="person_id"/>
@@ -71,6 +78,18 @@
             <p class="o_view_nocontent_smiling_face">
                 Maak nieuwe persoon details aan
             </p>
+        </field>
+    </record>
+
+    <!-- Server Action: Reformat All JSON -->
+    <record id="action_reformat_all_person_details_json" model="ir.actions.server">
+        <field name="name">Reformat All JSON</field>
+        <field name="model_id" ref="myschool_core.model_myschool_person_details"/>
+        <field name="binding_model_id" ref="myschool_core.model_myschool_person_details"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+action = model.action_reformat_all_json()
         </field>
     </record>
 </odoo>
