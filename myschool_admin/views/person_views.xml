@@ -39,6 +39,11 @@
                             type="object"
                             class="btn-secondary"
                             invisible="odoo_user_id"/>
+                    <button name="action_recalculate_person_tree"
+                            string="Recalculate Tree Position"
+                            type="object"
+                            class="btn-secondary"
+                            title="Recalculate PERSON-TREE position based on PPSBR relations"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">

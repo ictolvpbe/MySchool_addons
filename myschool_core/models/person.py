@@ -438,6 +438,40 @@ class Person(models.Model):
             }
         }
 
+    def action_recalculate_person_tree(self):
+        """
+        Manual action to recalculate PERSON-TREE position.
+
+        This determines where the person should be placed in the organization
+        tree based on their PPSBR relations and BRSO mappings.
+        """
+        self.ensure_one()
+
+        # Call the processor method
+        processor = self.env['myschool.betask.processor']
+        result = processor._update_person_tree_position(self)
+
+        if result:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Succes',
+                    'message': f'PERSON-TREE positie herberekend voor {self.name}.',
+                    'type': 'success',
+                }
+            }
+        else:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Waarschuwing',
+                    'message': f'Kon PERSON-TREE positie niet bepalen voor {self.name}. Controleer of er actieve PPSBR relaties zijn.',
+                    'type': 'warning',
+                }
+            }
+
     # =========================================================================
     # Helper Methods
     # =========================================================================
