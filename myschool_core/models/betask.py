@@ -297,23 +297,18 @@ class BeTask(models.Model):
             _logger.info(f'BeTask {record.name} FORCE RESET')
     
     def action_process_single(self):
-        """Process this single task immediately"""
+        """Process this single task immediately and refresh the form"""
         self.ensure_one()
         processor = self.env['myschool.betask.processor']
-        result = processor.process_single_task(self)
-        
-        notification_type = 'success' if result else 'danger'
-        message = _('Task processed successfully') if result else _('Task processing failed')
-        
+        processor.process_single_task(self)
+
+        # Return action to reload the form view (refreshes to show updated changes field)
         return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('Task Processing'),
-                'message': message,
-                'type': notification_type,
-                'sticky': False,
-            }
+            'type': 'ir.actions.act_window',
+            'res_model': 'myschool.betask',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'current',
         }
     
     def action_view_sys_events(self):
