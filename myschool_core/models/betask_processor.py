@@ -358,7 +358,7 @@ class BeTaskProcessor(models.AbstractModel):
         """Map imported Informat employee JSON to myschool.person.details field values."""
         vals = {
             'person_id': person_id,
-            'full_json_string': json.dumps(employee_json, ensure_ascii=False),
+            'full_json_string': json.dumps(employee_json, indent=2, ensure_ascii=False),
             'extra_field_1': inst_nr,
         }
 
@@ -366,7 +366,7 @@ class BeTaskProcessor(models.AbstractModel):
             value = employee_json.get(json_key)
             if value is not None and value != 'null':
                 if isinstance(value, (dict, list)):
-                    vals[odoo_field] = json.dumps(value, ensure_ascii=False)
+                    vals[odoo_field] = json.dumps(value, indent=2, ensure_ascii=False)
                 else:
                     vals[odoo_field] = str(value)
 
@@ -379,7 +379,7 @@ class BeTaskProcessor(models.AbstractModel):
         # Include assignments if present in employee_json
         assignments = employee_json.get('assignments')
         if assignments:
-            vals['assignments'] = json.dumps(assignments, ensure_ascii=False)
+            vals['assignments'] = json.dumps(assignments, indent=2, ensure_ascii=False)
 
         return vals
 
@@ -448,19 +448,19 @@ class BeTaskProcessor(models.AbstractModel):
         
         vals = {
             'person_id': person_id,
-            'full_json_string': json.dumps(full_data, ensure_ascii=False),
+            'full_json_string': json.dumps(full_data, indent=2, ensure_ascii=False),
             'extra_field_1': inst_nr,
         }
-        
+
         if student_json:
             for json_key, odoo_field in self.STUDENT_DETAILS_FIELD_MAP.items():
                 value = student_json.get(json_key)
                 if value is not None and value != 'null':
                     if isinstance(value, (dict, list)):
-                        vals[odoo_field] = json.dumps(value, ensure_ascii=False)
+                        vals[odoo_field] = json.dumps(value, indent=2, ensure_ascii=False)
                     else:
                         vals[odoo_field] = str(value)
-        
+
         return vals
 
     # =========================================================================
@@ -669,7 +669,7 @@ class BeTaskProcessor(models.AbstractModel):
             
             if existing_details:
                 existing_details.write({
-                    'full_json_string': json.dumps(data_json, ensure_ascii=False)
+                    'full_json_string': json.dumps(data_json, indent=2, ensure_ascii=False)
                 })
         
         return True
