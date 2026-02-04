@@ -295,8 +295,9 @@ class InformatService(models.AbstractModel):
                 
             if all_imported_employee_assignments is None:
                 self._create_sys_error("SAPSYNC-900", "Error in getEmployeeAssignmentsFromInformat")
+            else:
+                self._create_sys_event("SAPSYNC-001", f"Loaded {len(all_imported_employee_assignments)} employee assignments")
 
-            
             # Analyze and create employee roles
             self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
             #self._process_betasks('DB', 'ROLE', 'ADD')
@@ -983,6 +984,9 @@ class InformatService(models.AbstractModel):
                                 person_assignments.append(json.loads(assign_value))
                     if person_assignments:
                         employee_json['assignments'] = person_assignments
+                        self._create_sys_event("BETASK-001", f"Added {len(person_assignments)} assignments for {person_uuid} at {inst_nr}")
+                else:
+                    self._create_sys_event("BETASK-001", f"No assignments dict available for {person_uuid}")
 
                 # Get key fields
                 is_active_import = employee_json.get('isActive', True)
