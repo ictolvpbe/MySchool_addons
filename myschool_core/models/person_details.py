@@ -36,6 +36,30 @@ class PersonDetails(models.Model):
     extra_field_1 = fields.Char(string='Extra Veld 1 / InstNr')  # Mapped from extraField1 in Java
     is_active = fields.Boolean(string='Is Actief', default=False)
 
+    # Computed Html fields for formatted display
+    full_json_string_html = fields.Html(string='JSON Data', compute='_compute_json_html', sanitize=False)
+    addresses_html = fields.Html(string='Adressen', compute='_compute_json_html', sanitize=False)
+    emails_html = fields.Html(string='E-mails', compute='_compute_json_html', sanitize=False)
+    comnrs_html = fields.Html(string='Communicatienummers', compute='_compute_json_html', sanitize=False)
+    bank_accounts_html = fields.Html(string='Bankrekeningen', compute='_compute_json_html', sanitize=False)
+    relations_html = fields.Html(string='Relaties', compute='_compute_json_html', sanitize=False)
+    partner_html = fields.Html(string='Partner', compute='_compute_json_html', sanitize=False)
+    children_html = fields.Html(string='Kinderen', compute='_compute_json_html', sanitize=False)
+    assignments_html = fields.Html(string='Assignments', compute='_compute_json_html', sanitize=False)
+
+    @api.depends('full_json_string', 'addresses', 'emails', 'comnrs', 'bank_accounts',
+                 'relations', 'partner', 'children', 'assignments')
+    def _compute_json_html(self):
+        """Convert JSON text fields to formatted HTML with <pre> tags."""
+        import html
+        for record in self:
+            for field_name in self._JSON_FIELDS:
+                value = getattr(record, field_name) or ''
+                # Escape HTML entities and wrap in <pre> for formatting
+                escaped = html.escape(value)
+                html_value = f'<pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-family: monospace; font-size: 12px;">{escaped}</pre>' if value else ''
+                setattr(record, f'{field_name}_html', html_value)
+
     # JSON fields that should be pretty-printed
     _JSON_FIELDS = [
         'full_json_string', 'addresses', 'emails', 'comnrs',

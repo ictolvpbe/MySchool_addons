@@ -35,33 +35,31 @@
 
                     <notebook>
                         <page string="JSON Data" name="json_data">
-                            <group>
-                                <field name="full_json_string" widget="json"/>
-                            </group>
+                            <field name="full_json_string_html" nolabel="1"/>
                         </page>
                         <page string="Adressen" name="addresses">
-                            <field name="addresses" widget="json"/>
+                            <field name="addresses_html" nolabel="1"/>
                         </page>
                         <page string="E-mails" name="emails">
-                            <field name="emails" widget="json"/>
+                            <field name="emails_html" nolabel="1"/>
                         </page>
                         <page string="Communicatienummers" name="comnrs">
-                            <field name="comnrs" widget="json"/>
+                            <field name="comnrs_html" nolabel="1"/>
                         </page>
                         <page string="Bankrekeningen" name="bank_accounts">
-                            <field name="bank_accounts" widget="json"/>
+                            <field name="bank_accounts_html" nolabel="1"/>
                         </page>
                         <page string="Relaties" name="relations">
-                            <field name="relations" widget="json"/>
+                            <field name="relations_html" nolabel="1"/>
                         </page>
                         <page string="Partner" name="partner">
-                            <field name="partner" widget="json"/>
+                            <field name="partner_html" nolabel="1"/>
                         </page>
                         <page string="Kinderen" name="children">
-                            <field name="children" widget="json"/>
+                            <field name="children_html" nolabel="1"/>
                         </page>
                         <page string="Assignments" name="assignments">
-                            <field name="assignments" widget="json"/>
+                            <field name="assignments_html" nolabel="1"/>
                         </page>
                     </notebook>
                 </sheet>
