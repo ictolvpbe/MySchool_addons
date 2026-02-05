@@ -497,7 +497,7 @@ class BeTaskProcessor(models.AbstractModel):
     # EMPLOYEE CRUD METHODS
     # =========================================================================
 
-    def _create_person_from_employee_json(self, employee_json: dict, inst_nr: str = ''):
+    def  _create_person_from_employee_json(self, employee_json: dict, inst_nr: str = ''):
         """Create a Person and PersonDetails record from employee JSON."""
         Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
         PersonDetails = self.env['myschool.person.details']
@@ -542,8 +542,119 @@ class BeTaskProcessor(models.AbstractModel):
             None
         )
         _logger.info(f'Created ODOO-PERSON-ADD task for {new_person.name}')
-        
+
+        # Create PPSBR PropRelation between person, school org and role
+        self._create_ppsbr_for_new_employee(new_person, employee_json, inst_nr)
+
         return new_person
+
+    def _create_ppsbr_for_new_employee(self, person, employee_json: dict, inst_nr: str):
+        """
+        Create a backend task to create a PPSBR PropRelation for a newly created employee.
+
+        Links the person to the school org with the EMPLOYEE backend role.
+        """
+        Org = self.env['myschool.org']
+        Role = self.env['myschool.role']
+
+        if not inst_nr:
+            _logger.warning(f'No inst_nr provided for employee {person.name}, cannot create PPSBR task')
+            return
+
+        # Find the school org
+        school_org = Org.search([
+            ('inst_nr', '=', inst_nr),
+            ('is_active', '=', True)
+        ], limit=1)
+        if not school_org:
+            self._log_error('BETASK-551', f'School org not found for inst_nr {inst_nr}')
+            return
+
+        # Find the EMPLOYEE backend role
+        employee_role = Role.search([('name', '=', 'EMPLOYEE')], limit=1)
+        if not employee_role:
+            self._log_error('BETASK-552', f'EMPLOYEE role not found')
+            return
+
+        # Create DB-PROPRELATION-ADD task
+        proprel_data = {
+            'personId': person.sap_person_uuid,
+            'person_db_id': person.id,
+            'instNr': inst_nr,
+            'orgId': school_org.id,
+            'roleId': employee_role.id,
+            'roleName': employee_role.name,
+        }
+        self._create_betask_internal(
+            'DB', 'PROPRELATION', 'ADD',
+            json.dumps(proprel_data),
+            None
+        )
+        _logger.info(f'Created DB-PROPRELATION-ADD task for {person.name} at {school_org.name} with EMPLOYEE role')
+
+    def _ensure_ppsbr_exists_for_employee(self, person, inst_nr: str, field_changes: list = None):
+        """
+        Check if a PPSBR exists for the person at the school with EMPLOYEE role.
+        If not, create a DB-PROPRELATION-ADD task to create it.
+        """
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+        Role = self.env['myschool.role']
+
+        if not inst_nr:
+            return
+
+        # Get PPSBR type
+        ppsbr_type = PropRelationType.search([
+            ('name', '=', self.PROPRELATION_TYPE_PPSBR)
+        ], limit=1)
+        if not ppsbr_type:
+            return
+
+        # Find the school org
+        school_org = Org.search([
+            ('inst_nr', '=', inst_nr),
+            ('is_active', '=', True)
+        ], limit=1)
+        if not school_org:
+            return
+
+        # Find the EMPLOYEE backend role
+        employee_role = Role.search([('name', '=', 'EMPLOYEE')], limit=1)
+        if not employee_role:
+            return
+
+        # Check if PPSBR already exists
+        existing_ppsbr = PropRelation.search([
+            ('id_person', '=', person.id),
+            ('id_org', '=', school_org.id),
+            ('id_role', '=', employee_role.id),
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('is_active', '=', True)
+        ], limit=1)
+
+        if existing_ppsbr:
+            return  # PPSBR already exists
+
+        # Create DB-PROPRELATION-ADD task
+        proprel_data = {
+            'personId': person.sap_person_uuid,
+            'person_db_id': person.id,
+            'instNr': inst_nr,
+            'orgId': school_org.id,
+            'roleId': employee_role.id,
+            'roleName': employee_role.name,
+        }
+        self._create_betask_internal(
+            'DB', 'PROPRELATION', 'ADD',
+            json.dumps(proprel_data),
+            None
+        )
+        _logger.info(f'Created DB-PROPRELATION-ADD task for {person.name} at {school_org.name} with EMPLOYEE role')
+
+        if field_changes is not None:
+            field_changes.append(f"Created PPSBR task for {school_org.name} with EMPLOYEE role")
 
     def _update_person_from_employee_json(
         self,
@@ -591,15 +702,24 @@ class BeTaskProcessor(models.AbstractModel):
         details_vals['is_active'] = True  # New records are always active
 
         if existing_details:
-            # Track detail changes (exclude large JSON fields)
+            # Track detail changes (exclude large JSON fields from detailed logging)
             detail_changes = self._get_field_changes(
                 existing_details, details_vals,
                 exclude_fields=['full_json_string', 'person_id', 'is_active']
             )
-            if detail_changes:
+
+            # Also check if full_json_string has changed
+            old_json = existing_details.full_json_string or ''
+            new_json = details_vals.get('full_json_string', '')
+            json_changed = old_json != new_json
+
+            if detail_changes or json_changed:
                 # Changes detected - create new version, deactivate old
                 field_changes.append(f"PersonDetails version created (previous deactivated):")
-                field_changes.extend(detail_changes)
+                if detail_changes:
+                    field_changes.extend(detail_changes)
+                if json_changed:
+                    field_changes.append(f"  full_json_string: [content changed]")
 
                 # Deactivate the current record
                 existing_details.write({'is_active': False})
@@ -631,6 +751,10 @@ class BeTaskProcessor(models.AbstractModel):
                 None
             )
             _logger.info(f'Created ODOO-PERSON-UPD task for {person.name}')
+
+        # Check if PPSBR exists for this person at this school with EMPLOYEE role
+        # If not, create a task to create it
+        self._ensure_ppsbr_exists_for_employee(person, inst_nr, field_changes)
 
         return {'success': True, 'field_changes': field_changes}
 
@@ -778,15 +902,24 @@ class BeTaskProcessor(models.AbstractModel):
         details_vals['is_active'] = True  # New records are always active
 
         if existing_details:
-            # Track detail changes (exclude large JSON fields)
+            # Track detail changes (exclude large JSON fields from detailed logging)
             detail_changes = self._get_field_changes(
                 existing_details, details_vals,
                 exclude_fields=['full_json_string', 'person_id', 'is_active']
             )
-            if detail_changes:
+
+            # Also check if full_json_string has changed
+            old_json = existing_details.full_json_string or ''
+            new_json = details_vals.get('full_json_string', '')
+            json_changed = old_json != new_json
+
+            if detail_changes or json_changed:
                 # Changes detected - create new version, deactivate old
                 field_changes.append(f"PersonDetails version created (previous deactivated):")
-                field_changes.extend(detail_changes)
+                if detail_changes:
+                    field_changes.extend(detail_changes)
+                if json_changed:
+                    field_changes.append(f"  full_json_string: [content changed]")
 
                 # Deactivate the current record
                 existing_details.write({'is_active': False})
@@ -1576,45 +1709,45 @@ class BeTaskProcessor(models.AbstractModel):
                     ], limit=1)
             
             # -----------------------------------------------------------------
-            # Step 3: Get Backend Role via SR-BR lookup
-            # Task data contains SAP Role info (roleCode = shortname, roleName = name)
-            # We need to find the SAP Role first, then lookup Backend Role via SR-BR
-            # The PPSBR must contain the BACKEND Role, not the SAP Role!
+            # Step 3: Get Backend Role
+            # Two scenarios:
+            # A) roleId provided WITHOUT roleCode: roleId is already a Backend Role (e.g., EMPLOYEE)
+            # B) roleCode provided: it's a SAP Role shortname, need SR-BR lookup for Backend Role
             # -----------------------------------------------------------------
-            sap_role = None
             backend_role = None
             role_id = data.get('roleId')
-            role_code = data.get('roleCode')  # SAP Role shortname
-            role_name = data.get('roleName')  # SAP Role name
-            
+            role_code = data.get('roleCode')  # SAP Role shortname (optional)
+            role_name = data.get('roleName')  # Role name
+
             _logger.debug(f'[PPSBR] Role lookup - roleId: {role_id}, roleCode: {role_code}, roleName: {role_name}')
-            
-            # Step 3a: Find the SAP Role from task data
-            if role_id:
-                sap_role = Role.browse(role_id)
+
+            # Scenario A: roleId provided without roleCode - assume it's already a Backend Role
+            if role_id and not role_code:
+                backend_role = Role.browse(role_id)
+                if backend_role and backend_role.exists():
+                    _logger.info(f'[PPSBR] Using Backend Role directly: {backend_role.name} (ID: {backend_role.id})')
+                else:
+                    self._log_error('BETASK-703', f'Role with ID {role_id} not found. Task: {task.name}')
+                    return False
+
+            # Scenario B: roleCode provided - find SAP Role, then lookup Backend Role via SR-BR
             elif role_code:
-                # roleCode corresponds to Role.shortname
+                # Find the SAP Role
                 sap_role = Role.search([('shortname', '=', role_code)], limit=1)
-            elif role_name:
-                # roleName corresponds to Role.name
-                sap_role = Role.search([('name', '=', role_name)], limit=1)
-            
-            if sap_role:
+
+                if not sap_role:
+                    _logger.warning(f'[PPSBR] SAP Role not found for roleCode={role_code}')
+                    self._log_error('BETASK-703', f'SAP Role not found for roleCode={role_code}. Task: {task.name}')
+                    return False
+
                 _logger.debug(f'[PPSBR] Found SAP Role: {sap_role.name} (shortname: {sap_role.shortname}, ID: {sap_role.id})')
-            else:
-                _logger.warning(f'[PPSBR] SAP Role not found for roleCode={role_code}, roleName={role_name}')
-            
-            # Step 3b: Find Backend Role via SR-BR relation
-            # SR-BR maps SAP Role -> Backend Role
-            # SR-BR.id_role or SR-BR.id_role_child = SAP Role
-            # SR-BR.id_role_parent = Backend Role
-            if sap_role:
+
+                # Find Backend Role via SR-BR relation
                 sr_br_type = PropRelationType.search([
                     ('name', '=', self.PROPRELATION_TYPE_SR_BR)
                 ], limit=1)
-                
+
                 if sr_br_type:
-                    # Search for SR-BR relation where SAP Role is linked
                     sr_br_relation = PropRelation.search([
                         ('proprelation_type_id', '=', sr_br_type.id),
                         ('is_active', '=', True),
@@ -1623,7 +1756,7 @@ class BeTaskProcessor(models.AbstractModel):
                         ('id_role', '=', sap_role.id),
                         ('id_role_child', '=', sap_role.id)
                     ], limit=1)
-                    
+
                     if sr_br_relation and sr_br_relation.id_role_parent:
                         backend_role = sr_br_relation.id_role_parent
                         _logger.info(
@@ -1631,27 +1764,29 @@ class BeTaskProcessor(models.AbstractModel):
                             f'for SAP Role {sap_role.name} (ID: {sap_role.id})'
                         )
                     else:
-                        _logger.warning(
-                            f'[PPSBR] No SR-BR relation found for SAP Role {sap_role.name}. '
-                            f'Cannot determine Backend Role!'
+                        self._log_error(
+                            'BETASK-703',
+                            f'No SR-BR relation found for SAP Role {sap_role.name} (roleCode={role_code}). '
+                            f'Please ensure SR-BR mapping exists. Task: {task.name}'
                         )
+                        return False
                 else:
                     _logger.warning(f'[PPSBR] SR-BR PropRelationType not found!')
-            
-            # The role to use in PPSBR MUST be the Backend Role
-            # If we couldn't find a Backend Role, log an error
-            if not backend_role:
-                if sap_role:
-                    self._log_error(
-                        'BETASK-703', 
-                        f'No Backend Role found for SAP Role {sap_role.name} (roleCode={role_code}). '
-                        f'Please ensure SR-BR mapping exists. Task: {task.name}'
-                    )
+                    self._log_error('BETASK-703', f'SR-BR PropRelationType not found. Task: {task.name}')
+                    return False
+
+            # Fallback: try to find by roleName
+            elif role_name:
+                backend_role = Role.search([('name', '=', role_name)], limit=1)
+                if backend_role:
+                    _logger.info(f'[PPSBR] Found Role by name: {backend_role.name} (ID: {backend_role.id})')
                 else:
-                    self._log_error('BETASK-703', f'No role found for task {task.name}')
+                    self._log_error('BETASK-703', f'Role not found for roleName={role_name}. Task: {task.name}')
+                    return False
+            else:
+                self._log_error('BETASK-703', f'No role identifier in task {task.name}')
                 return False
-            
-            # Use backend_role for PPSBR (never use sap_role directly!)
+
             role_to_use = backend_role
             
             # -----------------------------------------------------------------
@@ -1923,6 +2058,45 @@ class BeTaskProcessor(models.AbstractModel):
                 _logger.info(f'PPSBR deactivated, recalculating tree position for {person.name}')
                 self._update_person_tree_position(person)
                 changes.append(f"Recalculated PERSON-TREE for {person.name}")
+
+                # Check if person should be deactivated (no more active PPSBR relations)
+                # Only auto-deactivate persons with automatic_sync=True
+                if person.is_active and person.automatic_sync:
+                    remaining_active_ppsbr = PropRelation.search([
+                        ('id_person', '=', person.id),
+                        ('proprelation_type_id', '=', ppsbr_type.id),
+                        ('is_active', '=', True)
+                    ])
+
+                    _logger.info(f'Remaining active PPSBRs for {person.name}: {len(remaining_active_ppsbr)}')
+
+                    if not remaining_active_ppsbr:
+                        _logger.info(f'No active PPSBR relations left for {person.name} - deactivating person')
+                        changes.append(f"No active PPSBR relations remaining - deactivating person")
+
+                        # Skip manual audit for backend task processing
+                        person_ctx = person.with_context(skip_manual_audit=True)
+
+                        # Create ODOO-PERSON-DEACT task if person has Odoo user
+                        if person.odoo_user_id:
+                            odoo_task_data = {
+                                'person_id': person.id,
+                                'personId': person.sap_person_uuid,
+                                'reason': 'No active PPSBR relations'
+                            }
+                            self._create_betask_internal(
+                                'ODOO', 'PERSON', 'DEACT',
+                                json.dumps(odoo_task_data),
+                                None
+                            )
+                            _logger.info(f'Created ODOO-PERSON-DEACT task for {person.name}')
+                            changes.append(f"Created ODOO-PERSON-DEACT task")
+
+                        # Only deactivate the person, NOT their other proprelations
+                        # (other proprelations like PERSON-TREE will be handled separately)
+                        person_ctx.write({'is_active': False})
+                        _logger.info(f"Deactivated person {person.name}")
+                        changes.append(f"Person {person.name} deactivated")
 
             return {'success': True, 'changes': '\n'.join(changes)}
 

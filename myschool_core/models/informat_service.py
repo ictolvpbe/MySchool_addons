@@ -926,8 +926,9 @@ class InformatService(models.AbstractModel):
         Logic:
         - Loop through imported employees
         - For each unique person (by sap_person_uuid):
-          - If not in DB and pension_date OK: CREATE (ADD task)
-          - If in DB: compare and UPDATE if changed (UPD task)
+          - If not in DB and pension_date OK: CREATE (ADD task) -> when conditions are met (isactive,pension_date, ...
+          - If in DB: compare and UPDATE if changed (UPD task) -> persondata -> assignments processed lader
+                                                                -> create an EMPLOYEE PPBRO propr
           - If in DB but should be deactivated: DEACT task
         - For persons in DB but not in import: DEACT task
 
@@ -973,20 +974,22 @@ class InformatService(models.AbstractModel):
                 employee_json = json.loads(employee_value)
                 employee_json['instNr'] = inst_nr
 
-                # Include assignments for this person and instNr
-                if all_imported_employee_assignments:
-                    person_assignments = []
-                    for assign_key, assign_value in all_imported_employee_assignments.items():
-                        # Key format: personId&instNr&assignmentId
-                        assign_parts = assign_key.split('&')
-                        if len(assign_parts) >= 2:
-                            if assign_parts[0] == person_uuid and assign_parts[1] == inst_nr:
-                                person_assignments.append(json.loads(assign_value))
-                    if person_assignments:
-                        employee_json['assignments'] = person_assignments
-                        self._create_sys_event("BETASK-001", f"Added {len(person_assignments)} assignments for {person_uuid} at {inst_nr}")
-                else:
-                    self._create_sys_event("BETASK-001", f"No assignments dict available for {person_uuid}")
+# 20260205 : move assignment/ambt processing to other procedure
+
+                # # Include assignments for this person and instNr
+                # if all_imported_employee_assignments:
+                #     person_assignments = []
+                #     for assign_key, assign_value in all_imported_employee_assignments.items():
+                #         # Key format: personId&instNr&assignmentId
+                #         assign_parts = assign_key.split('&')
+                #         if len(assign_parts) >= 2:
+                #             if assign_parts[0] == person_uuid and assign_parts[1] == inst_nr:
+                #                 person_assignments.append(json.loads(assign_value))
+                #     if person_assignments:
+                #         employee_json['assignments'] = person_assignments
+                #         self._create_sys_event("BETASK-001", f"Added {len(person_assignments)} assignments for {person_uuid} at {inst_nr}")
+                # else:
+                #     self._create_sys_event("BETASK-001", f"No assignments dict available for {person_uuid}")
 
                 # Get key fields
                 is_active_import = employee_json.get('isActive', True)
@@ -1000,7 +1003,7 @@ class InformatService(models.AbstractModel):
                 person_in_db = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
 
                 # =====================================================
-                # SCENARIO 1: Person NOT in database
+                # SCENARIO 1a: Person NOT in database
                 # =====================================================
                 if not person_in_db:
                     # Check if pension date allows creation
@@ -1015,10 +1018,12 @@ class InformatService(models.AbstractModel):
                                 json.dumps(employee_json),
                                 None
                             )
+                            # EMPLOYEE PROPrelation type PPSBR will be added during the processing of the above created task
+
                             added_persons[person_uuid] = inst_nr
                             self._create_sys_event("BETASK-001", f"ADD task created for new person: {person_uuid}")
                         else:
-                            # Person already added, just need to create PersonDetails
+                            # Person already added before in this cycle, just need to create PersonDetails
                             # This will be handled by the UPD task with ADD-DETAILS action
                             data2 = {'action': 'ADD-DETAILS', 'instNr': inst_nr}
                             self._create_betask(
@@ -1026,6 +1031,7 @@ class InformatService(models.AbstractModel):
                                 json.dumps(employee_json),
                                 json.dumps(data2)
                             )
+
                     continue
 
                 # =====================================================
@@ -1162,7 +1168,7 @@ class InformatService(models.AbstractModel):
 
     PROPRELATION_TYPE_PERSON_TREE = 'PERSON-TREE'
     PROPRELATION_TYPE_PPSBR = 'PPSBR'
-    PROPRELATION_TYPE_SR_BR = 'SR-BR'
+    PROPRELATION_TYPE_SR_BR = 'SRBR'
     PROPRELATION_TYPE_BRSO = 'BRSO'
     PROPRELATION_TYPE_ORG_TREE = 'ORG-TREE'
 
@@ -1253,15 +1259,15 @@ class InformatService(models.AbstractModel):
                 ('name', '=', self.PROPRELATION_TYPE_PPSBR)
             ], limit=1)
 
-            if not ppsbr_type:
-                self._create_sys_event("BETASK-001", f"Creating PPSBR PropRelationType")
-                ppsbr_type = PropRelationType.create({
-                    'name': self.PROPRELATION_TYPE_PPSBR,
-                    'usage': 'Person-Period-School-BackendRole relation',
-                    'is_active': True
-                })
+            # if not ppsbr_type:
+            #     self._create_sys_event("BETASK-001", f"Creating PPSBR PropRelationType")
+            #     ppsbr_type = PropRelationType.create({
+            #         'name': self.PROPRELATION_TYPE_PPSBR,
+            #         'usage': 'Person-Period-School-BackendRole relation',
+            #         'is_active': True
+            #     })
 
-            # SR-BR: SapRole to BackendRole mapping
+            # SRBR: SapRole to BackendRole mapping
             sr_br_type = PropRelationType.search([
                 ('name', '=', self.PROPRELATION_TYPE_SR_BR)
             ], limit=1)
@@ -1334,11 +1340,24 @@ class InformatService(models.AbstractModel):
                 ])
 
                 # Track which PPSBR we've processed (to detect ones to deactivate)
+                # Key: person_id + org_id + role_id (without period for employees)
                 processed_ppsbr_keys = set()
+                # Also track the SAP role to Backend role mappings for error detection
+                sap_to_be_role_map = {}  # {sap_role_id: be_role_id}
 
                 # -----------------------------------------------------
                 # Process imported assignments
                 # -----------------------------------------------------
+                # Debug: log imported assignments per school
+                if imported_assignments:
+                    for inst_nr, assignments in imported_assignments.items():
+                        valid_assignments = [a for a in assignments if a.get('ambtCode')]
+                        self._create_sys_event("BETASK-DEBUG",
+                            f"Person {person.name} @ inst_nr {inst_nr}: {len(assignments)} assignments, {len(valid_assignments)} with valid ambtCode")
+                else:
+                    self._create_sys_event("BETASK-DEBUG",
+                        f"Person {person.name}: NO imported assignments found")
+
                 for inst_nr, assignments in imported_assignments.items():
                     # Find the school org for this instNr
                     school_org = Org.search([
@@ -1365,10 +1384,10 @@ class InformatService(models.AbstractModel):
                         if not hoofd_ambt_code:
                             continue
 
-                        # Find the SAP Role
+                        # Find the SAP Role TODO: REQUIRED?????
                         sap_role = Role.search([('shortname', '=', hoofd_ambt_code)], limit=1)
 
-                        # Find Backend Role via SR-BR relation
+                        # Find Backend Role via SRBR relation
                         be_role = None
                         if sap_role and sr_br_type:
                             sr_br_relation = PropRelation.search([
@@ -1406,10 +1425,13 @@ class InformatService(models.AbstractModel):
                             continue
 
                         # Create unique key for this PPSBR
-                        # Key: person_id + org_id + role_id + period_id
-                        period_id = current_period.id if current_period else ''
-                        ppsbr_key = f"{person.id}_{school_org.id if school_org else ''}_{role_to_use.id}_{period_id}"
+                        # Key: person_id + org_id + role_id (without period for employees)
+                        ppsbr_key = f"{person.id}_{school_org.id if school_org else ''}_{role_to_use.id}"
                         processed_ppsbr_keys.add(ppsbr_key)
+
+                        # Track SAP to BE role mapping for error detection
+                        if sap_role and be_role and sap_role.id != be_role.id:
+                            sap_to_be_role_map[sap_role.id] = be_role.id
 
                         # Check if PPSBR already exists
                         search_domain = [
@@ -1450,13 +1472,47 @@ class InformatService(models.AbstractModel):
 
                 # -----------------------------------------------------
                 # Deactivate PPSBR not in import
+                # NOTE: Skip EMPLOYEE role PPSBRs - they are only deactivated
+                # when the person is deactivated, not by assignment processing
                 # -----------------------------------------------------
+                # Find the EMPLOYEE role to exclude from deactivation
+                employee_role = Role.search([('name', '=', 'EMPLOYEE')], limit=1)
+                employee_role_id = employee_role.id if employee_role else None
+
+                # Debug: log what we're comparing
+                if existing_ppsbr:
+                    self._create_sys_event("BETASK-DEBUG",
+                        f"Person {person.name}: {len(existing_ppsbr)} existing PPSBRs, {len(processed_ppsbr_keys)} processed keys")
+                    _logger.info(f"Person {person.name}: processed_ppsbr_keys = {processed_ppsbr_keys}")
+
                 for ppsbr in existing_ppsbr:
-                    # Build key from existing record
-                    period_id = ppsbr.id_period.id if ppsbr.id_period else ''
-                    existing_key = f"{ppsbr.id_person.id}_{ppsbr.id_org.id if ppsbr.id_org else ''}_{ppsbr.id_role.id if ppsbr.id_role else ''}_{period_id}"
+                    # Skip EMPLOYEE role PPSBRs - they are managed separately
+                    ppsbr_role_id = ppsbr.id_role.id if ppsbr.id_role else None
+                    if ppsbr_role_id and ppsbr_role_id == employee_role_id:
+                        _logger.debug(f"Skipping EMPLOYEE PPSBR {ppsbr.id} for {person.name} - managed by person lifecycle, not assignments")
+                        continue
+
+                    # Build key from existing record (without period for employees)
+                    existing_key = f"{ppsbr.id_person.id}_{ppsbr.id_org.id if ppsbr.id_org else ''}_{ppsbr_role_id or ''}"
+
+                    _logger.info(f"PPSBR {ppsbr.id} key: {existing_key}, in processed: {existing_key in processed_ppsbr_keys}")
 
                     if existing_key not in processed_ppsbr_keys:
+                        # Check if this PPSBR has a SAP role that should have been a Backend role
+                        if ppsbr_role_id and ppsbr_role_id in sap_to_be_role_map:
+                            # This PPSBR has a SAP role, but a Backend role mapping exists
+                            # Check if the Backend role key would match
+                            be_role_id = sap_to_be_role_map[ppsbr_role_id]
+                            be_key = f"{ppsbr.id_person.id}_{ppsbr.id_org.id if ppsbr.id_org else ''}_{be_role_id}"
+
+                            if be_key in processed_ppsbr_keys:
+                                # The assignment exists but PPSBR uses SAP role instead of Backend role
+                                self._create_sys_error("PPSBR-ROLE-MISMATCH",
+                                    f"PPSBR {ppsbr.id} for {person.name} uses SAP role (id={ppsbr_role_id}) "
+                                    f"but should use Backend role (id={be_role_id}). "
+                                    f"Please update the PPSBR role manually or delete and let sync recreate it.")
+                                continue  # Don't deactivate, raise error instead
+
                         # This PPSBR is no longer in import - deactivate
                         deact_data = {
                             'proprelation_id': ppsbr.id,
@@ -1469,7 +1525,7 @@ class InformatService(models.AbstractModel):
                             None
                         )
                         self._create_sys_event("BETASK-001",
-                                               f"PPSBR DEACT task for {person.name}, ppsbr_id: {ppsbr.id}")
+                            f"PPSBR DEACT task for {person.name}, ppsbr_id: {ppsbr.id}, org: {ppsbr.id_org.name if ppsbr.id_org else 'N/A'}")
 
             self._create_sys_event("BETASK-001", f"{procedure_name} completed")
             return True
@@ -2096,13 +2152,25 @@ class InformatService(models.AbstractModel):
 
                 json_data = json.loads(data)
 
+                # Default taskname
+                taskname = f"{action} {obj}"
 
                 if task_type.object == "EMPLOYEE":
-                   taskname = action + " " + obj + ": " + json_data["sortName"]
+                    taskname = action + " " + obj + ": " + json_data.get("sortName", json_data.get("personId", "unknown"))
+                elif task_type.object == "STUDENT":
+                    taskname = action + " " + obj + ": " + json_data.get("sortName", json_data.get("uuid", "unknown"))
                 elif task_type.object == "ROLE":
-                    taskname = action + " " + obj + ": " + json_data["name"]
+                    taskname = action + " " + obj + ": " + json_data.get("name", "unknown")
+                elif task_type.object == "ORG":
+                    taskname = action + " " + obj + ": " + json_data.get("name", json_data.get("orgId", "unknown"))
                 elif task_type.object == "PROPRELATION":
-                    taskname = action + " " + obj + ": " + str(json_data["person_db_id"])   #todo: naam aanpassen
+                    # Handle both ADD (has person_db_id) and DEACT (has proprelation_id) data structures
+                    if "person_db_id" in json_data:
+                        taskname = action + " " + obj + ": person_id=" + str(json_data["person_db_id"])
+                    elif "proprelation_id" in json_data:
+                        taskname = action + " " + obj + ": proprel_id=" + str(json_data["proprelation_id"])
+                    else:
+                        taskname = action + " " + obj + ": " + json_data.get("personId", "unknown")
 
                 vals = {
                     self.BETASK_TYPE_FIELD: task_type.id,
