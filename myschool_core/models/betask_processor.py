@@ -2059,44 +2059,43 @@ class BeTaskProcessor(models.AbstractModel):
                 self._update_person_tree_position(person)
                 changes.append(f"Recalculated PERSON-TREE for {person.name}")
 
-                # Check if person should be deactivated (no more active PPSBR relations)
-                # Only auto-deactivate persons with automatic_sync=True
-                if person.is_active and person.automatic_sync:
-                    remaining_active_ppsbr = PropRelation.search([
-                        ('id_person', '=', person.id),
-                        ('proprelation_type_id', '=', ppsbr_type.id),
-                        ('is_active', '=', True)
-                    ])
+            # Check if person should be deactivated (no more active proprelations)
+            # This check runs for ALL proprelation types, not just PPSBR
+            # Only auto-deactivate persons with automatic_sync=True
+            if person and person.is_active and person.automatic_sync:
+                remaining_active_proprels = PropRelation.search([
+                    ('id_person', '=', person.id),
+                    ('is_active', '=', True)
+                ])
 
-                    _logger.info(f'Remaining active PPSBRs for {person.name}: {len(remaining_active_ppsbr)}')
+                _logger.info(f'Remaining active proprelations for {person.name}: {len(remaining_active_proprels)}')
 
-                    if not remaining_active_ppsbr:
-                        _logger.info(f'No active PPSBR relations left for {person.name} - deactivating person')
-                        changes.append(f"No active PPSBR relations remaining - deactivating person")
+                if not remaining_active_proprels:
+                    _logger.info(f'No active proprelations left for {person.name} - deactivating person')
+                    changes.append(f"No active proprelations remaining - deactivating person")
 
-                        # Skip manual audit for backend task processing
-                        person_ctx = person.with_context(skip_manual_audit=True)
+                    # Skip manual audit for backend task processing
+                    person_ctx = person.with_context(skip_manual_audit=True)
 
-                        # Create ODOO-PERSON-DEACT task if person has Odoo user
-                        if person.odoo_user_id:
-                            odoo_task_data = {
-                                'person_id': person.id,
-                                'personId': person.sap_person_uuid,
-                                'reason': 'No active PPSBR relations'
-                            }
-                            self._create_betask_internal(
-                                'ODOO', 'PERSON', 'DEACT',
-                                json.dumps(odoo_task_data),
-                                None
-                            )
-                            _logger.info(f'Created ODOO-PERSON-DEACT task for {person.name}')
-                            changes.append(f"Created ODOO-PERSON-DEACT task")
+                    # Create ODOO-PERSON-DEACT task if person has Odoo user
+                    if person.odoo_user_id:
+                        odoo_task_data = {
+                            'person_id': person.id,
+                            'personId': person.sap_person_uuid,
+                            'reason': 'No active proprelations'
+                        }
+                        self._create_betask_internal(
+                            'ODOO', 'PERSON', 'DEACT',
+                            json.dumps(odoo_task_data),
+                            None
+                        )
+                        _logger.info(f'Created ODOO-PERSON-DEACT task for {person.name}')
+                        changes.append(f"Created ODOO-PERSON-DEACT task")
 
-                        # Only deactivate the person, NOT their other proprelations
-                        # (other proprelations like PERSON-TREE will be handled separately)
-                        person_ctx.write({'is_active': False})
-                        _logger.info(f"Deactivated person {person.name}")
-                        changes.append(f"Person {person.name} deactivated")
+                    # Only deactivate the person, NOT their other proprelations
+                    person_ctx.write({'is_active': False})
+                    _logger.info(f"Deactivated person {person.name}")
+                    changes.append(f"Person {person.name} deactivated")
 
             return {'success': True, 'changes': '\n'.join(changes)}
 

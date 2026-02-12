@@ -945,10 +945,13 @@ class InformatService(models.AbstractModel):
         self._create_sys_event("BETASK-001", f"{procedure_name} started")
 
         try:
+            from dateutil.relativedelta import relativedelta
+
             Person = self.env['myschool.person']
             PersonDetails = self.env['myschool.person.details']
 
             today = datetime.now().date()
+            one_month_ago = today - relativedelta(months=1)
 
             # Track processed person UUIDs to detect persons to deactivate
             processed_person_uuids = set()
@@ -1006,8 +1009,8 @@ class InformatService(models.AbstractModel):
                 # SCENARIO 1a: Person NOT in database
                 # =====================================================
                 if not person_in_db:
-                    # Check if pension date allows creation
-                    pension_ok = pension_date is None or pension_date > today
+                    # Check if pension date allows creation (not more than 1 month in past)
+                    pension_ok = pension_date is None or pension_date >= one_month_ago
 
                     if pension_ok and is_active_import and not is_overleden:
                         # Check if already added in this run (for another instNr)
@@ -1046,31 +1049,32 @@ class InformatService(models.AbstractModel):
                 ], limit=1)
 
                 # -----------------------------------------------------
-                # SCENARIO 2a: Should DEACTIVATE
+                # SCENARIO 2a: Should DEACTIVATE for this instNr
+                # Conditions: pension_date > 1 month in the past OR isActive=false OR isOverleden
+                # This is per-instNr: deactivate proprelations for this instNr only
                 # -----------------------------------------------------
-                should_deactivate = (
+                should_deactivate_instnr = (
                         (not is_active_import) or
                         (is_overleden) or
-                        (pension_date and pension_date <= today)
+                        (pension_date and pension_date < one_month_ago)
                 )
 
-                if should_deactivate and person_is_active_db:
-                    self._create_betask(
-                        'DB', 'EMPLOYEE', 'DEACT',
-                        json.dumps(employee_json),
-                        None
-                    )
-                    self._create_sys_event("BETASK-001", f"DEACT task created for: {person_uuid}")
+                if should_deactivate_instnr:
+                    # Deactivate proprelations for this instNr (including EMPLOYEE PPSBR)
+                    self._deactivate_employee_for_instnr(person_in_db, inst_nr, employee_json)
+                    self._create_sys_event("BETASK-001",
+                        f"Deactivation tasks created for {person_uuid} at instNr {inst_nr}")
                     continue
 
                 # -----------------------------------------------------
                 # SCENARIO 2b: Should REACTIVATE
+                # Only reactivate if pension_date is not more than 1 month in the past
                 # -----------------------------------------------------
                 should_reactivate = (
                         not person_is_active_db and
                         is_active_import and
                         not is_overleden and
-                        (pension_date is None or pension_date > today)
+                        (pension_date is None or pension_date >= one_month_ago)
                 )
 
                 if should_reactivate:
@@ -1216,6 +1220,79 @@ class InformatService(models.AbstractModel):
 
         return current_org
 
+    def _deactivate_employee_for_instnr(self, person, inst_nr: str, employee_json: dict = None):
+        """
+        Deactivate an employee's proprelations for a specific instNr.
+
+        This is called when an employee should be deactivated for a specific institution
+        (pension > 1 month past OR isActive=false). It:
+        1. Finds all proprelations for the person at the specified instNr
+        2. Creates DEACT tasks for each proprelation (including EMPLOYEE PPSBR)
+        3. The PROPRELATION-DEACT processing will check if person should be deactivated
+
+        @param person: The person record
+        @param inst_nr: The institution number
+        @param employee_json: The employee JSON data (for logging)
+        """
+        if not person or not inst_nr:
+            return
+
+        PropRelation = self.env['myschool.proprelation']
+        Org = self.env['myschool.org']
+
+        # Find the org for this instNr
+        org = Org.search([
+            ('inst_nr', '=', inst_nr),
+            ('is_active', '=', True)
+        ], limit=1)
+
+        if not org:
+            self._create_sys_event("BETASK-001",
+                f"No org found for instNr {inst_nr} - skipping deactivation for {person.name}")
+            return
+
+        # Find all active proprelations for this person at this org
+        proprelations = PropRelation.search([
+            ('id_person', '=', person.id),
+            ('id_org', '=', org.id),
+            ('is_active', '=', True)
+        ])
+
+        if not proprelations:
+            self._create_sys_event("BETASK-001",
+                f"No active proprelations found for {person.name} at instNr {inst_nr}")
+            # Check if person has any remaining active proprelations
+            remaining = PropRelation.search([
+                ('id_person', '=', person.id),
+                ('is_active', '=', True)
+            ], limit=1)
+            if not remaining and person.is_active:
+                # No active proprelations at all - deactivate person
+                self._create_betask(
+                    'DB', 'EMPLOYEE', 'DEACT',
+                    json.dumps(employee_json) if employee_json else json.dumps({'personId': person.sap_person_uuid}),
+                    None
+                )
+                self._create_sys_event("BETASK-001",
+                    f"No active proprelations for {person.name} - created EMPLOYEE DEACT task")
+            return
+
+        # Create DEACT tasks for each proprelation
+        for proprel in proprelations:
+            deact_data = {
+                'proprelation_id': proprel.id,
+                'personId': person.sap_person_uuid,
+                'instNr': inst_nr,
+                'reason': f'Employee deactivated for instNr {inst_nr} (pension/isActive)'
+            }
+            self._create_betask(
+                'DB', 'PROPRELATION', 'DEACT',
+                json.dumps(deact_data),
+                None
+            )
+            self._create_sys_event("BETASK-001",
+                f"PROPRELATION DEACT task for {person.name}, proprel_id: {proprel.id}, type: {proprel.proprelation_type_id.name if proprel.proprelation_type_id else 'N/A'}")
+
     # =========================================================================
     # PHASE 2: PropRelation Synchronization (UPDATED)
     # =========================================================================
@@ -1243,12 +1320,19 @@ class InformatService(models.AbstractModel):
         self._create_sys_event("BETASK-001", f"{procedure_name} started")
 
         try:
+            from dateutil.relativedelta import relativedelta
+
             Person = self.env['myschool.person']
             PropRelation = self.env['myschool.proprelation']
             PropRelationType = self.env['myschool.proprelation.type']
             Org = self.env['myschool.org']
             Role = self.env['myschool.role']
             Period = self.env['myschool.period']
+
+            # Calculate date thresholds for deactivation checks
+            today = datetime.now().date()
+            one_month_ago = today - relativedelta(months=1)
+            one_week_ago = today - relativedelta(weeks=1)
 
             # -----------------------------------------------------------------
             # Get PropRelation types
@@ -1382,6 +1466,14 @@ class InformatService(models.AbstractModel):
                         hoofd_ambt_name = assignment.get('ambt', '')
 
                         if not hoofd_ambt_code:
+                            continue
+
+                        # Check assignment end date (einddatum)
+                        # If end date is more than 1 week in the past, skip this assignment
+                        # (the corresponding PPSBR will be deactivated)
+                        assignment_end_date = self._parse_date_safe(assignment.get('einddatum'))
+                        if assignment_end_date and assignment_end_date < one_week_ago:
+                            _logger.info(f"Assignment for {person.name} has end date {assignment_end_date} (> 1 week ago) - skipping")
                             continue
 
                         # Find the SAP Role TODO: REQUIRED?????
