@@ -100,6 +100,13 @@
                 <field name="id_period"/>
                 <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
                 <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
+                <separator/>
+                <filter string="ORG-TREE" name="type_org_tree" domain="[('proprelation_type_id.name', '=', 'ORG-TREE')]"/>
+                <filter string="PERSON-TREE" name="type_person_tree" domain="[('proprelation_type_id.name', '=', 'PERSON-TREE')]"/>
+                <filter string="PPSBR" name="type_ppsbr" domain="[('proprelation_type_id.name', '=', 'PPSBR')]"/>
+                <filter string="BRSO" name="type_brso" domain="[('proprelation_type_id.name', '=', 'BRSO')]"/>
+                <filter string="SRBR" name="type_srbr" domain="[('proprelation_type_id.name', '=', 'SRBR')]"/>
+                <separator/>
                 <filter string="Administratief" name="administrative" domain="[('is_administrative', '=', True)]"/>
                 <filter string="Organisatorisch" name="organisational" domain="[('is_organisational', '=', True)]"/>
                 <filter string="Master" name="master" domain="[('is_master', '=', True)]"/>

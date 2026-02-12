@@ -1002,29 +1002,32 @@ class BeTaskProcessor(models.AbstractModel):
     
     @api.model
     def process_tasks_by_type(self, task_type):
-        """Process all pending tasks of a specific type."""
+        """Process all pending tasks of a specific type.
+
+        Each task is committed individually so progress is preserved.
+        """
         self._log_event('BETASK-002', f'START PROCESSING TASKS: {task_type.name}')
-        
+
         manual_tasks = self._check_manual_tasks()
         if manual_tasks:
             self._log_error(
                 'BETASK-003',
                 f'Found {len(manual_tasks)} manual tasks. Please process them first!'
             )
-        
+
         task_service = self.env['myschool.betask.service']
         tasks_to_process = task_service.find_by_type_and_status(task_type, 'new')
-        
+
         if not tasks_to_process:
             _logger.info(f'No pending tasks found for type: {task_type.name}')
             return True
-        
+
         _logger.info(f'Found {len(tasks_to_process)} tasks to process for type: {task_type.name}')
-        
+
         all_success = True
         processed_count = 0
         error_count = 0
-        
+
         for task in tasks_to_process:
             try:
                 result = self.process_single_task(task)
@@ -1038,12 +1041,15 @@ class BeTaskProcessor(models.AbstractModel):
                 all_success = False
                 self._register_task_error(task, str(e))
                 _logger.exception(f'Exception processing task {task.name}')
-        
+
+            # Commit after each task so progress is not lost
+            self.env.cr.commit()
+
         self._log_event(
             'BETASK-004',
             f'COMPLETED PROCESSING {task_type.name}: {processed_count} success, {error_count} errors'
         )
-        
+
         return all_success
     
     @api.model

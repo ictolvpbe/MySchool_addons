@@ -286,4 +286,11 @@
               sequence="110"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_recalculate_person_trees"
+              name="Recalculate PERSON-TREE"
+              parent="menu_configuration"
+              action="action_recalculate_all_person_trees"
+              sequence="120"
+              groups="myschool_core.group_myschool_core_admin"/>
+
 </odoo>

@@ -184,4 +184,33 @@
             </p>
         </field>
     </record>
+
+    <!-- Server Action for Recalculate All PERSON-TREE Relations -->
+    <record id="action_recalculate_all_person_trees" model="ir.actions.server">
+        <field name="name">Recalculate All PERSON-TREE Relations</field>
+        <field name="model_id" ref="myschool_core.model_myschool_person"/>
+        <field name="state">code</field>
+        <field name="code">
+processor = env['myschool.betask.processor']
+persons = env['myschool.person'].search([('is_active', '=', True)])
+success = 0
+skipped = 0
+for person in persons:
+    result = processor._update_person_tree_position(person)
+    if result:
+        success += 1
+    else:
+        skipped += 1
+action = {
+    'type': 'ir.actions.client',
+    'tag': 'display_notification',
+    'params': {
+        'title': 'PERSON-TREE Recalculation Complete',
+        'message': f'{success} updated, {skipped} skipped (no active PPSBR) out of {len(persons)} active persons.',
+        'type': 'success',
+        'sticky': True,
+    }
+}
+        </field>
+    </record>
 </odoo>
