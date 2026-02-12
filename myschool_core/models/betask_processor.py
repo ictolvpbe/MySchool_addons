@@ -3255,13 +3255,19 @@ class BeTaskProcessor(models.AbstractModel):
                 self._log_error('BETASK-803', f'Cannot determine login for person {person.name}')
                 return False
             
-            # Check if user with this login already exists
-            existing_user = ResUsers.search([('login', '=', login)], limit=1)
+            # Check if user with this login already exists (include archived users)
+            existing_user = ResUsers.with_context(active_test=False).search([('login', '=', login)], limit=1)
             
             if existing_user:
                 _logger.info(f'User with login {login} already exists, linking to person')
                 person.write({'odoo_user_id': existing_user.id})
                 changes.append(f"Linked existing Odoo user: {existing_user.login} (ID: {existing_user.id})")
+
+                # Reactivate user if archived
+                if not existing_user.active:
+                    existing_user.with_context(active_test=False).write({'active': True})
+                    _logger.info(f'Reactivated archived Odoo user: {existing_user.login}')
+                    changes.append(f"Reactivated archived Odoo user: {existing_user.login}")
 
                 # Link HR employee if exists, hr module installed, AND person is EMPLOYEE type
                 is_employee_type = (
@@ -3271,11 +3277,16 @@ class BeTaskProcessor(models.AbstractModel):
                 )
 
                 if hr_installed and is_employee_type:
-                    existing_employee = HrEmployee.search([('user_id', '=', existing_user.id)], limit=1)
+                    existing_employee = HrEmployee.with_context(active_test=False).search([('user_id', '=', existing_user.id)], limit=1)
                     if existing_employee:
                         person.write({'odoo_employee_id': existing_employee.id})
                         _logger.info(f'Linked existing HR Employee: {existing_employee.name}')
                         changes.append(f"Linked existing HR Employee: {existing_employee.name}")
+                        # Reactivate employee if archived
+                        if not existing_employee.active:
+                            existing_employee.with_context(active_test=False).write({'active': True})
+                            _logger.info(f'Reactivated archived HR Employee: {existing_employee.name}')
+                            changes.append(f"Reactivated archived HR Employee: {existing_employee.name}")
 
                 # Sync group memberships
                 self._sync_person_group_memberships(person)
