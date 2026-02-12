@@ -5,3 +5,4 @@ from . import org_extension
 from . import proprelation_extension
 from . import role_lines
 from . import wizards
+from . import sync_test_runner

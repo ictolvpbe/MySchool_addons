@@ -36,6 +36,7 @@ import logging
 import json
 import random
 import string
+import time
 import traceback
 from datetime import datetime
 from typing import Dict, Optional, Any, List
@@ -1093,30 +1094,61 @@ class BeTaskProcessor(models.AbstractModel):
             self._log_error('BETASK-500', f'Error processing task {task.name}: {error_msg}')
             return self._register_task_error(task, str(e))
     
+    # Maximum time (in seconds) to spend processing tasks in a single cron
+    # cycle. Keeps well under Odoo's default limit_time_real (120s) so the
+    # worker is never killed. Remaining tasks are picked up on the next cycle.
+    PROCESSING_TIME_LIMIT = 90
+
     @api.model
     def process_all_pending(self):
-        """Process all pending tasks for all auto-process task types."""
+        """Process all pending tasks for all auto-process task types.
+
+        Tasks are committed individually so that progress is preserved even
+        if the worker is interrupted. Processing stops gracefully when
+        PROCESSING_TIME_LIMIT is reached; remaining tasks will be picked
+        up on the next cron cycle.
+        """
+        start_time = time.time()
         self._log_event('BETASK-001', 'START PROCESSING ALL PENDING TASKS')
-        
+
         type_service = self.env['myschool.betask.type.service']
         task_types = type_service.find_auto_process_types()
-        
+
         results = {
             'total_types': len(task_types),
             'processed_types': 0,
             'total_tasks': 0,
             'successful_tasks': 0,
             'failed_tasks': 0,
+            'skipped_time_limit': 0,
         }
-        
+
+        time_limit_reached = False
+
         for task_type in task_types:
+            if time_limit_reached:
+                break
+
             task_service = self.env['myschool.betask.service']
             pending_tasks = task_service.find_by_type_and_status(task_type, 'new')
-            
+
             if pending_tasks:
                 results['total_tasks'] += len(pending_tasks)
-                
+
                 for task in pending_tasks:
+                    # Check time limit before starting next task
+                    elapsed = time.time() - start_time
+                    if elapsed >= self.PROCESSING_TIME_LIMIT:
+                        remaining = len(pending_tasks) - (
+                            results['successful_tasks'] + results['failed_tasks'])
+                        results['skipped_time_limit'] = remaining
+                        _logger.warning(
+                            f'Time limit reached ({elapsed:.0f}s >= '
+                            f'{self.PROCESSING_TIME_LIMIT}s), '
+                            f'{remaining} task(s) deferred to next cycle')
+                        time_limit_reached = True
+                        break
+
                     try:
                         if self.process_single_task(task):
                             results['successful_tasks'] += 1
@@ -1125,14 +1157,21 @@ class BeTaskProcessor(models.AbstractModel):
                     except Exception as e:
                         results['failed_tasks'] += 1
                         _logger.exception(f'Exception processing task {task.name}')
-                
+
+                    # Commit after each task so progress is not lost
+                    self.env.cr.commit()
+
                 results['processed_types'] += 1
-        
+
+        elapsed = time.time() - start_time
         self._log_event(
             'BETASK-005',
-            f'COMPLETED ALL PENDING: {results["successful_tasks"]} success, {results["failed_tasks"]} errors'
+            f'COMPLETED: {results["successful_tasks"]} success, '
+            f'{results["failed_tasks"]} errors, '
+            f'{results["skipped_time_limit"]} deferred '
+            f'({elapsed:.1f}s)'
         )
-        
+
         return results
 
     # =========================================================================

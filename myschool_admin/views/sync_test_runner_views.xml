@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Form View -->
+    <record id="view_sync_test_runner_form" model="ir.ui.view">
+        <field name="name">myschool.sync.test.runner.form</field>
+        <field name="model">myschool.sync.test.runner</field>
+        <field name="arch" type="xml">
+            <form string="SAP Sync Test Runner">
+                <group>
+                    <field name="testsets_path"/>
+                    <field name="test_person_uuid"/>
+                </group>
+                <footer>
+                    <button name="action_run_tests"
+                            string="Run All Tests"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+                <group string="Results" invisible="not result">
+                    <field name="result" nolabel="1"/>
+                </group>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_sync_test_runner" model="ir.actions.act_window">
+        <field name="name">SAP Sync Test Runner</field>
+        <field name="res_model">myschool.sync.test.runner</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

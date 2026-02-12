@@ -249,7 +249,7 @@ class InformatService(models.AbstractModel):
         @return: True if successful, False if errors occurred
         """
 
-        dev_mode = True
+        dev_mode = False
         _logger.info("SAPSYNC-001: Starting Informat sync process")
 
 
@@ -867,9 +867,9 @@ class InformatService(models.AbstractModel):
                 return False
 
             # Process DB-EMPLOYEE tasks
-            # self._process_betasks('DB', 'EMPLOYEE', 'ADD')
-            # self._process_betasks('DB', 'EMPLOYEE', 'UPD')
-            # self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
+            self._process_betasks('DB', 'EMPLOYEE', 'ADD')
+            self._process_betasks('DB', 'EMPLOYEE', 'UPD')
+            self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
 
             # =====================================================
             # PHASE 1b: Sync Odoo Users (NEW!)
@@ -877,9 +877,9 @@ class InformatService(models.AbstractModel):
             self._create_sys_event("BETASK-001", "Phase 1b: Syncing Odoo Users")
 
             # Process ODOO-PERSON tasks (creates res.users and hr.employee)
-            # self._process_betasks('ODOO', 'PERSON', 'ADD')
-            # self._process_betasks('ODOO', 'PERSON', 'UPD')
-            # self._process_betasks('ODOO', 'PERSON', 'DEACT')
+            self._process_betasks('ODOO', 'PERSON', 'ADD')
+            self._process_betasks('ODOO', 'PERSON', 'UPD')
+            self._process_betasks('ODOO', 'PERSON', 'DEACT')
 
             # =====================================================
             # PHASE 2: Sync PPSBR PropRelation Objects
@@ -891,9 +891,9 @@ class InformatService(models.AbstractModel):
                 return False
 
             # Process DB-PROPRELATION tasks
-            # self._process_betasks('DB', 'PROPRELATION', 'ADD')
-            # self._process_betasks('DB', 'PROPRELATION', 'UPD')
-            # self._process_betasks('DB', 'PROPRELATION', 'DEACT')
+            self._process_betasks('DB', 'PROPRELATION', 'ADD')
+            self._process_betasks('DB', 'PROPRELATION', 'UPD')
+            self._process_betasks('DB', 'PROPRELATION', 'DEACT')
 
             # =====================================================
             # PHASE 2b: Sync Odoo Group Memberships (NEW!)
@@ -1703,12 +1703,6 @@ class InformatService(models.AbstractModel):
 # | DB     | PROPRELATION | DEACT  |
 #
 # =============================================================================
-
-
-
-
-
-
 
 
     def _analyze_student_data_and_create_org_tasks(self, all_registrations: Dict[str, str]) -> bool:

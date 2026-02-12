@@ -173,6 +173,13 @@
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_sync_test_runner"
+              name="Sync Test Runner"
+              parent="menu_integrations"
+              action="action_sync_test_runner"
+              sequence="30"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <!-- ========================================= -->
     <!-- CONFIG ITEMS (sequence: 60) -->
     <!-- ========================================= -->
