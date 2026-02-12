@@ -2152,375 +2152,213 @@ class BeTaskProcessor(models.AbstractModel):
     # PERSON TREE POSITION - WITH DEBUG LOGGING
     # =========================================================================
 
+    def _resolve_school_org(self, org):
+        """Resolve an org to its non-administrative ancestor via ORG-TREE.
+        Returns the org itself if it's already non-administrative."""
+        if not org or not org.is_administrative:
+            return org
+        non_admin = self._find_non_administrative_parent_org(org)
+        return non_admin or org
+
     def _update_person_tree_position(self, person) -> bool:
         """
-        Determine and update the Person's position in the Org tree.
-        
-        Logic:
+        Determine and update the Person's positions in the Org tree.
+
+        Creates one PERSON-TREE entry per distinct role:
         1. Get all active PPSBR records for the person
-        2. Order by role priority (lowest number = highest priority)
-        3. If multiple roles have same priority, use alphabetically first
-           and create a sysevent for admin review
-        4. Find the corresponding Org via BRSO PropRelation
-        5. Create/update PERSON-TREE PropRelation
-        
+        2. Group by distinct role (deduplicate across administrative orgs)
+        3. For each role, find the target org via BRSO (resolving admin orgs)
+        4. Create/update PERSON-TREE PropRelations
+        5. Deactivate PERSON-TREE entries for roles no longer active
+
         @param person: Person record
         @return: True if successful
         """
         _logger.info(f'========== START: Updating Org tree position for person: {person.name} (ID: {person.id}) ==========')
-        
+
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        
+
         try:
             # -----------------------------------------------------------------
-            # Step 1: Get PPSBR PropRelationType
+            # Step 1: Get required PropRelationTypes
             # -----------------------------------------------------------------
-            _logger.debug(f'[TREE-POS] Step 1: Looking for PPSBR PropRelationType...')
-            
             ppsbr_type = PropRelationType.search([
                 ('name', '=', self.PROPRELATION_TYPE_PPSBR)
             ], limit=1)
-            
+
             if not ppsbr_type:
-                _logger.warning(f'[TREE-POS] PPSBR PropRelationType not found! Constant value: {self.PROPRELATION_TYPE_PPSBR}')
-                _logger.debug(f'[TREE-POS] Available PropRelationTypes: {PropRelationType.search([]).mapped("name")}')
+                _logger.warning(f'[TREE-POS] PPSBR PropRelationType not found!')
                 return False
-            
-            _logger.debug(f'[TREE-POS] Found PPSBR type: ID={ppsbr_type.id}, name={ppsbr_type.name}')
-            
-            # -----------------------------------------------------------------
-            # Step 2: Get all active PPSBR records for this person
-            # -----------------------------------------------------------------
-            _logger.debug(f'[TREE-POS] Step 2: Searching PPSBR records for person {person.id}...')
-            
-            search_domain = [
-                ('id_person', '=', person.id),
-                ('proprelation_type_id', '=', ppsbr_type.id),
-                ('is_active', '=', True),
-                ('id_role', '!=', False)
-            ]
-            _logger.debug(f'[TREE-POS] Search domain: {search_domain}')
-            
-            ppsbr_records = PropRelation.search(search_domain)
-            
-            _logger.info(f'[TREE-POS] Found {len(ppsbr_records)} PPSBR records for {person.name}')
-            
-            if not ppsbr_records:
-                _logger.info(f'[TREE-POS] No active PPSBR records found - checking if PERSON-TREE should be deactivated')
 
-                # Deactivate any existing active PERSON-TREE proprelations for this person
-                person_tree_type = PropRelationType.search([
-                    ('name', '=', self.PROPRELATION_TYPE_PERSON_TREE)
-                ], limit=1)
-
-                if person_tree_type:
-                    existing_tree_records = PropRelation.search([
-                        ('id_person', '=', person.id),
-                        ('proprelation_type_id', '=', person_tree_type.id),
-                        ('is_active', '=', True)
-                    ])
-
-                    if existing_tree_records:
-                        for tree_record in existing_tree_records:
-                            _logger.info(
-                                f'[TREE-POS] Deactivating PERSON-TREE {tree_record.id} for {person.name} '
-                                f'(no active PPSBR relations remaining)'
-                            )
-                            tree_record.write({'is_active': False})
-                        _logger.info(f'[TREE-POS] Deactivated {len(existing_tree_records)} PERSON-TREE record(s)')
-                    else:
-                        _logger.debug(f'[TREE-POS] No active PERSON-TREE records to deactivate')
-                else:
-                    _logger.debug(f'[TREE-POS] PERSON-TREE type not found - nothing to deactivate')
-
-                return True
-            
-            # Log all found PPSBR records
-            for idx, ppsbr in enumerate(ppsbr_records):
-                _logger.debug(
-                    f'[TREE-POS] PPSBR #{idx + 1}: '
-                    f'ID={ppsbr.id}, '
-                    f'name={ppsbr.name}, '
-                    f'role={ppsbr.id_role.name if ppsbr.id_role else "None"} (ID: {ppsbr.id_role.id if ppsbr.id_role else "None"}), '
-                    f'org={ppsbr.id_org.name if ppsbr.id_org else "None"} (ID: {ppsbr.id_org.id if ppsbr.id_org else "None"}), '
-                    f'period={ppsbr.id_period.name if ppsbr.id_period else "None"}, '
-                    f'priority={ppsbr.priority}'
-                )
-            
-            # -----------------------------------------------------------------
-            # Step 3: Build list with priorities and sort
-            # -----------------------------------------------------------------
-            _logger.debug(f'[TREE-POS] Step 3: Building priority list and sorting...')
-            
-            ppsbr_with_priority = []
-            
-            for ppsbr in ppsbr_records:
-                role = ppsbr.id_role
-                if role:
-                    priority = ppsbr.priority
-                    if priority is None or priority == 0:
-                        priority = getattr(role, 'priority', None)
-                    if priority is None or priority == 0:
-                        priority = 9999
-                    
-                    role_name = role.name or ''
-                    
-                    _logger.debug(
-                        f'[TREE-POS] Processing PPSBR {ppsbr.id}: '
-                        f'role={role_name}, '
-                        f'ppsbr.priority={ppsbr.priority}, '
-                        f'role.priority={getattr(role, "priority", "N/A")}, '
-                        f'final_priority={priority}'
-                    )
-                    
-                    ppsbr_with_priority.append((ppsbr, role, priority, role_name))
-                else:
-                    _logger.warning(f'[TREE-POS] PPSBR {ppsbr.id} has no role - skipping')
-            
-            if not ppsbr_with_priority:
-                _logger.warning(f'[TREE-POS] No PPSBR records with valid roles for {person.name}')
-                return True
-            
-            _logger.debug(f'[TREE-POS] Before sorting - {len(ppsbr_with_priority)} records:')
-            for ppsbr, role, priority, role_name in ppsbr_with_priority:
-                _logger.debug(f'[TREE-POS]   - {role_name}: priority={priority}')
-            
-            # Sort by priority (ascending), then by role name (alphabetically)
-            ppsbr_with_priority.sort(key=lambda x: (x[2], x[3]))
-            
-            _logger.debug(f'[TREE-POS] After sorting:')
-            for ppsbr, role, priority, role_name in ppsbr_with_priority:
-                _logger.debug(f'[TREE-POS]   - {role_name}: priority={priority}')
-            
-            # -----------------------------------------------------------------
-            # Step 4: Check for same priority conflicts
-            # -----------------------------------------------------------------
-            _logger.debug(f'[TREE-POS] Step 4: Checking for priority conflicts...')
-            
-            highest_priority = ppsbr_with_priority[0][2]
-            same_priority_records = [x for x in ppsbr_with_priority if x[2] == highest_priority]
-            
-            _logger.debug(f'[TREE-POS] Highest priority value: {highest_priority}')
-            _logger.debug(f'[TREE-POS] Records with highest priority: {len(same_priority_records)}')
-            
-            if len(same_priority_records) > 1:
-                role_names = [x[3] for x in same_priority_records]
-                warning_msg = (
-                    f'Person {person.name} has {len(same_priority_records)} roles with same priority {highest_priority}: '
-                    f'{", ".join(role_names)}. Using alphabetically first: {role_names[0]}. '
-                    f'Please review and adjust role priorities if needed.'
-                )
-                
-                _logger.warning(f'[TREE-POS] PRIORITY CONFLICT: {warning_msg}')
-                
-                self._log_event('PROPREL-PRIORITY', warning_msg)
-            
-            # Select the winner
-            selected_ppsbr, selected_role, selected_priority, selected_role_name = ppsbr_with_priority[0]
-            
-            _logger.info(
-                f'[TREE-POS] SELECTED: role={selected_role_name} (ID: {selected_role.id}), '
-                f'priority={selected_priority}, ppsbr_id={selected_ppsbr.id}'
-            )
-            
-            # -----------------------------------------------------------------
-            # Step 5: Find Org via BRSO PropRelation
-            # NOTE: BRSO relations are ALWAYS linked to Backend Roles, never SAP Roles.
-            # The id_role in PPSBR should already be a Backend Role.
-            # -----------------------------------------------------------------
-            _logger.debug(f'[TREE-POS] Step 5: Looking for BRSO PropRelationType...')
-            
-            brso_type = PropRelationType.search([
-                ('name', '=', self.PROPRELATION_TYPE_BRSO)
-            ], limit=1)
-            
-            target_org = None
-            
-            if brso_type:
-                _logger.debug(f'[TREE-POS] Found BRSO type: ID={brso_type.id}')
-                
-                # Validate: Check if selected_role is a Backend Role (optional safety check)
-                # Backend Roles typically have role_type_id.name = 'BACKEND'
-                if selected_role.role_type_id:
-                    role_type_name = selected_role.role_type_id.name
-                    if role_type_name and role_type_name.upper() == 'SAP':
-                        _logger.warning(
-                            f'[TREE-POS] WARNING: selected_role {selected_role.name} appears to be a SAP Role '
-                            f'(role_type={role_type_name}). BRSO lookup may fail. '
-                            f'PPSBR.id_role should contain Backend Roles, not SAP Roles!'
-                        )
-                    else:
-                        _logger.debug(f'[TREE-POS] Role type: {role_type_name}')
-                
-                # Search BRSO using the Backend Role from PPSBR
-                brso_search_domain = [
-                    ('id_role', '=', selected_role.id),
-                    ('proprelation_type_id', '=', brso_type.id),
-                    ('is_active', '=', True),
-                    ('id_org', '!=', False)
-                ]
-                _logger.debug(f'[TREE-POS] BRSO search domain: {brso_search_domain}')
-                
-                brso_relation = PropRelation.search(brso_search_domain, limit=1)
-                
-                if brso_relation:
-                    target_org = brso_relation.id_org
-                    _logger.info(
-                        f'[TREE-POS] Found Org via BRSO: {target_org.name} (ID: {target_org.id}), '
-                        f'brso_relation_id={brso_relation.id}'
-                    )
-                else:
-                    _logger.warning(
-                        f'[TREE-POS] No BRSO relation found for role {selected_role.name} (ID: {selected_role.id})'
-                    )
-                    all_brso = PropRelation.search([
-                        ('proprelation_type_id', '=', brso_type.id),
-                        ('is_active', '=', True)
-                    ])
-                    _logger.debug(f'[TREE-POS] All active BRSO relations ({len(all_brso)}):')
-                    for brso in all_brso:
-                        _logger.debug(
-                            f'[TREE-POS]   - BRSO {brso.id}: '
-                            f'role={brso.id_role.name if brso.id_role else "None"} (ID: {brso.id_role.id if brso.id_role else "None"}), '
-                            f'org={brso.id_org.name if brso.id_org else "None"}'
-                        )
-            else:
-                _logger.warning(f'[TREE-POS] BRSO PropRelationType not found! Constant value: {self.PROPRELATION_TYPE_BRSO}')
-            
-            # Fallback: use the Org from the PPSBR record
-            if not target_org and selected_ppsbr.id_org:
-                target_org = selected_ppsbr.id_org
-                _logger.info(
-                    f'[TREE-POS] FALLBACK: Using Org from PPSBR: {target_org.name} (ID: {target_org.id})'
-                )
-            
-            if not target_org:
-                _logger.warning(f'[TREE-POS] No target Org found for {person.name} - cannot create PERSON-TREE')
-                return True
-            
-            # -----------------------------------------------------------------
-            # Step 5b: If target_org is administrative, find non-administrative parent
-            # -----------------------------------------------------------------
-            if target_org.is_administrative:
-                _logger.debug(
-                    f'[TREE-POS] Target Org {target_org.name} is administrative (is_administrative=True), '
-                    f'searching for non-administrative parent...'
-                )
-                
-                original_org = target_org
-                non_admin_org = self._find_non_administrative_parent_org(target_org)
-                
-                if non_admin_org:
-                    _logger.info(
-                        f'[TREE-POS] Found non-administrative parent: {non_admin_org.name} (ID: {non_admin_org.id}) '
-                        f'for administrative org {original_org.name}'
-                    )
-                    target_org = non_admin_org
-                else:
-                    _logger.warning(
-                        f'[TREE-POS] No non-administrative parent found for {original_org.name}, '
-                        f'using original administrative org'
-                    )
-            
-            # -----------------------------------------------------------------
-            # Step 6: Get/Create PERSON-TREE PropRelationType
-            # -----------------------------------------------------------------
-            _logger.debug(f'[TREE-POS] Step 6: Looking for PERSON-TREE PropRelationType...')
-            
             person_tree_type = PropRelationType.search([
                 ('name', '=', self.PROPRELATION_TYPE_PERSON_TREE)
             ], limit=1)
-            
             if not person_tree_type:
-                _logger.info(f'[TREE-POS] PERSON-TREE type not found, creating...')
                 person_tree_type = PropRelationType.create({
                     'name': self.PROPRELATION_TYPE_PERSON_TREE,
                     'usage': 'Defines Person position in Org tree',
                     'is_active': True
                 })
-                _logger.info(f'[TREE-POS] Created PERSON-TREE type: ID={person_tree_type.id}')
-            else:
-                _logger.debug(f'[TREE-POS] Found PERSON-TREE type: ID={person_tree_type.id}')
-            
+
+            brso_type = PropRelationType.search([
+                ('name', '=', self.PROPRELATION_TYPE_BRSO)
+            ], limit=1)
+
             # -----------------------------------------------------------------
-            # Step 7: Find existing PERSON-TREE record
+            # Step 2: Get all active PPSBR records for this person
             # -----------------------------------------------------------------
-            _logger.debug(f'[TREE-POS] Step 7: Searching for existing PERSON-TREE record...')
-            
-            existing_tree_domain = [
+            ppsbr_records = PropRelation.search([
+                ('id_person', '=', person.id),
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('is_active', '=', True),
+                ('id_role', '!=', False)
+            ])
+
+            _logger.info(f'[TREE-POS] Found {len(ppsbr_records)} PPSBR records for {person.name}')
+
+            # Get all existing active PERSON-TREE records for this person
+            existing_trees = PropRelation.search([
                 ('id_person', '=', person.id),
                 ('proprelation_type_id', '=', person_tree_type.id),
                 ('is_active', '=', True)
-            ]
-            _logger.debug(f'[TREE-POS] Existing PERSON-TREE search domain: {existing_tree_domain}')
-            
-            existing_tree = PropRelation.search(existing_tree_domain, limit=1)
-            
-            if existing_tree:
-                _logger.debug(
-                    f'[TREE-POS] Found existing PERSON-TREE: ID={existing_tree.id}, '
-                    f'current_org={existing_tree.id_org.name if existing_tree.id_org else "None"} '
-                    f'(ID: {existing_tree.id_org.id if existing_tree.id_org else "None"})'
-                )
-            else:
-                _logger.debug(f'[TREE-POS] No existing PERSON-TREE found')
-            
+            ])
+
+            if not ppsbr_records:
+                _logger.info(f'[TREE-POS] No active PPSBR records - deactivating all PERSON-TREE entries')
+                for tree_record in existing_trees:
+                    tree_record.write({'is_active': False})
+                    _logger.info(f'[TREE-POS] Deactivated PERSON-TREE {tree_record.id}')
+                return True
+
             # -----------------------------------------------------------------
-            # Step 8: Prepare values and Create/Update PERSON-TREE
+            # Step 3: Group PPSBR records by distinct role, pick one representative per role
             # -----------------------------------------------------------------
-            _logger.debug(f'[TREE-POS] Step 8: Preparing PERSON-TREE values...')
-            
-            # Build standardized name
-            name_kwargs = {
-                'id_person': person,
-                'id_org': target_org,
-                'id_role': selected_role
-            }
-            if selected_ppsbr.id_period:
-                name_kwargs['id_period'] = selected_ppsbr.id_period
-            
-            tree_name = build_proprelation_name(self.PROPRELATION_TYPE_PERSON_TREE, **name_kwargs)
-            
-            tree_vals = {
-                'name': tree_name,
-                'proprelation_type_id': person_tree_type.id,
-                'id_person': person.id,
-                'id_org': target_org.id,
-                'id_org_parent': target_org.id,
-                'id_role': selected_role.id,
-                'is_active': True,
-                'is_organisational': True,
-                'automatic_sync': True,
-            }
-            
-            if selected_ppsbr.id_period:
-                tree_vals['id_period'] = selected_ppsbr.id_period.id
-                _logger.debug(f'[TREE-POS] Including period: {selected_ppsbr.id_period.name}')
-            
-            _logger.debug(f'[TREE-POS] PERSON-TREE values: {tree_vals}')
-            
-            if existing_tree:
-                old_org_id = existing_tree.id_org.id if existing_tree.id_org else None
-                old_org_name = existing_tree.id_org.name if existing_tree.id_org else "None"
-                
-                if old_org_id != target_org.id:
-                    _logger.info(
-                        f'[TREE-POS] ORG CHANGED: {old_org_name} (ID: {old_org_id}) -> '
-                        f'{target_org.name} (ID: {target_org.id})'
-                    )
+            role_ppsbr_map = {}  # role_id -> (ppsbr, role, priority, role_name)
+            for ppsbr in ppsbr_records:
+                role = ppsbr.id_role
+                if not role:
+                    continue
+                priority = ppsbr.priority
+                if not priority:
+                    priority = getattr(role, 'priority', None)
+                if not priority:
+                    priority = 9999
+                role_name = role.name or ''
+
+                # Keep the first PPSBR per role (they all resolve to the same school)
+                if role.id not in role_ppsbr_map:
+                    role_ppsbr_map[role.id] = (ppsbr, role, priority, role_name)
+
+            if not role_ppsbr_map:
+                _logger.warning(f'[TREE-POS] No PPSBR records with valid roles for {person.name}')
+                return True
+
+            _logger.info(f'[TREE-POS] Distinct roles: {[v[3] for v in role_ppsbr_map.values()]}')
+
+            # -----------------------------------------------------------------
+            # Step 4: For each role, find target org via BRSO and create/update PERSON-TREE
+            # -----------------------------------------------------------------
+            # Index existing PERSON-TREE by role_id for efficient lookup
+            existing_by_role = {}
+            for tree in existing_trees:
+                if tree.id_role:
+                    existing_by_role[tree.id_role.id] = tree
+
+            processed_role_ids = set()
+
+            for role_id, (selected_ppsbr, selected_role, priority, role_name) in role_ppsbr_map.items():
+                _logger.info(f'[TREE-POS] Processing role: {role_name} (ID: {role_id}, priority: {priority})')
+
+                target_org = None
+
+                if brso_type:
+                    # Resolve the PPSBR school org to its non-administrative ancestor
+                    ppsbr_school = selected_ppsbr.id_org_parent or selected_ppsbr.id_org
+                    if ppsbr_school:
+                        ppsbr_school = self._resolve_school_org(ppsbr_school)
+
+                    brso_search_domain = [
+                        ('id_role', '=', selected_role.id),
+                        ('proprelation_type_id', '=', brso_type.id),
+                        ('is_active', '=', True),
+                        ('id_org', '!=', False),
+                    ]
+                    if ppsbr_school:
+                        brso_search_domain.append(('id_org_parent', '=', ppsbr_school.id))
+
+                    brso_relation = PropRelation.search(brso_search_domain, limit=1)
+
+                    if brso_relation:
+                        target_org = brso_relation.id_org
+                        _logger.info(f'[TREE-POS] Found Org via BRSO: {target_org.name} (brso_id={brso_relation.id})')
+
+                # Fallback: use the Org from the PPSBR record
+                if not target_org and selected_ppsbr.id_org:
+                    target_org = selected_ppsbr.id_org
+                    _logger.info(f'[TREE-POS] FALLBACK: Using Org from PPSBR: {target_org.name}')
+
+                if not target_org:
+                    _logger.warning(f'[TREE-POS] No target Org for role {role_name} - skipping')
+                    continue
+
+                # If target_org is administrative, resolve to non-administrative parent
+                if target_org.is_administrative:
+                    resolved = self._find_non_administrative_parent_org(target_org)
+                    if resolved:
+                        _logger.info(f'[TREE-POS] Resolved admin org {target_org.name} -> {resolved.name}')
+                        target_org = resolved
+
+                # Build PERSON-TREE values
+                name_kwargs = {
+                    'id_person': person,
+                    'id_org': target_org,
+                    'id_role': selected_role
+                }
+                if selected_ppsbr.id_period:
+                    name_kwargs['id_period'] = selected_ppsbr.id_period
+
+                tree_name = build_proprelation_name(self.PROPRELATION_TYPE_PERSON_TREE, **name_kwargs)
+
+                tree_vals = {
+                    'name': tree_name,
+                    'proprelation_type_id': person_tree_type.id,
+                    'id_person': person.id,
+                    'id_org': target_org.id,
+                    'id_org_parent': target_org.id,
+                    'id_role': selected_role.id,
+                    'is_active': True,
+                    'is_organisational': True,
+                    'automatic_sync': True,
+                }
+                if selected_ppsbr.id_period:
+                    tree_vals['id_period'] = selected_ppsbr.id_period.id
+
+                # Update existing or create new PERSON-TREE for this role
+                existing_tree = existing_by_role.get(role_id)
+                if existing_tree:
+                    existing_tree.write(tree_vals)
+                    _logger.info(f'[TREE-POS] UPDATED PERSON-TREE: ID={existing_tree.id}, role={role_name} -> {target_org.name}')
                 else:
-                    _logger.debug(f'[TREE-POS] Org unchanged: {target_org.name}')
-                
-                existing_tree.write(tree_vals)
-                _logger.info(f'[TREE-POS] UPDATED PERSON-TREE: ID={existing_tree.id}')
-            else:
-                new_tree = PropRelation.create(tree_vals)
-                _logger.info(f'[TREE-POS] CREATED PERSON-TREE: ID={new_tree.id}, {person.name} -> {target_org.name}')
-            
+                    new_tree = PropRelation.create(tree_vals)
+                    _logger.info(f'[TREE-POS] CREATED PERSON-TREE: ID={new_tree.id}, role={role_name} -> {target_org.name}')
+
+                processed_role_ids.add(role_id)
+
+            # -----------------------------------------------------------------
+            # Step 5: Deactivate PERSON-TREE entries for roles no longer in PPSBR
+            # -----------------------------------------------------------------
+            for tree in existing_trees:
+                if tree.id_role and tree.id_role.id not in processed_role_ids:
+                    _logger.info(
+                        f'[TREE-POS] Deactivating PERSON-TREE {tree.id} for role '
+                        f'{tree.id_role.name} (no longer in active PPSBR)'
+                    )
+                    tree.write({'is_active': False})
+
             _logger.info(f'========== END: Successfully updated Org tree position for {person.name} ==========')
             return True
-            
+
         except Exception as e:
             _logger.error(f'[TREE-POS] EXCEPTION: {str(e)}')
             _logger.error(f'[TREE-POS] Traceback: {traceback.format_exc()}')
@@ -2534,56 +2372,55 @@ class BeTaskProcessor(models.AbstractModel):
     def _find_non_administrative_parent_org(self, org, max_depth: int = 10):
         """
         Find the first non-administrative parent Org in the hierarchy.
-        
-        Traverses up the Org tree (via id_org_parent or parent_id) until it finds
+
+        Traverses up the Org tree via ORG-TREE proprelations until it finds
         an Org where is_administrative = False.
-        
+
         @param org: Starting Org record (administrative)
         @param max_depth: Maximum levels to traverse (prevent infinite loops)
         @return: Non-administrative Org or None if not found
         """
         _logger.debug(f'[TREE-POS] Searching non-administrative parent for: {org.name}')
-        
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        if not org_tree_type:
+            _logger.warning('[TREE-POS] ORG-TREE type not found - cannot traverse org hierarchy')
+            return None
+
         current_org = org
-        depth = 0
-        
-        while current_org and depth < max_depth:
-            depth += 1
-            
-            # Try to get parent org (check common field names)
-            parent_org = None
-            
-            # Try id_org_parent first (common in PropRelation-style models)
-            if hasattr(current_org, 'id_org_parent') and current_org.id_org_parent:
-                parent_org = current_org.id_org_parent
-            # Try parent_id (common Odoo convention)
-            elif hasattr(current_org, 'parent_id') and current_org.parent_id:
-                parent_org = current_org.parent_id
-            # Try org_parent_id
-            elif hasattr(current_org, 'org_parent_id') and current_org.org_parent_id:
-                parent_org = current_org.org_parent_id
-            
-            if not parent_org:
+
+        for depth in range(1, max_depth + 1):
+            parent_rel = PropRelation.search([
+                ('id_org', '=', current_org.id),
+                ('id_org_parent', '!=', False),
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('is_active', '=', True),
+            ], limit=1)
+
+            if not parent_rel or not parent_rel.id_org_parent:
                 _logger.debug(
-                    f'[TREE-POS] No parent found for {current_org.name} at depth {depth}'
+                    f'[TREE-POS] No ORG-TREE parent found for {current_org.name} at depth {depth}'
                 )
                 return None
-            
+
+            parent_org = parent_rel.id_org_parent
+
             _logger.debug(
                 f'[TREE-POS] Depth {depth}: Checking parent {parent_org.name} '
                 f'(is_administrative={parent_org.is_administrative})'
             )
-            
-            # Check if this parent is non-administrative
+
             if not parent_org.is_administrative:
                 _logger.debug(
                     f'[TREE-POS] Found non-administrative org at depth {depth}: {parent_org.name}'
                 )
                 return parent_org
-            
-            # Move up to next parent
+
             current_org = parent_org
-        
+
         _logger.warning(
             f'[TREE-POS] Max depth ({max_depth}) reached without finding non-administrative parent'
         )
