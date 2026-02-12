@@ -2798,51 +2798,56 @@ class ManageOrgRolesWizard(models.TransientModel):
     )
 
     @api.model
-    def default_get(self, fields_list):
-        """Load existing BRSO relations as lines and set default school."""
-        res = super().default_get(fields_list)
+    def action_open(self, org_id, org_name):
+        """Create the wizard with lines saved to DB and return the action to open it."""
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
 
-        if 'org_id' in res and res['org_id']:
-            org_id = res['org_id']
-            PropRelation = self.env['myschool.proprelation']
-            PropRelationType = self.env['myschool.proprelation.type']
+        # Determine default school from ORG-TREE
+        school_id = False
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        search_domain = [
+            ('id_org', '=', org_id),
+            ('id_org_parent', '!=', False),
+            ('is_active', '=', True),
+        ]
+        if org_tree_type:
+            search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+        parent_rel = PropRelation.search(search_domain, limit=1)
+        if parent_rel and parent_rel.id_org_parent:
+            school_id = parent_rel.id_org_parent.id
 
-            # Get ORG-TREE type
-            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-
-            # Try to find parent org (school) via ORG-TREE relation only
-            search_domain = [
+        # Build line vals from BRSO relations
+        lines = []
+        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+        if brso_type:
+            relations = PropRelation.search([
+                ('proprelation_type_id', '=', brso_type.id),
                 ('id_org', '=', org_id),
-                ('id_org_parent', '!=', False),
+                ('id_role', '!=', False),
                 ('is_active', '=', True),
-            ]
-            if org_tree_type:
-                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+            ])
+            for rel in relations:
+                lines.append((0, 0, {
+                    'proprelation_id': rel.id,
+                    'role_name': rel.id_role.name if rel.id_role else '',
+                    'is_active': rel.is_active,
+                }))
 
-            parent_rel = PropRelation.search(search_domain, limit=1)
+        wizard = self.create({
+            'org_id': org_id,
+            'org_name': org_name,
+            'school_id': school_id,
+            'line_ids': lines,
+        })
 
-            if parent_rel and parent_rel.id_org_parent:
-                res['school_id'] = parent_rel.id_org_parent.id
-
-            brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
-            if brso_type:
-                relations = PropRelation.search([
-                    ('proprelation_type_id', '=', brso_type.id),
-                    ('id_org', '=', org_id),
-                    ('id_role', '!=', False),
-                    ('is_active', '=', True),
-                ])
-                
-                lines = []
-                for rel in relations:
-                    lines.append((0, 0, {
-                        'proprelation_id': rel.id,
-                        'role_name': rel.id_role.name if rel.id_role else '',
-                        'is_active': rel.is_active,
-                    }))
-                res['line_ids'] = lines
-        
-        return res
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': wizard.id,
+            'views': [(False, 'form')],
+            'target': 'new',
+        }
 
     def action_add_role(self):
         """Add the selected role to the organization."""
@@ -2905,19 +2910,9 @@ class ManageOrgRolesWizard(models.TransientModel):
                 'id_role': self.new_role_id.id,
                 'is_active': True,
             })
-        
-        # Reopen wizard to show updated list
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.manage.org.roles.wizard',
-            'view_mode': 'form',
-            'target': 'new',
-            'context': {
-                'default_org_id': self.org_id.id,
-                'default_org_name': self.org_name,
-                'default_school_id': self.school_id.id,
-            },
-        }
+
+        # Reopen wizard with saved records
+        return self.action_open(self.org_id.id, self.org_name)
 
     def action_close(self):
         """Close the wizard."""
@@ -2945,45 +2940,51 @@ class ManagePersonRolesWizard(models.TransientModel):
     )
 
     @api.model
-    def default_get(self, fields_list):
-        """Load existing PPSBR relations as lines."""
-        res = super().default_get(fields_list)
-        
-        if 'person_id' in res and res['person_id']:
-            person_id = res['person_id']
-            PropRelation = self.env['myschool.proprelation']
-            PropRelationType = self.env['myschool.proprelation.type']
-            
-            ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
-            if ppsbr_type:
-                relations = PropRelation.search([
-                    ('proprelation_type_id', '=', ppsbr_type.id),
-                    ('id_person', '=', person_id),
-                    ('id_role', '!=', False),
-                    ('is_active', '=', True),
-                ])
-                
-                lines = []
-                for rel in relations:
-                    lines.append((0, 0, {
-                        'proprelation_id': rel.id,
-                        'role_name': rel.id_role.name if rel.id_role else '',
-                        'is_active': rel.is_active,
-                    }))
-                res['line_ids'] = lines
-        
-        return res
+    def action_open(self, person_id, person_name):
+        """Create the wizard with lines saved to DB and return the action to open it."""
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        lines = []
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if ppsbr_type:
+            relations = PropRelation.search([
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('id_person', '=', person_id),
+                ('id_role', '!=', False),
+                ('is_active', '=', True),
+            ])
+            for rel in relations:
+                lines.append((0, 0, {
+                    'proprelation_id': rel.id,
+                    'role_name': rel.id_role.name if rel.id_role else '',
+                    'is_active': rel.is_active,
+                }))
+
+        wizard = self.create({
+            'person_id': person_id,
+            'person_name': person_name,
+            'line_ids': lines,
+        })
+
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': wizard.id,
+            'views': [(False, 'form')],
+            'target': 'new',
+        }
 
     def action_add_role(self):
         """Add the selected role to the person."""
         self.ensure_one()
-        
+
         if not self.new_role_id:
             raise UserError("Please select a role to add.")
-        
+
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        
+
         # Get or create PPSBR proprelation type
         ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
         if not ppsbr_type:
@@ -2992,7 +2993,7 @@ class ManagePersonRolesWizard(models.TransientModel):
                 'usage': 'Person - Role relation',
                 'is_active': True,
             })
-        
+
         # Check if relation already exists
         existing = PropRelation.search([
             ('proprelation_type_id', '=', ppsbr_type.id),
@@ -3000,10 +3001,10 @@ class ManagePersonRolesWizard(models.TransientModel):
             ('id_role', '=', self.new_role_id.id),
             ('is_active', '=', True),
         ], limit=1)
-        
+
         if existing:
             raise UserError(f"Role '{self.new_role_id.name}' is already linked to this person.")
-        
+
         # Check for inactive and reactivate
         inactive = PropRelation.search([
             ('proprelation_type_id', '=', ppsbr_type.id),
@@ -3011,7 +3012,7 @@ class ManagePersonRolesWizard(models.TransientModel):
             ('id_role', '=', self.new_role_id.id),
             ('is_active', '=', False),
         ], limit=1)
-        
+
         if inactive:
             inactive.write({'is_active': True})
         else:
@@ -3028,18 +3029,9 @@ class ManagePersonRolesWizard(models.TransientModel):
                 'id_role': self.new_role_id.id,
                 'is_active': True,
             })
-        
-        # Reopen wizard to show updated list
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.manage.person.roles.wizard',
-            'view_mode': 'form',
-            'target': 'new',
-            'context': {
-                'default_person_id': self.person_id.id,
-                'default_person_name': self.person_name,
-            },
-        }
+
+        # Reopen wizard with saved records
+        return self.action_open(self.person_id.id, self.person_name)
 
     def action_close(self):
         """Close the wizard."""

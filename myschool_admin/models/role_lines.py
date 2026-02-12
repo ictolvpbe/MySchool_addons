@@ -19,21 +19,17 @@ class OrgRoleLine(models.TransientModel):
     def action_remove(self):
         """Remove (deactivate) this role relation."""
         self.ensure_one()
-        if self.proprelation_id:
-            self.proprelation_id.write({'is_active': False})
-        
-        # Reopen wizard to show updated list
-        wizard = self.wizard_id
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.manage.org.roles.wizard',
-            'view_mode': 'form',
-            'target': 'new',
-            'context': {
-                'default_org_id': wizard.org_id.id if wizard.org_id else False,
-                'default_org_name': wizard.org_name,
-            },
-        }
+        proprelation = self.proprelation_id
+        if proprelation:
+            proprelation.write({'is_active': False})
+
+        # Reopen wizard with saved records via action_open
+        org = proprelation.id_org if proprelation else False
+        Wizard = self.env['myschool.manage.org.roles.wizard']
+        return Wizard.action_open(
+            org.id if org else False,
+            org.name if org else '',
+        )
 
 
 class PersonRoleLine(models.TransientModel):
@@ -49,18 +45,14 @@ class PersonRoleLine(models.TransientModel):
     def action_remove(self):
         """Remove (deactivate) this role relation."""
         self.ensure_one()
-        if self.proprelation_id:
-            self.proprelation_id.write({'is_active': False})
-        
-        # Reopen wizard to show updated list
-        wizard = self.wizard_id
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.manage.person.roles.wizard',
-            'view_mode': 'form',
-            'target': 'new',
-            'context': {
-                'default_person_id': wizard.person_id.id if wizard.person_id else False,
-                'default_person_name': wizard.person_name,
-            },
-        }
+        proprelation = self.proprelation_id
+        if proprelation:
+            proprelation.write({'is_active': False})
+
+        # Reopen wizard with saved records via action_open
+        person = proprelation.id_person if proprelation else False
+        Wizard = self.env['myschool.manage.person.roles.wizard']
+        return Wizard.action_open(
+            person.id if person else False,
+            person.name if person else '',
+        )

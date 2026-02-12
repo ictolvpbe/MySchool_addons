@@ -936,19 +936,15 @@ export class ObjectBrowserClient extends Component {
         });
     }
     
-    openManageOrgRolesWizard(orgNode) {
+    async openManageOrgRolesWizard(orgNode) {
         const orgId = orgNode.id;
         this.expandPathToOrg(orgId);
-        this.action.doAction({
-            type: 'ir.actions.act_window',
-            res_model: 'myschool.manage.org.roles.wizard',
-            views: [[false, 'form']],
-            target: 'new',
-            context: {
-                default_org_id: orgNode.id,
-                default_org_name: orgNode.name_tree || orgNode.name,
-            },
-        }, {
+        const action = await this.orm.call(
+            'myschool.manage.org.roles.wizard',
+            'action_open',
+            [orgNode.id, orgNode.name_tree || orgNode.name],
+        );
+        this.action.doAction(action, {
             onClose: async () => {
                 await this.loadData();
                 this.expandPathToOrg(orgId);
@@ -956,19 +952,15 @@ export class ObjectBrowserClient extends Component {
         });
     }
     
-    openManagePersonRolesWizard(personNode) {
+    async openManagePersonRolesWizard(personNode) {
         const orgId = personNode.org_id;
         if (orgId) this.expandPathToOrg(orgId);
-        this.action.doAction({
-            type: 'ir.actions.act_window',
-            res_model: 'myschool.manage.person.roles.wizard',
-            views: [[false, 'form']],
-            target: 'new',
-            context: {
-                default_person_id: personNode.id,
-                default_person_name: personNode.name,
-            },
-        }, {
+        const action = await this.orm.call(
+            'myschool.manage.person.roles.wizard',
+            'action_open',
+            [personNode.id, personNode.name],
+        );
+        this.action.doAction(action, {
             onClose: async () => {
                 await this.loadData();
                 if (orgId) this.expandPathToOrg(orgId);
