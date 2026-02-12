@@ -65,12 +65,17 @@
                             string="Retry" 
                             type="object" 
                             invisible="status != 'error'"/>
-                    <button name="action_force_reset" 
-                            string="Force Reset" 
-                            type="object" 
+                    <button name="action_force_reset"
+                            string="Force Reset"
+                            type="object"
                             class="btn-secondary"
                             invisible="status not in ['error', 'completed_ok']"
                             groups="base.group_system"/>
+                    <button name="action_reformat_json"
+                            string="Reformat JSON"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-indent"/>
                     <field name="status" widget="statusbar" statusbar_visible="new,processing,completed_ok"/>
                 </header>
                 <sheet>
@@ -120,6 +125,14 @@
                     </group>
                     <notebook>
                         <page string="Data" name="data">
+                            <group string="Primary Data">
+                                <field name="data_html" nolabel="1" colspan="2"/>
+                            </group>
+                            <group string="Secondary Data">
+                                <field name="data2_html" nolabel="1" colspan="2"/>
+                            </group>
+                        </page>
+                        <page string="Data (Edit)" name="data_edit">
                             <group>
                                 <field name="data" widget="ace" options="{'mode': 'json'}" placeholder="Primary task data (JSON)..."/>
                             </group>

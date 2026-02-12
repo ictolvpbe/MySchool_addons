@@ -2162,7 +2162,33 @@ class BeTaskProcessor(models.AbstractModel):
             _logger.info(f'[TREE-POS] Found {len(ppsbr_records)} PPSBR records for {person.name}')
             
             if not ppsbr_records:
-                _logger.info(f'[TREE-POS] No PPSBR records found - nothing to do')
+                _logger.info(f'[TREE-POS] No active PPSBR records found - checking if PERSON-TREE should be deactivated')
+
+                # Deactivate any existing active PERSON-TREE proprelations for this person
+                person_tree_type = PropRelationType.search([
+                    ('name', '=', self.PROPRELATION_TYPE_PERSON_TREE)
+                ], limit=1)
+
+                if person_tree_type:
+                    existing_tree_records = PropRelation.search([
+                        ('id_person', '=', person.id),
+                        ('proprelation_type_id', '=', person_tree_type.id),
+                        ('is_active', '=', True)
+                    ])
+
+                    if existing_tree_records:
+                        for tree_record in existing_tree_records:
+                            _logger.info(
+                                f'[TREE-POS] Deactivating PERSON-TREE {tree_record.id} for {person.name} '
+                                f'(no active PPSBR relations remaining)'
+                            )
+                            tree_record.write({'is_active': False})
+                        _logger.info(f'[TREE-POS] Deactivated {len(existing_tree_records)} PERSON-TREE record(s)')
+                    else:
+                        _logger.debug(f'[TREE-POS] No active PERSON-TREE records to deactivate')
+                else:
+                    _logger.debug(f'[TREE-POS] PERSON-TREE type not found - nothing to deactivate')
+
                 return True
             
             # Log all found PPSBR records

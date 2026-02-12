@@ -8,6 +8,8 @@ Tasks are created by various processes (sync, user actions, etc.)
 and processed by the BeTaskProcessor.
 """
 
+import json
+
 from odoo import models, fields, api, _
 from odoo.exceptions import ValidationError
 import logging
@@ -72,6 +74,18 @@ class BeTask(models.Model):
     data2 = fields.Text(
         string='Data 2',
         help='Secondary/additional data for task processing'
+    )
+
+    # Computed Html fields for formatted JSON display
+    data_html = fields.Html(
+        string='Data (Formatted)',
+        compute='_compute_json_html',
+        sanitize=False
+    )
+    data2_html = fields.Html(
+        string='Data 2 (Formatted)',
+        compute='_compute_json_html',
+        sanitize=False
     )
 
     changes = fields.Text(
@@ -332,3 +346,64 @@ class BeTask(models.Model):
                 name += f" [{record.betasktype_id.name}]"
             result.append((record.id, name))
         return result
+
+    # ==========================================================================
+    # JSON Formatting Methods
+    # ==========================================================================
+
+    @api.depends('data', 'data2')
+    def _compute_json_html(self):
+        """Convert JSON text fields to formatted HTML with <pre> tags."""
+        import html
+        for record in self:
+            for field_name in ['data', 'data2']:
+                value = getattr(record, field_name) or ''
+                # Escape HTML entities and wrap in <pre> for formatting
+                escaped = html.escape(value)
+                html_value = f'<pre style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-family: monospace; font-size: 12px;">{escaped}</pre>' if value else ''
+                setattr(record, f'{field_name}_html', html_value)
+
+    def _reformat_json_field(self, value):
+        """Reformat a JSON string with pretty-printing."""
+        if not value:
+            return value
+        try:
+            parsed = json.loads(value)
+            # Check if result is still a string (double-encoded JSON)
+            if isinstance(parsed, str):
+                try:
+                    parsed = json.loads(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            return json.dumps(parsed, indent=2, ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError) as e:
+            _logger.warning(f'Failed to parse JSON: {e}, value starts with: {value[:100] if value else "None"}')
+            return value
+
+    def action_reformat_json(self):
+        """Reformat data and data2 JSON fields with pretty-printing."""
+        self.ensure_one()
+        updates = {}
+        for field_name in ['data', 'data2']:
+            value = getattr(self, field_name)
+            _logger.info(f'BeTask {self.name}: checking field {field_name}, has_value={bool(value)}')
+            if value:
+                reformatted = self._reformat_json_field(value)
+                _logger.info(f'BeTask {self.name}: field {field_name} changed={reformatted != value}')
+                if reformatted and reformatted != value:
+                    updates[field_name] = reformatted
+                    _logger.info(f'BeTask {self.name}: field {field_name} will be reformatted')
+
+        _logger.info(f'BeTask {self.name}: total fields to update: {len(updates)}')
+        if updates:
+            self.write(updates)
+            _logger.info(f'Reformatted {len(updates)} JSON fields for BeTask {self.name}')
+
+        # Reload the form to show the updated JSON
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'myschool.betask',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
