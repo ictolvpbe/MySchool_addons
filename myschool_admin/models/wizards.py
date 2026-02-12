@@ -2778,12 +2778,13 @@ class ManageOrgRolesWizard(models.TransientModel):
     org_id = fields.Many2one('myschool.org', string='Organization', required=True, readonly=True)
     org_name = fields.Char(string='Organization Name', readonly=True)
     school_id = fields.Many2one(
-        'myschool.org', 
-        string='School', 
+        'myschool.org',
+        string='School',
         required=True,
+        domain="[('org_type_id.name', '=', 'SCHOOL')]",
         help='Select the school organization (parent)'
     )
-    
+
     line_ids = fields.One2many(
         'myschool.org.role.line',
         'wizard_id',
@@ -2803,19 +2804,25 @@ class ManageOrgRolesWizard(models.TransientModel):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
 
-        # Determine default school from ORG-TREE
+        # Traverse ORG-TREE upward to find the nearest parent with org_type SCHOOL
         school_id = False
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-        search_domain = [
-            ('id_org', '=', org_id),
-            ('id_org_parent', '!=', False),
-            ('is_active', '=', True),
-        ]
         if org_tree_type:
-            search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
-        parent_rel = PropRelation.search(search_domain, limit=1)
-        if parent_rel and parent_rel.id_org_parent:
-            school_id = parent_rel.id_org_parent.id
+            current_org_id = org_id
+            for _guard in range(10):  # prevent infinite loops
+                parent_rel = PropRelation.search([
+                    ('id_org', '=', current_org_id),
+                    ('id_org_parent', '!=', False),
+                    ('proprelation_type_id', '=', org_tree_type.id),
+                    ('is_active', '=', True),
+                ], limit=1)
+                if not parent_rel or not parent_rel.id_org_parent:
+                    break
+                parent_org = parent_rel.id_org_parent
+                if parent_org.org_type_id and parent_org.org_type_id.name == 'SCHOOL':
+                    school_id = parent_org.id
+                    break
+                current_org_id = parent_org.id
 
         # Build line vals from BRSO relations
         lines = []

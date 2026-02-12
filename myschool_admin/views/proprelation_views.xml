@@ -56,8 +56,11 @@
                         <page string="Organisatie Relaties" name="org_relations">
                             <group>
                                 <field name="id_org"/>
+                                <field name="id_org_name_tree"/>
                                 <field name="id_org_parent"/>
+                                <field name="id_org_parent_name_tree"/>
                                 <field name="id_org_child"/>
+                                <field name="id_org_child_name_tree"/>
                             </group>
                         </page>
 

@@ -27,6 +27,9 @@ class PropRelation(models.Model):
     id_org = fields.Many2one('myschool.org', string='Organisatie')
     id_org_parent = fields.Many2one('myschool.org', string='Parent Organisatie')  # Kind Org (idOrgChild) mist in PropRelation.java
     id_org_child = fields.Many2one('myschool.org', string='Child Organgistation')
+    id_org_name_tree = fields.Char(related='id_org.name_tree', string='Org Tree Name', readonly=True)
+    id_org_parent_name_tree = fields.Char(related='id_org_parent.name_tree', string='Parent Org Tree Name', readonly=True)
+    id_org_child_name_tree = fields.Char(related='id_org_child.name_tree', string='Child Org Tree Name', readonly=True)
 
     # Period Relaties
     id_period = fields.Many2one('myschool.period', string='Periode')
