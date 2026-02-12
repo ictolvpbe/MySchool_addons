@@ -537,13 +537,19 @@ class Person(models.Model):
         for record in self:
             old_values_map[record.id] = record._get_audit_values()
 
-        # Check if we're deactivating
+        # Check if we're deactivating or reactivating
         is_deactivation = 'is_active' in vals and vals['is_active'] is False
+        is_reactivation = 'is_active' in vals and vals['is_active'] is True
 
         if is_deactivation:
             for record in self:
                 if record.is_active:  # Was active, now being deactivated
                     record._on_deactivate()
+
+        if is_reactivation:
+            for record in self:
+                if not record.is_active:  # Was inactive, now being reactivated
+                    record._on_reactivate()
 
         result = super().write(vals)
 
@@ -623,6 +629,45 @@ class Person(models.Model):
         _logger.info(f'Deactivation complete for {self.name}: {", ".join(changes)}')
         return changes
 
+    def _on_reactivate(self):
+        """
+        Handle person reactivation - cascade to related records.
+
+        This method is called when a person is being reactivated.
+        It reactivates:
+        - Linked Odoo user (res.users)
+        - Linked HR employee (hr.employee)
+
+        Note: Proprelations are NOT reactivated as they depend on external sync/data.
+        """
+        self.ensure_one()
+        _logger.info(f'Reactivating person: {self.name} (ID: {self.id})')
+
+        changes = []
+
+        # Reactivate Odoo user
+        if self.odoo_user_id:
+            try:
+                self.odoo_user_id.with_context(active_test=False).write({'active': True})
+                changes.append(f'Odoo user {self.odoo_user_id.login} reactivated')
+                _logger.info(f'Reactivated Odoo user: {self.odoo_user_id.login}')
+            except Exception as e:
+                _logger.error(f'Failed to reactivate Odoo user: {e}')
+                changes.append(f'ERROR reactivating Odoo user: {e}')
+
+        # Reactivate HR employee
+        if self.odoo_employee_id:
+            try:
+                self.odoo_employee_id.with_context(active_test=False).write({'active': True})
+                changes.append(f'HR employee {self.odoo_employee_id.name} reactivated')
+                _logger.info(f'Reactivated HR employee: {self.odoo_employee_id.name}')
+            except Exception as e:
+                _logger.error(f'Failed to reactivate HR employee: {e}')
+                changes.append(f'ERROR reactivating HR employee: {e}')
+
+        _logger.info(f'Reactivation complete for {self.name}: {", ".join(changes)}')
+        return changes
+
     def _deactivate_proprelations(self):
         """
         Deactivate all proprelations where this person is involved.
@@ -694,8 +739,10 @@ class Person(models.Model):
         """
         Manual action to reactivate an employee.
 
-        Note: This only reactivates the person, not the Odoo user/employee/proprelations.
-        Those should be reactivated manually or via separate tasks if needed.
+        This will:
+        - Set is_active to True
+        - Reactivate Odoo user
+        - Reactivate HR employee
         """
         self.ensure_one()
 
@@ -717,8 +764,8 @@ class Person(models.Model):
             'tag': 'display_notification',
             'params': {
                 'title': 'Succes',
-                'message': f'{self.name} is geheractiveerd. Let op: Odoo gebruiker en HR medewerker moeten apart geheractiveerd worden.',
-                'type': 'warning',
+                'message': f'{self.name} is geheractiveerd. Odoo gebruiker en HR medewerker zijn ook geheractiveerd.',
+                'type': 'success',
             }
         }
 
