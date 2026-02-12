@@ -3241,9 +3241,56 @@ class BeTaskProcessor(models.AbstractModel):
             # Check if already has Odoo user
             if person.odoo_user_id:
                 _logger.info(f'Person {person.name} already has Odoo user: {person.odoo_user_id.login}')
-                # Still sync group memberships
-                self._sync_person_group_memberships(person)
                 changes.append(f"Person {person.name} already has Odoo user: {person.odoo_user_id.login}")
+
+                # Ensure HR employee is linked and active for EMPLOYEE type
+                is_employee_type = (
+                    person.person_type_id and
+                    person.person_type_id.name and
+                    person.person_type_id.name.upper() == 'EMPLOYEE'
+                )
+
+                if hr_installed and is_employee_type:
+                    if person.odoo_employee_id:
+                        # Reactivate if archived
+                        if not person.odoo_employee_id.active:
+                            person.odoo_employee_id.with_context(active_test=False).write({'active': True})
+                            _logger.info(f'Reactivated archived HR Employee: {person.odoo_employee_id.name}')
+                            changes.append(f"Reactivated archived HR Employee: {person.odoo_employee_id.name}")
+                    else:
+                        # Try to find existing employee by user_id
+                        existing_employee = HrEmployee.with_context(active_test=False).search(
+                            [('user_id', '=', person.odoo_user_id.id)], limit=1)
+                        if existing_employee:
+                            person.write({'odoo_employee_id': existing_employee.id})
+                            _logger.info(f'Linked existing HR Employee: {existing_employee.name}')
+                            changes.append(f"Linked existing HR Employee: {existing_employee.name}")
+                            if not existing_employee.active:
+                                existing_employee.with_context(active_test=False).write({'active': True})
+                                _logger.info(f'Reactivated archived HR Employee: {existing_employee.name}')
+                                changes.append(f"Reactivated archived HR Employee: {existing_employee.name}")
+                        else:
+                            # Create new HR employee
+                            employee_name = person.name
+                            if person.first_name:
+                                last_name = person.name.split(',')[0].strip() if ',' in person.name else person.name
+                                employee_name = f"{person.first_name} {last_name}"
+                            email = person.email_cloud or person.email_private
+                            employee_vals = {
+                                'name': employee_name,
+                                'user_id': person.odoo_user_id.id,
+                                'work_email': email,
+                                'active': True,
+                            }
+                            if self.env.company:
+                                employee_vals['company_id'] = self.env.company.id
+                            new_employee = HrEmployee.create(employee_vals)
+                            person.write({'odoo_employee_id': new_employee.id})
+                            _logger.info(f'Created HR Employee: {new_employee.name} (ID: {new_employee.id})')
+                            changes.append(f"Created HR Employee: {new_employee.name} (ID: {new_employee.id})")
+
+                # Sync group memberships
+                self._sync_person_group_memberships(person)
                 changes.append("Synced group memberships")
                 return {'success': True, 'changes': '\n'.join(changes)}
             
