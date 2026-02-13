@@ -1,0 +1,510 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- ============================================================
+         Toolbar
+         ============================================================ -->
+    <t t-name="process_mapper.Toolbar">
+        <div class="pm-toolbar">
+            <span class="pm-toolbar-title">
+                <i class="fa fa-sitemap me-1"/>
+                <t t-esc="props.mapName || 'Process Mapper'"/>
+            </span>
+
+            <span class="badge rounded-pill"
+                  t-attf-class="bg-#{props.mapState === 'approved' ? 'success' : props.mapState === 'review' ? 'warning' : 'info'}">
+                <t t-esc="props.mapState"/>
+            </span>
+
+            <div class="pm-toolbar-divider"/>
+
+            <!-- Palette items -->
+            <div class="pm-toolbar-section">
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'start')"
+                        title="Start Event">
+                    <i class="fa fa-play-circle text-success"/> Start
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'end')"
+                        title="End Event">
+                    <i class="fa fa-stop-circle text-danger"/> End
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'task')"
+                        title="Task">
+                    <i class="fa fa-square text-primary"/> Task
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'condition')"
+                        title="Condition (If/Else)">
+                    <i class="fa fa-question-circle text-info"/> If/Else
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'gateway_exclusive')"
+                        title="Exclusive Gateway (Decision)">
+                    <i class="fa fa-diamond text-warning"/> XOR
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'gateway_parallel')"
+                        title="Parallel Gateway">
+                    <i class="fa fa-diamond text-warning"/> AND
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'lane')"
+                        title="Add Swimlane">
+                    <i class="fa fa-bars text-muted"/> Lane
+                </button>
+            </div>
+
+            <div class="pm-toolbar-divider"/>
+
+            <!-- Action buttons -->
+            <div class="pm-toolbar-section">
+                <button class="pm-toolbar-btn pm-save-btn" t-on-click="props.onSave"
+                        title="Save (Ctrl+S)">
+                    <i class="fa fa-save"/> Save
+                    <t t-if="props.dirty"><span class="pm-dirty-dot"/></t>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onZoomIn" title="Zoom In">
+                    <i class="fa fa-search-plus"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onZoomOut" title="Zoom Out">
+                    <i class="fa fa-search-minus"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onFitView" title="Fit to View">
+                    <i class="fa fa-compress"/>
+                </button>
+                <button t-attf-class="pm-toolbar-btn #{props.gridEnabled ? 'pm-active' : ''}"
+                        t-on-click="props.onToggleGrid" title="Toggle Grid">
+                    <i class="fa fa-th"/>
+                </button>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Canvas (SVG)
+         ============================================================ -->
+    <t t-name="process_mapper.Canvas">
+        <div class="pm-canvas-wrapper"
+             t-on-dragover="onDragOver"
+             t-on-drop="onDrop">
+            <svg t-ref="svgCanvas" class="pm-canvas"
+                 t-on-mousedown="onSvgMouseDown"
+                 t-on-mousemove="onSvgMouseMove"
+                 t-on-mouseup="onSvgMouseUp"
+                 t-on-wheel.prevent="onWheel"
+                 xmlns="http://www.w3.org/2000/svg">
+
+                <defs>
+                    <!-- Arrowhead marker -->
+                    <marker id="pm-arrowhead" markerWidth="10" markerHeight="7"
+                            refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
+                    </marker>
+                    <marker id="pm-arrowhead-blue" markerWidth="10" markerHeight="7"
+                            refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#1565C0"/>
+                    </marker>
+                    <!-- Grid pattern -->
+                    <pattern id="pm-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+                    </pattern>
+                </defs>
+
+                <!-- Background -->
+                <rect class="pm-canvas-bg" width="10000" height="10000" fill="#fafafa"
+                      x="-5000" y="-5000"/>
+
+                <!-- Transform group for pan/zoom -->
+                <g t-att-transform="getTransform()">
+
+                    <!-- Grid -->
+                    <t t-if="props.gridEnabled">
+                        <rect width="10000" height="10000" x="-2000" y="-500"
+                              fill="url(#pm-grid)" opacity="0.8"/>
+                    </t>
+
+                    <!-- Lanes -->
+                    <t t-foreach="props.lanes" t-as="lane" t-key="lane.id">
+                        <g t-on-click.stop="(ev) => this.onLaneClick(ev, lane)">
+                            <rect t-att-x="0" t-att-y="lane.y_position"
+                                  width="5000" t-att-height="lane.height"
+                                  t-att-fill="lane.color || '#E3F2FD'" fill-opacity="0.3"
+                                  stroke="#bbb" stroke-width="1" stroke-dasharray="4 2"/>
+                            <!-- Lane label -->
+                            <text t-att-x="12" t-att-y="lane.y_position + 20"
+                                  class="pm-lane-label">
+                                <t t-esc="lane.name"/>
+                            </text>
+                        </g>
+                    </t>
+
+                    <!-- Connections -->
+                    <t t-foreach="props.connections" t-as="conn" t-key="conn.id">
+                        <g>
+                            <path t-att-d="getConnectionPath(conn)"
+                                  t-att-class="getConnectionClass(conn)"
+                                  marker-end="url(#pm-arrowhead)"
+                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"/>
+                            <t t-if="conn.label">
+                                <t t-set="labelPos" t-value="getConnectionLabelPos(conn)"/>
+                                <rect t-att-x="labelPos.x - 20" t-att-y="labelPos.y - 10"
+                                      width="40" height="20" rx="4" fill="#fff" fill-opacity="0.85"
+                                      stroke="#ccc" stroke-width="0.5"/>
+                                <text t-att-x="labelPos.x" t-att-y="labelPos.y + 4"
+                                      class="pm-connection-label">
+                                    <t t-esc="conn.label"/>
+                                </text>
+                            </t>
+                        </g>
+                    </t>
+
+                    <!-- Steps -->
+                    <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                        <g t-att-class="getStepClass(step)"
+                           t-on-mousedown.stop="(ev) => this.onStepMouseDown(ev, step)">
+
+                            <!-- Start Event: green circle -->
+                            <t t-if="step.step_type === 'start'">
+                                <circle class="pm-shape"
+                                        t-att-cx="step.x_position + 25"
+                                        t-att-cy="step.y_position + 25"
+                                        r="25" fill="#4CAF50" stroke="#2E7D32" stroke-width="2"/>
+                                <text class="pm-shape-text"
+                                      t-att-x="step.x_position + 25"
+                                      t-att-y="step.y_position + 25">
+                                    <t t-esc="step.name.substring(0, 8)"/>
+                                </text>
+                            </t>
+
+                            <!-- End Event: red circle -->
+                            <t t-if="step.step_type === 'end'">
+                                <circle class="pm-shape"
+                                        t-att-cx="step.x_position + 25"
+                                        t-att-cy="step.y_position + 25"
+                                        r="25" fill="#ffebee" stroke="#D32F2F" stroke-width="4"/>
+                                <text class="pm-shape-text pm-shape-text-dark"
+                                      t-att-x="step.x_position + 25"
+                                      t-att-y="step.y_position + 25">
+                                    <t t-esc="step.name.substring(0, 8)"/>
+                                </text>
+                            </t>
+
+                            <!-- Task: rounded rectangle -->
+                            <t t-if="step.step_type === 'task'">
+                                <rect class="pm-shape"
+                                      t-att-x="step.x_position" t-att-y="step.y_position"
+                                      t-att-width="step.width || 140" t-att-height="step.height || 60"
+                                      rx="8" ry="8" fill="#42A5F5" stroke="#1565C0" stroke-width="2"/>
+                                <text class="pm-shape-text"
+                                      t-att-x="step.x_position + (step.width || 140) / 2"
+                                      t-att-y="step.y_position + (step.height || 60) / 2">
+                                    <t t-esc="step.name.substring(0, 18)"/>
+                                </text>
+                            </t>
+
+                            <!-- Condition (If/Else): larger diamond with question text -->
+                            <t t-if="step.step_type === 'condition'">
+                                <polygon class="pm-shape"
+                                         t-att-points="(step.x_position + 50) + ',' + step.y_position + ' ' + (step.x_position + 100) + ',' + (step.y_position + 50) + ' ' + (step.x_position + 50) + ',' + (step.y_position + 100) + ' ' + step.x_position + ',' + (step.y_position + 50)"
+                                         fill="#26C6DA" stroke="#00838F" stroke-width="2"/>
+                                <text class="pm-shape-text"
+                                      t-att-x="step.x_position + 50"
+                                      t-att-y="step.y_position + 45"
+                                      font-size="11">
+                                    <t t-esc="step.name.substring(0, 14)"/>
+                                </text>
+                                <text class="pm-shape-text" font-size="9" fill-opacity="0.8"
+                                      t-att-x="step.x_position + 50"
+                                      t-att-y="step.y_position + 60">
+                                    Yes / No
+                                </text>
+                            </t>
+
+                            <!-- Exclusive Gateway: yellow diamond with X -->
+                            <t t-if="step.step_type === 'gateway_exclusive'">
+                                <polygon class="pm-shape"
+                                         t-att-points="step.x_position + 30 + ',' + step.y_position + ' ' + (step.x_position + 60) + ',' + (step.y_position + 30) + ' ' + (step.x_position + 30) + ',' + (step.y_position + 60) + ' ' + step.x_position + ',' + (step.y_position + 30)"
+                                         fill="#FFC107" stroke="#F57F17" stroke-width="2"/>
+                                <text class="pm-gateway-symbol"
+                                      t-att-x="step.x_position + 30"
+                                      t-att-y="step.y_position + 32">X</text>
+                            </t>
+
+                            <!-- Parallel Gateway: yellow diamond with + -->
+                            <t t-if="step.step_type === 'gateway_parallel'">
+                                <polygon class="pm-shape"
+                                         t-att-points="step.x_position + 30 + ',' + step.y_position + ' ' + (step.x_position + 60) + ',' + (step.y_position + 30) + ' ' + (step.x_position + 30) + ',' + (step.y_position + 60) + ' ' + step.x_position + ',' + (step.y_position + 30)"
+                                         fill="#FFC107" stroke="#F57F17" stroke-width="2"/>
+                                <text class="pm-gateway-symbol"
+                                      t-att-x="step.x_position + 30"
+                                      t-att-y="step.y_position + 32">+</text>
+                            </t>
+
+                            <!-- Connector dots (visible on hover) -->
+                            <t t-foreach="getConnectorDots(step)" t-as="dot" t-key="dot.pos">
+                                <circle class="pm-connector-dot"
+                                        t-att-cx="dot.cx" t-att-cy="dot.cy" r="5"
+                                        t-on-mousedown.stop="(ev) => this.onConnectorMouseDown(ev, step)"/>
+                            </t>
+                        </g>
+                    </t>
+
+                    <!-- Rubber band for connection creation -->
+                    <t t-if="state.showRubberBand">
+                        <path t-att-d="getRubberBandPath()" class="pm-rubber-band"/>
+                    </t>
+
+                </g>
+            </svg>
+            <div class="pm-canvas-info">
+                Zoom: <t t-esc="Math.round(props.zoom * 100)"/>% |
+                Pan: <t t-esc="Math.round(props.panX)"/>, <t t-esc="Math.round(props.panY)"/>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Properties Panel
+         ============================================================ -->
+    <t t-name="process_mapper.PropertiesPanel">
+        <div class="pm-properties">
+            <h4><i class="fa fa-sliders me-1"/> Properties</h4>
+
+            <t t-if="!props.selectedElement">
+                <div class="pm-no-selection">
+                    <i class="fa fa-mouse-pointer fa-2x mb-2 d-block text-muted"/>
+                    Select an element on the canvas to edit its properties.
+                    <br/><br/>
+                    <small>
+                        <b>Tip:</b> Drag items from the toolbar onto the canvas.
+                        Hover over a shape and drag from the connector dots to create connections.
+                    </small>
+                </div>
+            </t>
+
+            <!-- Step properties -->
+            <t t-if="props.selectedElement and props.selectedType === 'step'">
+                <div class="pm-prop-group">
+                    <label>Name</label>
+                    <input type="text" t-att-value="props.selectedElement.name"
+                           t-on-change="(ev) => this.onInputChange('name', ev)"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Type</label>
+                    <select t-on-change="(ev) => this.onInputChange('step_type', ev)">
+                        <option value="start" t-att-selected="props.selectedElement.step_type === 'start'">Start Event</option>
+                        <option value="end" t-att-selected="props.selectedElement.step_type === 'end'">End Event</option>
+                        <option value="task" t-att-selected="props.selectedElement.step_type === 'task'">Task</option>
+                        <option value="condition" t-att-selected="props.selectedElement.step_type === 'condition'">Condition (If/Else)</option>
+                        <option value="gateway_exclusive" t-att-selected="props.selectedElement.step_type === 'gateway_exclusive'">Exclusive Gateway</option>
+                        <option value="gateway_parallel" t-att-selected="props.selectedElement.step_type === 'gateway_parallel'">Parallel Gateway</option>
+                    </select>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Description</label>
+                    <textarea t-on-change="(ev) => this.onInputChange('description', ev)"
+                              t-att-value="props.selectedElement.description || ''"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Lane</label>
+                    <select t-on-change="(ev) => this.onInputChange('lane_id', ev)">
+                        <option value="">-- No Lane --</option>
+                        <t t-foreach="props.lanes" t-as="lane" t-key="lane.id">
+                            <option t-att-value="lane.id"
+                                    t-att-selected="props.selectedElement.lane_id === lane.id">
+                                <t t-esc="lane.name"/>
+                            </option>
+                        </t>
+                    </select>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Role</label>
+                    <select t-on-change="(ev) => this.onInputChange('role_id', ev)">
+                        <option value="">-- No Role --</option>
+                        <t t-foreach="props.roles" t-as="role" t-key="role.id">
+                            <option t-att-value="role.id"
+                                    t-att-selected="props.selectedElement.role_id === role.id">
+                                <t t-esc="role.name"/>
+                            </option>
+                        </t>
+                    </select>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Responsible</label>
+                    <input type="text" t-att-value="props.selectedElement.responsible || ''"
+                           t-on-change="(ev) => this.onInputChange('responsible', ev)"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>System Action</label>
+                    <input type="text" t-att-value="props.selectedElement.system_action || ''"
+                           t-on-change="(ev) => this.onInputChange('system_action', ev)"
+                           placeholder="e.g., Send email, Create record"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Data Fields</label>
+                    <textarea t-on-change="(ev) => this.onInputChange('data_fields', ev)"
+                              t-att-value="props.selectedElement.data_fields || ''"
+                              placeholder="One field per line, e.g.:&#10;name: Char (required)&#10;amount: Float&#10;partner_id: Many2one(res.partner)"/>
+                </div>
+                <button class="pm-delete-btn" t-on-click="props.onDelete">
+                    <i class="fa fa-trash me-1"/> Delete Step
+                </button>
+            </t>
+
+            <!-- Connection properties -->
+            <t t-if="props.selectedElement and props.selectedType === 'connection'">
+                <div class="pm-prop-group">
+                    <label>Label</label>
+                    <input type="text" t-att-value="props.selectedElement.label || ''"
+                           t-on-change="(ev) => this.onInputChange('label', ev)"
+                           placeholder="e.g., Yes, No, Approved"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Type</label>
+                    <select t-on-change="(ev) => this.onInputChange('connection_type', ev)">
+                        <option value="sequence" t-att-selected="props.selectedElement.connection_type === 'sequence'">Sequence Flow</option>
+                        <option value="message" t-att-selected="props.selectedElement.connection_type === 'message'">Message Flow</option>
+                        <option value="association" t-att-selected="props.selectedElement.connection_type === 'association'">Association</option>
+                    </select>
+                </div>
+                <button class="pm-delete-btn" t-on-click="props.onDelete">
+                    <i class="fa fa-trash me-1"/> Delete Connection
+                </button>
+            </t>
+
+            <!-- Lane properties -->
+            <t t-if="props.selectedElement and props.selectedType === 'lane'">
+                <div class="pm-prop-group">
+                    <label>Name</label>
+                    <input type="text" t-att-value="props.selectedElement.name"
+                           t-on-change="(ev) => this.onInputChange('name', ev)"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Color</label>
+                    <input type="color" t-att-value="props.selectedElement.color || '#E3F2FD'"
+                           t-on-change="(ev) => this.onInputChange('color', ev)"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Height</label>
+                    <input type="number" t-att-value="props.selectedElement.height"
+                           t-on-change="(ev) => this.onInputChange('height', ev)" min="80" step="10"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Organization</label>
+                    <select t-on-change="(ev) => this.onInputChange('org_id', ev)">
+                        <option value="">-- No Organization --</option>
+                        <t t-foreach="props.orgs" t-as="org" t-key="org.id">
+                            <option t-att-value="org.id"
+                                    t-att-selected="props.selectedElement.org_id === org.id">
+                                <t t-esc="org.name"/>
+                            </option>
+                        </t>
+                    </select>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Role</label>
+                    <select t-on-change="(ev) => this.onInputChange('role_id', ev)">
+                        <option value="">-- No Role --</option>
+                        <t t-foreach="props.roles" t-as="role" t-key="role.id">
+                            <option t-att-value="role.id"
+                                    t-att-selected="props.selectedElement.role_id === role.id">
+                                <t t-esc="role.name"/>
+                            </option>
+                        </t>
+                    </select>
+                </div>
+                <button class="pm-delete-btn" t-on-click="props.onDelete">
+                    <i class="fa fa-trash me-1"/> Delete Lane
+                </button>
+            </t>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Main Client Action
+         ============================================================ -->
+    <t t-name="process_mapper.ProcessMapperClient">
+        <div class="pm-container">
+            <t t-if="state.loading">
+                <div class="d-flex align-items-center justify-content-center h-100">
+                    <i class="fa fa-spinner fa-spin fa-2x text-muted"/>
+                </div>
+            </t>
+
+            <!-- Map Selector (when no map loaded) -->
+            <t t-elif="!state.mapId">
+                <div class="pm-map-selector">
+                    <h2><i class="fa fa-sitemap me-2"/>Select a Process Map</h2>
+                    <t t-if="state.availableMaps.length === 0">
+                        <p class="pm-empty-msg">
+                            No process maps found. Create one from the
+                            <a href="#" t-on-click.prevent="goBackToList">Process Maps list</a>.
+                        </p>
+                    </t>
+                    <ul class="pm-map-list" t-if="state.availableMaps.length > 0">
+                        <t t-foreach="state.availableMaps" t-as="map" t-key="map.id">
+                            <li class="pm-map-list-item" t-on-click="() => this.selectMap(map.id)">
+                                <span class="pm-map-name">
+                                    <i class="fa fa-sitemap me-1"/>
+                                    <t t-esc="map.name"/>
+                                </span>
+                                <span t-attf-class="pm-map-state #{map.state}">
+                                    <t t-esc="map.state"/>
+                                </span>
+                            </li>
+                        </t>
+                    </ul>
+                    <button class="btn btn-secondary mt-3" t-on-click="goBackToList">
+                        <i class="fa fa-list me-1"/> Go to Process Maps List
+                    </button>
+                </div>
+            </t>
+
+            <!-- Canvas Editor -->
+            <t t-else="">
+                <ProcessMapperToolbar
+                    onSave="() => this.saveDiagram()"
+                    onZoomIn="() => this.onZoomIn()"
+                    onZoomOut="() => this.onZoomOut()"
+                    onFitView="() => this.onFitView()"
+                    onToggleGrid="() => this.onToggleGrid()"
+                    gridEnabled="state.gridEnabled"
+                    dirty="state.dirty"
+                    mapName="state.mapName"
+                    mapState="state.mapState"/>
+
+                <div class="pm-main">
+                    <ProcessMapperCanvas
+                        steps="state.steps"
+                        connections="state.connections"
+                        lanes="state.lanes"
+                        selectedId="state.selectedId"
+                        selectedType="state.selectedType || ''"
+                        gridEnabled="state.gridEnabled"
+                        zoom="state.zoom"
+                        panX="state.panX"
+                        panY="state.panY"
+                        onSelectElement="(id, type) => this.onSelectElement(id, type)"
+                        onMoveStep="(id, x, y) => this.onMoveStep(id, x, y)"
+                        onCreateConnection="(s, t) => this.onCreateConnection(s, t)"
+                        onCanvasDrop="(type, x, y) => this.onCanvasDrop(type, x, y)"
+                        onPan="(x, y) => this.onPan(x, y)"
+                        onZoom="(delta) => this.onZoomDelta(delta)"/>
+
+                    <ProcessMapperProperties
+                        selectedElement="this.getSelectedElement()"
+                        selectedType="state.selectedType || ''"
+                        lanes="state.lanes"
+                        roles="state.roles"
+                        orgs="state.orgs"
+                        onPropertyChange="(f, v) => this.onPropertyChange(f, v)"
+                        onDelete="() => this.onDelete()"/>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

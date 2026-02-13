@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_process_map_user,process.map.user,model_process_map,process_mapper.group_process_mapper_user,1,1,1,0
+access_process_map_manager,process.map.manager,model_process_map,process_mapper.group_process_mapper_manager,1,1,1,1
+access_process_map_lane_user,process.map.lane.user,model_process_map_lane,process_mapper.group_process_mapper_user,1,1,1,0
+access_process_map_lane_manager,process.map.lane.manager,model_process_map_lane,process_mapper.group_process_mapper_manager,1,1,1,1
+access_process_map_step_user,process.map.step.user,model_process_map_step,process_mapper.group_process_mapper_user,1,1,1,0
+access_process_map_step_manager,process.map.step.manager,model_process_map_step,process_mapper.group_process_mapper_manager,1,1,1,1
+access_process_map_connection_user,process.map.connection.user,model_process_map_connection,process_mapper.group_process_mapper_user,1,1,1,0
+access_process_map_connection_manager,process.map.connection.manager,model_process_map_connection,process_mapper.group_process_mapper_manager,1,1,1,1

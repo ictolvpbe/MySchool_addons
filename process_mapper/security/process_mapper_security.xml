@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- User Group -->
+        <record id="group_process_mapper_user" model="res.groups">
+            <field name="name">Process Mapper User</field>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        </record>
+
+        <!-- Manager Group -->
+        <record id="group_process_mapper_manager" model="res.groups">
+            <field name="name">Process Mapper Manager</field>
+            <field name="implied_ids" eval="[(4, ref('group_process_mapper_user'))]"/>
+        </record>
+
+    </data>
+</odoo>

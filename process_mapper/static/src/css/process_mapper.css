@@ -1,0 +1,378 @@
+/* ============================================================
+   Process Mapper - Canvas Editor Styles
+   ============================================================ */
+
+/* --- Main Layout --- */
+.pm-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 50px);
+    background: #fff;
+    overflow: hidden;
+}
+
+/* --- Toolbar --- */
+.pm-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.pm-toolbar-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pm-toolbar-divider {
+    width: 1px;
+    height: 28px;
+    background: #dee2e6;
+    margin: 0 4px;
+}
+
+.pm-toolbar-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    color: #495057;
+    transition: all 0.15s;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.pm-toolbar-btn:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+}
+
+.pm-toolbar-btn.pm-active {
+    background: #714B67;
+    color: #fff;
+    border-color: #714B67;
+}
+
+.pm-toolbar-btn[draggable="true"] {
+    cursor: grab;
+    border-style: dashed;
+}
+
+.pm-toolbar-btn[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.pm-toolbar-btn .fa {
+    font-size: 14px;
+}
+
+.pm-save-btn {
+    background: #714B67;
+    color: #fff;
+    border-color: #714B67;
+}
+
+.pm-save-btn:hover {
+    background: #5a3b52;
+}
+
+.pm-dirty-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #dc3545;
+    margin-left: 4px;
+}
+
+.pm-toolbar-title {
+    font-weight: 600;
+    font-size: 15px;
+    color: #714B67;
+    margin-right: 12px;
+}
+
+/* --- Main content area --- */
+.pm-main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* --- Canvas area --- */
+.pm-canvas-wrapper {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #fafafa;
+}
+
+.pm-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.pm-canvas-info {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    font-size: 11px;
+    color: #999;
+    pointer-events: none;
+}
+
+/* --- SVG Elements --- */
+.pm-step {
+    cursor: pointer;
+}
+
+.pm-step:hover .pm-shape {
+    filter: brightness(0.92);
+}
+
+.pm-step.pm-selected .pm-shape {
+    stroke-dasharray: 6 3;
+    stroke-width: 3;
+    stroke: #1565C0;
+}
+
+.pm-shape-text {
+    font-size: 12px;
+    fill: #fff;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    font-weight: 500;
+}
+
+.pm-shape-text-dark {
+    fill: #333;
+}
+
+.pm-gateway-symbol {
+    font-size: 18px;
+    font-weight: bold;
+    fill: #333;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+}
+
+.pm-lane-label {
+    font-size: 13px;
+    font-weight: 600;
+    fill: #555;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+}
+
+.pm-connection-line {
+    stroke: #555;
+    stroke-width: 2;
+    fill: none;
+    cursor: pointer;
+}
+
+.pm-connection-line:hover {
+    stroke: #1565C0;
+    stroke-width: 3;
+}
+
+.pm-connection-line.pm-selected {
+    stroke: #1565C0;
+    stroke-width: 3;
+    stroke-dasharray: 8 4;
+}
+
+.pm-connection-label {
+    font-size: 11px;
+    fill: #666;
+    text-anchor: middle;
+}
+
+.pm-connector-dot {
+    fill: #999;
+    stroke: #fff;
+    stroke-width: 1;
+    cursor: crosshair;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.pm-step:hover .pm-connector-dot {
+    opacity: 1;
+}
+
+.pm-rubber-band {
+    stroke: #1565C0;
+    stroke-width: 2;
+    stroke-dasharray: 6 3;
+    fill: none;
+    pointer-events: none;
+}
+
+/* --- Properties panel --- */
+.pm-properties {
+    width: 300px;
+    min-width: 300px;
+    border-left: 1px solid #dee2e6;
+    background: #fff;
+    overflow-y: auto;
+    padding: 16px;
+    flex-shrink: 0;
+}
+
+.pm-properties h4 {
+    margin: 0 0 16px 0;
+    color: #714B67;
+    font-size: 14px;
+    border-bottom: 2px solid #714B67;
+    padding-bottom: 8px;
+}
+
+.pm-prop-group {
+    margin-bottom: 12px;
+}
+
+.pm-prop-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 4px;
+}
+
+.pm-prop-group input,
+.pm-prop-group select,
+.pm-prop-group textarea {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+.pm-prop-group input:focus,
+.pm-prop-group select:focus,
+.pm-prop-group textarea:focus {
+    border-color: #714B67;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(113, 75, 103, 0.15);
+}
+
+.pm-prop-group textarea {
+    min-height: 60px;
+    resize: vertical;
+}
+
+.pm-no-selection {
+    color: #999;
+    font-style: italic;
+    text-align: center;
+    padding: 40px 16px;
+    font-size: 13px;
+}
+
+/* --- Map selector (when no map loaded) --- */
+.pm-map-selector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px;
+}
+
+.pm-map-selector h2 {
+    color: #714B67;
+    margin-bottom: 24px;
+}
+
+.pm-map-list {
+    list-style: none;
+    padding: 0;
+    width: 100%;
+    max-width: 500px;
+}
+
+.pm-map-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.pm-map-list-item:hover {
+    background: #f8f0f6;
+    border-color: #714B67;
+}
+
+.pm-map-list-item .pm-map-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.pm-map-list-item .pm-map-state {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #e9ecef;
+    color: #666;
+}
+
+.pm-map-list-item .pm-map-state.draft { background: #cfe2ff; color: #084298; }
+.pm-map-list-item .pm-map-state.review { background: #fff3cd; color: #664d03; }
+.pm-map-list-item .pm-map-state.approved { background: #d1e7dd; color: #0f5132; }
+
+.pm-empty-msg {
+    color: #999;
+    font-style: italic;
+}
+
+/* --- Delete button in properties --- */
+.pm-delete-btn {
+    background: #dc3545;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    width: 100%;
+    margin-top: 16px;
+}
+
+.pm-delete-btn:hover {
+    background: #bb2d3b;
+}
+
+/* --- Responsive --- */
+@media (max-width: 900px) {
+    .pm-main {
+        flex-direction: column;
+    }
+    .pm-properties {
+        width: 100%;
+        min-width: unset;
+        max-height: 250px;
+        border-left: none;
+        border-top: 1px solid #dee2e6;
+    }
+}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Root menu -->
+    <menuitem id="menu_process_mapper_root"
+              name="Process Mapper"
+              web_icon="process_mapper,static/description/icon.png"
+              sequence="15"
+              groups="process_mapper.group_process_mapper_user"/>
+
+    <!-- Process Maps list -->
+    <menuitem id="menu_process_maps"
+              name="Process Maps"
+              parent="menu_process_mapper_root"
+              action="action_process_map_list"
+              sequence="10"/>
+
+    <!-- Canvas Editor direct entry -->
+    <menuitem id="menu_process_mapper_canvas"
+              name="Canvas Editor"
+              parent="menu_process_mapper_root"
+              action="action_process_mapper_client"
+              sequence="20"/>
+
+</odoo>
