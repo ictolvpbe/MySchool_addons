@@ -363,6 +363,367 @@
     background: #bb2d3b;
 }
 
+/* --- Field Builder trigger button in properties --- */
+.pm-field-builder-trigger {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pm-field-builder-trigger textarea {
+    background: #f8f9fa;
+    cursor: default;
+    font-size: 12px;
+    font-family: monospace;
+}
+
+.pm-field-builder-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border: 1px dashed #714B67;
+    border-radius: 4px;
+    background: #faf5f8;
+    color: #714B67;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.15s;
+}
+
+.pm-field-builder-btn:hover {
+    background: #714B67;
+    color: #fff;
+    border-style: solid;
+}
+
+/* --- Field Builder Modal --- */
+.pm-fb-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pm-fb-modal {
+    background: #fff;
+    border-radius: 8px;
+    width: 780px;
+    max-width: 95vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.pm-fb-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.pm-fb-header h4 {
+    margin: 0;
+    color: #714B67;
+    font-size: 16px;
+}
+
+.pm-fb-close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: #999;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+
+.pm-fb-close:hover {
+    color: #333;
+}
+
+.pm-fb-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    min-height: 350px;
+}
+
+/* --- Field Builder Palette --- */
+.pm-fb-palette {
+    width: 200px;
+    min-width: 200px;
+    border-right: 1px solid #dee2e6;
+    padding: 12px;
+    overflow-y: auto;
+    background: #f8f9fa;
+}
+
+.pm-fb-palette-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #999;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.pm-fb-palette-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    background: #fff;
+    margin-bottom: 4px;
+    cursor: grab;
+    font-size: 12px;
+    transition: all 0.12s;
+    user-select: none;
+}
+
+.pm-fb-palette-item:hover {
+    border-color: #714B67;
+    background: #faf5f8;
+}
+
+.pm-fb-palette-item:active {
+    cursor: grabbing;
+}
+
+.pm-fb-palette-icon {
+    width: 16px;
+    text-align: center;
+    color: #714B67;
+    font-size: 13px;
+}
+
+.pm-fb-palette-label {
+    flex: 1;
+    font-weight: 500;
+    color: #333;
+}
+
+.pm-fb-palette-type {
+    font-size: 10px;
+    color: #999;
+    font-family: monospace;
+}
+
+/* --- Field Builder Fields list --- */
+.pm-fb-fields {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+}
+
+.pm-fb-fields-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #999;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.pm-fb-fields-count {
+    font-weight: 400;
+}
+
+.pm-fb-dropzone {
+    height: 6px;
+    border-radius: 3px;
+    transition: all 0.15s;
+    margin: 2px 0;
+}
+
+.pm-fb-dropzone-active {
+    height: 32px;
+    background: #e8d5e3;
+    border: 2px dashed #714B67;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pm-fb-dropzone-text {
+    display: none;
+    font-size: 11px;
+    color: #714B67;
+}
+
+.pm-fb-dropzone-active .pm-fb-dropzone-text {
+    display: block;
+}
+
+.pm-fb-field-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #fff;
+    cursor: grab;
+    transition: box-shadow 0.12s;
+}
+
+.pm-fb-field-row:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.pm-fb-field-handle {
+    color: #ccc;
+    padding: 4px 2px;
+    cursor: grab;
+    font-size: 12px;
+}
+
+.pm-fb-field-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pm-fb-field-top {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.pm-fb-field-name {
+    flex: 1;
+    padding: 4px 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: monospace;
+    min-width: 0;
+}
+
+.pm-fb-field-name:focus {
+    border-color: #714B67;
+    outline: none;
+}
+
+.pm-fb-field-type-select {
+    width: 110px;
+    padding: 4px 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    font-size: 12px;
+    background: #fff;
+}
+
+.pm-fb-field-type-select:focus {
+    border-color: #714B67;
+    outline: none;
+}
+
+.pm-fb-req-btn {
+    padding: 3px 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    background: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #999;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.pm-fb-req-btn:hover {
+    border-color: #dc3545;
+    color: #dc3545;
+}
+
+.pm-fb-req-active {
+    background: #dc3545;
+    color: #fff;
+    border-color: #dc3545;
+}
+
+.pm-fb-req-active:hover {
+    background: #bb2d3b;
+    color: #fff;
+}
+
+.pm-fb-field-relation {
+    display: flex;
+    gap: 4px;
+}
+
+.pm-fb-field-relation input {
+    flex: 1;
+    padding: 3px 6px;
+    border: 1px solid #e0d5de;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: monospace;
+    background: #faf5f8;
+}
+
+.pm-fb-field-relation input:focus {
+    border-color: #714B67;
+    outline: none;
+}
+
+.pm-fb-field-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pm-fb-field-actions button {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    font-size: 11px;
+    color: #999;
+    cursor: pointer;
+}
+
+.pm-fb-field-actions button:hover {
+    color: #333;
+}
+
+.pm-fb-field-actions button:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.pm-fb-remove-btn:hover {
+    color: #dc3545 !important;
+}
+
+.pm-fb-empty {
+    text-align: center;
+    color: #999;
+    font-style: italic;
+    padding: 40px 16px;
+    font-size: 13px;
+}
+
+.pm-fb-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid #dee2e6;
+}
+
 /* --- Responsive --- */
 @media (max-width: 900px) {
     .pm-main {

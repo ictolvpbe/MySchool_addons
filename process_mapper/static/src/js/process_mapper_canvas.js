@@ -114,10 +114,213 @@ class ProcessMapperToolbar extends Component {
 }
 
 // ============================================================
+// Field Builder Component (modal for data_fields)
+// ============================================================
+const FIELD_TYPES = [
+    { type: 'Char', icon: 'fa-font', label: 'Text', hint: 'Short text value' },
+    { type: 'Text', icon: 'fa-align-left', label: 'Long Text', hint: 'Multi-line text' },
+    { type: 'Html', icon: 'fa-code', label: 'Rich Text', hint: 'HTML content' },
+    { type: 'Integer', icon: 'fa-hashtag', label: 'Integer', hint: 'Whole number' },
+    { type: 'Float', icon: 'fa-calculator', label: 'Decimal', hint: 'Decimal number' },
+    { type: 'Monetary', icon: 'fa-eur', label: 'Monetary', hint: 'Currency amount' },
+    { type: 'Boolean', icon: 'fa-toggle-on', label: 'Yes/No', hint: 'True or false' },
+    { type: 'Date', icon: 'fa-calendar', label: 'Date', hint: 'Date only' },
+    { type: 'Datetime', icon: 'fa-clock-o', label: 'Date & Time', hint: 'Date and time' },
+    { type: 'Selection', icon: 'fa-list-ul', label: 'Selection', hint: 'Dropdown choices' },
+    { type: 'Many2one', icon: 'fa-link', label: 'Many2one', hint: 'Link to one record' },
+    { type: 'One2many', icon: 'fa-list', label: 'One2many', hint: 'List of child records' },
+    { type: 'Many2many', icon: 'fa-exchange', label: 'Many2many', hint: 'Multiple links' },
+    { type: 'Binary', icon: 'fa-file', label: 'File', hint: 'File attachment' },
+    { type: 'Image', icon: 'fa-picture-o', label: 'Image', hint: 'Image upload' },
+];
+
+class FieldBuilder extends Component {
+    static template = "process_mapper.FieldBuilder";
+    static props = {
+        dataFields: { type: String },
+        onSave: { type: Function },
+        onClose: { type: Function },
+    };
+
+    setup() {
+        this.state = useState({
+            fields: this._parseFields(this.props.dataFields),
+            dragOverIndex: -1,
+        });
+        this.nextId = 1000;
+    }
+
+    get fieldTypes() {
+        return FIELD_TYPES;
+    }
+
+    // --- Parse "name: Type (options)" text into structured array ---
+    _parseFields(text) {
+        if (!text || !text.trim()) return [];
+        const fields = [];
+        for (const line of text.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const match = trimmed.match(/^(\w+)\s*:\s*(\w+)\s*(.*)$/);
+            if (match) {
+                const options = match[3] ? match[3].replace(/[()]/g, '').trim() : '';
+                fields.push({
+                    _id: this.nextId++,
+                    name: match[1],
+                    type: match[2],
+                    required: options.includes('required'),
+                    relation: '',
+                    options: options.replace('required', '').replace(',', '').trim(),
+                });
+                // Extract relation model for relational fields
+                const relMatch = options.match(/^([\w.]+)/);
+                if (relMatch && ['Many2one', 'One2many', 'Many2many'].includes(match[2])) {
+                    fields[fields.length - 1].relation = relMatch[1];
+                    fields[fields.length - 1].options = options.replace(relMatch[1], '').replace(',', '').trim();
+                }
+            } else {
+                fields.push({
+                    _id: this.nextId++,
+                    name: trimmed,
+                    type: 'Char',
+                    required: false,
+                    relation: '',
+                    options: '',
+                });
+            }
+        }
+        return fields;
+    }
+
+    // --- Serialize fields back to text ---
+    _serializeFields() {
+        return this.state.fields.map(f => {
+            let line = `${f.name}: ${f.type}`;
+            const parts = [];
+            if (['Many2one', 'One2many', 'Many2many'].includes(f.type) && f.relation) {
+                parts.push(f.relation);
+            }
+            if (f.required) parts.push('required');
+            if (f.options && f.options.trim()) parts.push(f.options.trim());
+            if (parts.length) line += ` (${parts.join(', ')})`;
+            return line;
+        }).join('\n');
+    }
+
+    // --- Drag from palette ---
+    onPaletteDragStart(ev, fieldType) {
+        ev.dataTransfer.setData("application/pm-field-type", fieldType.type);
+        ev.dataTransfer.effectAllowed = "copy";
+    }
+
+    // --- Drop zone ---
+    onDropZoneDragOver(ev, index) {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "copy";
+        this.state.dragOverIndex = index;
+    }
+
+    onDropZoneDragLeave(ev) {
+        this.state.dragOverIndex = -1;
+    }
+
+    onDropZoneDrop(ev, index) {
+        ev.preventDefault();
+        this.state.dragOverIndex = -1;
+        const typeName = ev.dataTransfer.getData("application/pm-field-type");
+        if (!typeName) return;
+        const fieldDef = FIELD_TYPES.find(f => f.type === typeName);
+        const suggestedName = this._suggestFieldName(typeName);
+        const newField = {
+            _id: this.nextId++,
+            name: suggestedName,
+            type: typeName,
+            required: false,
+            relation: '',
+            options: '',
+        };
+        this.state.fields.splice(index, 0, newField);
+    }
+
+    _suggestFieldName(typeName) {
+        const base = typeName.toLowerCase();
+        const nameMap = {
+            'Char': 'name', 'Text': 'description', 'Html': 'body_html',
+            'Integer': 'count', 'Float': 'amount', 'Monetary': 'price',
+            'Boolean': 'is_active', 'Date': 'date', 'Datetime': 'datetime',
+            'Selection': 'state', 'Many2one': 'partner_id', 'One2many': 'line_ids',
+            'Many2many': 'tag_ids', 'Binary': 'attachment', 'Image': 'image',
+        };
+        let suggestion = nameMap[typeName] || base;
+        const existing = new Set(this.state.fields.map(f => f.name));
+        if (existing.has(suggestion)) {
+            let i = 2;
+            while (existing.has(`${suggestion}_${i}`)) i++;
+            suggestion = `${suggestion}_${i}`;
+        }
+        return suggestion;
+    }
+
+    // --- Reorder via drag within list ---
+    onFieldDragStart(ev, index) {
+        ev.dataTransfer.setData("application/pm-field-index", String(index));
+        ev.dataTransfer.effectAllowed = "move";
+    }
+
+    onFieldDropReorder(ev, targetIndex) {
+        ev.preventDefault();
+        const sourceIndex = parseInt(ev.dataTransfer.getData("application/pm-field-index"));
+        if (isNaN(sourceIndex) || sourceIndex === targetIndex) return;
+        const [moved] = this.state.fields.splice(sourceIndex, 1);
+        this.state.fields.splice(targetIndex > sourceIndex ? targetIndex - 1 : targetIndex, 0, moved);
+        this.state.dragOverIndex = -1;
+    }
+
+    // --- Field editing ---
+    onFieldChange(index, field, ev) {
+        this.state.fields[index][field] = ev.target.value;
+    }
+
+    onToggleRequired(index) {
+        this.state.fields[index].required = !this.state.fields[index].required;
+    }
+
+    onRemoveField(index) {
+        this.state.fields.splice(index, 1);
+    }
+
+    onMoveUp(index) {
+        if (index <= 0) return;
+        const [item] = this.state.fields.splice(index, 1);
+        this.state.fields.splice(index - 1, 0, item);
+    }
+
+    onMoveDown(index) {
+        if (index >= this.state.fields.length - 1) return;
+        const [item] = this.state.fields.splice(index, 1);
+        this.state.fields.splice(index + 1, 0, item);
+    }
+
+    isRelational(type) {
+        return ['Many2one', 'One2many', 'Many2many'].includes(type);
+    }
+
+    // --- Save & close ---
+    onSave() {
+        this.props.onSave(this._serializeFields());
+    }
+
+    onClose() {
+        this.props.onClose();
+    }
+}
+
+// ============================================================
 // Properties Panel Component
 // ============================================================
 class ProcessMapperProperties extends Component {
     static template = "process_mapper.PropertiesPanel";
+    static components = { FieldBuilder };
     static props = {
         selectedElement: { type: Object, optional: true },
         selectedType: { type: String, optional: true },
@@ -128,12 +331,29 @@ class ProcessMapperProperties extends Component {
         onDelete: { type: Function },
     };
 
+    setup() {
+        this.state = useState({ showFieldBuilder: false });
+    }
+
     onInputChange(field, ev) {
         let value = ev.target.value;
         if (field === 'lane_id' || field === 'role_id' || field === 'org_id') {
             value = value ? parseInt(value) : false;
         }
         this.props.onPropertyChange(field, value);
+    }
+
+    openFieldBuilder() {
+        this.state.showFieldBuilder = true;
+    }
+
+    onFieldBuilderSave(serialized) {
+        this.props.onPropertyChange('data_fields', serialized);
+        this.state.showFieldBuilder = false;
+    }
+
+    onFieldBuilderClose() {
+        this.state.showFieldBuilder = false;
     }
 }
 

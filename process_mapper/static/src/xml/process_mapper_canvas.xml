@@ -267,6 +267,131 @@
     </t>
 
     <!-- ============================================================
+         Field Builder (modal overlay)
+         ============================================================ -->
+    <t t-name="process_mapper.FieldBuilder">
+        <div class="pm-fb-overlay" t-on-click.self="onClose">
+            <div class="pm-fb-modal">
+                <div class="pm-fb-header">
+                    <h4><i class="fa fa-database me-1"/> Field Builder</h4>
+                    <button class="pm-fb-close" t-on-click="onClose">
+                        <i class="fa fa-times"/>
+                    </button>
+                </div>
+
+                <div class="pm-fb-body">
+                    <!-- Left: field type palette -->
+                    <div class="pm-fb-palette">
+                        <div class="pm-fb-palette-title">Drag a field type</div>
+                        <t t-foreach="fieldTypes" t-as="ft" t-key="ft.type">
+                            <div class="pm-fb-palette-item"
+                                 draggable="true"
+                                 t-on-dragstart="(ev) => this.onPaletteDragStart(ev, ft)"
+                                 t-att-title="ft.hint">
+                                <i t-attf-class="fa #{ft.icon} pm-fb-palette-icon"/>
+                                <span class="pm-fb-palette-label"><t t-esc="ft.label"/></span>
+                                <span class="pm-fb-palette-type"><t t-esc="ft.type"/></span>
+                            </div>
+                        </t>
+                    </div>
+
+                    <!-- Right: field list -->
+                    <div class="pm-fb-fields">
+                        <div class="pm-fb-fields-title">
+                            Fields
+                            <span class="pm-fb-fields-count">(<t t-esc="state.fields.length"/>)</span>
+                        </div>
+
+                        <!-- Drop zone at top -->
+                        <div t-attf-class="pm-fb-dropzone #{state.dragOverIndex === 0 ? 'pm-fb-dropzone-active' : ''}"
+                             t-on-dragover="(ev) => this.onDropZoneDragOver(ev, 0)"
+                             t-on-dragleave="onDropZoneDragLeave"
+                             t-on-drop="(ev) => this.onDropZoneDrop(ev, 0)">
+                            <span class="pm-fb-dropzone-text">Drop field here</span>
+                        </div>
+
+                        <t t-foreach="state.fields" t-as="field" t-key="field._id">
+                            <div class="pm-fb-field-row"
+                                 draggable="true"
+                                 t-on-dragstart="(ev) => this.onFieldDragStart(ev, field_index)">
+                                <div class="pm-fb-field-handle">
+                                    <i class="fa fa-grip-vertical"/>
+                                </div>
+                                <div class="pm-fb-field-content">
+                                    <div class="pm-fb-field-top">
+                                        <input class="pm-fb-field-name" type="text"
+                                               t-att-value="field.name"
+                                               t-on-change="(ev) => this.onFieldChange(field_index, 'name', ev)"
+                                               placeholder="field_name"/>
+                                        <select class="pm-fb-field-type-select"
+                                                t-on-change="(ev) => this.onFieldChange(field_index, 'type', ev)">
+                                            <t t-foreach="fieldTypes" t-as="ft" t-key="ft.type">
+                                                <option t-att-value="ft.type"
+                                                        t-att-selected="field.type === ft.type">
+                                                    <t t-esc="ft.type"/>
+                                                </option>
+                                            </t>
+                                        </select>
+                                        <button t-attf-class="pm-fb-req-btn #{field.required ? 'pm-fb-req-active' : ''}"
+                                                t-on-click="() => this.onToggleRequired(field_index)"
+                                                title="Toggle required">
+                                            req
+                                        </button>
+                                    </div>
+                                    <t t-if="this.isRelational(field.type)">
+                                        <div class="pm-fb-field-relation">
+                                            <input type="text"
+                                                   t-att-value="field.relation"
+                                                   t-on-change="(ev) => this.onFieldChange(field_index, 'relation', ev)"
+                                                   placeholder="e.g. res.partner"/>
+                                        </div>
+                                    </t>
+                                </div>
+                                <div class="pm-fb-field-actions">
+                                    <button t-on-click="() => this.onMoveUp(field_index)" title="Move up"
+                                            t-att-disabled="field_index === 0">
+                                        <i class="fa fa-chevron-up"/>
+                                    </button>
+                                    <button t-on-click="() => this.onMoveDown(field_index)" title="Move down"
+                                            t-att-disabled="field_index === state.fields.length - 1">
+                                        <i class="fa fa-chevron-down"/>
+                                    </button>
+                                    <button t-on-click="() => this.onRemoveField(field_index)" title="Remove"
+                                            class="pm-fb-remove-btn">
+                                        <i class="fa fa-trash"/>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Drop zone after each field -->
+                            <div t-attf-class="pm-fb-dropzone #{state.dragOverIndex === field_index + 1 ? 'pm-fb-dropzone-active' : ''}"
+                                 t-on-dragover="(ev) => this.onDropZoneDragOver(ev, field_index + 1)"
+                                 t-on-dragleave="onDropZoneDragLeave"
+                                 t-on-drop="(ev) => this.onDropZoneDrop(ev, field_index + 1)">
+                                <span class="pm-fb-dropzone-text">Drop field here</span>
+                            </div>
+                        </t>
+
+                        <t t-if="state.fields.length === 0">
+                            <div class="pm-fb-empty">
+                                <i class="fa fa-arrow-left fa-2x text-muted d-block mb-2"/>
+                                Drag field types from the palette to add fields.
+                            </div>
+                        </t>
+                    </div>
+                </div>
+
+                <div class="pm-fb-footer">
+                    <button class="btn btn-secondary btn-sm" t-on-click="onClose">Cancel</button>
+                    <button class="btn btn-primary btn-sm" t-on-click="onSave">
+                        <i class="fa fa-check me-1"/> Apply Fields
+                    </button>
+                </div>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
          Properties Panel
          ============================================================ -->
     <t t-name="process_mapper.PropertiesPanel">
@@ -345,10 +470,26 @@
                 </div>
                 <div class="pm-prop-group">
                     <label>Data Fields</label>
-                    <textarea t-on-change="(ev) => this.onInputChange('data_fields', ev)"
-                              t-att-value="props.selectedElement.data_fields || ''"
-                              placeholder="One field per line, e.g.:&#10;name: Char (required)&#10;amount: Float&#10;partner_id: Many2one(res.partner)"/>
+                    <div class="pm-field-builder-trigger">
+                        <textarea t-on-change="(ev) => this.onInputChange('data_fields', ev)"
+                                  t-att-value="props.selectedElement.data_fields || ''"
+                                  placeholder="Use the Field Builder or type manually"
+                                  rows="3" readonly="1"/>
+                        <button class="pm-field-builder-btn" t-on-click="() => this.openFieldBuilder()"
+                                title="Open Field Builder">
+                            <i class="fa fa-wrench me-1"/> Field Builder
+                        </button>
+                    </div>
                 </div>
+
+                <!-- Field Builder Modal -->
+                <t t-if="state.showFieldBuilder">
+                    <FieldBuilder
+                        dataFields="props.selectedElement.data_fields || ''"
+                        onSave="(val) => this.onFieldBuilderSave(val)"
+                        onClose="() => this.onFieldBuilderClose()"/>
+                </t>
+
                 <button class="pm-delete-btn" t-on-click="props.onDelete">
                     <i class="fa fa-trash me-1"/> Delete Step
                 </button>
