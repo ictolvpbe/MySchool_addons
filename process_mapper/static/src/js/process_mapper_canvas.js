@@ -143,15 +143,77 @@ class FieldBuilder extends Component {
     };
 
     setup() {
+        this.orm = useService("orm");
         this.state = useState({
             fields: this._parseFields(this.props.dataFields),
             dragOverIndex: -1,
+            paletteTab: 'types',  // 'types' or 'model'
+            modelQuery: '',
+            modelResults: [],
+            selectedModel: null,
+            modelFields: [],
+            modelFieldsLoading: false,
         });
         this.nextId = 1000;
+        this._searchTimeout = null;
     }
 
     get fieldTypes() {
         return FIELD_TYPES;
+    }
+
+    // --- Model browser ---
+    switchTab(tab) {
+        this.state.paletteTab = tab;
+    }
+
+    onModelQueryInput(ev) {
+        this.state.modelQuery = ev.target.value;
+        clearTimeout(this._searchTimeout);
+        if (ev.target.value.length < 2) {
+            this.state.modelResults = [];
+            return;
+        }
+        this._searchTimeout = setTimeout(() => this._searchModels(ev.target.value), 300);
+    }
+
+    async _searchModels(query) {
+        try {
+            const results = await this.orm.call("process.map", "search_models", [query]);
+            this.state.modelResults = results;
+        } catch {
+            this.state.modelResults = [];
+        }
+    }
+
+    async onSelectModel(model) {
+        this.state.selectedModel = model;
+        this.state.modelFieldsLoading = true;
+        try {
+            const fields = await this.orm.call("process.map", "get_model_fields", [model.model]);
+            this.state.modelFields = fields;
+        } catch {
+            this.state.modelFields = [];
+        }
+        this.state.modelFieldsLoading = false;
+    }
+
+    onBackToModelList() {
+        this.state.selectedModel = null;
+        this.state.modelFields = [];
+    }
+
+    onModelFieldDragStart(ev, mf) {
+        const modelName = this.state.selectedModel ? this.state.selectedModel.model : '';
+        const data = JSON.stringify({
+            name: modelName ? `${modelName}.${mf.name}` : mf.name,
+            type: mf.type,
+            required: mf.required,
+            relation: mf.relation || '',
+            label: mf.label,
+        });
+        ev.dataTransfer.setData("application/pm-model-field", data);
+        ev.dataTransfer.effectAllowed = "copy";
     }
 
     // --- Parse "name: Type (options)" text into structured array ---
@@ -227,9 +289,27 @@ class FieldBuilder extends Component {
     onDropZoneDrop(ev, index) {
         ev.preventDefault();
         this.state.dragOverIndex = -1;
+
+        // Check if it's a model field drop
+        const modelFieldData = ev.dataTransfer.getData("application/pm-model-field");
+        if (modelFieldData) {
+            try {
+                const mf = JSON.parse(modelFieldData);
+                this.state.fields.splice(index, 0, {
+                    _id: this.nextId++,
+                    name: mf.name,
+                    type: mf.type,
+                    required: mf.required || false,
+                    relation: mf.relation || '',
+                    options: '',
+                });
+            } catch { /* ignore parse errors */ }
+            return;
+        }
+
+        // Otherwise it's a palette type drop
         const typeName = ev.dataTransfer.getData("application/pm-field-type");
         if (!typeName) return;
-        const fieldDef = FIELD_TYPES.find(f => f.type === typeName);
         const suggestedName = this._suggestFieldName(typeName);
         const newField = {
             _id: this.nextId++,
@@ -374,6 +454,7 @@ class ProcessMapperCanvas extends Component {
         panY: { type: Number },
         onSelectElement: { type: Function },
         onMoveStep: { type: Function },
+        onRenameStep: { type: Function },
         onCreateConnection: { type: Function },
         onCanvasDrop: { type: Function },
         onPan: { type: Function },
@@ -382,6 +463,7 @@ class ProcessMapperCanvas extends Component {
 
     setup() {
         this.svgRef = useRef("svgCanvas");
+        this.editInputRef = useRef("editInput");
         this.dragging = null;
         this.panning = null;
         this.connecting = null;
@@ -390,6 +472,8 @@ class ProcessMapperCanvas extends Component {
             rubberBandY: 0,
             showRubberBand: false,
             connectSourceId: null,
+            editingStepId: null,
+            editingText: '',
         });
     }
 
@@ -528,6 +612,8 @@ class ProcessMapperCanvas extends Component {
     onStepMouseDown(ev, step) {
         ev.stopPropagation();
         if (ev.button !== 0) return;
+        // Don't start drag if we're editing
+        if (this.state.editingStepId === step.id) return;
         this.props.onSelectElement(step.id, 'step');
         const pos = this.screenToSvg(ev.clientX, ev.clientY);
         this.dragging = {
@@ -535,6 +621,61 @@ class ProcessMapperCanvas extends Component {
             offsetX: pos.x - step.x_position,
             offsetY: pos.y - step.y_position,
         };
+    }
+
+    onStepDblClick(ev, step) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        this.dragging = null;
+        this.state.editingStepId = step.id;
+        this.state.editingText = step.name;
+        // Focus the input after OWL renders it
+        setTimeout(() => {
+            const el = this.editInputRef.el;
+            if (el) {
+                el.focus();
+                el.select();
+            }
+        }, 50);
+    }
+
+    onEditInput(ev) {
+        this.state.editingText = ev.target.value;
+    }
+
+    onEditKeydown(ev) {
+        if (ev.key === 'Enter') {
+            this._commitEdit();
+        } else if (ev.key === 'Escape') {
+            this._cancelEdit();
+        }
+    }
+
+    onEditBlur() {
+        this._commitEdit();
+    }
+
+    _commitEdit() {
+        if (this.state.editingStepId !== null && this.state.editingText.trim()) {
+            this.props.onRenameStep(this.state.editingStepId, this.state.editingText.trim());
+        }
+        this.state.editingStepId = null;
+        this.state.editingText = '';
+    }
+
+    _cancelEdit() {
+        this.state.editingStepId = null;
+        this.state.editingText = '';
+    }
+
+    getEditBox(step) {
+        const center = shapeCenter(step);
+        const w = step.step_type === 'start' || step.step_type === 'end' ? 80 :
+                  step.step_type === 'condition' ? 90 :
+                  step.step_type === 'gateway_exclusive' || step.step_type === 'gateway_parallel' ? 70 :
+                  (step.width || 140);
+        const h = 26;
+        return { x: center.x - w / 2, y: center.y - h / 2, w, h };
     }
 
     onConnectionClick(ev, conn) {
@@ -761,6 +902,16 @@ class ProcessMapperClient extends Component {
                 y >= l.y_position && y < l.y_position + l.height
             );
             step.lane_id = lane ? lane.id : false;
+            this.state.dirty = true;
+        }
+    }
+
+    // --- Rename step (inline edit) ---
+
+    onRenameStep(stepId, newName) {
+        const step = this.state.steps.find(s => s.id === stepId);
+        if (step) {
+            step.name = newName;
             this.state.dirty = true;
         }
     }

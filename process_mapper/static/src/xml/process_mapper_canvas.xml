@@ -164,7 +164,8 @@
                     <!-- Steps -->
                     <t t-foreach="props.steps" t-as="step" t-key="step.id">
                         <g t-att-class="getStepClass(step)"
-                           t-on-mousedown.stop="(ev) => this.onStepMouseDown(ev, step)">
+                           t-on-mousedown.stop="(ev) => this.onStepMouseDown(ev, step)"
+                           t-on-dblclick.stop="(ev) => this.onStepDblClick(ev, step)">
 
                             <!-- Start Event: green circle -->
                             <t t-if="step.step_type === 'start'">
@@ -172,11 +173,13 @@
                                         t-att-cx="step.x_position + 25"
                                         t-att-cy="step.y_position + 25"
                                         r="25" fill="#4CAF50" stroke="#2E7D32" stroke-width="2"/>
-                                <text class="pm-shape-text"
-                                      t-att-x="step.x_position + 25"
-                                      t-att-y="step.y_position + 25">
-                                    <t t-esc="step.name.substring(0, 8)"/>
-                                </text>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <text class="pm-shape-text"
+                                          t-att-x="step.x_position + 25"
+                                          t-att-y="step.y_position + 25">
+                                        <t t-esc="step.name.substring(0, 8)"/>
+                                    </text>
+                                </t>
                             </t>
 
                             <!-- End Event: red circle -->
@@ -185,11 +188,13 @@
                                         t-att-cx="step.x_position + 25"
                                         t-att-cy="step.y_position + 25"
                                         r="25" fill="#ffebee" stroke="#D32F2F" stroke-width="4"/>
-                                <text class="pm-shape-text pm-shape-text-dark"
-                                      t-att-x="step.x_position + 25"
-                                      t-att-y="step.y_position + 25">
-                                    <t t-esc="step.name.substring(0, 8)"/>
-                                </text>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <text class="pm-shape-text pm-shape-text-dark"
+                                          t-att-x="step.x_position + 25"
+                                          t-att-y="step.y_position + 25">
+                                        <t t-esc="step.name.substring(0, 8)"/>
+                                    </text>
+                                </t>
                             </t>
 
                             <!-- Task: rounded rectangle -->
@@ -198,11 +203,13 @@
                                       t-att-x="step.x_position" t-att-y="step.y_position"
                                       t-att-width="step.width || 140" t-att-height="step.height || 60"
                                       rx="8" ry="8" fill="#42A5F5" stroke="#1565C0" stroke-width="2"/>
-                                <text class="pm-shape-text"
-                                      t-att-x="step.x_position + (step.width || 140) / 2"
-                                      t-att-y="step.y_position + (step.height || 60) / 2">
-                                    <t t-esc="step.name.substring(0, 18)"/>
-                                </text>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <text class="pm-shape-text"
+                                          t-att-x="step.x_position + (step.width || 140) / 2"
+                                          t-att-y="step.y_position + (step.height || 60) / 2">
+                                        <t t-esc="step.name.substring(0, 18)"/>
+                                    </text>
+                                </t>
                             </t>
 
                             <!-- Condition (If/Else): larger diamond with question text -->
@@ -210,17 +217,19 @@
                                 <polygon class="pm-shape"
                                          t-att-points="(step.x_position + 50) + ',' + step.y_position + ' ' + (step.x_position + 100) + ',' + (step.y_position + 50) + ' ' + (step.x_position + 50) + ',' + (step.y_position + 100) + ' ' + step.x_position + ',' + (step.y_position + 50)"
                                          fill="#26C6DA" stroke="#00838F" stroke-width="2"/>
-                                <text class="pm-shape-text"
-                                      t-att-x="step.x_position + 50"
-                                      t-att-y="step.y_position + 45"
-                                      font-size="11">
-                                    <t t-esc="step.name.substring(0, 14)"/>
-                                </text>
-                                <text class="pm-shape-text" font-size="9" fill-opacity="0.8"
-                                      t-att-x="step.x_position + 50"
-                                      t-att-y="step.y_position + 60">
-                                    Yes / No
-                                </text>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <text class="pm-shape-text"
+                                          t-att-x="step.x_position + 50"
+                                          t-att-y="step.y_position + 45"
+                                          font-size="11">
+                                        <t t-esc="step.name.substring(0, 14)"/>
+                                    </text>
+                                    <text class="pm-shape-text" font-size="9" fill-opacity="0.8"
+                                          t-att-x="step.x_position + 50"
+                                          t-att-y="step.y_position + 60">
+                                        Yes / No
+                                    </text>
+                                </t>
                             </t>
 
                             <!-- Exclusive Gateway: yellow diamond with X -->
@@ -248,6 +257,22 @@
                                 <circle class="pm-connector-dot"
                                         t-att-cx="dot.cx" t-att-cy="dot.cy" r="5"
                                         t-on-mousedown.stop="(ev) => this.onConnectorMouseDown(ev, step)"/>
+                            </t>
+
+                            <!-- Inline text editor (shown on double-click) -->
+                            <t t-if="state.editingStepId === step.id">
+                                <foreignObject t-att-x="getEditBox(step).x"
+                                               t-att-y="getEditBox(step).y"
+                                               t-att-width="getEditBox(step).w"
+                                               t-att-height="getEditBox(step).h">
+                                    <input xmlns="http://www.w3.org/1999/xhtml"
+                                           class="pm-inline-edit"
+                                           t-ref="editInput"
+                                           t-att-value="state.editingText"
+                                           t-on-input="onEditInput"
+                                           t-on-keydown="onEditKeydown"
+                                           t-on-blur="onEditBlur"/>
+                                </foreignObject>
                             </t>
                         </g>
                     </t>
@@ -280,18 +305,87 @@
                 </div>
 
                 <div class="pm-fb-body">
-                    <!-- Left: field type palette -->
+                    <!-- Left: palette with tabs -->
                     <div class="pm-fb-palette">
-                        <div class="pm-fb-palette-title">Drag a field type</div>
-                        <t t-foreach="fieldTypes" t-as="ft" t-key="ft.type">
-                            <div class="pm-fb-palette-item"
-                                 draggable="true"
-                                 t-on-dragstart="(ev) => this.onPaletteDragStart(ev, ft)"
-                                 t-att-title="ft.hint">
-                                <i t-attf-class="fa #{ft.icon} pm-fb-palette-icon"/>
-                                <span class="pm-fb-palette-label"><t t-esc="ft.label"/></span>
-                                <span class="pm-fb-palette-type"><t t-esc="ft.type"/></span>
-                            </div>
+                        <div class="pm-fb-palette-tabs">
+                            <button t-attf-class="pm-fb-tab #{state.paletteTab === 'types' ? 'pm-fb-tab-active' : ''}"
+                                    t-on-click="() => this.switchTab('types')">
+                                <i class="fa fa-th-list me-1"/> Types
+                            </button>
+                            <button t-attf-class="pm-fb-tab #{state.paletteTab === 'model' ? 'pm-fb-tab-active' : ''}"
+                                    t-on-click="() => this.switchTab('model')">
+                                <i class="fa fa-cubes me-1"/> From Model
+                            </button>
+                        </div>
+
+                        <!-- Tab: Field Types -->
+                        <t t-if="state.paletteTab === 'types'">
+                            <div class="pm-fb-palette-title">Drag a field type</div>
+                            <t t-foreach="fieldTypes" t-as="ft" t-key="ft.type">
+                                <div class="pm-fb-palette-item"
+                                     draggable="true"
+                                     t-on-dragstart="(ev) => this.onPaletteDragStart(ev, ft)"
+                                     t-att-title="ft.hint">
+                                    <i t-attf-class="fa #{ft.icon} pm-fb-palette-icon"/>
+                                    <span class="pm-fb-palette-label"><t t-esc="ft.label"/></span>
+                                    <span class="pm-fb-palette-type"><t t-esc="ft.type"/></span>
+                                </div>
+                            </t>
+                        </t>
+
+                        <!-- Tab: From Model -->
+                        <t t-if="state.paletteTab === 'model'">
+                            <t t-if="!state.selectedModel">
+                                <div class="pm-fb-palette-title">Search a model</div>
+                                <input type="text" class="pm-fb-model-search"
+                                       t-att-value="state.modelQuery"
+                                       t-on-input="onModelQueryInput"
+                                       placeholder="e.g. res.partner, sale.order"/>
+                                <t t-if="state.modelResults.length > 0">
+                                    <t t-foreach="state.modelResults" t-as="m" t-key="m.id">
+                                        <div class="pm-fb-model-item"
+                                             t-on-click="() => this.onSelectModel(m)">
+                                            <span class="pm-fb-model-name"><t t-esc="m.model"/></span>
+                                            <span class="pm-fb-model-label"><t t-esc="m.name"/></span>
+                                        </div>
+                                    </t>
+                                </t>
+                                <t t-elif="state.modelQuery.length >= 2">
+                                    <div class="pm-fb-model-empty">No models found</div>
+                                </t>
+                            </t>
+
+                            <t t-if="state.selectedModel">
+                                <div class="pm-fb-model-header">
+                                    <button class="pm-fb-model-back" t-on-click="onBackToModelList">
+                                        <i class="fa fa-arrow-left"/>
+                                    </button>
+                                    <div class="pm-fb-model-selected">
+                                        <strong><t t-esc="state.selectedModel.model"/></strong>
+                                        <small><t t-esc="state.selectedModel.name"/></small>
+                                    </div>
+                                </div>
+                                <div class="pm-fb-palette-title">Drag fields to add</div>
+                                <t t-if="state.modelFieldsLoading">
+                                    <div class="pm-fb-model-empty">
+                                        <i class="fa fa-spinner fa-spin"/> Loading...
+                                    </div>
+                                </t>
+                                <t t-if="!state.modelFieldsLoading">
+                                    <t t-foreach="state.modelFields" t-as="mf" t-key="mf.name">
+                                        <div class="pm-fb-palette-item pm-fb-model-field"
+                                             draggable="true"
+                                             t-on-dragstart="(ev) => this.onModelFieldDragStart(ev, mf)"
+                                             t-att-title="mf.label">
+                                            <span class="pm-fb-palette-label pm-fb-mf-name"><t t-esc="mf.name"/></span>
+                                            <span class="pm-fb-palette-type"><t t-esc="mf.type"/></span>
+                                            <t t-if="mf.required">
+                                                <span class="pm-fb-mf-req">req</span>
+                                            </t>
+                                        </div>
+                                    </t>
+                                </t>
+                            </t>
                         </t>
                     </div>
 
@@ -633,7 +727,8 @@
                         onCreateConnection="(s, t) => this.onCreateConnection(s, t)"
                         onCanvasDrop="(type, x, y) => this.onCanvasDrop(type, x, y)"
                         onPan="(x, y) => this.onPan(x, y)"
-                        onZoom="(delta) => this.onZoomDelta(delta)"/>
+                        onZoom="(delta) => this.onZoomDelta(delta)"
+                        onRenameStep="(id, name) => this.onRenameStep(id, name)"/>
 
                     <ProcessMapperProperties
                         selectedElement="this.getSelectedElement()"

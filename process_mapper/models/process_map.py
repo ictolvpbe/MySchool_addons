@@ -53,6 +53,50 @@ class ProcessMap(models.Model):
         }
 
     # ------------------------------------------------------------------
+    # Model browser API (called from Field Builder)
+    # ------------------------------------------------------------------
+
+    @api.model
+    def search_models(self, query):
+        """Search ir.model by name or technical name."""
+        domain = ['|',
+                  ('model', 'ilike', query),
+                  ('name', 'ilike', query)]
+        models = self.env['ir.model'].search(domain, limit=30, order='model')
+        return [{'id': m.id, 'model': m.model, 'name': m.name} for m in models]
+
+    @api.model
+    def get_model_fields(self, model_name):
+        """Return fields for a given model, mapped to Odoo field type names."""
+        ir_model = self.env['ir.model'].search([('model', '=', model_name)], limit=1)
+        if not ir_model:
+            return []
+
+        TYPE_MAP = {
+            'char': 'Char', 'text': 'Text', 'html': 'Html',
+            'integer': 'Integer', 'float': 'Float', 'monetary': 'Monetary',
+            'boolean': 'Boolean', 'date': 'Date', 'datetime': 'Datetime',
+            'selection': 'Selection', 'many2one': 'Many2one',
+            'one2many': 'One2many', 'many2many': 'Many2many',
+            'binary': 'Binary',
+        }
+        result = []
+        for f in ir_model.field_id.sorted('name'):
+            if f.name.startswith('__') or f.name in ('id', 'create_uid', 'create_date',
+                                                       'write_uid', 'write_date'):
+                continue
+            mapped_type = TYPE_MAP.get(f.ttype, 'Char')
+            relation = f.relation or ''
+            result.append({
+                'name': f.name,
+                'type': mapped_type,
+                'label': f.field_description,
+                'required': f.required,
+                'relation': relation,
+            })
+        return result
+
+    # ------------------------------------------------------------------
     # Diagram data API (called from OWL frontend)
     # ------------------------------------------------------------------
 
