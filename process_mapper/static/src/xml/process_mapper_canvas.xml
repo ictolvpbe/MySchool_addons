@@ -396,8 +396,8 @@
                             <span class="pm-fb-fields-count">(<t t-esc="state.fields.length"/>)</span>
                         </div>
 
-                        <!-- Drop zone at top -->
-                        <div t-attf-class="pm-fb-dropzone #{state.dragOverIndex === 0 ? 'pm-fb-dropzone-active' : ''}"
+                        <!-- Drop zone at top (hidden until dragging) -->
+                        <div t-attf-class="pm-fb-dropzone pm-fb-dropzone-hidden #{state.dragOverIndex === 0 ? 'pm-fb-dropzone-active' : ''}"
                              t-on-dragover="(ev) => this.onDropZoneDragOver(ev, 0)"
                              t-on-dragleave="onDropZoneDragLeave"
                              t-on-drop="(ev) => this.onDropZoneDrop(ev, 0)">
@@ -457,8 +457,8 @@
                                 </div>
                             </div>
 
-                            <!-- Drop zone after each field -->
-                            <div t-attf-class="pm-fb-dropzone #{state.dragOverIndex === field_index + 1 ? 'pm-fb-dropzone-active' : ''}"
+                            <!-- Drop zone after each field (hidden for in-between, visible for last) -->
+                            <div t-attf-class="pm-fb-dropzone #{field_last ? '' : 'pm-fb-dropzone-hidden'} #{state.dragOverIndex === field_index + 1 ? 'pm-fb-dropzone-active' : ''}"
                                  t-on-dragover="(ev) => this.onDropZoneDragOver(ev, field_index + 1)"
                                  t-on-dragleave="onDropZoneDragLeave"
                                  t-on-drop="(ev) => this.onDropZoneDrop(ev, field_index + 1)">

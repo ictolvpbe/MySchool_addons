@@ -716,6 +716,31 @@
     justify-content: center;
 }
 
+.pm-fb-dropzone-hidden {
+    height: 6px;
+    border-color: transparent;
+    background: transparent;
+    margin: 2px 0;
+    overflow: hidden;
+}
+
+.pm-fb-dropzone-hidden .pm-fb-dropzone-text {
+    display: none;
+}
+
+.pm-fb-dropzone-hidden.pm-fb-dropzone-active {
+    height: 32px;
+    border-color: #714B67;
+    background: #e8d5e3;
+    overflow: visible;
+}
+
+.pm-fb-dropzone-hidden.pm-fb-dropzone-active .pm-fb-dropzone-text {
+    display: inline;
+    color: #714B67;
+    font-weight: 600;
+}
+
 .pm-fb-dropzone-active {
     height: 40px;
     background: #e8d5e3;
