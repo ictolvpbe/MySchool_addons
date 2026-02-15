@@ -1,0 +1,547 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- ============================================================
+         Toolbar
+         ============================================================ -->
+    <t t-name="knowledge_builder.Toolbar">
+        <div class="kb-toolbar">
+            <span class="kb-toolbar-title">
+                <i class="fa fa-book me-1"/>
+                <t t-esc="props.title || 'Knowledge Builder'"/>
+            </span>
+
+            <span t-attf-class="kb-type-badge kb-type-#{props.knowledgeType}">
+                <t t-esc="props.knowledgeType"/>
+            </span>
+
+            <span t-attf-class="kb-state-badge kb-state-#{props.state}">
+                <t t-esc="props.state"/>
+            </span>
+
+            <div class="kb-toolbar-divider"/>
+
+            <button class="kb-toolbar-btn kb-save-btn"
+                    t-on-click="() => this.props.onSave()">
+                <i class="fa fa-save"/> Save
+                <t t-if="props.dirty">
+                    <span class="kb-dirty-dot"/>
+                </t>
+            </button>
+
+            <button class="kb-toolbar-btn"
+                    t-on-click="() => this.props.onAddStep()">
+                <i class="fa fa-plus"/> Add Step
+            </button>
+
+            <div class="kb-toolbar-divider"/>
+
+            <button t-attf-class="kb-toolbar-btn #{props.showPreview ? 'kb-active' : ''}"
+                    t-on-click="() => this.props.onTogglePreview()">
+                <i class="fa fa-eye"/> Preview
+            </button>
+
+            <button t-attf-class="kb-toolbar-btn #{props.showVersions ? 'kb-active' : ''}"
+                    t-on-click="() => this.props.onToggleVersions()">
+                <i class="fa fa-history"/> Versions
+            </button>
+
+            <button class="kb-toolbar-btn"
+                    t-on-click="() => this.props.onPrint()"
+                    title="Print / Export PDF">
+                <i class="fa fa-print"/> Print
+            </button>
+
+            <div class="kb-toolbar-divider"/>
+
+            <button class="kb-toolbar-btn"
+                    t-on-click="() => this.props.onBack()">
+                <i class="fa fa-arrow-left"/> Back
+            </button>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Step List (left panel)
+         ============================================================ -->
+    <t t-name="knowledge_builder.StepList">
+        <div class="kb-step-list">
+            <div class="kb-step-list-header">
+                <h4><i class="fa fa-list-ol me-1"/> Steps</h4>
+                <span class="badge bg-secondary"><t t-esc="props.steps.length"/></span>
+            </div>
+
+            <!-- Search filter -->
+            <div class="kb-step-search">
+                <input type="text" class="kb-step-search-input"
+                       placeholder="Filter steps..."
+                       t-att-value="props.searchFilter"
+                       t-on-input="(ev) => this.props.onSearchChange(ev.target.value)"/>
+                <i class="fa fa-search kb-step-search-icon"/>
+            </div>
+
+            <div class="kb-step-list-body">
+                <!-- Drop zone at top (hidden until drag) -->
+                <div t-attf-class="kb-dropzone kb-dropzone-hidden #{state.dragOverIndex === 0 ? 'kb-dropzone-active' : ''}"
+                     t-on-dragover="(ev) => this.onDropZoneDragOver(ev, 0)"
+                     t-on-dragleave="onDropZoneDragLeave"
+                     t-on-drop="(ev) => this.onDropZoneDrop(ev, 0)">
+                    <span class="kb-dropzone-text">Drop here</span>
+                </div>
+
+                <t t-foreach="this.filteredSteps" t-as="step" t-key="step.id">
+                    <div t-attf-class="kb-step-card #{props.selectedStepIndex === step._origIndex ? 'kb-step-selected' : ''}"
+                         draggable="true"
+                         t-on-dragstart="(ev) => this.onStepDragStart(ev, step._origIndex)"
+                         t-on-click="() => this.props.onSelectStep(step._origIndex)">
+                        <div class="kb-step-handle">
+                            <i class="fa fa-grip-vertical"/>
+                        </div>
+                        <div class="kb-step-info">
+                            <div class="kb-step-number">Step <t t-esc="step._origIndex + 1"/></div>
+                            <div class="kb-step-title"><t t-esc="step.name"/></div>
+                        </div>
+                        <t t-if="step.image">
+                            <img class="kb-step-thumb"
+                                 t-att-src="'data:image/png;base64,' + step.image"/>
+                        </t>
+                        <div class="kb-step-card-actions">
+                            <button class="kb-step-action-btn"
+                                    t-on-click.stop="() => this.props.onDuplicateStep(step._origIndex)"
+                                    title="Duplicate step">
+                                <i class="fa fa-copy"/>
+                            </button>
+                            <button class="kb-step-action-btn kb-step-delete"
+                                    t-on-click.stop="() => this.props.onRemoveStep(step._origIndex)"
+                                    title="Remove step">
+                                <i class="fa fa-trash"/>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Drop zone after each step -->
+                    <div t-attf-class="kb-dropzone #{step_last ? '' : 'kb-dropzone-hidden'} #{state.dragOverIndex === step._origIndex + 1 ? 'kb-dropzone-active' : ''}"
+                         t-on-dragover="(ev) => this.onDropZoneDragOver(ev, step._origIndex + 1)"
+                         t-on-dragleave="onDropZoneDragLeave"
+                         t-on-drop="(ev) => this.onDropZoneDrop(ev, step._origIndex + 1)">
+                        <span class="kb-dropzone-text">Drop here</span>
+                    </div>
+                </t>
+
+                <t t-if="props.steps.length === 0">
+                    <div class="kb-selector-empty">
+                        <i class="fa fa-arrow-up fa-2x text-muted d-block mb-2"/>
+                        Click "Add Step" to get started.
+                    </div>
+                </t>
+
+                <button class="kb-add-step-btn"
+                        t-on-click="() => this.props.onAddStep()">
+                    <i class="fa fa-plus"/> Add Step
+                </button>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Rich Text Toolbar
+         ============================================================ -->
+    <t t-name="knowledge_builder.RichTextToolbar">
+        <div class="kb-rt-toolbar">
+            <button class="kb-rt-btn" t-on-click="() => this.props.onCommand('bold')" title="Bold (Ctrl+B)">
+                <i class="fa fa-bold"/>
+            </button>
+            <button class="kb-rt-btn" t-on-click="() => this.props.onCommand('italic')" title="Italic (Ctrl+I)">
+                <i class="fa fa-italic"/>
+            </button>
+            <button class="kb-rt-btn" t-on-click="() => this.props.onCommand('underline')" title="Underline (Ctrl+U)">
+                <i class="fa fa-underline"/>
+            </button>
+            <span class="kb-rt-divider"/>
+            <button class="kb-rt-btn" t-on-click="() => this.props.onCommand('insertUnorderedList')" title="Bullet list">
+                <i class="fa fa-list-ul"/>
+            </button>
+            <button class="kb-rt-btn" t-on-click="() => this.props.onCommand('insertOrderedList')" title="Numbered list">
+                <i class="fa fa-list-ol"/>
+            </button>
+            <span class="kb-rt-divider"/>
+            <button class="kb-rt-btn" t-on-click="() => this.props.onCommand('formatBlock', 'h3')" title="Heading">
+                <i class="fa fa-header"/>
+            </button>
+            <button class="kb-rt-btn" t-on-click="() => this.props.onCommand('removeFormat')" title="Clear formatting">
+                <i class="fa fa-eraser"/>
+            </button>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Step Editor (center panel)
+         ============================================================ -->
+    <t t-name="knowledge_builder.StepEditor">
+        <div class="kb-editor" t-ref="editorArea">
+            <t t-if="props.step">
+                <div class="kb-editor-section">
+                    <label>Step Title</label>
+                    <input type="text"
+                           t-att-value="props.step.name"
+                           t-on-input="(ev) => this.props.onTitleChange(ev.target.value)"
+                           placeholder="Enter step title"/>
+                </div>
+
+                <div class="kb-editor-section">
+                    <label>Step Text</label>
+                    <RichTextToolbar onCommand="(cmd, val) => this.onRichTextCommand(cmd, val)"/>
+                    <div class="kb-rich-text"
+                         contenteditable="true"
+                         t-ref="richText"
+                         t-on-input="() => this.onRichTextInput()"
+                         data-placeholder="Type your text here. Use the toolbar above for formatting."/>
+                </div>
+
+                <div class="kb-editor-section">
+                    <label>Picture</label>
+                    <div class="kb-image-zone" tabindex="0">
+                        <t t-if="props.step.image">
+                            <div class="kb-image-preview-wrapper">
+                                <img class="kb-image-preview"
+                                     t-att-src="'data:image/png;base64,' + props.step.image"/>
+                            </div>
+                            <div class="kb-image-actions">
+                                <button class="kb-image-btn"
+                                        t-on-click="onUploadClick">
+                                    <i class="fa fa-upload"/> Replace
+                                </button>
+                                <button class="kb-image-btn kb-image-btn-danger"
+                                        t-on-click="() => this.props.onImageRemove()">
+                                    <i class="fa fa-trash"/> Remove
+                                </button>
+                            </div>
+                        </t>
+                        <t t-else="">
+                            <div class="kb-image-zone-empty">
+                                <i class="fa fa-image"/>
+                                <p>Paste an image (Ctrl+V) or upload a file</p>
+                                <div class="kb-image-zone-buttons">
+                                    <button class="kb-image-btn"
+                                            t-on-click="onUploadClick">
+                                        <i class="fa fa-upload"/> Upload Image
+                                    </button>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
+                    <input type="file" accept="image/*"
+                           t-ref="fileInput"
+                           style="display: none;"
+                           t-on-change="onFileUpload"/>
+                </div>
+
+                <!-- Comments section -->
+                <div class="kb-editor-section">
+                    <button class="kb-comments-toggle"
+                            t-on-click="toggleComments">
+                        <i t-attf-class="fa #{state.showComments ? 'fa-chevron-down' : 'fa-chevron-right'}"/>
+                        Comments
+                        <t t-if="props.comments and props.comments.length > 0">
+                            <span class="badge bg-secondary ms-1"><t t-esc="props.comments.length"/></span>
+                        </t>
+                    </button>
+                    <t t-if="state.showComments">
+                        <div class="kb-comments">
+                            <div class="kb-comment-input">
+                                <textarea class="kb-comment-textarea"
+                                          placeholder="Add a comment... (Enter to submit)"
+                                          t-att-value="state.newComment"
+                                          t-on-input="(ev) => this.state.newComment = ev.target.value"
+                                          t-on-keydown="onCommentKeydown"/>
+                                <button class="kb-comment-submit" t-on-click="submitComment">
+                                    <i class="fa fa-paper-plane"/>
+                                </button>
+                            </div>
+                            <t t-foreach="props.comments || []" t-as="comment" t-key="comment.id">
+                                <div class="kb-comment">
+                                    <div class="kb-comment-header">
+                                        <strong><t t-esc="comment.author"/></strong>
+                                        <span class="kb-comment-date"><t t-esc="comment.date"/></span>
+                                        <button class="kb-comment-delete"
+                                                t-on-click="() => this.props.onDeleteComment(comment.id)"
+                                                title="Delete comment">
+                                            <i class="fa fa-times"/>
+                                        </button>
+                                    </div>
+                                    <div class="kb-comment-body"><t t-esc="comment.body"/></div>
+                                </div>
+                            </t>
+                            <t t-if="!props.comments or props.comments.length === 0">
+                                <div class="kb-comments-empty">No comments yet.</div>
+                            </t>
+                        </div>
+                    </t>
+                </div>
+            </t>
+            <t t-else="">
+                <div class="kb-editor-empty">
+                    <i class="fa fa-hand-pointer-o"/>
+                    Select a step from the list to edit it.
+                </div>
+            </t>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Preview Panel
+         ============================================================ -->
+    <t t-name="knowledge_builder.Preview">
+        <div class="kb-preview">
+            <div class="kb-preview-doc">
+                <div class="kb-preview-title"><t t-esc="props.title"/></div>
+                <div class="kb-preview-type">
+                    <span t-attf-class="kb-type-badge kb-type-#{props.knowledgeType}">
+                        <t t-esc="props.knowledgeType"/>
+                    </span>
+                </div>
+                <t t-if="props.details">
+                    <div class="kb-preview-details" t-out="props.details"/>
+                </t>
+
+                <!-- Table of Contents -->
+                <t t-if="props.steps.length > 2">
+                    <div class="kb-preview-toc">
+                        <div class="kb-preview-toc-title">Table of Contents</div>
+                        <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                            <div class="kb-preview-toc-item">
+                                <span class="kb-preview-toc-num"><t t-esc="step_index + 1"/>.</span>
+                                <t t-esc="step.name"/>
+                            </div>
+                        </t>
+                    </div>
+                </t>
+
+                <!-- Procedure layout -->
+                <t t-if="props.knowledgeType === 'procedure'">
+                    <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                        <div class="kb-preview-step" t-att-id="'step-' + step_index">
+                            <div class="kb-preview-step-header">
+                                <div class="kb-preview-step-num"><t t-esc="step_index + 1"/></div>
+                                <div class="kb-preview-step-title"><t t-esc="step.name"/></div>
+                            </div>
+                            <t t-if="step.text">
+                                <div class="kb-preview-step-text" t-out="step.text"/>
+                            </t>
+                            <t t-if="step.image">
+                                <img class="kb-preview-step-image"
+                                     t-att-src="'data:image/png;base64,' + step.image"/>
+                            </t>
+                        </div>
+                    </t>
+                </t>
+
+                <!-- Q&A layout -->
+                <t t-if="props.knowledgeType === 'qa'">
+                    <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                        <div t-attf-class="kb-preview-qa-step #{step_index % 2 !== 0 ? 'kb-preview-qa-answer' : ''}"
+                             t-att-id="'step-' + step_index">
+                            <div t-attf-class="kb-preview-qa-label #{step_index % 2 === 0 ? 'kb-preview-qa-q' : 'kb-preview-qa-a'}">
+                                <t t-if="step_index % 2 === 0">Question</t>
+                                <t t-else="">Answer</t>
+                            </div>
+                            <div class="kb-preview-step-title" style="margin-bottom: 8px;">
+                                <t t-esc="step.name"/>
+                            </div>
+                            <t t-if="step.text">
+                                <div class="kb-preview-step-text" t-out="step.text"/>
+                            </t>
+                            <t t-if="step.image">
+                                <img class="kb-preview-step-image"
+                                     t-att-src="'data:image/png;base64,' + step.image"/>
+                            </t>
+                        </div>
+                    </t>
+                </t>
+
+                <!-- Solution layout -->
+                <t t-if="props.knowledgeType === 'solution'">
+                    <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                        <div t-attf-class="#{step_index === 0 ? 'kb-preview-solution-problem' : 'kb-preview-solution-step'}"
+                             t-att-id="'step-' + step_index">
+                            <div class="kb-preview-qa-label" style="margin-bottom: 4px;">
+                                <t t-if="step_index === 0">
+                                    <span style="color: #dc3545;">Problem</span>
+                                </t>
+                                <t t-else="">
+                                    <span style="color: #198754;">Solution Step <t t-esc="step_index"/></span>
+                                </t>
+                            </div>
+                            <div class="kb-preview-step-title" style="margin-bottom: 8px;">
+                                <t t-esc="step.name"/>
+                            </div>
+                            <t t-if="step.text">
+                                <div class="kb-preview-step-text" t-out="step.text"/>
+                            </t>
+                            <t t-if="step.image">
+                                <img class="kb-preview-step-image"
+                                     t-att-src="'data:image/png;base64,' + step.image"/>
+                            </t>
+                        </div>
+                    </t>
+                </t>
+
+                <!-- Information layout -->
+                <t t-if="props.knowledgeType === 'information'">
+                    <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                        <div class="kb-preview-info-step" t-att-id="'step-' + step_index">
+                            <div class="kb-preview-step-title" style="font-size: 20px; margin-bottom: 12px;">
+                                <t t-esc="step.name"/>
+                            </div>
+                            <t t-if="step.text">
+                                <div class="kb-preview-step-text" t-out="step.text"/>
+                            </t>
+                            <t t-if="step.image">
+                                <img class="kb-preview-step-image"
+                                     t-att-src="'data:image/png;base64,' + step.image"/>
+                            </t>
+                        </div>
+                    </t>
+                </t>
+
+                <t t-if="props.steps.length === 0">
+                    <div class="kb-selector-empty">
+                        No steps yet. Add steps to see the preview.
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Version History Panel
+         ============================================================ -->
+    <t t-name="knowledge_builder.Versions">
+        <div class="kb-versions-panel">
+            <div class="kb-versions-header">
+                <h4><i class="fa fa-history me-1"/> Version History</h4>
+                <button class="kb-versions-close" t-on-click="() => this.props.onClose()">
+                    <i class="fa fa-times"/>
+                </button>
+            </div>
+            <div class="kb-versions-body">
+                <t t-if="props.versions.length > 0">
+                    <t t-foreach="props.versions" t-as="version" t-key="version.id">
+                        <div class="kb-version-item">
+                            <div class="kb-version-info">
+                                <div class="kb-version-num">v<t t-esc="version.version_number"/></div>
+                                <div class="kb-version-summary"><t t-esc="version.summary"/></div>
+                                <div class="kb-version-meta">
+                                    <t t-esc="version.author"/> · <t t-esc="version.date"/>
+                                </div>
+                            </div>
+                            <button class="kb-version-restore"
+                                    t-on-click="() => this.props.onRestore(version.id)"
+                                    title="Restore this version">
+                                <i class="fa fa-undo"/> Restore
+                            </button>
+                        </div>
+                    </t>
+                </t>
+                <t t-else="">
+                    <div class="kb-selector-empty">
+                        No versions yet. Versions are created each time you save.
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Main Client Component
+         ============================================================ -->
+    <t t-name="knowledge_builder.KnowledgeBuilderClient">
+        <div class="kb-container">
+            <t t-if="state.objectId">
+                <KnowledgeBuilderToolbar
+                    title="state.title"
+                    knowledgeType="state.knowledgeType"
+                    state="state.objectState"
+                    dirty="state.dirty"
+                    showPreview="state.showPreview"
+                    showVersions="state.showVersions"
+                    onSave="() => this.saveEditorData()"
+                    onAddStep="() => this.addStep()"
+                    onTogglePreview="() => this.togglePreview()"
+                    onToggleVersions="() => this.toggleVersions()"
+                    onPrint="() => this.onPrint()"
+                    onBack="() => this.goBack()"/>
+
+                <div class="kb-main">
+                    <KnowledgeBuilderStepList
+                        steps="state.steps"
+                        selectedStepIndex="state.selectedStepIndex"
+                        searchFilter="state.searchFilter"
+                        onSelectStep="(i) => this.selectStep(i)"
+                        onAddStep="() => this.addStep()"
+                        onDuplicateStep="(i) => this.duplicateStep(i)"
+                        onRemoveStep="(i) => this.removeStep(i)"
+                        onMoveStep="(from, to) => this.moveStep(from, to)"
+                        onSearchChange="(v) => this.onSearchChange(v)"/>
+
+                    <t t-if="state.showPreview">
+                        <KnowledgeBuilderPreview
+                            title="state.title"
+                            details="state.details"
+                            knowledgeType="state.knowledgeType"
+                            steps="state.steps"/>
+                    </t>
+                    <t t-else="">
+                        <KnowledgeBuilderStepEditor
+                            step="this.getSelectedStep()"
+                            comments="this.getSelectedStepComments()"
+                            onTitleChange="(v) => this.onStepTitleChange(v)"
+                            onTextChange="(v) => this.onStepTextChange(v)"
+                            onImageChange="(b64) => this.onStepImageChange(b64)"
+                            onImageRemove="() => this.onStepImageRemove()"
+                            onAddComment="(body) => this.onAddComment(body)"
+                            onDeleteComment="(id) => this.onDeleteComment(id)"/>
+                    </t>
+
+                    <!-- Version History sidebar -->
+                    <t t-if="state.showVersions">
+                        <KnowledgeBuilderVersions
+                            versions="state.versions"
+                            onRestore="(id) => this.restoreVersion(id)"
+                            onClose="() => this.toggleVersions()"/>
+                    </t>
+                </div>
+            </t>
+            <t t-else="">
+                <!-- Object selector -->
+                <div class="kb-selector">
+                    <h2><i class="fa fa-book me-2"/>Knowledge Builder</h2>
+                    <t t-if="state.availableObjects.length > 0">
+                        <ul class="kb-selector-list">
+                            <t t-foreach="state.availableObjects" t-as="obj" t-key="obj.id">
+                                <li class="kb-selector-item"
+                                    t-on-click="() => this.loadObject(obj.id)">
+                                    <span class="kb-selector-name"><t t-esc="obj.name"/></span>
+                                    <div class="d-flex gap-2">
+                                        <span t-attf-class="kb-type-badge kb-type-#{obj.knowledge_type}">
+                                            <t t-esc="obj.knowledge_type"/>
+                                        </span>
+                                        <span t-attf-class="kb-state-badge kb-state-#{obj.state}">
+                                            <t t-esc="obj.state"/>
+                                        </span>
+                                    </div>
+                                </li>
+                            </t>
+                        </ul>
+                    </t>
+                    <t t-else="">
+                        <div class="kb-selector-empty">
+                            No knowledge objects found. Create one from the Knowledge Objects list view.
+                        </div>
+                    </t>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

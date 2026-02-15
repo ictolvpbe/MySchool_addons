@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_knowledge_builder_root"
+              name="Knowledge Builder"
+              sequence="16"
+              groups="knowledge_builder.group_knowledge_builder_user"/>
+
+    <menuitem id="menu_knowledge_objects"
+              name="Knowledge Objects"
+              parent="menu_knowledge_builder_root"
+              action="action_knowledge_object_list"
+              sequence="10"/>
+
+    <menuitem id="menu_knowledge_config"
+              name="Configuration"
+              parent="menu_knowledge_builder_root"
+              sequence="90"
+              groups="knowledge_builder.group_knowledge_builder_manager"/>
+
+    <menuitem id="menu_knowledge_tags"
+              name="Tags"
+              parent="menu_knowledge_config"
+              action="action_knowledge_tag_list"
+              sequence="10"/>
+</odoo>

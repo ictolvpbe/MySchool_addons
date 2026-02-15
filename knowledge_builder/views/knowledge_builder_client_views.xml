@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_knowledge_builder_client" model="ir.actions.client">
+        <field name="name">Knowledge Builder Editor</field>
+        <field name="tag">knowledge_builder_editor</field>
+    </record>
+</odoo>

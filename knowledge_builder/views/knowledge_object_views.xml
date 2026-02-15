@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- List View -->
+    <record id="view_knowledge_object_list" model="ir.ui.view">
+        <field name="name">knowledge.object.list</field>
+        <field name="model">knowledge.object</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="knowledge_type" widget="badge"
+                       decoration-info="knowledge_type == 'information'"
+                       decoration-success="knowledge_type == 'procedure'"
+                       decoration-warning="knowledge_type == 'qa'"
+                       decoration-danger="knowledge_type == 'solution'"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state == 'review'"
+                       decoration-success="state == 'published'"/>
+                <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                <field name="step_count"/>
+                <field name="version_number" string="Version"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_knowledge_object_form" model="ir.ui.view">
+        <field name="name">knowledge.object.form</field>
+        <field name="model">knowledge.object</field>
+        <field name="arch" type="xml">
+            <form string="Knowledge Object">
+                <header>
+                    <button name="action_open_editor" type="object"
+                            string="Open Visual Editor" class="btn-primary"
+                            icon="fa-pencil-square-o"/>
+                    <button name="action_submit_review" type="object"
+                            string="Submit for Review" class="btn-secondary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_publish" type="object"
+                            string="Publish" class="btn-success"
+                            invisible="state != 'review'"/>
+                    <button name="action_reset_draft" type="object"
+                            string="Reset to Draft" class="btn-secondary"
+                            invisible="state == 'draft'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,review,published"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_generate_share_link" type="object"
+                                class="oe_stat_button" icon="fa-share-alt"
+                                invisible="state != 'published'">
+                            <div class="o_field_widget o_stat_info">
+                                <span class="o_stat_text">Share</span>
+                            </div>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="Knowledge Object Title"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="knowledge_type"/>
+                            <field name="tag_ids" widget="many2many_tags"
+                                   options="{'color_field': 'color'}"/>
+                        </group>
+                        <group>
+                            <field name="step_count"/>
+                            <field name="version_number"/>
+                            <field name="share_url" widget="url" invisible="not share_token"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Details" name="details">
+                            <field name="details"/>
+                        </page>
+                        <page string="Steps" name="steps">
+                            <field name="step_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="text"/>
+                                    <field name="image" widget="image" options="{'size': [100, 100]}"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_knowledge_object_list" model="ir.actions.act_window">
+        <field name="name">Knowledge Objects</field>
+        <field name="res_model">knowledge.object</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first Knowledge Object
+            </p>
+        </field>
+    </record>
+
+    <!-- Tag views -->
+    <record id="view_knowledge_tag_list" model="ir.ui.view">
+        <field name="name">knowledge.tag.list</field>
+        <field name="model">knowledge.tag</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="name"/>
+                <field name="color" widget="color_picker"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_knowledge_tag_list" model="ir.actions.act_window">
+        <field name="name">Tags</field>
+        <field name="res_model">knowledge.tag</field>
+        <field name="view_mode">list</field>
+    </record>
+
+</odoo>
