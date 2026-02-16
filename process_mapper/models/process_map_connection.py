@@ -15,6 +15,8 @@ class ProcessMapConnection(models.Model):
         ('message', 'Message Flow'),
         ('association', 'Association'),
     ], string='Type', default='sequence', required=True)
+    waypoints = fields.Text(string='Waypoints', default='[]',
+                            help='JSON array of waypoint coordinates for orthogonal routing')
     map_id = fields.Many2one('process.map', string='Process Map', required=True, ondelete='cascade')
 
     _sql_constraints = [

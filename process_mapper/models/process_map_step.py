@@ -9,6 +9,7 @@ class ProcessMapStep(models.Model):
         ('start', 'Start Event'),
         ('end', 'End Event'),
         ('task', 'Task'),
+        ('subprocess', 'Sub-Process'),
         ('condition', 'Condition (If/Else)'),
         ('gateway_exclusive', 'Exclusive Gateway'),
         ('gateway_parallel', 'Parallel Gateway'),
@@ -31,3 +32,8 @@ class ProcessMapStep(models.Model):
     system_action = fields.Char(string='System Action')
     data_fields = fields.Text(string='Data Fields',
                               help='Describe the data/fields this step needs or produces, one per line')
+
+    color = fields.Char(string='Color', help='Custom fill color (hex) overriding the default type color')
+    icon = fields.Char(string='Icon', help='FontAwesome icon class, e.g. fa-envelope')
+    annotation = fields.Text(string='Annotation', help='Additional note or business rule for this step')
+    sub_process_id = fields.Many2one('process.map', string='Linked Sub-Process', ondelete='set null')

@@ -1,3 +1,4 @@
+import json
 import re
 import logging
 
@@ -5,6 +6,25 @@ from odoo import models, fields, api
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
+
+# Mapping from Field Builder notation to Odoo Python field definitions
+_FB_TYPE_MAP = {
+    'Char': 'fields.Char',
+    'Text': 'fields.Text',
+    'Html': 'fields.Html',
+    'Integer': 'fields.Integer',
+    'Float': 'fields.Float',
+    'Monetary': 'fields.Monetary',
+    'Boolean': 'fields.Boolean',
+    'Date': 'fields.Date',
+    'Datetime': 'fields.Datetime',
+    'Selection': 'fields.Selection',
+    'Many2one': 'fields.Many2one',
+    'One2many': 'fields.One2many',
+    'Many2many': 'fields.Many2many',
+    'Binary': 'fields.Binary',
+    'Image': 'fields.Image',
+}
 
 
 class ProcessMap(models.Model):
@@ -25,6 +45,7 @@ class ProcessMap(models.Model):
     lane_ids = fields.One2many('process.map.lane', 'map_id', string='Lanes')
     step_ids = fields.One2many('process.map.step', 'map_id', string='Steps')
     connection_ids = fields.One2many('process.map.connection', 'map_id', string='Connections')
+    version_ids = fields.One2many('process.map.version', 'map_id', string='Version History')
 
     generated_prompt = fields.Text(string='Generated Prompt', readonly=True)
 
@@ -134,6 +155,11 @@ class ProcessMap(models.Model):
                 'responsible': step.responsible or '',
                 'system_action': step.system_action or '',
                 'data_fields': step.data_fields or '',
+                'color': step.color or '',
+                'icon': step.icon or '',
+                'annotation': step.annotation or '',
+                'sub_process_id': step.sub_process_id.id if step.sub_process_id else False,
+                'sub_process_name': step.sub_process_id.name if step.sub_process_id else '',
             })
 
         connections = []
@@ -144,6 +170,7 @@ class ProcessMap(models.Model):
                 'target_step_id': conn.target_step_id.id,
                 'label': conn.label or '',
                 'connection_type': conn.connection_type,
+                'waypoints': json.loads(conn.waypoints or '[]'),
             })
 
         return {
@@ -158,6 +185,9 @@ class ProcessMap(models.Model):
 
     def save_diagram_data(self, data):
         self.ensure_one()
+
+        # Create version snapshot before saving
+        self._create_version_snapshot()
 
         Lane = self.env['process.map.lane']
         Step = self.env['process.map.step']
@@ -204,6 +234,8 @@ class ProcessMap(models.Model):
             if lane_id and lane_id in id_map:
                 lane_id = id_map[lane_id]
 
+            sub_process_id = step_data.get('sub_process_id') or False
+
             vals = {
                 'name': step_data.get('name', 'Step'),
                 'description': step_data.get('description', ''),
@@ -217,6 +249,10 @@ class ProcessMap(models.Model):
                 'responsible': step_data.get('responsible', ''),
                 'system_action': step_data.get('system_action', ''),
                 'data_fields': step_data.get('data_fields', ''),
+                'color': step_data.get('color', ''),
+                'icon': step_data.get('icon', ''),
+                'annotation': step_data.get('annotation', ''),
+                'sub_process_id': sub_process_id,
                 'map_id': self.id,
             }
             if isinstance(sid, int) and sid > 0 and sid in existing_step_ids:
@@ -250,6 +286,7 @@ class ProcessMap(models.Model):
                 'target_step_id': target_id,
                 'label': conn_data.get('label', ''),
                 'connection_type': conn_data.get('connection_type', 'sequence'),
+                'waypoints': json.dumps(conn_data.get('waypoints', [])),
                 'map_id': self.id,
             }
             if isinstance(cid, int) and cid > 0 and cid in existing_conn_ids:
@@ -263,6 +300,47 @@ class ProcessMap(models.Model):
         if to_delete:
             Connection.browse(list(to_delete)).unlink()
 
+        return True
+
+    # ------------------------------------------------------------------
+    # Version history
+    # ------------------------------------------------------------------
+
+    def _create_version_snapshot(self):
+        """Create a version snapshot of the current diagram state."""
+        self.ensure_one()
+        if not self.step_ids and not self.lane_ids:
+            return
+        data = self.get_diagram_data()
+        last_version = self.env['process.map.version'].search(
+            [('map_id', '=', self.id)], limit=1, order='version_number desc')
+        next_num = (last_version.version_number + 1) if last_version else 1
+        self.env['process.map.version'].create({
+            'map_id': self.id,
+            'version_number': next_num,
+            'snapshot': json.dumps(data),
+        })
+
+    def get_versions(self):
+        """Return version list for the frontend version panel."""
+        self.ensure_one()
+        versions = self.env['process.map.version'].search([('map_id', '=', self.id)], order='version_number desc')
+        return [{
+            'id': v.id,
+            'version_number': v.version_number,
+            'create_date': fields.Datetime.to_string(v.create_date),
+            'create_uid_name': v.create_uid.name if v.create_uid else '',
+            'note': v.note or '',
+        } for v in versions]
+
+    def restore_version(self, version_id):
+        """Restore diagram from a version snapshot."""
+        self.ensure_one()
+        version = self.env['process.map.version'].browse(version_id)
+        if not version.exists() or version.map_id.id != self.id:
+            raise UserError("Invalid version.")
+        data = json.loads(version.snapshot)
+        self.save_diagram_data(data)
         return True
 
     # ------------------------------------------------------------------
@@ -283,6 +361,44 @@ class ProcessMap(models.Model):
         text = text.lower().strip()
         text = re.sub(r'[^a-z0-9]+', '_', text)
         return text.strip('_')
+
+    def _parse_field_builder_line(self, line):
+        """Parse a Field Builder line like 'field_name: Type (relation, required)'
+        into a proper Odoo field definition string."""
+        line = line.strip()
+        if not line:
+            return None
+        match = re.match(r'^(\w+)\s*:\s*(\w+)\s*(.*)$', line)
+        if not match:
+            return f"    # {line}"
+        name = match.group(1)
+        ftype = match.group(2)
+        options = match.group(3).strip().strip('()').strip() if match.group(3) else ''
+
+        odoo_type = _FB_TYPE_MAP.get(ftype, 'fields.Char')
+        parts = [p.strip() for p in options.split(',') if p.strip()] if options else []
+
+        required = 'required' in parts
+        relation = ''
+        other_parts = []
+        for p in parts:
+            if p == 'required':
+                continue
+            if ftype in ('Many2one', 'One2many', 'Many2many') and '.' in p:
+                relation = p
+            else:
+                other_parts.append(p)
+
+        # Build field definition
+        string_label = name.replace('_', ' ').title()
+        args = []
+        if ftype in ('Many2one', 'One2many', 'Many2many') and relation:
+            args.append(f"'{relation}'")
+        args.append(f"string='{string_label}'")
+        if required:
+            args.append("required=True")
+
+        return f"    {name} = {odoo_type}({', '.join(args)})"
 
     def _build_prompt(self, module_name):
         lines = []
@@ -319,10 +435,14 @@ class ProcessMap(models.Model):
                 lines.append(f"- **{step.name}** [{type_label}]")
                 if step.description:
                     lines.append(f"  Description: {step.description}")
+                if step.annotation:
+                    lines.append(f"  Business rule: {step.annotation}")
                 if step.responsible:
                     lines.append(f"  Responsible: {step.responsible}")
                 if step.system_action:
                     lines.append(f"  System action: {step.system_action}")
+                if step.sub_process_id:
+                    lines.append(f"  Sub-process: {step.sub_process_id.name}")
                 if step.data_fields:
                     lines.append(f"  Data/fields needed: {step.data_fields}")
         lines.append("")
@@ -341,19 +461,32 @@ class ProcessMap(models.Model):
             lines.append(f"{i + 1}. {state}")
         lines.append("")
 
-        # Derive data models
+        # Derive data models with proper field definitions
         lines.append("## Suggested Data Models")
         models_info = self._derive_models(module_name)
         for model_info in models_info:
             lines.append(f"\n### Model: {model_info['name']}")
             lines.append(f"Technical name: {model_info['technical_name']}")
-            if model_info.get('fields'):
+            if model_info.get('field_definitions'):
+                lines.append("```python")
+                for fdef in model_info['field_definitions']:
+                    lines.append(fdef)
+                lines.append("```")
+            elif model_info.get('fields'):
                 lines.append("Fields:")
                 for field in model_info['fields']:
                     lines.append(f"  - {field}")
             if model_info.get('states'):
                 lines.append(f"Workflow states: {', '.join(model_info['states'])}")
         lines.append("")
+
+        # Business rules from annotations
+        annotated_steps = self.step_ids.filtered(lambda s: s.annotation)
+        if annotated_steps:
+            lines.append("## Business Rules (from step annotations)")
+            for step in annotated_steps:
+                lines.append(f"- **{step.name}**: {step.annotation}")
+            lines.append("")
 
         # Security groups
         lines.append("## Security Groups")
@@ -365,7 +498,7 @@ class ProcessMap(models.Model):
         # Views
         lines.append("## Views Required")
         for model_info in models_info:
-            lines.append(f"- {model_info['technical_name']}: form view, tree view, search view")
+            lines.append(f"- {model_info['technical_name']}: form view, list view, search view")
         lines.append("")
 
         # Menu
@@ -380,13 +513,14 @@ class ProcessMap(models.Model):
         lines.append("Generate a complete Odoo 19 module with:")
         lines.append("1. __manifest__.py with proper dependencies (base, mail)")
         lines.append("2. Python model files for each model listed above")
-        lines.append("3. XML view files (form, tree, search) for each model")
+        lines.append("3. XML view files (form, list, search) for each model")
         lines.append("4. Security groups XML and ir.model.access.csv")
         lines.append("5. Menu items XML")
         lines.append("6. Workflow logic with state transitions and button actions")
         lines.append("7. Inherit mail.thread for the main model for chatter support")
         lines.append("")
         lines.append("Follow Odoo 19 conventions:")
+        lines.append("- Use <list> tag (NOT <tree>) for list views")
         lines.append("- Use OWL2 for any custom frontend components")
         lines.append("- Use statusbar widget for state fields")
         lines.append("- Use proper field types (Many2one, One2many, Selection, etc.)")
@@ -406,7 +540,7 @@ class ProcessMap(models.Model):
             if step.id in visited:
                 return
             visited.add(step.id)
-            if step.step_type == 'task':
+            if step.step_type in ('task', 'subprocess'):
                 state_name = self._slugify(step.name)
                 states.append(state_name)
             elif step.step_type == 'condition':
@@ -426,21 +560,41 @@ class ProcessMap(models.Model):
         """Derive suggested data models from the process steps."""
         models = []
 
-        # Main process model
-        main_fields = ['name: Char (required)', 'description: Text', 'state: Selection']
-        task_steps = self.step_ids.filtered(lambda s: s.step_type == 'task')
+        # Main process model - try to produce proper field definitions
+        base_field_defs = [
+            "    name = fields.Char(string='Name', required=True)",
+            "    description = fields.Text(string='Description')",
+            "    state = fields.Selection([], string='State', default='draft', required=True)",
+        ]
+        raw_fields = ['name: Char (required)', 'description: Text', 'state: Selection']
+        field_definitions = list(base_field_defs)
+
+        task_steps = self.step_ids.filtered(lambda s: s.step_type in ('task', 'subprocess'))
+        seen_names = {'name', 'description', 'state'}
         for step in task_steps:
             if step.data_fields:
                 for line in step.data_fields.strip().split('\n'):
                     line = line.strip()
-                    if line:
-                        main_fields.append(line)
+                    if not line:
+                        continue
+                    # Check for duplicate field names
+                    match = re.match(r'^(\w+)\s*:', line)
+                    fname = match.group(1) if match else None
+                    if fname and fname in seen_names:
+                        continue
+                    if fname:
+                        seen_names.add(fname)
+                    raw_fields.append(line)
+                    parsed = self._parse_field_builder_line(line)
+                    if parsed:
+                        field_definitions.append(parsed)
 
         states = self._derive_workflow_states()
         models.append({
             'name': self.name,
             'technical_name': f"{module_name}.record",
-            'fields': main_fields,
+            'fields': raw_fields,
+            'field_definitions': field_definitions,
             'states': states,
         })
 

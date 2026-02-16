@@ -36,6 +36,11 @@
                     <i class="fa fa-square text-primary"/> Task
                 </button>
                 <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'subprocess')"
+                        title="Sub-Process">
+                    <i class="fa fa-clone" style="color:#7E57C2"/> Sub
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
                         t-on-dragstart="(ev) => this.onDragStart(ev, 'condition')"
                         title="Condition (If/Else)">
                     <i class="fa fa-question-circle text-info"/> If/Else
@@ -61,6 +66,20 @@
 
             <!-- Action buttons -->
             <div class="pm-toolbar-section">
+                <button class="pm-toolbar-btn" t-on-click="props.onUndo"
+                        t-att-disabled="!props.canUndo" title="Undo (Ctrl+Z)">
+                    <i class="fa fa-undo"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onRedo"
+                        t-att-disabled="!props.canRedo" title="Redo (Ctrl+Shift+Z)">
+                    <i class="fa fa-repeat"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onAutoLayout" title="Auto Layout">
+                    <i class="fa fa-magic"/>
+                </button>
+
+                <div class="pm-toolbar-divider"/>
+
                 <button class="pm-toolbar-btn pm-save-btn" t-on-click="props.onSave"
                         title="Save (Ctrl+S)">
                     <i class="fa fa-save"/> Save
@@ -78,6 +97,24 @@
                 <button t-attf-class="pm-toolbar-btn #{props.gridEnabled ? 'pm-active' : ''}"
                         t-on-click="props.onToggleGrid" title="Toggle Grid">
                     <i class="fa fa-th"/>
+                </button>
+
+                <div class="pm-toolbar-divider"/>
+
+                <button class="pm-toolbar-btn" t-on-click="props.onToggleMinimap" title="Toggle Minimap">
+                    <i class="fa fa-map"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onToggleVersions" title="Version History">
+                    <i class="fa fa-history"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onExportPNG" title="Export PNG">
+                    <i class="fa fa-file-image-o"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onExportSVG" title="Export SVG">
+                    <i class="fa fa-download"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onPrint" title="Print">
+                    <i class="fa fa-print"/>
                 </button>
             </div>
         </div>
@@ -98,7 +135,6 @@
                  xmlns="http://www.w3.org/2000/svg">
 
                 <defs>
-                    <!-- Arrowhead marker -->
                     <marker id="pm-arrowhead" markerWidth="10" markerHeight="7"
                             refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
                         <polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
@@ -107,7 +143,6 @@
                             refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
                         <polygon points="0 0, 10 3.5, 0 7" fill="#1565C0"/>
                     </marker>
-                    <!-- Grid pattern -->
                     <pattern id="pm-grid" width="20" height="20" patternUnits="userSpaceOnUse">
                         <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
                     </pattern>
@@ -133,11 +168,15 @@
                                   width="5000" t-att-height="lane.height"
                                   t-att-fill="lane.color || '#E3F2FD'" fill-opacity="0.3"
                                   stroke="#bbb" stroke-width="1" stroke-dasharray="4 2"/>
-                            <!-- Lane label -->
                             <text t-att-x="12" t-att-y="lane.y_position + 20"
                                   class="pm-lane-label">
                                 <t t-esc="lane.name"/>
                             </text>
+                            <!-- Lane bottom resize handle -->
+                            <rect class="pm-lane-resize-handle"
+                                  t-att-x="0" t-att-y="lane.y_position + lane.height - 4"
+                                  width="5000" height="8"
+                                  t-on-mousedown.stop="(ev) => this.onLaneResizeMouseDown(ev, lane)"/>
                         </g>
                     </t>
 
@@ -158,7 +197,18 @@
                                     <t t-esc="conn.label"/>
                                 </text>
                             </t>
+                            <!-- Segment drag handles (when connection selected) -->
+                            <t t-foreach="getConnectionSegments(conn)" t-as="seg" t-key="seg.segmentIndex">
+                                <circle class="pm-segment-handle"
+                                        t-att-cx="seg.midX" t-att-cy="seg.midY" r="4"
+                                        t-on-mousedown.stop="(ev) => this.onSegmentHandleMouseDown(ev, conn, seg.segmentIndex)"/>
+                            </t>
                         </g>
+                    </t>
+
+                    <!-- Crossing arcs (where connections cross) -->
+                    <t t-foreach="getCrossingArcs()" t-as="cross" t-key="cross_index">
+                        <path t-att-d="cross.d" class="pm-crossing-arc"/>
                     </t>
 
                     <!-- Steps -->
@@ -167,33 +217,44 @@
                            t-on-mousedown.stop="(ev) => this.onStepMouseDown(ev, step)"
                            t-on-dblclick.stop="(ev) => this.onStepDblClick(ev, step)">
 
-                            <!-- Start Event: green circle -->
+                            <!-- Start Event: circle -->
                             <t t-if="step.step_type === 'start'">
                                 <circle class="pm-shape"
-                                        t-att-cx="step.x_position + 25"
-                                        t-att-cy="step.y_position + 25"
-                                        r="25" fill="#4CAF50" stroke="#2E7D32" stroke-width="2"/>
+                                        t-att-cx="step.x_position + (step.width || 50) / 2"
+                                        t-att-cy="step.y_position + (step.width || 50) / 2"
+                                        t-att-r="(step.width || 50) / 2" t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
                                 <t t-if="state.editingStepId !== step.id">
-                                    <text class="pm-shape-text"
-                                          t-att-x="step.x_position + 25"
-                                          t-att-y="step.y_position + 25">
-                                        <t t-esc="step.name.substring(0, 8)"/>
-                                    </text>
+                                    <t t-if="step.icon">
+                                        <foreignObject t-att-x="step.x_position + (step.width || 50) / 2 - 12" t-att-y="step.y_position + (step.width || 50) / 2 - 17"
+                                                       width="24" height="16">
+                                            <i xmlns="http://www.w3.org/1999/xhtml"
+                                               t-attf-class="fa #{step.icon}" style="color:#fff;font-size:14px"/>
+                                        </foreignObject>
+                                    </t>
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
                                 </t>
                             </t>
 
-                            <!-- End Event: red circle -->
+                            <!-- End Event: circle -->
                             <t t-if="step.step_type === 'end'">
                                 <circle class="pm-shape"
-                                        t-att-cx="step.x_position + 25"
-                                        t-att-cy="step.y_position + 25"
-                                        r="25" fill="#ffebee" stroke="#D32F2F" stroke-width="4"/>
+                                        t-att-cx="step.x_position + (step.width || 50) / 2"
+                                        t-att-cy="step.y_position + (step.width || 50) / 2"
+                                        t-att-r="(step.width || 50) / 2" t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="4"/>
                                 <t t-if="state.editingStepId !== step.id">
-                                    <text class="pm-shape-text pm-shape-text-dark"
-                                          t-att-x="step.x_position + 25"
-                                          t-att-y="step.y_position + 25">
-                                        <t t-esc="step.name.substring(0, 8)"/>
-                                    </text>
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text pm-shape-text-dark"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
                                 </t>
                             </t>
 
@@ -202,54 +263,111 @@
                                 <rect class="pm-shape"
                                       t-att-x="step.x_position" t-att-y="step.y_position"
                                       t-att-width="step.width || 140" t-att-height="step.height || 60"
-                                      rx="8" ry="8" fill="#42A5F5" stroke="#1565C0" stroke-width="2"/>
+                                      rx="8" ry="8" t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
                                 <t t-if="state.editingStepId !== step.id">
-                                    <text class="pm-shape-text"
-                                          t-att-x="step.x_position + (step.width || 140) / 2"
-                                          t-att-y="step.y_position + (step.height || 60) / 2">
-                                        <t t-esc="step.name.substring(0, 18)"/>
-                                    </text>
+                                    <t t-if="step.icon">
+                                        <foreignObject t-att-x="step.x_position + (step.width || 140) / 2 - 10" t-att-y="step.y_position + 5"
+                                                       width="20" height="20">
+                                            <i xmlns="http://www.w3.org/1999/xhtml"
+                                               t-attf-class="fa #{step.icon}" style="color:#fff;font-size:16px"/>
+                                        </foreignObject>
+                                    </t>
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
                                 </t>
                             </t>
 
-                            <!-- Condition (If/Else): larger diamond with question text -->
+                            <!-- Sub-Process: double-bordered rectangle -->
+                            <t t-if="step.step_type === 'subprocess'">
+                                <rect class="pm-shape"
+                                      t-att-x="step.x_position" t-att-y="step.y_position"
+                                      t-att-width="step.width || 140" t-att-height="step.height || 60"
+                                      rx="8" ry="8" t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
+                                <!-- Inner border for subprocess -->
+                                <rect t-att-x="step.x_position + 4" t-att-y="step.y_position + 4"
+                                      t-att-width="(step.width || 140) - 8" t-att-height="(step.height || 60) - 8"
+                                      rx="6" ry="6" fill="none" t-att-stroke="getStepStroke(step)" stroke-width="1" opacity="0.5"/>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <t t-if="step.icon">
+                                        <foreignObject t-att-x="step.x_position + (step.width || 140) / 2 - 10" t-att-y="step.y_position + 8"
+                                                       width="20" height="20">
+                                            <i xmlns="http://www.w3.org/1999/xhtml"
+                                               t-attf-class="fa #{step.icon}" style="color:#fff;font-size:16px"/>
+                                        </foreignObject>
+                                    </t>
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
+                                    <!-- Sub-process indicator -->
+                                    <rect t-att-x="step.x_position + (step.width || 140) / 2 - 8"
+                                          t-att-y="step.y_position + (step.height || 60) - 14"
+                                          width="16" height="10" rx="2" fill="none" stroke="#fff" stroke-width="1" opacity="0.7"/>
+                                    <text t-att-x="step.x_position + (step.width || 140) / 2"
+                                          t-att-y="step.y_position + (step.height || 60) - 6"
+                                          fill="#fff" font-size="7" text-anchor="middle" dominant-baseline="central"
+                                          opacity="0.8">+</text>
+                                </t>
+                            </t>
+
+                            <!-- Condition (If/Else): diamond -->
                             <t t-if="step.step_type === 'condition'">
                                 <polygon class="pm-shape"
-                                         t-att-points="(step.x_position + 50) + ',' + step.y_position + ' ' + (step.x_position + 100) + ',' + (step.y_position + 50) + ' ' + (step.x_position + 50) + ',' + (step.y_position + 100) + ' ' + step.x_position + ',' + (step.y_position + 50)"
-                                         fill="#26C6DA" stroke="#00838F" stroke-width="2"/>
+                                         t-att-points="(step.x_position + (step.width || 100) / 2) + ',' + step.y_position + ' ' + (step.x_position + (step.width || 100)) + ',' + (step.y_position + (step.height || 100) / 2) + ' ' + (step.x_position + (step.width || 100) / 2) + ',' + (step.y_position + (step.height || 100)) + ' ' + step.x_position + ',' + (step.y_position + (step.height || 100) / 2)"
+                                         t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
                                 <t t-if="state.editingStepId !== step.id">
-                                    <text class="pm-shape-text"
-                                          t-att-x="step.x_position + 50"
-                                          t-att-y="step.y_position + 45"
-                                          font-size="11">
-                                        <t t-esc="step.name.substring(0, 14)"/>
-                                    </text>
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
                                     <text class="pm-shape-text" font-size="9" fill-opacity="0.8"
-                                          t-att-x="step.x_position + 50"
-                                          t-att-y="step.y_position + 60">
+                                          t-att-x="step.x_position + (step.width || 100) / 2"
+                                          t-att-y="step.y_position + (step.height || 100) / 2 + 16">
                                         Yes / No
                                     </text>
                                 </t>
                             </t>
 
-                            <!-- Exclusive Gateway: yellow diamond with X -->
+                            <!-- Exclusive Gateway: diamond with X -->
                             <t t-if="step.step_type === 'gateway_exclusive'">
                                 <polygon class="pm-shape"
-                                         t-att-points="step.x_position + 30 + ',' + step.y_position + ' ' + (step.x_position + 60) + ',' + (step.y_position + 30) + ' ' + (step.x_position + 30) + ',' + (step.y_position + 60) + ' ' + step.x_position + ',' + (step.y_position + 30)"
-                                         fill="#FFC107" stroke="#F57F17" stroke-width="2"/>
+                                         t-att-points="(step.x_position + (step.width || 60) / 2) + ',' + step.y_position + ' ' + (step.x_position + (step.width || 60)) + ',' + (step.y_position + (step.height || 60) / 2) + ' ' + (step.x_position + (step.width || 60) / 2) + ',' + (step.y_position + (step.height || 60)) + ' ' + step.x_position + ',' + (step.y_position + (step.height || 60) / 2)"
+                                         t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
                                 <text class="pm-gateway-symbol"
-                                      t-att-x="step.x_position + 30"
-                                      t-att-y="step.y_position + 32">X</text>
+                                      t-att-x="step.x_position + (step.width || 60) / 2"
+                                      t-att-y="step.y_position + (step.height || 60) / 2 + 2">X</text>
                             </t>
 
-                            <!-- Parallel Gateway: yellow diamond with + -->
+                            <!-- Parallel Gateway: diamond with + -->
                             <t t-if="step.step_type === 'gateway_parallel'">
                                 <polygon class="pm-shape"
-                                         t-att-points="step.x_position + 30 + ',' + step.y_position + ' ' + (step.x_position + 60) + ',' + (step.y_position + 30) + ' ' + (step.x_position + 30) + ',' + (step.y_position + 60) + ' ' + step.x_position + ',' + (step.y_position + 30)"
-                                         fill="#FFC107" stroke="#F57F17" stroke-width="2"/>
+                                         t-att-points="(step.x_position + (step.width || 60) / 2) + ',' + step.y_position + ' ' + (step.x_position + (step.width || 60)) + ',' + (step.y_position + (step.height || 60) / 2) + ' ' + (step.x_position + (step.width || 60) / 2) + ',' + (step.y_position + (step.height || 60)) + ' ' + step.x_position + ',' + (step.y_position + (step.height || 60) / 2)"
+                                         t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
                                 <text class="pm-gateway-symbol"
-                                      t-att-x="step.x_position + 30"
-                                      t-att-y="step.y_position + 32">+</text>
+                                      t-att-x="step.x_position + (step.width || 60) / 2"
+                                      t-att-y="step.y_position + (step.height || 60) / 2 + 2">+</text>
+                            </t>
+
+                            <!-- Annotation indicator -->
+                            <t t-if="step.annotation">
+                                <t t-set="aPos" t-value="getAnnotationPos(step)"/>
+                                <circle t-att-cx="aPos.x" t-att-cy="aPos.y" r="7"
+                                        fill="#FFF9C4" stroke="#F9A825" stroke-width="1"/>
+                                <text t-att-x="aPos.x" t-att-y="aPos.y + 1"
+                                      font-size="9" fill="#F9A825" text-anchor="middle" dominant-baseline="central"
+                                      font-weight="bold" class="pm-annotation-icon">i</text>
+                                <title><t t-esc="step.annotation"/></title>
                             </t>
 
                             <!-- Connector dots (visible on hover) -->
@@ -259,19 +377,27 @@
                                         t-on-mousedown.stop="(ev) => this.onConnectorMouseDown(ev, step)"/>
                             </t>
 
-                            <!-- Inline text editor (shown on double-click) -->
+                            <!-- Resize handles (visible when selected) -->
+                            <t t-foreach="getResizeHandles(step)" t-as="rh" t-key="rh.handle">
+                                <rect class="pm-resize-handle"
+                                      t-att-x="rh.x - 4" t-att-y="rh.y - 4"
+                                      width="8" height="8"
+                                      t-att-style="'cursor:' + rh.cursor"
+                                      t-on-mousedown.stop="(ev) => this.onResizeHandleMouseDown(ev, step, rh.handle)"/>
+                            </t>
+
+                            <!-- Inline text editor (multi-line textarea) -->
                             <t t-if="state.editingStepId === step.id">
                                 <foreignObject t-att-x="getEditBox(step).x"
                                                t-att-y="getEditBox(step).y"
                                                t-att-width="getEditBox(step).w"
                                                t-att-height="getEditBox(step).h">
-                                    <input xmlns="http://www.w3.org/1999/xhtml"
-                                           class="pm-inline-edit"
-                                           t-ref="editInput"
-                                           t-att-value="state.editingText"
-                                           t-on-input="onEditInput"
-                                           t-on-keydown="onEditKeydown"
-                                           t-on-blur="onEditBlur"/>
+                                    <textarea xmlns="http://www.w3.org/1999/xhtml"
+                                              class="pm-inline-edit"
+                                              t-ref="editInput"
+                                              t-on-input="onEditInput"
+                                              t-on-keydown="onEditKeydown"
+                                              t-on-blur="onEditBlur"><t t-esc="state.editingText"/></textarea>
                                 </foreignObject>
                             </t>
                         </g>
@@ -282,11 +408,86 @@
                         <path t-att-d="getRubberBandPath()" class="pm-rubber-band"/>
                     </t>
 
+                    <!-- Alignment guides -->
+                    <t t-foreach="props.alignGuides" t-as="guide" t-key="guide_index">
+                        <line t-att-x1="guide.x1" t-att-y1="guide.y1"
+                              t-att-x2="guide.x2" t-att-y2="guide.y2"
+                              class="pm-align-guide"/>
+                    </t>
+
+                    <!-- Selection rectangle -->
+                    <t t-if="state.selectionRect">
+                        <rect t-att-x="state.selectionRect.x" t-att-y="state.selectionRect.y"
+                              t-att-width="state.selectionRect.w" t-att-height="state.selectionRect.h"
+                              class="pm-selection-rect"/>
+                    </t>
+
                 </g>
             </svg>
             <div class="pm-canvas-info">
                 Zoom: <t t-esc="Math.round(props.zoom * 100)"/>% |
                 Pan: <t t-esc="Math.round(props.panX)"/>, <t t-esc="Math.round(props.panY)"/>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Minimap
+         ============================================================ -->
+    <t t-name="process_mapper.Minimap">
+        <div class="pm-minimap" t-on-click="onMinimapClick">
+            <svg width="200" height="140" class="pm-minimap-svg">
+                <rect width="200" height="140" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+                <!-- Connection lines (orthogonal) -->
+                <t t-foreach="props.connections" t-as="conn" t-key="conn.id">
+                    <t t-set="cl" t-value="getConnectionLine(conn)"/>
+                    <t t-if="cl">
+                        <path t-att-d="cl" fill="none" stroke="#aaa" stroke-width="0.5"/>
+                    </t>
+                </t>
+                <!-- Step rectangles -->
+                <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                    <t t-set="sr" t-value="getStepRect(step)"/>
+                    <rect t-att-x="sr.x" t-att-y="sr.y" t-att-width="Math.max(sr.w, 3)" t-att-height="Math.max(sr.h, 3)"
+                          rx="1" t-att-fill="getStepColor(step)" opacity="0.8"/>
+                </t>
+                <!-- Viewport rectangle -->
+                <t t-set="vr" t-value="viewportRect"/>
+                <rect t-att-x="vr.x" t-att-y="vr.y" t-att-width="vr.w" t-att-height="vr.h"
+                      fill="none" stroke="#1565C0" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.7"/>
+            </svg>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Version Panel
+         ============================================================ -->
+    <t t-name="process_mapper.VersionPanel">
+        <div class="pm-version-panel">
+            <div class="pm-version-header">
+                <h5><i class="fa fa-history me-1"/> Versions</h5>
+                <button class="pm-version-close" t-on-click="props.onClose">
+                    <i class="fa fa-times"/>
+                </button>
+            </div>
+            <div class="pm-version-list">
+                <t t-if="props.versions.length === 0">
+                    <div class="pm-version-empty">No versions saved yet.</div>
+                </t>
+                <t t-foreach="props.versions" t-as="v" t-key="v.id">
+                    <div class="pm-version-item">
+                        <div class="pm-version-info">
+                            <strong>v<t t-esc="v.version_number"/></strong>
+                            <small><t t-esc="v.create_date"/></small>
+                            <small class="text-muted"><t t-esc="v.create_uid_name"/></small>
+                        </div>
+                        <button class="pm-version-restore-btn"
+                                t-on-click="() => this.props.onRestore(v.id)"
+                                title="Restore this version">
+                            <i class="fa fa-undo"/> Restore
+                        </button>
+                    </div>
+                </t>
             </div>
         </div>
     </t>
@@ -318,7 +519,6 @@
                             </button>
                         </div>
 
-                        <!-- Tab: Field Types -->
                         <t t-if="state.paletteTab === 'types'">
                             <div class="pm-fb-palette-title">Drag a field type</div>
                             <t t-foreach="fieldTypes" t-as="ft" t-key="ft.type">
@@ -333,7 +533,6 @@
                             </t>
                         </t>
 
-                        <!-- Tab: From Model -->
                         <t t-if="state.paletteTab === 'model'">
                             <t t-if="!state.selectedModel">
                                 <div class="pm-fb-palette-title">Search a model</div>
@@ -396,7 +595,6 @@
                             <span class="pm-fb-fields-count">(<t t-esc="state.fields.length"/>)</span>
                         </div>
 
-                        <!-- Drop zone at top (hidden until dragging) -->
                         <div t-attf-class="pm-fb-dropzone pm-fb-dropzone-hidden #{state.dragOverIndex === 0 ? 'pm-fb-dropzone-active' : ''}"
                              t-on-dragover="(ev) => this.onDropZoneDragOver(ev, 0)"
                              t-on-dragleave="onDropZoneDragLeave"
@@ -457,7 +655,6 @@
                                 </div>
                             </div>
 
-                            <!-- Drop zone after each field (hidden for in-between, visible for last) -->
                             <div t-attf-class="pm-fb-dropzone #{field_last ? '' : 'pm-fb-dropzone-hidden'} #{state.dragOverIndex === field_index + 1 ? 'pm-fb-dropzone-active' : ''}"
                                  t-on-dragover="(ev) => this.onDropZoneDragOver(ev, field_index + 1)"
                                  t-on-dragleave="onDropZoneDragLeave"
@@ -492,7 +689,19 @@
         <div class="pm-properties">
             <h4><i class="fa fa-sliders me-1"/> Properties</h4>
 
-            <t t-if="!props.selectedElement">
+            <!-- Multi-select summary -->
+            <t t-if="props.selectedCount > 1">
+                <div class="pm-multi-select-info">
+                    <i class="fa fa-object-group fa-2x mb-2 d-block text-muted"/>
+                    <strong><t t-esc="props.selectedCount"/> elements selected</strong>
+                    <br/><small>Drag to move all. Press Delete to remove all.</small>
+                </div>
+                <button class="pm-delete-btn" t-on-click="props.onDelete">
+                    <i class="fa fa-trash me-1"/> Delete Selected (<t t-esc="props.selectedCount"/>)
+                </button>
+            </t>
+
+            <t t-if="!props.selectedElement and props.selectedCount &lt;= 1">
                 <div class="pm-no-selection">
                     <i class="fa fa-mouse-pointer fa-2x mb-2 d-block text-muted"/>
                     Select an element on the canvas to edit its properties.
@@ -500,6 +709,7 @@
                     <small>
                         <b>Tip:</b> Drag items from the toolbar onto the canvas.
                         Hover over a shape and drag from the connector dots to create connections.
+                        <b>Shift+click</b> to multi-select. <b>Ctrl+C/V</b> to copy/paste.
                     </small>
                 </div>
             </t>
@@ -517,6 +727,7 @@
                         <option value="start" t-att-selected="props.selectedElement.step_type === 'start'">Start Event</option>
                         <option value="end" t-att-selected="props.selectedElement.step_type === 'end'">End Event</option>
                         <option value="task" t-att-selected="props.selectedElement.step_type === 'task'">Task</option>
+                        <option value="subprocess" t-att-selected="props.selectedElement.step_type === 'subprocess'">Sub-Process</option>
                         <option value="condition" t-att-selected="props.selectedElement.step_type === 'condition'">Condition (If/Else)</option>
                         <option value="gateway_exclusive" t-att-selected="props.selectedElement.step_type === 'gateway_exclusive'">Exclusive Gateway</option>
                         <option value="gateway_parallel" t-att-selected="props.selectedElement.step_type === 'gateway_parallel'">Parallel Gateway</option>
@@ -527,6 +738,75 @@
                     <textarea t-on-change="(ev) => this.onInputChange('description', ev)"
                               t-att-value="props.selectedElement.description || ''"/>
                 </div>
+
+                <!-- Color picker -->
+                <div class="pm-prop-group">
+                    <label>Color</label>
+                    <div class="pm-color-row">
+                        <input type="color" t-att-value="props.selectedElement.color || '#42A5F5'"
+                               t-on-change="(ev) => this.onInputChange('color', ev)"/>
+                        <button class="pm-color-clear" t-on-click="() => this.props.onPropertyChange('color', '')"
+                                title="Reset to default">
+                            <i class="fa fa-times"/>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Icon picker -->
+                <div class="pm-prop-group">
+                    <label>Icon</label>
+                    <div class="pm-icon-row">
+                        <button class="pm-icon-trigger" t-on-click="() => this.toggleIconPicker()">
+                            <t t-if="props.selectedElement.icon">
+                                <i t-attf-class="fa #{props.selectedElement.icon} me-1"/>
+                                <t t-esc="props.selectedElement.icon"/>
+                            </t>
+                            <t t-else="">
+                                <i class="fa fa-plus-circle me-1"/> Choose icon
+                            </t>
+                        </button>
+                    </div>
+                    <t t-if="state.showIconPicker">
+                        <div class="pm-icon-picker">
+                            <button class="pm-icon-option pm-icon-none" t-on-click="() => this.clearIcon()">
+                                <i class="fa fa-ban"/> None
+                            </button>
+                            <t t-foreach="stepIcons" t-as="ic" t-key="ic">
+                                <button class="pm-icon-option" t-on-click="() => this.selectIcon(ic)"
+                                        t-att-title="ic">
+                                    <i t-attf-class="fa #{ic}"/>
+                                </button>
+                            </t>
+                        </div>
+                    </t>
+                </div>
+
+                <!-- Annotation -->
+                <div class="pm-prop-group">
+                    <label>Annotation / Business Rule</label>
+                    <textarea t-on-change="(ev) => this.onInputChange('annotation', ev)"
+                              t-att-value="props.selectedElement.annotation || ''"
+                              placeholder="Additional notes or business rules"
+                              rows="2"/>
+                </div>
+
+                <!-- Sub-process link (only for subprocess type) -->
+                <t t-if="props.selectedElement.step_type === 'subprocess'">
+                    <div class="pm-prop-group">
+                        <label>Linked Process Map</label>
+                        <select t-on-change="(ev) => this.onInputChange('sub_process_id', ev)">
+                            <option value="">-- No linked map --</option>
+                            <t t-foreach="props.availableMaps" t-as="map" t-key="map.id">
+                                <option t-att-value="map.id"
+                                        t-att-selected="props.selectedElement.sub_process_id === map.id">
+                                    <t t-esc="map.name"/>
+                                </option>
+                            </t>
+                        </select>
+                        <small class="text-muted">Double-click on canvas to navigate</small>
+                    </div>
+                </t>
+
                 <div class="pm-prop-group">
                     <label>Lane</label>
                     <select t-on-change="(ev) => this.onInputChange('lane_id', ev)">
@@ -576,7 +856,6 @@
                     </div>
                 </div>
 
-                <!-- Field Builder Modal -->
                 <t t-if="state.showFieldBuilder">
                     <FieldBuilder
                         dataFields="props.selectedElement.data_fields || ''"
@@ -706,8 +985,18 @@
                     onZoomOut="() => this.onZoomOut()"
                     onFitView="() => this.onFitView()"
                     onToggleGrid="() => this.onToggleGrid()"
+                    onUndo="() => this.undo()"
+                    onRedo="() => this.redo()"
+                    onAutoLayout="() => this.autoLayout()"
+                    onToggleMinimap="() => this.onToggleMinimap()"
+                    onToggleVersions="() => this.onToggleVersions()"
+                    onExportPNG="() => this.onExportPNG()"
+                    onExportSVG="() => this.onExportSVG()"
+                    onPrint="() => this.onPrint()"
                     gridEnabled="state.gridEnabled"
                     dirty="state.dirty"
+                    canUndo="state.canUndo"
+                    canRedo="state.canRedo"
                     mapName="state.mapName"
                     mapState="state.mapState"/>
 
@@ -716,30 +1005,80 @@
                         steps="state.steps"
                         connections="state.connections"
                         lanes="state.lanes"
-                        selectedId="state.selectedId"
+                        selectedIds="state.selectedIds"
                         selectedType="state.selectedType || ''"
                         gridEnabled="state.gridEnabled"
                         zoom="state.zoom"
                         panX="state.panX"
                         panY="state.panY"
+                        alignGuides="state.alignGuides"
                         onSelectElement="(id, type) => this.onSelectElement(id, type)"
+                        onMultiSelect="(ids) => this.onMultiSelect(ids)"
                         onMoveStep="(id, x, y) => this.onMoveStep(id, x, y)"
+                        onMoveSteps="(ids, dx, dy) => this.onMoveSteps(ids, dx, dy)"
                         onCreateConnection="(s, t) => this.onCreateConnection(s, t)"
                         onCanvasDrop="(type, x, y) => this.onCanvasDrop(type, x, y)"
                         onPan="(x, y) => this.onPan(x, y)"
                         onZoom="(delta) => this.onZoomDelta(delta)"
-                        onRenameStep="(id, name) => this.onRenameStep(id, name)"/>
+                        onRenameStep="(id, name) => this.onRenameStep(id, name)"
+                        onDragStart="(id, x, y) => this.onDragStart(id, x, y)"
+                        onDragEnd="() => this.onDragEnd()"
+                        onOpenSubProcess="(id) => this.onOpenSubProcess(id)"
+                        onUpdateConnectionWaypoints="(id, wp) => this.onUpdateConnectionWaypoints(id, wp)"
+                        onResizeStep="(id, x, y, w, h) => this.onResizeStep(id, x, y, w, h)"
+                        onResizeLane="(id, h) => this.onResizeLane(id, h)"/>
 
                     <ProcessMapperProperties
                         selectedElement="this.getSelectedElement()"
                         selectedType="state.selectedType || ''"
+                        selectedCount="state.selectedIds.length"
                         lanes="state.lanes"
                         roles="state.roles"
                         orgs="state.orgs"
+                        availableMaps="state.availableMaps"
                         onPropertyChange="(f, v) => this.onPropertyChange(f, v)"
                         onDelete="() => this.onDelete()"/>
                 </div>
+
+                <!-- Minimap overlay -->
+                <t t-if="state.showMinimap">
+                    <ProcessMapperMinimap
+                        steps="state.steps"
+                        connections="state.connections"
+                        zoom="state.zoom"
+                        panX="state.panX"
+                        panY="state.panY"
+                        canvasWidth="state.canvasWidth"
+                        canvasHeight="state.canvasHeight"
+                        onNavigate="(x, y) => this.onMinimapNavigate(x, y)"/>
+                </t>
+
+                <!-- Version panel sidebar -->
+                <t t-if="state.showVersionPanel">
+                    <ProcessMapperVersionPanel
+                        versions="state.versions"
+                        onRestore="(id) => this.onRestoreVersion(id)"
+                        onClose="() => this.onToggleVersions()"/>
+                </t>
             </t>
+        </div>
+
+        <!-- Print legend (hidden, shown only in print) -->
+        <div class="pm-print-legend">
+            <h3><t t-esc="state.mapName"/> - Process Map Legend</h3>
+            <table>
+                <thead><tr><th>Step</th><th>Type</th><th>Description</th><th>Responsible</th></tr></thead>
+                <tbody>
+                    <t t-foreach="state.steps" t-as="step" t-key="step.id">
+                        <tr>
+                            <td><t t-esc="step.name"/></td>
+                            <td><t t-esc="step.step_type"/></td>
+                            <td><t t-esc="step.description || '-'"/></td>
+                            <td><t t-esc="step.responsible || '-'"/></td>
+                        </tr>
+                    </t>
+                </tbody>
+            </table>
         </div>
     </t>
 
