@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="itsm_ci_view_list" model="ir.ui.view">
+        <field name="name">itsm.ci.list</field>
+        <field name="model">itsm.ci</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="ci_type" widget="badge"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'active'"
+                       decoration-warning="state == 'maintenance'"
+                       decoration-muted="state == 'retired'"/>
+                <field name="environment"/>
+                <field name="hostname"/>
+                <field name="ip_address"/>
+                <field name="asset_id"/>
+                <field name="owner_id" widget="many2one_avatar_user"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="itsm_ci_view_form" model="ir.ui.view">
+        <field name="name">itsm.ci.form</field>
+        <field name="model">itsm.ci</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="CI Name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="ci_type"/>
+                            <field name="state"/>
+                            <field name="environment"/>
+                        </group>
+                        <group>
+                            <field name="ip_address"/>
+                            <field name="hostname"/>
+                            <field name="version"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group>
+                            <field name="asset_id"/>
+                            <field name="org_id"/>
+                        </group>
+                        <group>
+                            <field name="owner_id" widget="many2one_avatar_user"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="Relationships" name="relationships">
+                            <group string="Depends On / Runs On / Connected To">
+                                <field name="relationship_ids" nolabel="1">
+                                    <list editable="bottom">
+                                        <field name="relationship_type"/>
+                                        <field name="target_ci_id"/>
+                                    </list>
+                                </field>
+                            </group>
+                            <group string="Referenced By">
+                                <field name="reverse_relationship_ids" nolabel="1" readonly="1">
+                                    <list>
+                                        <field name="relationship_type"/>
+                                        <field name="source_ci_id"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
+                        <page string="Services" name="services">
+                            <field name="service_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="category_id"/>
+                                    <field name="state"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="itsm_ci_view_search" model="ir.ui.view">
+        <field name="name">itsm.ci.search</field>
+        <field name="model">itsm.ci</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="hostname"/>
+                <field name="ip_address"/>
+                <field name="asset_id"/>
+                <separator/>
+                <filter string="Active" name="active" domain="[('state', '=', 'active')]"/>
+                <filter string="Maintenance" name="maintenance" domain="[('state', '=', 'maintenance')]"/>
+                <separator/>
+                <filter string="Production" name="production" domain="[('environment', '=', 'production')]"/>
+<!--                <group string="Group By">-->
+<!--                    <filter string="CI Type" name="group_type" context="{'group_by': 'ci_type'}"/>-->
+<!--                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>-->
+<!--                    <filter string="Environment" name="group_env" context="{'group_by': 'environment'}"/>-->
+<!--                    <filter string="Owner" name="group_owner" context="{'group_by': 'owner_id'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+
+    <record id="group_itsm_user" model="res.groups">
+        <field name="name">ITSM User</field>
+        <field name="implied_ids" eval="[(4, ref('myschool_core.group_myschool_core_user'))]"/>
+        <field name="comment">Read access to ITSM. Can submit tickets.</field>
+    </record>
+
+    <record id="group_itsm_agent" model="res.groups">
+        <field name="name">ITSM Agent</field>
+        <field name="implied_ids" eval="[(4, ref('group_itsm_user'))]"/>
+        <field name="comment">IT support agent. Can manage tickets, problems, and knowledge.</field>
+    </record>
+
+    <record id="group_itsm_manager" model="res.groups">
+        <field name="name">ITSM Manager</field>
+        <field name="implied_ids" eval="[(4, ref('group_itsm_agent'))]"/>
+        <field name="comment">Full ITSM access including changes, services, SLAs, and CMDB.</field>
+    </record>
+
+    </data>
+</odoo>

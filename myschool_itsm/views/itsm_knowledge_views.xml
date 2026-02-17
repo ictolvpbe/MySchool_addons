@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="itsm_knowledge_article_view_list" model="ir.ui.view">
+        <field name="name">itsm.knowledge.article.list</field>
+        <field name="model">itsm.knowledge.article</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="article_type" widget="badge"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'published'"
+                       decoration-muted="state == 'archived'"/>
+                <field name="author_id" widget="many2one_avatar_user"/>
+                <field name="service_id"/>
+                <field name="views_count"/>
+                <field name="helpful_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="itsm_knowledge_article_view_form" model="ir.ui.view">
+        <field name="name">itsm.knowledge.article.form</field>
+        <field name="model">itsm.knowledge.article</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_publish" type="object" string="Publish"
+                            class="btn-success"
+                            invisible="state not in ('draft',)"/>
+                    <button name="action_archive" type="object" string="Archive"
+                            invisible="state not in ('published',)"/>
+                    <button name="action_draft" type="object" string="Back to Draft"
+                            invisible="state not in ('archived',)"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="Article title..."/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="article_type"/>
+                            <field name="author_id" widget="many2one_avatar_user"/>
+                            <field name="service_id"/>
+                        </group>
+                        <group>
+                            <field name="tag_ids" widget="many2many_tags"/>
+                            <field name="views_count" readonly="1"/>
+                            <field name="helpful_count" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Content" name="content">
+                            <field name="content"/>
+                        </page>
+                        <page string="Related Problems" name="problems">
+                            <field name="related_problem_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="title"/>
+                                    <field name="state"/>
+                                    <field name="is_known_error"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="itsm_knowledge_article_view_search" model="ir.ui.view">
+        <field name="name">itsm.knowledge.article.search</field>
+        <field name="model">itsm.knowledge.article</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="tag_ids"/>
+                <field name="service_id"/>
+                <separator/>
+                <filter string="Published" name="published" domain="[('state', '=', 'published')]"/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <separator/>
+                <filter string="FAQ" name="faq" domain="[('article_type', '=', 'faq')]"/>
+                <filter string="How-To" name="howto" domain="[('article_type', '=', 'howto')]"/>
+                <filter string="Troubleshooting" name="troubleshooting" domain="[('article_type', '=', 'troubleshooting')]"/>
+<!--                <group expand="0" string="Group By">-->
+<!--                    <filter string="Type" name="group_type" context="{'group_by': 'article_type'}"/>-->
+<!--                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>-->
+<!--                    <filter string="Service" name="group_service" context="{'group_by': 'service_id'}"/>-->
+<!--                    <filter string="Author" name="group_author" context="{'group_by': 'author_id'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+</odoo>

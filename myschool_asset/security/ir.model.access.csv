@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_asset_category_user,asset.category.user,model_asset_category,myschool_asset.group_asset_user,1,0,0,0
+access_asset_category_manager,asset.category.manager,model_asset_category,myschool_asset.group_asset_manager,1,1,1,1
+access_asset_asset_user,asset.asset.user,model_asset_asset,myschool_asset.group_asset_user,1,0,0,0
+access_asset_asset_manager,asset.asset.manager,model_asset_asset,myschool_asset.group_asset_manager,1,1,1,1
+access_asset_license_user,asset.license.user,model_asset_license,myschool_asset.group_asset_user,1,0,0,0
+access_asset_license_manager,asset.license.manager,model_asset_license,myschool_asset.group_asset_manager,1,1,1,1
+access_asset_checkout_user,asset.checkout.user,model_asset_checkout,myschool_asset.group_asset_user,1,1,1,0
+access_asset_checkout_manager,asset.checkout.manager,model_asset_checkout,myschool_asset.group_asset_manager,1,1,1,1

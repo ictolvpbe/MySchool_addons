@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="itsm_sla_view_list" model="ir.ui.view">
+        <field name="name">itsm.sla.list</field>
+        <field name="model">itsm.sla</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="service_id"/>
+                <field name="ticket_type"/>
+                <field name="priority"/>
+                <field name="response_time_hours"/>
+                <field name="resolution_time_hours"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="itsm_sla_view_form" model="ir.ui.view">
+        <field name="name">itsm.sla.form</field>
+        <field name="model">itsm.sla</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="service_id"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="ticket_type"/>
+                            <field name="priority"/>
+                        </group>
+                    </group>
+                    <group string="Time Targets">
+                        <group>
+                            <field name="response_time_hours" widget="float_time"/>
+                        </group>
+                        <group>
+                            <field name="resolution_time_hours" widget="float_time"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="itsm_sla_view_search" model="ir.ui.view">
+        <field name="name">itsm.sla.search</field>
+        <field name="model">itsm.sla</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="service_id"/>
+                <separator/>
+                <filter string="Incidents" name="incidents" domain="[('ticket_type', '=', 'incident')]"/>
+                <filter string="Service Requests" name="requests" domain="[('ticket_type', '=', 'service_request')]"/>
+<!--                <group string="Group By">-->
+<!--                    <filter string="Service" name="group_service" context="{'group_by': 'service_id'}"/>-->
+<!--                    <filter string="Priority" name="group_priority" context="{'group_by': 'priority'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+</odoo>

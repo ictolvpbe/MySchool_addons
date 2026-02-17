@@ -165,10 +165,14 @@ function snapToGrid(val) {
  * @param {Object} source - source step
  * @param {Object} target - target step
  * @param {Array} waypoints - user-defined waypoints [{x,y}, ...]
+ * @param {string|null} sourcePort - fixed source port (top/right/bottom/left) or null for auto
+ * @param {string|null} targetPort - fixed target port (top/right/bottom/left) or null for auto
  * @returns {Array} points [{x,y}, ...]
  */
-function computeOrthogonalPath(source, target, waypoints) {
-    const { sourceSide, targetSide } = selectPorts(source, target);
+function computeOrthogonalPath(source, target, waypoints, sourcePort, targetPort) {
+    const auto = selectPorts(source, target);
+    const sourceSide = sourcePort || auto.sourceSide;
+    const targetSide = targetPort || auto.targetSide;
     const p1 = shapePortPoint(source, sourceSide);
     const p2 = shapePortPoint(target, targetSide);
 
@@ -778,7 +782,8 @@ class ProcessMapperMinimap extends Component {
         const source = this.props.steps.find(s => s.id === conn.source_step_id);
         const target = this.props.steps.find(s => s.id === conn.target_step_id);
         if (!source || !target) return null;
-        const points = computeOrthogonalPath(source, target, conn.waypoints || []);
+        const points = computeOrthogonalPath(source, target, conn.waypoints || [],
+            conn.source_port || null, conn.target_port || null);
         if (points.length === 0) return null;
         const scaled = points.map(p => ({
             x: p.x * this.scale + this.offset.x,
@@ -900,7 +905,8 @@ class ProcessMapperCanvas extends Component {
         const source = this.props.steps.find(s => s.id === conn.source_step_id);
         const target = this.props.steps.find(s => s.id === conn.target_step_id);
         if (!source || !target) return [];
-        return computeOrthogonalPath(source, target, conn.waypoints || []);
+        return computeOrthogonalPath(source, target, conn.waypoints || [],
+            conn.source_port || null, conn.target_port || null);
     }
 
     getConnectionPath(conn) {
@@ -1291,7 +1297,19 @@ class ProcessMapperCanvas extends Component {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
             const target = this._findStepAt(pos.x, pos.y);
             if (target && target.id !== this.connecting.sourceId) {
-                this.props.onCreateConnection(this.connecting.sourceId, target.id);
+                // Find nearest port on target based on mouse position
+                const sides = ['top', 'right', 'bottom', 'left'];
+                let bestPort = 'top';
+                let bestDist = Infinity;
+                for (const side of sides) {
+                    const pp = shapePortPoint(target, side);
+                    const d = (pp.x - pos.x) ** 2 + (pp.y - pos.y) ** 2;
+                    if (d < bestDist) { bestDist = d; bestPort = side; }
+                }
+                this.props.onCreateConnection(
+                    this.connecting.sourceId, target.id,
+                    this.connecting.sourcePort, bestPort
+                );
             }
             this.connecting = null;
             this.state.showRubberBand = false;
@@ -1437,15 +1455,15 @@ class ProcessMapperCanvas extends Component {
         this.props.onSelectElement(lane.id, 'lane');
     }
 
-    onConnectorMouseDown(ev, step) {
+    onConnectorMouseDown(ev, step, port) {
         ev.stopPropagation();
         ev.preventDefault();
-        const center = shapeCenter(step);
-        this.connecting = { sourceId: step.id };
+        const portPoint = shapePortPoint(step, port);
+        this.connecting = { sourceId: step.id, sourcePort: port };
         this.state.showRubberBand = true;
         this.state.connectSourceId = step.id;
-        this.state.rubberBandX = center.x;
-        this.state.rubberBandY = center.y;
+        this.state.rubberBandX = portPoint.x;
+        this.state.rubberBandY = portPoint.y;
     }
 
     onWheel(ev) {
@@ -1474,11 +1492,11 @@ class ProcessMapperCanvas extends Component {
     }
 
     getRubberBandPath() {
-        if (!this.state.showRubberBand || !this.state.connectSourceId) return "";
+        if (!this.state.showRubberBand || !this.state.connectSourceId || !this.connecting) return "";
         const source = this.props.steps.find(s => s.id === this.state.connectSourceId);
         if (!source) return "";
-        const center = shapeCenter(source);
-        return `M ${center.x} ${center.y} L ${this.state.rubberBandX} ${this.state.rubberBandY}`;
+        const portPoint = shapePortPoint(source, this.connecting.sourcePort);
+        return `M ${portPoint.x} ${portPoint.y} L ${this.state.rubberBandX} ${this.state.rubberBandY}`;
     }
 
     // Annotation icon position
@@ -1811,7 +1829,7 @@ class ProcessMapperClient extends Component {
 
     // --- Create connection ---
 
-    onCreateConnection(sourceId, targetId) {
+    onCreateConnection(sourceId, targetId, sourcePort, targetPort) {
         const exists = this.state.connections.find(
             c => c.source_step_id === sourceId && c.target_step_id === targetId
         );
@@ -1833,6 +1851,8 @@ class ProcessMapperClient extends Component {
             label,
             connection_type: "sequence",
             waypoints: [],
+            source_port: sourcePort || false,
+            target_port: targetPort || false,
         });
         this.state.dirty = true;
         this._pushHistory();
@@ -2088,9 +2108,11 @@ class ProcessMapperClient extends Component {
             }
         }
 
-        // Reset all connection waypoints for clean auto-routing
+        // Reset all connection waypoints and ports for clean auto-routing
         for (const conn of this.state.connections) {
             conn.waypoints = [];
+            conn.source_port = false;
+            conn.target_port = false;
         }
 
         this.state.dirty = true;

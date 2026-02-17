@@ -171,6 +171,8 @@ class ProcessMap(models.Model):
                 'label': conn.label or '',
                 'connection_type': conn.connection_type,
                 'waypoints': json.loads(conn.waypoints or '[]'),
+                'source_port': conn.source_port or False,
+                'target_port': conn.target_port or False,
             })
 
         return {
@@ -287,6 +289,8 @@ class ProcessMap(models.Model):
                 'label': conn_data.get('label', ''),
                 'connection_type': conn_data.get('connection_type', 'sequence'),
                 'waypoints': json.dumps(conn_data.get('waypoints', [])),
+                'source_port': conn_data.get('source_port') or False,
+                'target_port': conn_data.get('target_port') or False,
                 'map_id': self.id,
             }
             if isinstance(cid, int) and cid > 0 and cid in existing_conn_ids:

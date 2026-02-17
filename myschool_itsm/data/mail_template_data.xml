@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+    <!-- Ticket Acknowledgment: sent when a ticket is created from email -->
+    <record id="mail_template_ticket_acknowledgment" model="mail.template">
+        <field name="name">ITSM: Ticket Acknowledgment</field>
+        <field name="model_id" ref="model_itsm_ticket"/>
+        <field name="subject">{{ object.name }} - Your request has been received</field>
+        <field name="email_from">{{ (object.assigned_to_id.email_formatted or user.email_formatted) }}</field>
+        <field name="email_to">{{ object.reporter_email }}</field>
+        <field name="body_html"><![CDATA[
+<p>Dear customer,</p>
+<p>Thank you for contacting our IT Service Desk.
+   Your request has been received and logged with the following details:</p>
+<table style="width:100%; border-collapse:collapse; margin:16px 0;">
+    <tr>
+        <td style="padding:8px 12px; border:1px solid #dee2e6; background:#f8f9fa; width:140px;">
+            <strong>Reference</strong></td>
+        <td style="padding:8px 12px; border:1px solid #dee2e6;">
+            {{ object.name }}</td>
+    </tr>
+    <tr>
+        <td style="padding:8px 12px; border:1px solid #dee2e6; background:#f8f9fa;">
+            <strong>Subject</strong></td>
+        <td style="padding:8px 12px; border:1px solid #dee2e6;">
+            {{ object.subject }}</td>
+    </tr>
+</table>
+<p>Our team will review your request and get back to you as soon as possible.
+   You can reply to this email to add information to your ticket.</p>
+<p>Best regards,<br/>IT Service Desk</p>
+]]></field>
+    </record>
+
+    <!-- Ticket Reply: template for agents replying to customers -->
+    <record id="mail_template_ticket_reply" model="mail.template">
+        <field name="name">ITSM: Ticket Reply</field>
+        <field name="model_id" ref="model_itsm_ticket"/>
+        <field name="subject">Re: {{ object.name }} - {{ object.subject }}</field>
+        <field name="email_from">{{ (object.assigned_to_id.email_formatted or user.email_formatted) }}</field>
+        <field name="email_to">{{ object.reporter_email }}</field>
+        <field name="body_html"><![CDATA[
+<p>Dear customer,</p>
+<p>Regarding your ticket <strong>{{ object.name }}</strong> - {{ object.subject }}:</p>
+<p><br/></p>
+<p>Best regards,<br/>{{ user.name }}<br/>IT Service Desk</p>
+]]></field>
+    </record>
+
+    <!-- Ticket Status Update: sent on state changes -->
+    <record id="mail_template_ticket_status" model="mail.template">
+        <field name="name">ITSM: Ticket Status Update</field>
+        <field name="model_id" ref="model_itsm_ticket"/>
+        <field name="subject">{{ object.name }} - Status update</field>
+        <field name="email_from">{{ (object.assigned_to_id.email_formatted or user.email_formatted) }}</field>
+        <field name="email_to">{{ object.reporter_email }}</field>
+        <field name="body_html"><![CDATA[
+<p>Dear customer,</p>
+<p>Your ticket <strong>{{ object.name }}</strong> has been updated.</p>
+<table style="width:100%; border-collapse:collapse; margin:16px 0;">
+    <tr>
+        <td style="padding:8px 12px; border:1px solid #dee2e6; background:#f8f9fa; width:140px;">
+            <strong>Subject</strong></td>
+        <td style="padding:8px 12px; border:1px solid #dee2e6;">
+            {{ object.subject }}</td>
+    </tr>
+    <tr>
+        <td style="padding:8px 12px; border:1px solid #dee2e6; background:#f8f9fa;">
+            <strong>Status</strong></td>
+        <td style="padding:8px 12px; border:1px solid #dee2e6;">
+            {{ object.state }}</td>
+    </tr>
+</table>
+<p>You can reply to this email to add information to your ticket.</p>
+<p>Best regards,<br/>IT Service Desk</p>
+]]></field>
+    </record>
+
+    </data>
+</odoo>

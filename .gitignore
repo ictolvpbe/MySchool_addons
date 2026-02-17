@@ -1,2 +1,4 @@
 /myschool_admin/storage/sapimport/
 /myschool_core/storage/
+__pycache__/
+*.pyc

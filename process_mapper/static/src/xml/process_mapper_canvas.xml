@@ -374,7 +374,7 @@
                             <t t-foreach="getConnectorDots(step)" t-as="dot" t-key="dot.pos">
                                 <circle class="pm-connector-dot"
                                         t-att-cx="dot.cx" t-att-cy="dot.cy" r="5"
-                                        t-on-mousedown.stop="(ev) => this.onConnectorMouseDown(ev, step)"/>
+                                        t-on-mousedown.stop="(ev) => this.onConnectorMouseDown(ev, step, dot.pos)"/>
                             </t>
 
                             <!-- Resize handles (visible when selected) -->

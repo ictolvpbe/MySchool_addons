@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="itsm_improvement_view_list" model="ir.ui.view">
+        <field name="name">itsm.improvement.list</field>
+        <field name="model">itsm.improvement</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="title"/>
+                <field name="state" widget="badge"
+                       decoration-info="state in ('idea', 'assessment')"
+                       decoration-success="state in ('approved', 'done')"
+                       decoration-warning="state == 'implementing'"
+                       decoration-danger="state == 'rejected'"/>
+                <field name="priority" widget="badge"/>
+                <field name="source"/>
+                <field name="assigned_to_id" widget="many2one_avatar_user"/>
+                <field name="target_date"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="itsm_improvement_view_form" model="ir.ui.view">
+        <field name="name">itsm.improvement.form</field>
+        <field name="model">itsm.improvement</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_assess" type="object" string="Assess"
+                            class="btn-primary"
+                            invisible="state not in ('idea',)"/>
+                    <button name="action_approve" type="object" string="Approve"
+                            class="btn-success"
+                            invisible="state not in ('assessment',)"/>
+                    <button name="action_reject" type="object" string="Reject"
+                            class="btn-danger"
+                            invisible="state not in ('assessment',)"/>
+                    <button name="action_implement" type="object" string="Start Implementation"
+                            class="btn-primary"
+                            invisible="state not in ('approved',)"/>
+                    <button name="action_done" type="object" string="Mark Done"
+                            class="btn-success"
+                            invisible="state not in ('implementing',)"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="idea,assessment,approved,implementing,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                        <label for="title"/>
+                        <h2><field name="title" placeholder="Improvement title..."/></h2>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="priority"/>
+                            <field name="source"/>
+                        </group>
+                        <group>
+                            <field name="assigned_to_id" widget="many2one_avatar_user"/>
+                            <field name="target_date"/>
+                            <field name="completion_date" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="Expected Benefit" name="benefit">
+                            <field name="expected_benefit" placeholder="What benefit do we expect..."/>
+                        </page>
+                        <page string="Measurable Target" name="target">
+                            <field name="measurable_target" placeholder="How will success be measured..."/>
+                        </page>
+                        <page string="Actual Result" name="result">
+                            <field name="actual_result" placeholder="What was actually achieved..."/>
+                        </page>
+                        <page string="Sources" name="sources">
+                            <group>
+                                <field name="source_ticket_id"/>
+                                <field name="source_problem_id"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="itsm_improvement_view_search" model="ir.ui.view">
+        <field name="name">itsm.improvement.search</field>
+        <field name="model">itsm.improvement</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="title"/>
+                <field name="assigned_to_id"/>
+                <separator/>
+                <filter string="Open" name="open"
+                        domain="[('state', 'not in', ('done', 'rejected'))]"/>
+                <filter string="Done" name="done"
+                        domain="[('state', '=', 'done')]"/>
+<!--                <group string="Group By">-->
+<!--                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>-->
+<!--                    <filter string="Priority" name="group_priority" context="{'group_by': 'priority'}"/>-->
+<!--                    <filter string="Source" name="group_source" context="{'group_by': 'source'}"/>-->
+<!--                    <filter string="Assigned To" name="group_assigned" context="{'group_by': 'assigned_to_id'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+</odoo>

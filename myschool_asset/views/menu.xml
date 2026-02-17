@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Root Menu -->
+    <menuitem id="menu_asset_root"
+              name="Asset Management"
+              web_icon="myschool_asset,static/description/icon.png"
+              sequence="30"/>
+
+    <!-- Assets submenu -->
+    <menuitem id="menu_asset_assets"
+              name="Assets"
+              parent="menu_asset_root"
+              sequence="10"/>
+
+    <!-- Assets action -->
+    <record id="action_asset_asset" model="ir.actions.act_window">
+        <field name="name">Assets</field>
+        <field name="res_model">asset.asset</field>
+        <field name="view_mode">list,form,kanban</field>
+        <field name="search_view_id" ref="asset_asset_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first asset
+            </p>
+            <p>
+                Track hardware, software, and other assets across your organization.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_asset_asset_list"
+              name="All Assets"
+              parent="menu_asset_assets"
+              action="action_asset_asset"
+              sequence="10"/>
+
+    <!-- Licenses action -->
+    <record id="action_asset_license" model="ir.actions.act_window">
+        <field name="name">Licenses</field>
+        <field name="res_model">asset.license</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="asset_license_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first license
+            </p>
+            <p>
+                Manage software licenses, subscriptions, and seat allocations.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_asset_license_list"
+              name="Licenses"
+              parent="menu_asset_assets"
+              action="action_asset_license"
+              sequence="20"/>
+
+    <!-- Checkouts action -->
+    <record id="action_asset_checkout" model="ir.actions.act_window">
+        <field name="name">Checkouts</field>
+        <field name="res_model">asset.checkout</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="asset_checkout_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No checkouts yet
+            </p>
+            <p>
+                Track asset checkouts and returns for people in your organization.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_asset_checkout_list"
+              name="Checkouts"
+              parent="menu_asset_assets"
+              action="action_asset_checkout"
+              sequence="30"/>
+
+    <!-- Configuration submenu -->
+    <menuitem id="menu_asset_config"
+              name="Configuration"
+              parent="menu_asset_root"
+              sequence="90"
+              groups="myschool_asset.group_asset_manager"/>
+
+    <!-- Categories action (under Configuration) -->
+    <record id="action_asset_category" model="ir.actions.act_window">
+        <field name="name">Asset Categories</field>
+        <field name="res_model">asset.category</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="asset_category_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first asset category
+            </p>
+            <p>
+                Organize your assets into categories and subcategories.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_asset_category_config"
+              name="Categories"
+              parent="menu_asset_config"
+              action="action_asset_category"
+              sequence="10"/>
+
+</odoo>

@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="itsm_problem_view_list" model="ir.ui.view">
+        <field name="name">itsm.problem.list</field>
+        <field name="model">itsm.problem</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="title"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'investigation'"
+                       decoration-warning="state == 'root_cause_identified'"
+                       decoration-success="state in ('resolved', 'closed')"/>
+                <field name="priority" widget="badge"
+                       decoration-danger="priority == 'p1'"
+                       decoration-warning="priority == 'p2'"/>
+                <field name="is_known_error"/>
+                <field name="assigned_to_id" widget="many2one_avatar_user"/>
+                <field name="ticket_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="itsm_problem_view_form" model="ir.ui.view">
+        <field name="name">itsm.problem.form</field>
+        <field name="model">itsm.problem</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_investigate" type="object" string="Investigate"
+                            class="btn-primary"
+                            invisible="state not in ('logged',)"/>
+                    <button name="action_root_cause" type="object" string="Root Cause Found"
+                            class="btn-primary"
+                            invisible="state not in ('investigation',)"/>
+                    <button name="action_resolve" type="object" string="Resolve"
+                            class="btn-primary"
+                            invisible="state not in ('root_cause_identified',)"/>
+                    <button name="action_close" type="object" string="Close"
+                            invisible="state not in ('resolved',)"/>
+                    <button name="action_mark_known_error" type="object" string="Mark as Known Error"
+                            class="btn-warning"
+                            invisible="is_known_error or state in ('closed',)"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_tickets" type="object"
+                                class="oe_stat_button" icon="fa-ticket">
+                            <field name="ticket_count" widget="statinfo" string="Tickets"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                        <label for="title"/>
+                        <h2><field name="title" placeholder="Problem title..."/></h2>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="priority"/>
+                            <field name="is_known_error"/>
+                        </group>
+                        <group>
+                            <field name="assigned_to_id" widget="many2one_avatar_user"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="Root Cause" name="root_cause">
+                            <field name="root_cause" placeholder="Root cause analysis..."/>
+                        </page>
+                        <page string="Workaround" name="workaround">
+                            <field name="workaround" placeholder="Temporary workaround..."/>
+                        </page>
+                        <page string="Permanent Fix" name="fix">
+                            <field name="permanent_fix" placeholder="Permanent fix description..."/>
+                        </page>
+                        <page string="Related Tickets" name="tickets">
+                            <field name="ticket_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="subject"/>
+                                    <field name="state"/>
+                                    <field name="priority"/>
+                                    <field name="assigned_to_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Related CIs" name="cis">
+                            <field name="related_ci_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="ci_type"/>
+                                    <field name="state"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Related Services" name="services">
+                            <field name="related_service_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="category_id"/>
+                                    <field name="state"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="itsm_problem_view_search" model="ir.ui.view">
+        <field name="name">itsm.problem.search</field>
+        <field name="model">itsm.problem</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="title"/>
+                <field name="assigned_to_id"/>
+                <separator/>
+                <filter string="Open" name="open"
+                        domain="[('state', 'not in', ('resolved', 'closed'))]"/>
+                <filter string="Known Errors" name="known_errors"
+                        domain="[('is_known_error', '=', True)]"/>
+<!--                <group string="Group By">-->
+<!--                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>-->
+<!--                    <filter string="Priority" name="group_priority" context="{'group_by': 'priority'}"/>-->
+<!--                    <filter string="Assigned To" name="group_assigned" context="{'group_by': 'assigned_to_id'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+</odoo>

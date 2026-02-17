@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="itsm_service_view_list" model="ir.ui.view">
+        <field name="name">itsm.service.list</field>
+        <field name="model">itsm.service</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="category_id"/>
+                <field name="owner_id" widget="many2one_avatar_user"/>
+                <field name="support_hours"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'operational'"
+                       decoration-info="state == 'design'"
+                       decoration-muted="state == 'retired'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="itsm_service_view_form" model="ir.ui.view">
+        <field name="name">itsm.service.form</field>
+        <field name="model">itsm.service</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="Service Name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="category_id"/>
+                            <field name="owner_id" widget="many2one_avatar_user"/>
+                        </group>
+                        <group>
+                            <field name="support_hours" placeholder="e.g. Mon-Fri 8:00-17:00"/>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="SLAs" name="slas">
+                            <field name="sla_ids">
+                                <list editable="bottom">
+                                    <field name="name"/>
+                                    <field name="ticket_type"/>
+                                    <field name="priority"/>
+                                    <field name="response_time_hours"/>
+                                    <field name="resolution_time_hours"/>
+                                    <field name="active"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Configuration Items" name="cis">
+                            <field name="ci_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="ci_type"/>
+                                    <field name="state"/>
+                                    <field name="hostname"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="itsm_service_view_search" model="ir.ui.view">
+        <field name="name">itsm.service.search</field>
+        <field name="model">itsm.service</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="category_id"/>
+                <field name="owner_id"/>
+                <separator/>
+                <filter string="Operational" name="operational" domain="[('state', '=', 'operational')]"/>
+                <filter string="Design" name="design" domain="[('state', '=', 'design')]"/>
+                <filter string="Retired" name="retired" domain="[('state', '=', 'retired')]"/>
+<!--                <group string="Group By">-->
+<!--                    <filter string="Category" name="group_category" context="{'group_by': 'category_id'}"/>-->
+<!--                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>-->
+<!--                    <filter string="Owner" name="group_owner" context="{'group_by': 'owner_id'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+</odoo>

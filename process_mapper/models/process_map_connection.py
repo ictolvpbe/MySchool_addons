@@ -17,6 +17,12 @@ class ProcessMapConnection(models.Model):
     ], string='Type', default='sequence', required=True)
     waypoints = fields.Text(string='Waypoints', default='[]',
                             help='JSON array of waypoint coordinates for orthogonal routing')
+    source_port = fields.Selection([
+        ('top', 'Top'), ('right', 'Right'), ('bottom', 'Bottom'), ('left', 'Left'),
+    ], string='Source Port', help='Port on source shape where connection starts')
+    target_port = fields.Selection([
+        ('top', 'Top'), ('right', 'Right'), ('bottom', 'Bottom'), ('left', 'Left'),
+    ], string='Target Port', help='Port on target shape where connection ends')
     map_id = fields.Many2one('process.map', string='Process Map', required=True, ondelete='cascade')
 
     _sql_constraints = [

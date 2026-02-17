@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="itsm_change_view_list" model="ir.ui.view">
+        <field name="name">itsm.change.list</field>
+        <field name="model">itsm.change</field>
+        <field name="arch" type="xml">
+            <list decoration-danger="risk_level == 'critical'" decoration-warning="risk_level == 'high'">
+                <field name="name"/>
+                <field name="title"/>
+                <field name="change_type" widget="badge"/>
+                <field name="state" widget="badge"
+                       decoration-success="state in ('approved', 'closed')"
+                       decoration-info="state in ('assessment', 'scheduled')"
+                       decoration-warning="state == 'implementing'"
+                       decoration-danger="state == 'rejected'"/>
+                <field name="priority" widget="badge"/>
+                <field name="risk_level"/>
+                <field name="scheduled_start"/>
+                <field name="assigned_to_id" widget="many2one_avatar_user"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="itsm_change_view_form" model="ir.ui.view">
+        <field name="name">itsm.change.form</field>
+        <field name="model">itsm.change</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_assess" type="object" string="Assess"
+                            class="btn-primary"
+                            invisible="state not in ('draft',)"/>
+                    <button name="action_approve" type="object" string="Approve"
+                            class="btn-success"
+                            invisible="state not in ('assessment',)"/>
+                    <button name="action_reject" type="object" string="Reject"
+                            class="btn-danger"
+                            invisible="state not in ('assessment',)"/>
+                    <button name="action_schedule" type="object" string="Schedule"
+                            invisible="state not in ('approved',)"/>
+                    <button name="action_implement" type="object" string="Start Implementation"
+                            class="btn-primary"
+                            invisible="state not in ('scheduled',)"/>
+                    <button name="action_review" type="object" string="Complete &amp; Review"
+                            class="btn-primary"
+                            invisible="state not in ('implementing',)"/>
+                    <button name="action_close" type="object" string="Close"
+                            invisible="state not in ('review',)"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,assessment,approved,scheduled,implementing,review,closed"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                        <label for="title"/>
+                        <h2><field name="title" placeholder="Change title..."/></h2>
+                    </div>
+                    <group>
+                        <group string="Classification">
+                            <field name="change_type"/>
+                            <field name="priority"/>
+                            <field name="risk_level"/>
+                        </group>
+                        <group string="People">
+                            <field name="requested_by_id"/>
+                            <field name="assigned_to_id" widget="many2one_avatar_user"/>
+                            <field name="approved_by_id" readonly="1"/>
+                            <field name="approval_date" readonly="1"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Scheduled">
+                            <field name="scheduled_start"/>
+                            <field name="scheduled_end"/>
+                        </group>
+                        <group string="Actual">
+                            <field name="actual_start" readonly="1"/>
+                            <field name="actual_end" readonly="1"/>
+                            <field name="success"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="Impact Analysis" name="impact">
+                            <field name="impact_analysis" placeholder="What will be affected by this change..."/>
+                        </page>
+                        <page string="Implementation Plan" name="implementation">
+                            <field name="implementation_plan" placeholder="Step-by-step implementation plan..."/>
+                        </page>
+                        <page string="Rollback Plan" name="rollback">
+                            <field name="rollback_plan" placeholder="How to roll back if the change fails..."/>
+                        </page>
+                        <page string="Affected Assets" name="assets">
+                            <field name="affected_asset_ids">
+                                <list><field name="name"/><field name="category_id"/><field name="state"/></list>
+                            </field>
+                        </page>
+                        <page string="Affected CIs" name="cis">
+                            <field name="affected_ci_ids">
+                                <list><field name="name"/><field name="ci_type"/><field name="state"/></list>
+                            </field>
+                        </page>
+                        <page string="Affected Services" name="services">
+                            <field name="affected_service_ids">
+                                <list><field name="name"/><field name="category_id"/><field name="state"/></list>
+                            </field>
+                        </page>
+                        <page string="Related Tickets" name="tickets">
+                            <field name="ticket_ids">
+                                <list><field name="name"/><field name="subject"/><field name="state"/></list>
+                            </field>
+                        </page>
+                        <page string="Review" name="review">
+                            <field name="review_notes" placeholder="Post-implementation review notes..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="itsm_change_view_search" model="ir.ui.view">
+        <field name="name">itsm.change.search</field>
+        <field name="model">itsm.change</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="title"/>
+                <field name="assigned_to_id"/>
+                <separator/>
+                <filter string="Open" name="open"
+                        domain="[('state', 'not in', ('closed', 'rejected'))]"/>
+                <filter string="Pending Approval" name="pending_approval"
+                        domain="[('state', '=', 'assessment')]"/>
+                <filter string="Emergency" name="emergency"
+                        domain="[('change_type', '=', 'emergency')]"/>
+                <separator/>
+                <filter string="Standard" name="standard"
+                        domain="[('change_type', '=', 'standard')]"/>
+                <filter string="Normal" name="normal"
+                        domain="[('change_type', '=', 'normal')]"/>
+<!--                <group string="Group By">-->
+<!--                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>-->
+<!--                    <filter string="Change Type" name="group_type" context="{'group_by': 'change_type'}"/>-->
+<!--                    <filter string="Risk Level" name="group_risk" context="{'group_by': 'risk_level'}"/>-->
+<!--                    <filter string="Assigned To" name="group_assigned" context="{'group_by': 'assigned_to_id'}"/>-->
+<!--                </group>-->
+            </search>
+        </field>
+    </record>
+
+</odoo>
