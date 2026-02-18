@@ -164,6 +164,18 @@ if result and isinstance(result, dict):
         </field>
     </record>
 
+    <!-- Server Action for Recalculate All ORG-TREE Relations (used by menu item) -->
+    <record id="action_recalculate_all_org_trees" model="ir.actions.server">
+        <field name="name">Recalculate All ORG-TREE Relations</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="state">code</field>
+        <field name="code">
+result = env['myschool.org'].recalculate_all_org_trees()
+if result and isinstance(result, dict):
+    action = result
+        </field>
+    </record>
+
     <!-- Org Role Line List View -->
     <record id="view_org_role_line_list" model="ir.ui.view">
         <field name="name">myschool.org.role.line.list</field>

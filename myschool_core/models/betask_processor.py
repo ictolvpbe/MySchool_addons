@@ -2162,14 +2162,14 @@ class BeTaskProcessor(models.AbstractModel):
 
     def _update_person_tree_position(self, person) -> bool:
         """
-        Determine and update the Person's positions in the Org tree.
+        Determine and update the Person's position in the Org tree.
 
-        Creates one PERSON-TREE entry per distinct role:
+        Creates a single PERSON-TREE entry for the highest-priority role:
         1. Get all active PPSBR records for the person
-        2. Group by distinct role (deduplicate across administrative orgs)
-        3. For each role, find the target org via BRSO (resolving admin orgs)
-        4. Create/update PERSON-TREE PropRelations
-        5. Deactivate PERSON-TREE entries for roles no longer active
+        2. Group by distinct role, determine priority (1=high, 5=low)
+        3. Select the role with the highest priority (lowest number)
+        4. Find the target org via BRSO (resolving admin orgs)
+        5. Create/update a single PERSON-TREE PropRelation
 
         @param person: Person record
         @return: True if successful
@@ -2217,7 +2217,7 @@ class BeTaskProcessor(models.AbstractModel):
 
             _logger.info(f'[TREE-POS] Found {len(ppsbr_records)} PPSBR records for {person.name}')
 
-            # Get all existing active PERSON-TREE records for this person
+            # Get all existing PERSON-TREE records for this person
             existing_trees = PropRelation.search([
                 ('id_person', '=', person.id),
                 ('proprelation_type_id', '=', person_tree_type.id),
@@ -2226,27 +2226,23 @@ class BeTaskProcessor(models.AbstractModel):
 
             if not ppsbr_records:
                 _logger.info(f'[TREE-POS] No active PPSBR records - deactivating all PERSON-TREE entries')
-                for tree_record in existing_trees:
-                    tree_record.write({'is_active': False})
-                    _logger.info(f'[TREE-POS] Deactivated PERSON-TREE {tree_record.id}')
+                if existing_trees:
+                    existing_trees.write({'is_active': False})
                 return True
 
             # -----------------------------------------------------------------
-            # Step 3: Group PPSBR records by distinct role, pick one representative per role
+            # Step 3: Group by role, pick one PPSBR per role, then select
+            #         the role with the highest priority (lowest number wins)
             # -----------------------------------------------------------------
             role_ppsbr_map = {}  # role_id -> (ppsbr, role, priority, role_name)
             for ppsbr in ppsbr_records:
                 role = ppsbr.id_role
                 if not role:
                     continue
-                priority = ppsbr.priority
-                if not priority:
-                    priority = getattr(role, 'priority', None)
-                if not priority:
-                    priority = 9999
+                # Use the Role's priority (1=high, 5=low). 0 or unset = lowest priority.
+                priority = role.priority if role.priority else 9999
                 role_name = role.name or ''
 
-                # Keep the first PPSBR per role (they all resolve to the same school)
                 if role.id not in role_ppsbr_map:
                     role_ppsbr_map[role.id] = (ppsbr, role, priority, role_name)
 
@@ -2254,107 +2250,95 @@ class BeTaskProcessor(models.AbstractModel):
                 _logger.warning(f'[TREE-POS] No PPSBR records with valid roles for {person.name}')
                 return True
 
-            _logger.info(f'[TREE-POS] Distinct roles: {[v[3] for v in role_ppsbr_map.values()]}')
+            _logger.info(f'[TREE-POS] Distinct roles: {[(v[3], v[2]) for v in role_ppsbr_map.values()]}')
+
+            # Select the role with the highest priority (lowest number)
+            selected_ppsbr, selected_role, priority, role_name = min(
+                role_ppsbr_map.values(), key=lambda v: v[2]
+            )
+            _logger.info(f'[TREE-POS] Selected highest-priority role: {role_name} (priority={priority})')
 
             # -----------------------------------------------------------------
-            # Step 4: For each role, find target org via BRSO and create/update PERSON-TREE
+            # Step 4: Find target org via BRSO
             # -----------------------------------------------------------------
-            # Index existing PERSON-TREE by role_id for efficient lookup
-            existing_by_role = {}
-            for tree in existing_trees:
-                if tree.id_role:
-                    existing_by_role[tree.id_role.id] = tree
+            target_org = None
 
-            processed_role_ids = set()
+            if brso_type:
+                ppsbr_school = selected_ppsbr.id_org_parent or selected_ppsbr.id_org
+                if ppsbr_school:
+                    ppsbr_school = self._resolve_school_org(ppsbr_school)
 
-            for role_id, (selected_ppsbr, selected_role, priority, role_name) in role_ppsbr_map.items():
-                _logger.info(f'[TREE-POS] Processing role: {role_name} (ID: {role_id}, priority: {priority})')
+                brso_search_domain = [
+                    ('id_role', '=', selected_role.id),
+                    ('proprelation_type_id', '=', brso_type.id),
+                    ('is_active', '=', True),
+                    ('id_org', '!=', False),
+                ]
+                if ppsbr_school:
+                    brso_search_domain.append(('id_org_parent', '=', ppsbr_school.id))
 
-                target_org = None
+                brso_relation = PropRelation.search(brso_search_domain, limit=1)
 
-                if brso_type:
-                    # Resolve the PPSBR school org to its non-administrative ancestor
-                    ppsbr_school = selected_ppsbr.id_org_parent or selected_ppsbr.id_org
-                    if ppsbr_school:
-                        ppsbr_school = self._resolve_school_org(ppsbr_school)
+                if brso_relation:
+                    target_org = brso_relation.id_org
+                    _logger.info(f'[TREE-POS] Found Org via BRSO: {target_org.name} (brso_id={brso_relation.id})')
 
-                    brso_search_domain = [
-                        ('id_role', '=', selected_role.id),
-                        ('proprelation_type_id', '=', brso_type.id),
-                        ('is_active', '=', True),
-                        ('id_org', '!=', False),
-                    ]
-                    if ppsbr_school:
-                        brso_search_domain.append(('id_org_parent', '=', ppsbr_school.id))
+            # Fallback: use the Org from the PPSBR record
+            if not target_org and selected_ppsbr.id_org:
+                target_org = selected_ppsbr.id_org
+                _logger.info(f'[TREE-POS] FALLBACK: Using Org from PPSBR: {target_org.name}')
 
-                    brso_relation = PropRelation.search(brso_search_domain, limit=1)
+            if not target_org:
+                _logger.warning(f'[TREE-POS] No target Org for role {role_name} - deactivating existing')
+                if existing_trees:
+                    existing_trees.write({'is_active': False})
+                return True
 
-                    if brso_relation:
-                        target_org = brso_relation.id_org
-                        _logger.info(f'[TREE-POS] Found Org via BRSO: {target_org.name} (brso_id={brso_relation.id})')
-
-                # Fallback: use the Org from the PPSBR record
-                if not target_org and selected_ppsbr.id_org:
-                    target_org = selected_ppsbr.id_org
-                    _logger.info(f'[TREE-POS] FALLBACK: Using Org from PPSBR: {target_org.name}')
-
-                if not target_org:
-                    _logger.warning(f'[TREE-POS] No target Org for role {role_name} - skipping')
-                    continue
-
-                # If target_org is administrative, resolve to non-administrative parent
-                if target_org.is_administrative:
-                    resolved = self._find_non_administrative_parent_org(target_org)
-                    if resolved:
-                        _logger.info(f'[TREE-POS] Resolved admin org {target_org.name} -> {resolved.name}')
-                        target_org = resolved
-
-                # Build PERSON-TREE values
-                name_kwargs = {
-                    'id_person': person,
-                    'id_org': target_org,
-                    'id_role': selected_role
-                }
-                if selected_ppsbr.id_period:
-                    name_kwargs['id_period'] = selected_ppsbr.id_period
-
-                tree_name = build_proprelation_name(self.PROPRELATION_TYPE_PERSON_TREE, **name_kwargs)
-
-                tree_vals = {
-                    'name': tree_name,
-                    'proprelation_type_id': person_tree_type.id,
-                    'id_person': person.id,
-                    'id_org': target_org.id,
-                    'id_org_parent': target_org.id,
-                    'id_role': selected_role.id,
-                    'is_active': True,
-                    'is_organisational': True,
-                    'automatic_sync': True,
-                }
-                if selected_ppsbr.id_period:
-                    tree_vals['id_period'] = selected_ppsbr.id_period.id
-
-                # Update existing or create new PERSON-TREE for this role
-                existing_tree = existing_by_role.get(role_id)
-                if existing_tree:
-                    existing_tree.write(tree_vals)
-                    _logger.info(f'[TREE-POS] UPDATED PERSON-TREE: ID={existing_tree.id}, role={role_name} -> {target_org.name}')
-                else:
-                    new_tree = PropRelation.create(tree_vals)
-                    _logger.info(f'[TREE-POS] CREATED PERSON-TREE: ID={new_tree.id}, role={role_name} -> {target_org.name}')
-
-                processed_role_ids.add(role_id)
+            # If target_org is administrative, resolve to non-administrative parent
+            if target_org.is_administrative:
+                resolved = self._find_non_administrative_parent_org(target_org)
+                if resolved:
+                    _logger.info(f'[TREE-POS] Resolved admin org {target_org.name} -> {resolved.name}')
+                    target_org = resolved
 
             # -----------------------------------------------------------------
-            # Step 5: Deactivate PERSON-TREE entries for roles no longer in PPSBR
+            # Step 5: Create/update single PERSON-TREE, deactivate extras
             # -----------------------------------------------------------------
-            for tree in existing_trees:
-                if tree.id_role and tree.id_role.id not in processed_role_ids:
-                    _logger.info(
-                        f'[TREE-POS] Deactivating PERSON-TREE {tree.id} for role '
-                        f'{tree.id_role.name} (no longer in active PPSBR)'
-                    )
-                    tree.write({'is_active': False})
+            name_kwargs = {
+                'id_person': person,
+                'id_org': target_org,
+                'id_role': selected_role
+            }
+            if selected_ppsbr.id_period:
+                name_kwargs['id_period'] = selected_ppsbr.id_period
+
+            tree_name = build_proprelation_name(self.PROPRELATION_TYPE_PERSON_TREE, **name_kwargs)
+
+            tree_vals = {
+                'name': tree_name,
+                'proprelation_type_id': person_tree_type.id,
+                'id_person': person.id,
+                'id_org': target_org.id,
+                'id_org_parent': target_org.id,
+                'id_role': selected_role.id,
+                'is_active': True,
+                'is_organisational': True,
+                'automatic_sync': True,
+                'priority': priority,
+            }
+            if selected_ppsbr.id_period:
+                tree_vals['id_period'] = selected_ppsbr.id_period.id
+
+            if existing_trees:
+                # Update the first existing record, deactivate the rest
+                existing_trees[0].write(tree_vals)
+                _logger.info(f'[TREE-POS] UPDATED PERSON-TREE: ID={existing_trees[0].id}, role={role_name} -> {target_org.name}')
+                for extra in existing_trees[1:]:
+                    extra.write({'is_active': False})
+                    _logger.info(f'[TREE-POS] Deactivated extra PERSON-TREE {extra.id}')
+            else:
+                new_tree = PropRelation.create(tree_vals)
+                _logger.info(f'[TREE-POS] CREATED PERSON-TREE: ID={new_tree.id}, role={role_name} -> {target_org.name}')
 
             _logger.info(f'========== END: Successfully updated Org tree position for {person.name} ==========')
             return True

@@ -286,6 +286,13 @@
               sequence="110"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_recalculate_org_trees"
+              name="Recalculate ORG-TREE"
+              parent="menu_configuration"
+              action="action_recalculate_all_org_trees"
+              sequence="115"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <menuitem id="menu_recalculate_person_trees"
               name="Recalculate PERSON-TREE"
               parent="menu_configuration"

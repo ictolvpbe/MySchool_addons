@@ -101,16 +101,16 @@ class OrgProprelations(models.Model):
         """Update all name_trees. Called from server action or cron job."""
         Org = self.env['myschool.org']
         all_orgs = Org.search([('ou_fqdn_internal', '!=', False)])
-        
+
         updated_count = 0
         for org in all_orgs:
             name_tree = org._compute_name_tree_from_fqdn()
             if name_tree and org.name_tree != name_tree:
                 org.write({'name_tree': name_tree})
                 updated_count += 1
-        
+
         _logger.info(f"Updated name_tree for {updated_count} organizations")
-        
+
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
@@ -119,5 +119,115 @@ class OrgProprelations(models.Model):
                 'message': f'Updated name_tree for {updated_count} organizations.',
                 'type': 'success',
                 'sticky': False,
+            }
+        }
+
+    @api.model
+    def recalculate_all_org_trees(self):
+        """
+        Recalculate all ORG-TREE proprelations from ou_fqdn_internal.
+
+        1. Remove (deactivate) all existing ORG-TREE relations
+        2. For each org with ou_fqdn_internal, derive its parent FQDN
+        3. Find the parent org and create a new ORG-TREE relation
+        """
+        from .wizards import build_proprelation_name
+
+        Org = self.env['myschool.org']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        # Get or create ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        if not org_tree_type:
+            org_tree_type = PropRelationType.create({
+                'name': 'ORG-TREE',
+                'usage': 'Organization hierarchy relationship',
+                'is_active': True,
+            })
+
+        # Step 1: Remove all existing ORG-TREE relations
+        existing_org_trees = PropRelation.search([
+            ('proprelation_type_id', '=', org_tree_type.id),
+        ])
+        removed_count = len(existing_org_trees)
+        if existing_org_trees:
+            existing_org_trees.unlink()
+            _logger.info(f"Removed {removed_count} existing ORG-TREE relations")
+
+        # Step 2: Build FQDN-to-org index for fast parent lookup
+        all_orgs = Org.search([('ou_fqdn_internal', '!=', False)])
+        fqdn_to_org = {}
+        for org in all_orgs:
+            fqdn = org.ou_fqdn_internal.strip().lower()
+            fqdn_to_org[fqdn] = org
+
+        # Step 3: For each org, derive parent FQDN and create ORG-TREE relation
+        created_count = 0
+        skipped_count = 0
+
+        for org in all_orgs:
+            fqdn = org.ou_fqdn_internal.strip().lower()
+            components = [c.strip() for c in fqdn.split(',') if c.strip()]
+
+            if len(components) <= 1:
+                # Root org (only dc= parts or single component) - no parent
+                skipped_count += 1
+                continue
+
+            # Parent FQDN = remove the first component (ou=xxx or cn=xxx)
+            # Only strip if the first component is an ou= or cn= (not dc=)
+            first = components[0]
+            if first.startswith('ou=') or first.startswith('cn='):
+                parent_fqdn = ','.join(components[1:])
+            else:
+                # First component is dc= - this is a root, no parent
+                skipped_count += 1
+                continue
+
+            parent_org = fqdn_to_org.get(parent_fqdn)
+            if not parent_org:
+                _logger.debug(
+                    f"No parent org found for {org.name_short} "
+                    f"(parent FQDN: {parent_fqdn})"
+                )
+                skipped_count += 1
+                continue
+
+            # Don't create self-referencing relations
+            if parent_org.id == org.id:
+                skipped_count += 1
+                continue
+
+            relation_name = build_proprelation_name(
+                'ORG-TREE', id_org=org, id_org_parent=parent_org
+            )
+
+            PropRelation.create({
+                'name': relation_name,
+                'proprelation_type_id': org_tree_type.id,
+                'id_org': org.id,
+                'id_org_parent': parent_org.id,
+                'is_active': True,
+            })
+            created_count += 1
+
+        _logger.info(
+            f"ORG-TREE recalculation complete: "
+            f"removed {removed_count}, created {created_count}, skipped {skipped_count}"
+        )
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'ORG-TREE Recalculation Complete',
+                'message': (
+                    f'Removed {removed_count} old relations. '
+                    f'Created {created_count} new relations '
+                    f'({skipped_count} root orgs skipped).'
+                ),
+                'type': 'success',
+                'sticky': True,
             }
         }

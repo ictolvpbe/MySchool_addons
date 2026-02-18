@@ -191,6 +191,14 @@
         <field name="model_id" ref="myschool_core.model_myschool_person"/>
         <field name="state">code</field>
         <field name="code">
+PropRelation = env['myschool.proprelation']
+PropRelationType = env['myschool.proprelation.type']
+person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+removed = 0
+if person_tree_type:
+    existing = PropRelation.search([('proprelation_type_id', '=', person_tree_type.id)])
+    removed = len(existing)
+    existing.unlink()
 processor = env['myschool.betask.processor']
 persons = env['myschool.person'].search([('is_active', '=', True)])
 success = 0
@@ -206,7 +214,7 @@ action = {
     'tag': 'display_notification',
     'params': {
         'title': 'PERSON-TREE Recalculation Complete',
-        'message': f'{success} updated, {skipped} skipped (no active PPSBR) out of {len(persons)} active persons.',
+        'message': f'Removed {removed} old relations. {success} created, {skipped} skipped (no active PPSBR) out of {len(persons)} active persons.',
         'type': 'success',
         'sticky': True,
     }
