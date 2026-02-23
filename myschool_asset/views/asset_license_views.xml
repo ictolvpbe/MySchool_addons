@@ -90,11 +90,11 @@
                 <filter string="Site License" name="site" domain="[('license_type', '=', 'site')]"/>
                 <filter string="Subscription" name="subscription" domain="[('license_type', '=', 'subscription')]"/>
                 <filter string="Open Source" name="open_source" domain="[('license_type', '=', 'open_source')]"/>
-                <group string="Group By">
-                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>
-                    <filter string="License Type" name="group_type" context="{'group_by': 'license_type'}"/>
-                    <filter string="Vendor" name="group_vendor" context="{'group_by': 'vendor'}"/>
-                </group>
+<!--                <group string="Group By">-->
+<!--                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>-->
+<!--                    <filter string="License Type" name="group_type" context="{'group_by': 'license_type'}"/>-->
+<!--                    <filter string="Vendor" name="group_vendor" context="{'group_by': 'vendor'}"/>-->
+<!--                </group>-->
             </search>
         </field>
     </record>

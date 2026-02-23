@@ -64,11 +64,11 @@
                 <filter string="Checked Out" name="checked_out" domain="[('state', '=', 'checked_out')]"/>
                 <filter string="Returned" name="returned" domain="[('state', '=', 'returned')]"/>
                 <filter string="Overdue" name="overdue" domain="[('state', '=', 'overdue')]"/>
-                <group string="Group By">
-                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>
-                    <filter string="Asset" name="group_asset" context="{'group_by': 'asset_id'}"/>
-                    <filter string="Person" name="group_person" context="{'group_by': 'person_id'}"/>
-                </group>
+<!--                <group string="Group By">-->
+<!--                    <filter string="State" name="group_state" context="{'group_by': 'state'}"/>-->
+<!--                    <filter string="Asset" name="group_asset" context="{'group_by': 'asset_id'}"/>-->
+<!--                    <filter string="Person" name="group_person" context="{'group_by': 'person_id'}"/>-->
+<!--                </group>-->
             </search>
         </field>
     </record>

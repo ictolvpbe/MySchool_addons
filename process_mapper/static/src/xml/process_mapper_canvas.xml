@@ -415,6 +415,13 @@
                               class="pm-align-guide"/>
                     </t>
 
+                    <!-- Snap-to-grid indicators -->
+                    <t t-foreach="props.snapIndicators" t-as="si" t-key="si_index">
+                        <line t-att-x1="si.x1" t-att-y1="si.y1"
+                              t-att-x2="si.x2" t-att-y2="si.y2"
+                              class="pm-snap-indicator"/>
+                    </t>
+
                     <!-- Selection rectangle -->
                     <t t-if="state.selectionRect">
                         <rect t-att-x="state.selectionRect.x" t-att-y="state.selectionRect.y"
@@ -1026,7 +1033,10 @@
                         onOpenSubProcess="(id) => this.onOpenSubProcess(id)"
                         onUpdateConnectionWaypoints="(id, wp) => this.onUpdateConnectionWaypoints(id, wp)"
                         onResizeStep="(id, x, y, w, h) => this.onResizeStep(id, x, y, w, h)"
-                        onResizeLane="(id, h) => this.onResizeLane(id, h)"/>
+                        onResizeLane="(id, h) => this.onResizeLane(id, h)"
+                        onSnapStepToGrid="(id) => this.onSnapStepToGrid(id)"
+                        onSnapStepsToGrid="(ids) => this.onSnapStepsToGrid(ids)"
+                        snapIndicators="state.snapIndicators"/>
 
                     <ProcessMapperProperties
                         selectedElement="this.getSelectedElement()"
