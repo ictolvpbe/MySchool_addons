@@ -2780,8 +2780,6 @@ class ManageOrgRolesWizard(models.TransientModel):
     school_id = fields.Many2one(
         'myschool.org',
         string='School',
-        required=True,
-        domain="[('org_type_id.name', '=', 'SCHOOL')]",
         help='Select the school organization (parent)'
     )
 
@@ -2804,25 +2802,36 @@ class ManageOrgRolesWizard(models.TransientModel):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
 
-        # Traverse ORG-TREE upward to find the nearest parent with org_type SCHOOL
+        # Find the school: check the org itself, then traverse ORG-TREE upward
         school_id = False
-        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-        if org_tree_type:
-            current_org_id = org_id
-            for _guard in range(10):  # prevent infinite loops
-                parent_rel = PropRelation.search([
-                    ('id_org', '=', current_org_id),
-                    ('id_org_parent', '!=', False),
-                    ('proprelation_type_id', '=', org_tree_type.id),
-                    ('is_active', '=', True),
-                ], limit=1)
-                if not parent_rel or not parent_rel.id_org_parent:
-                    break
-                parent_org = parent_rel.id_org_parent
-                if parent_org.org_type_id and parent_org.org_type_id.name == 'SCHOOL':
-                    school_id = parent_org.id
-                    break
-                current_org_id = parent_org.id
+        first_parent_id = False
+        Org = self.env['myschool.org']
+        org = Org.browse(org_id)
+        if org.org_type_id and org.org_type_id.name == 'SCHOOL':
+            school_id = org.id
+        else:
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+            if org_tree_type:
+                current_org_id = org_id
+                for _guard in range(10):  # prevent infinite loops
+                    parent_rel = PropRelation.search([
+                        ('id_org', '=', current_org_id),
+                        ('id_org_parent', '!=', False),
+                        ('proprelation_type_id', '=', org_tree_type.id),
+                        ('is_active', '=', True),
+                    ], limit=1)
+                    if not parent_rel or not parent_rel.id_org_parent:
+                        break
+                    parent_org = parent_rel.id_org_parent
+                    if not first_parent_id:
+                        first_parent_id = parent_org.id
+                    if parent_org.org_type_id and parent_org.org_type_id.name == 'SCHOOL':
+                        school_id = parent_org.id
+                        break
+                    current_org_id = parent_org.id
+            # Fallback: use nearest parent if no SCHOOL-type ancestor found
+            if not school_id:
+                school_id = first_parent_id
 
         # Build line vals from BRSO relations
         lines = []
@@ -2841,12 +2850,14 @@ class ManageOrgRolesWizard(models.TransientModel):
                     'is_active': rel.is_active,
                 }))
 
-        wizard = self.create({
+        wizard_vals = {
             'org_id': org_id,
             'org_name': org_name,
-            'school_id': school_id,
             'line_ids': lines,
-        })
+        }
+        if school_id:
+            wizard_vals['school_id'] = school_id
+        wizard = self.create(wizard_vals)
 
         return {
             'type': 'ir.actions.act_window',
