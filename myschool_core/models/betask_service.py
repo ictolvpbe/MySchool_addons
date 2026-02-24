@@ -156,13 +156,17 @@ class BeTaskService(models.AbstractModel):
     @api.model
     def find_manual_tasks(self):
         """
-        Find manual tasks that need attention
-        
+        Find manual tasks that need processing.
+
+        Searches by target='MANUAL' (the betask type's target field),
+        status='new', and automatic_sync=False (queued mode tasks).
+
         :return: Recordset of manual tasks
         """
         return self.env['myschool.betask'].search([
-            ('action', '=', 'MANUAL'),
-            ('status', '=', 'new')
+            ('target', '=', 'MANUAL'),
+            ('status', '=', 'new'),
+            ('automatic_sync', '=', False),
         ])
     
     # =========================================================================
@@ -383,7 +387,8 @@ class BeTaskService(models.AbstractModel):
             'completed': BeTask.search_count([('status', '=', 'completed_ok')]),
             'error': BeTask.search_count([('status', '=', 'error')]),
             'manual_pending': BeTask.search_count([
-                ('action', '=', 'MANUAL'),
-                ('status', '=', 'new')
+                ('target', '=', 'MANUAL'),
+                ('status', '=', 'new'),
+                ('automatic_sync', '=', False),
             ]),
         }
