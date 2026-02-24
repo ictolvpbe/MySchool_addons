@@ -161,6 +161,35 @@ function snapToGrid(val) {
 }
 
 /**
+ * Simplify a path by removing redundant points:
+ * - Remove zero-length segments (duplicate consecutive points)
+ * - Remove collinear middle points (3 points on same horizontal or vertical line)
+ */
+function simplifyPath(points) {
+    if (points.length <= 2) return points;
+    const result = [points[0]];
+    for (let i = 1; i < points.length; i++) {
+        const prev = result[result.length - 1];
+        const cur = points[i];
+        // Skip duplicate points (zero-length segments)
+        if (Math.abs(prev.x - cur.x) < 0.5 && Math.abs(prev.y - cur.y) < 0.5) continue;
+        // Remove collinear middle point: if prev, last-added and cur are all on same line
+        if (result.length >= 2) {
+            const mid = result[result.length - 1];
+            const before = result[result.length - 2];
+            const allSameX = Math.abs(before.x - mid.x) < 0.5 && Math.abs(mid.x - cur.x) < 0.5;
+            const allSameY = Math.abs(before.y - mid.y) < 0.5 && Math.abs(mid.y - cur.y) < 0.5;
+            if (allSameX || allSameY) {
+                // Middle point is redundant, replace it with current
+                result.pop();
+            }
+        }
+        result.push(cur);
+    }
+    return result;
+}
+
+/**
  * Compute orthogonal route points from source to target.
  * @param {Object} source - source step
  * @param {Object} target - target step
@@ -170,80 +199,44 @@ function snapToGrid(val) {
  * @returns {Array} points [{x,y}, ...]
  */
 function computeOrthogonalPath(source, target, waypoints, sourcePort, targetPort) {
+    // Always auto-select the best (closest) ports based on shape positions
     const auto = selectPorts(source, target);
-    const sourceSide = sourcePort || auto.sourceSide;
-    const targetSide = targetPort || auto.targetSide;
+    const sourceSide = auto.sourceSide;
+    const targetSide = auto.targetSide;
     const p1 = shapePortPoint(source, sourceSide);
     const p2 = shapePortPoint(target, targetSide);
 
-    // With user-defined waypoints: connect start → waypoints → end via H/V segments
-    if (waypoints && waypoints.length > 0) {
-        const points = [p1];
-        let prev = p1;
-        for (const wp of waypoints) {
-            // Alternate H then V to reach waypoint
-            points.push({ x: wp.x, y: prev.y });
-            points.push({ x: wp.x, y: wp.y });
-            prev = wp;
-        }
-        // Connect last waypoint to end
-        points.push({ x: p2.x, y: prev.y });
-        points.push(p2);
-        return points;
-    }
+    const isHorizontal = (sourceSide === 'left' || sourceSide === 'right');
+    const autoMidX = snapToGrid((p1.x + p2.x) / 2);
+    const autoMidY = snapToGrid((p1.y + p2.y) / 2);
 
-    // Auto-route without waypoints
-    const MARGIN = 30;
-
-    if (sourceSide === 'right' && targetSide === 'left') {
-        if (p2.x > p1.x + MARGIN) {
-            // Simple 3-segment: H → V → H
-            const midX = snapToGrid((p1.x + p2.x) / 2);
-            return [p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2];
-        } else {
-            // U-route: go right, then up/down, then left
-            const extX = snapToGrid(p1.x + MARGIN);
-            const extX2 = snapToGrid(p2.x - MARGIN);
-            const midY = snapToGrid(p1.y < p2.y ? Math.min(p1.y, p2.y) - 40 : Math.max(p1.y, p2.y) + 40);
-            return [p1, { x: extX, y: p1.y }, { x: extX, y: midY }, { x: extX2, y: midY }, { x: extX2, y: p2.y }, p2];
+    if (isHorizontal) {
+        // H → V → H (3 segments)
+        let midX = autoMidX;
+        if (waypoints && waypoints.length > 0) {
+            const wpX = waypoints[0].x;
+            // Only use stored X if it's between the two ports (with some margin)
+            const minX = Math.min(p1.x, p2.x) - 100;
+            const maxX = Math.max(p1.x, p2.x) + 100;
+            if (wpX >= minX && wpX <= maxX) {
+                midX = wpX;
+            }
         }
-    }
-    if (sourceSide === 'left' && targetSide === 'right') {
-        if (p2.x < p1.x - MARGIN) {
-            const midX = snapToGrid((p1.x + p2.x) / 2);
-            return [p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2];
-        } else {
-            const extX = snapToGrid(p1.x - MARGIN);
-            const extX2 = snapToGrid(p2.x + MARGIN);
-            const midY = snapToGrid(p1.y < p2.y ? Math.min(p1.y, p2.y) - 40 : Math.max(p1.y, p2.y) + 40);
-            return [p1, { x: extX, y: p1.y }, { x: extX, y: midY }, { x: extX2, y: midY }, { x: extX2, y: p2.y }, p2];
+        return simplifyPath([p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2]);
+    } else {
+        // V → H → V (3 segments)
+        let midY = autoMidY;
+        if (waypoints && waypoints.length > 0) {
+            const wpY = waypoints[0].y;
+            // Only use stored Y if it's between the two ports (with some margin)
+            const minY = Math.min(p1.y, p2.y) - 100;
+            const maxY = Math.max(p1.y, p2.y) + 100;
+            if (wpY >= minY && wpY <= maxY) {
+                midY = wpY;
+            }
         }
+        return simplifyPath([p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2]);
     }
-    if (sourceSide === 'bottom' && targetSide === 'top') {
-        if (p2.y > p1.y + MARGIN) {
-            const midY = snapToGrid((p1.y + p2.y) / 2);
-            return [p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2];
-        } else {
-            const extY = snapToGrid(p1.y + MARGIN);
-            const extY2 = snapToGrid(p2.y - MARGIN);
-            const midX = snapToGrid(p1.x < p2.x ? Math.min(p1.x, p2.x) - 40 : Math.max(p1.x, p2.x) + 40);
-            return [p1, { x: p1.x, y: extY }, { x: midX, y: extY }, { x: midX, y: extY2 }, { x: p2.x, y: extY2 }, p2];
-        }
-    }
-    if (sourceSide === 'top' && targetSide === 'bottom') {
-        if (p2.y < p1.y - MARGIN) {
-            const midY = snapToGrid((p1.y + p2.y) / 2);
-            return [p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2];
-        } else {
-            const extY = snapToGrid(p1.y - MARGIN);
-            const extY2 = snapToGrid(p2.y + MARGIN);
-            const midX = snapToGrid(p1.x < p2.x ? Math.min(p1.x, p2.x) - 40 : Math.max(p1.x, p2.x) + 40);
-            return [p1, { x: p1.x, y: extY }, { x: midX, y: extY }, { x: midX, y: extY2 }, { x: p2.x, y: extY2 }, p2];
-        }
-    }
-
-    // Fallback: simple L-route
-    return [p1, { x: p2.x, y: p1.y }, p2];
 }
 
 /**
@@ -968,6 +961,7 @@ class ProcessMapperCanvas extends Component {
     onSegmentHandleMouseDown(ev, conn, segIdx) {
         ev.stopPropagation();
         ev.preventDefault();
+        // Capture current full path so we can manipulate it stably during drag
         const points = this.getConnectionPoints(conn);
         const a = points[segIdx];
         const b = points[segIdx + 1];
@@ -978,6 +972,8 @@ class ProcessMapperCanvas extends Component {
             segmentIndex: segIdx,
             isHorizontal,
             startPos: this.screenToSvg(ev.clientX, ev.clientY),
+            // Store the full original path points so we don't recompute mid-drag
+            originalPoints: points.map(p => ({ x: p.x, y: p.y })),
         };
     }
 
@@ -1244,37 +1240,11 @@ class ProcessMapperCanvas extends Component {
         }
         if (this.segmentDragging) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
-            const conn = this.props.connections.find(c => c.id === this.segmentDragging.connId);
-            if (conn) {
-                const source = this.props.steps.find(s => s.id === conn.source_step_id);
-                const target = this.props.steps.find(s => s.id === conn.target_step_id);
-                if (source && target) {
-                    const points = computeOrthogonalPath(source, target, conn.waypoints || []);
-                    const segIdx = this.segmentDragging.segmentIndex;
-                    if (segIdx >= 0 && segIdx < points.length - 1) {
-                        // Build waypoints from the intermediate points (exclude first/last which are ports)
-                        const newWaypoints = [];
-                        for (let i = 1; i < points.length - 1; i++) {
-                            newWaypoints.push({ ...points[i] });
-                        }
-                        // Adjust the segment being dragged
-                        const wpIdxA = segIdx - 1; // index in waypoints array
-                        const wpIdxB = segIdx;
-                        if (this.segmentDragging.isHorizontal) {
-                            // H-segment: move vertically
-                            const newY = snapToGrid(pos.y);
-                            if (wpIdxA >= 0 && wpIdxA < newWaypoints.length) newWaypoints[wpIdxA].y = newY;
-                            if (wpIdxB >= 0 && wpIdxB < newWaypoints.length) newWaypoints[wpIdxB].y = newY;
-                        } else {
-                            // V-segment: move horizontally
-                            const newX = snapToGrid(pos.x);
-                            if (wpIdxA >= 0 && wpIdxA < newWaypoints.length) newWaypoints[wpIdxA].x = newX;
-                            if (wpIdxB >= 0 && wpIdxB < newWaypoints.length) newWaypoints[wpIdxB].x = newX;
-                        }
-                        this.props.onUpdateConnectionWaypoints(conn.id, newWaypoints);
-                    }
-                }
-            }
+            const seg = this.segmentDragging;
+            const snappedX = snapToGrid(pos.x);
+            const snappedY = snapToGrid(pos.y);
+            // Store both coordinates so the waypoint is valid regardless of routing direction
+            this.props.onUpdateConnectionWaypoints(seg.connId, [{ x: snappedX, y: snappedY }]);
         }
         if (this.connecting) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
@@ -1670,7 +1640,7 @@ class ProcessMapperClient extends Component {
 
     // --- Data loading ---
 
-    async loadDiagram() {
+    /*async loadDiagram() {
         try {
             const data = await this.orm.call("process.map", "get_diagram_data", [this.state.mapId]);
             this.state.mapName = data.name;
@@ -1686,7 +1656,45 @@ class ProcessMapperClient extends Component {
         } catch (e) {
             this.notification.add("Failed to load diagram: " + (e.message || e), { type: "danger" });
         }
+    }*/
+    async loadDiagram() {
+    try {
+        const data = await this.orm.call("process.map", "get_diagram_data", [this.state.mapId]);
+
+        // STAP 1: Maak de huidige lijnen eerst leeg (helpt tegen ghosting)
+        this.state.connections = [];
+        this.state.steps = [];
+
+        // STAP 2: Vul de state met een schone kopie
+        this.state.mapName = data.name;
+        this.state.mapState = data.state;
+        this.state.steps = data.steps.map(s => ({ ...s }));
+        this.state.lanes = data.lanes.map(l => ({ ...l }));
+
+        // Zorg dat waypoints van een string naar een object gaan als dat nodig is
+        this.state.connections = data.connections.map(c => {
+            let waypoints = c.waypoints;
+            if (typeof waypoints === 'string') {
+                try { waypoints = JSON.parse(waypoints); } catch(e) { waypoints = []; }
+            }
+            return { ...c, waypoints: waypoints || [] };
+        });
+
+        this.state.dirty = false;
+
+        // Forceer een herberekening van de canvas als je een externe library gebruikt
+        if (this.canvasEngine) {
+            this.canvasEngine.render();
+        }
+
+        // Initialize history
+        this._history = [];
+        this._historyIndex = -1;
+        this._pushHistory();
+    } catch (e) {
+        this.notification.add("Failed to load diagram: " + (e.message || e), { type: "danger" });
     }
+}
 
     async loadMapList() {
         try {
@@ -1712,21 +1720,48 @@ class ProcessMapperClient extends Component {
 
     // --- Save ---
 
+    // async saveDiagram() {
+    //     if (!this.state.mapId) return;
+    //     try {
+    //         const data = {
+    //             lanes: this.state.lanes.map(l => ({ ...l })),
+    //             steps: this.state.steps.map(s => ({ ...s })),
+    //             connections: this.state.connections.map(c => ({ ...c })),
+    //         };
+    //         await this.orm.call("process.map", "save_diagram_data", [this.state.mapId, date]);
+    //         await this.loadDiagram();
+    //         this.notification.add("Diagram saved successfully", { type: "success" });
+    //     } catch (e) {
+    //         this.notification.add("Failed to save: " + (e.message || e), { type: "danger" });
+    //     }
+    // }
     async saveDiagram() {
-        if (!this.state.mapId) return;
-        try {
-            const data = {
-                lanes: this.state.lanes.map(l => ({ ...l })),
-                steps: this.state.steps.map(s => ({ ...s })),
-                connections: this.state.connections.map(c => ({ ...c })),
-            };
-            await this.orm.call("process.map", "save_diagram_data", [this.state.mapId], { data });
-            await this.loadDiagram();
-            this.notification.add("Diagram saved successfully", { type: "success" });
-        } catch (e) {
-            this.notification.add("Failed to save: " + (e.message || e), { type: "danger" });
-        }
+    if (!this.state.mapId) return;
+    try {
+        // Zorg dat alle coördinaten Integers zijn, Odoo kan struikelen over Floats uit de browser
+        const data = {
+            lanes: this.state.lanes.map(l => ({ ...l, y_position: Math.round(l.y_position) })),
+            steps: this.state.steps.map(s => ({ ...s, x_position: Math.round(s.x_position), y_position: Math.round(s.y_position) })),
+            connections: this.state.connections.map(c => ({
+                ...c,
+                // Zorg dat we geen 'undefined' sturen naar Python
+                source_port: c.source_port || "",
+                target_port: c.target_port || ""
+            })),
+        };
+
+        // Let op: data is nu het tweede argument in de array []
+        await this.orm.call("process.map", "save_diagram_data", [this.state.mapId, data]);
+
+        // Optioneel: Maak de connecties even leeg voor een 'schone' hertekening
+        this.state.connections = [];
+
+        await this.loadDiagram();
+        this.notification.add("Opgeslagen!", { type: "success" });
+    } catch (e) {
+        this.notification.add("Fout bij opslaan: " + e.message, { type: "danger" });
     }
+}
 
     // --- Map selection ---
 
@@ -1775,6 +1810,8 @@ class ProcessMapperClient extends Component {
                 y >= l.y_position && y < l.y_position + l.height
             );
             step.lane_id = lane ? lane.id : false;
+            // Clear waypoints on connected lines so they auto-route cleanly
+            this._clearWaypointsForStep(stepId);
             this.state.dirty = true;
         }
     }
@@ -1789,9 +1826,20 @@ class ProcessMapperClient extends Component {
                     step.y_position >= l.y_position && step.y_position < l.y_position + l.height
                 );
                 step.lane_id = lane ? lane.id : false;
+                // Clear waypoints on connected lines so they auto-route cleanly
+                this._clearWaypointsForStep(id);
             }
         }
         this.state.dirty = true;
+    }
+
+    _clearWaypointsForStep(stepId) {
+        this.state.connections = this.state.connections.map(c => {
+            if (c.source_step_id === stepId || c.target_step_id === stepId) {
+                return { ...c, waypoints: [] };
+            }
+            return c;
+        });
     }
 
     // --- Snap alignment guides ---
@@ -1973,14 +2021,24 @@ class ProcessMapperClient extends Component {
 
     // --- Update connection waypoints ---
 
-    onUpdateConnectionWaypoints(connId, waypoints) {
+    /*onUpdateConnectionWaypoints(connId, waypoints) {
         const conn = this.state.connections.find(c => c.id === connId);
         if (conn) {
             conn.waypoints = waypoints;
             this.state.dirty = true;
         }
     }
-
+*/
+    onUpdateConnectionWaypoints(connId, waypoints) {
+    this.state.connections = this.state.connections.map(c => {
+        if (c.id === connId) {
+            // Maak een gloednieuwe kopie van de connectie met de nieuwe waypoints
+            return { ...c, waypoints: [...waypoints] };
+        }
+        return c;
+    });
+    this.state.dirty = true;
+}
     // --- Drop from palette ---
 
     onCanvasDrop(elementType, x, y) {

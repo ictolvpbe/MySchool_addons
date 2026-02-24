@@ -1023,7 +1023,7 @@
                         onMultiSelect="(ids) => this.onMultiSelect(ids)"
                         onMoveStep="(id, x, y) => this.onMoveStep(id, x, y)"
                         onMoveSteps="(ids, dx, dy) => this.onMoveSteps(ids, dx, dy)"
-                        onCreateConnection="(s, t) => this.onCreateConnection(s, t)"
+                        onCreateConnection="(s, t, sp, tp) => this.onCreateConnection(s, t, sp, tp)"
                         onCanvasDrop="(type, x, y) => this.onCanvasDrop(type, x, y)"
                         onPan="(x, y) => this.onPan(x, y)"
                         onZoom="(delta) => this.onZoomDelta(delta)"
