@@ -858,6 +858,9 @@ class ProcessMapperCanvas extends Component {
         onUpdateConnectionWaypoints: { type: Function },
         onResizeStep: { type: Function },
         onResizeLane: { type: Function },
+        onSnapStepToGrid: { type: Function },
+        onSnapStepsToGrid: { type: Function },
+        snapIndicators: { type: Array },
     };
 
     setup() {
@@ -1178,10 +1181,7 @@ class ProcessMapperCanvas extends Component {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
             let x = pos.x - this.dragging.offsetX;
             let y = pos.y - this.dragging.offsetY;
-            if (this.props.gridEnabled) {
-                x = Math.round(x / 20) * 20;
-                y = Math.round(y / 20) * 20;
-            }
+            // No grid snap during drag movement (applied on release instead)
             const dx = x - this.dragging.lastX;
             const dy = y - this.dragging.lastY;
             this.dragging.lastX = x;
@@ -1316,6 +1316,15 @@ class ProcessMapperCanvas extends Component {
             this.state.connectSourceId = null;
         }
         if (this.dragging) {
+            // Snap to grid on release
+            if (this.props.gridEnabled) {
+                const stepId = this.dragging.stepId;
+                if (this.props.selectedIds.includes(stepId) && this.props.selectedIds.length > 1) {
+                    this.props.onSnapStepsToGrid(this.props.selectedIds);
+                } else {
+                    this.props.onSnapStepToGrid(stepId);
+                }
+            }
             this.props.onDragEnd();
         }
         if (this.resizing) {
@@ -1572,6 +1581,7 @@ class ProcessMapperClient extends Component {
             showVersionPanel: false,
             versions: [],
             alignGuides: [],
+            snapIndicators: [],
             canvasWidth: 800,
             canvasHeight: 600,
         });
@@ -1814,6 +1824,67 @@ class ProcessMapperClient extends Component {
     onDragEnd() {
         this.state.alignGuides = [];
         this._pushHistory();
+    }
+
+    // --- Snap to grid on release ---
+
+    onSnapStepToGrid(stepId) {
+        const step = this.state.steps.find(s => s.id === stepId);
+        if (!step) return;
+        const gridSize = 20;
+        const snappedX = Math.round(step.x_position / gridSize) * gridSize;
+        const snappedY = Math.round(step.y_position / gridSize) * gridSize;
+        if (snappedX === step.x_position && snappedY === step.y_position) return;
+        step.x_position = snappedX;
+        step.y_position = snappedY;
+        this._showSnapIndicators([step]);
+        this.state.dirty = true;
+    }
+
+    onSnapStepsToGrid(ids) {
+        const gridSize = 20;
+        const snapped = [];
+        for (const id of ids) {
+            const step = this.state.steps.find(s => s.id === id);
+            if (!step) continue;
+            const snappedX = Math.round(step.x_position / gridSize) * gridSize;
+            const snappedY = Math.round(step.y_position / gridSize) * gridSize;
+            if (snappedX !== step.x_position || snappedY !== step.y_position) {
+                step.x_position = snappedX;
+                step.y_position = snappedY;
+                snapped.push(step);
+            }
+        }
+        if (snapped.length > 0) {
+            this._showSnapIndicators(snapped);
+            this.state.dirty = true;
+        }
+    }
+
+    _showSnapIndicators(steps) {
+        const gridSize = 20;
+        const indicators = [];
+        for (const step of steps) {
+            const x = step.x_position;
+            const y = step.y_position;
+            const ds = defaultSize(step.step_type);
+            const w = step.width || ds.w;
+            const h = step.height || ds.h;
+            // Horizontal grid line at top edge
+            indicators.push({ x1: x - 10, y1: y, x2: x + w + 10, y2: y });
+            // Horizontal grid line at bottom edge
+            indicators.push({ x1: x - 10, y1: y + h, x2: x + w + 10, y2: y + h });
+            // Vertical grid line at left edge
+            indicators.push({ x1: x, y1: y - 10, x2: x, y2: y + h + 10 });
+            // Vertical grid line at right edge
+            indicators.push({ x1: x + w, y1: y - 10, x2: x + w, y2: y + h + 10 });
+        }
+        this.state.snapIndicators = indicators;
+        // Clear after a brief flash
+        clearTimeout(this._snapIndicatorTimeout);
+        this._snapIndicatorTimeout = setTimeout(() => {
+            this.state.snapIndicators = [];
+        }, 400);
     }
 
     // --- Rename step (inline edit) ---

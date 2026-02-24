@@ -1113,6 +1113,20 @@
     pointer-events: none;
 }
 
+/* --- Snap-to-Grid Indicators --- */
+.pm-snap-indicator {
+    stroke: #4CAF50;
+    stroke-width: 1.5;
+    stroke-opacity: 0.7;
+    pointer-events: none;
+    animation: pm-snap-fade 0.4s ease-out forwards;
+}
+
+@keyframes pm-snap-fade {
+    0% { stroke-opacity: 0.8; stroke-width: 2; }
+    100% { stroke-opacity: 0; stroke-width: 1; }
+}
+
 /* --- Selection Rectangle --- */
 .pm-selection-rect {
     fill: rgba(21, 101, 192, 0.08);
