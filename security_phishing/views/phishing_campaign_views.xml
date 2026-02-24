@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+    <!-- Campaign: List View -->
+    <record id="view_phishing_campaign_list" model="ir.ui.view">
+        <field name="name">phishing.campaign.list</field>
+        <field name="model">phishing.campaign</field>
+        <field name="arch" type="xml">
+            <list decoration-info="state == 'draft'"
+                  decoration-success="state == 'running'"
+                  decoration-muted="state == 'completed'">
+                <field name="name"/>
+                <field name="template_id"/>
+                <field name="date_start"/>
+                <field name="date_end"/>
+                <field name="responsible_id" widget="many2one_avatar_user"/>
+                <field name="target_count" string="Doelwitten"/>
+                <field name="sent_count" string="Verzonden"/>
+                <field name="click_rate" string="Klik %" widget="progressbar"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-success="state == 'running'"
+                       decoration-muted="state == 'completed'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Campaign: Form View -->
+    <record id="view_phishing_campaign_form" model="ir.ui.view">
+        <field name="name">phishing.campaign.form</field>
+        <field name="model">phishing.campaign</field>
+        <field name="arch" type="xml">
+            <form string="Phishing Campagne">
+                <header>
+                    <button name="action_launch_wizard"
+                            string="Campagne Starten"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_send_emails"
+                            string="E-mails Versturen"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'running'"
+                            confirm="Weet u zeker dat u de phishing e-mails wilt versturen?"/>
+                    <button name="action_complete"
+                            string="Afronden"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state != 'running'"
+                            confirm="Weet u zeker dat u deze campagne wilt afronden?"/>
+                    <button name="action_reset_to_draft"
+                            string="Terugzetten naar Concept"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state == 'draft'"
+                            groups="security_phishing.group_phishing_manager"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,running,completed"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_targets"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-users">
+                            <field name="target_count" widget="statinfo" string="Doelwitten"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="Campagnenaam..."/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Configuratie">
+                            <field name="template_id"/>
+                            <field name="responsible_id" widget="many2one_avatar_user"/>
+                        </group>
+                        <group string="Planning">
+                            <field name="date_start"/>
+                            <field name="date_end"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Omschrijving" name="description">
+                            <field name="description" placeholder="Beschrijving van de campagne..."/>
+                        </page>
+                        <page string="Doelwitten" name="targets">
+                            <field name="target_ids">
+                                <list editable="bottom">
+                                    <field name="partner_id"/>
+                                    <field name="user_id"/>
+                                    <field name="email"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state == 'pending'"
+                                           decoration-warning="state == 'sent'"
+                                           decoration-danger="state in ('clicked', 'credentials_entered')"/>
+                                    <field name="reported"/>
+                                    <field name="date_sent"/>
+                                    <field name="date_clicked"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Statistieken" name="stats">
+                            <group>
+                                <group string="Aantallen">
+                                    <field name="sent_count"/>
+                                    <field name="clicked_count"/>
+                                    <field name="reported_count"/>
+                                    <field name="credentials_count"/>
+                                </group>
+                                <group string="Percentages">
+                                    <field name="click_rate" widget="progressbar"/>
+                                    <field name="report_rate" widget="progressbar"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Campaign: Search View -->
+    <record id="view_phishing_campaign_search" model="ir.ui.view">
+        <field name="name">phishing.campaign.search</field>
+        <field name="model">phishing.campaign</field>
+        <field name="arch" type="xml">
+            <search string="Phishing Campagnes">
+                <field name="name" string="Naam"/>
+                <field name="template_id" string="Sjabloon"/>
+                <field name="responsible_id" string="Verantwoordelijke"/>
+                <separator/>
+                <filter name="draft" string="Concept" domain="[('state', '=', 'draft')]"/>
+                <filter name="running" string="Actief" domain="[('state', '=', 'running')]"/>
+                <filter name="completed" string="Afgerond" domain="[('state', '=', 'completed')]"/>
+                <separator/>
+                <filter name="my_campaigns" string="Mijn Campagnes"
+                        domain="[('responsible_id', '=', uid)]"/>
+                <separator/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_responsible" string="Verantwoordelijke"
+                        context="{'group_by': 'responsible_id'}"/>
+                <filter name="group_template" string="Sjabloon"
+                        context="{'group_by': 'template_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Campaign: Action -->
+    <record id="action_phishing_campaign" model="ir.actions.act_window">
+        <field name="name">Campagnes</field>
+        <field name="res_model">phishing.campaign</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_phishing_campaign_search"/>
+        <field name="context">{'search_default_running': 1}</field>
+    </record>
+
+    </data>
+</odoo>
