@@ -188,17 +188,37 @@ function selectPorts(source, target) {
     }
 
     // Both axes have significant gaps → shapes are diagonal → L-route (2 segments)
-    if (Math.abs(dx) >= Math.abs(dy)) {
-        // More horizontal: exit horizontal, enter vertical
-        const hSide = dx > 0 ? 'right' : 'left';
-        const vSide = dy > 0 ? 'top' : 'bottom';
-        return { sourceSide: hSide, targetSide: vSide };
-    } else {
-        // More vertical: exit vertical, enter horizontal
-        const vSide = dy > 0 ? 'bottom' : 'top';
-        const hSide = dx > 0 ? 'left' : 'right';
-        return { sourceSide: vSide, targetSide: hSide };
+    // Pick the perpendicular port pair where both ports face toward the bend point
+    // and the total path length is shortest.
+    const candidates = [];
+    const allSides = ['top', 'right', 'bottom', 'left'];
+    for (const sp of allSides) {
+        for (const tp of allSides) {
+            const spH = (sp === 'left' || sp === 'right');
+            const tpH = (tp === 'left' || tp === 'right');
+            if (spH === tpH) continue; // need perpendicular
+            const pp1 = shapePortPoint(source, sp);
+            const pp2 = shapePortPoint(target, tp);
+            // Compute bend point for this L-route
+            const bend = spH ? { x: pp2.x, y: pp1.y } : { x: pp1.x, y: pp2.y };
+            // Check that source port faces toward the bend (not away from shape)
+            const srcOK = (sp === 'right' && bend.x >= pp1.x) ||
+                          (sp === 'left' && bend.x <= pp1.x) ||
+                          (sp === 'bottom' && bend.y >= pp1.y) ||
+                          (sp === 'top' && bend.y <= pp1.y);
+            // Check that target port faces toward the bend (not away from shape)
+            const tgtOK = (tp === 'right' && bend.x >= pp2.x) ||
+                          (tp === 'left' && bend.x <= pp2.x) ||
+                          (tp === 'bottom' && bend.y >= pp2.y) ||
+                          (tp === 'top' && bend.y <= pp2.y);
+            const dist = Math.abs(pp1.x - pp2.x) + Math.abs(pp1.y - pp2.y);
+            // Heavy penalty for ports facing away from the bend
+            const penalty = (srcOK ? 0 : 10000) + (tgtOK ? 0 : 10000);
+            candidates.push({ sp, tp, score: dist + penalty });
+        }
     }
+    candidates.sort((a, b) => a.score - b.score);
+    return { sourceSide: candidates[0].sp, targetSide: candidates[0].tp };
 }
 
 const GRID_SNAP = 20;
@@ -267,9 +287,10 @@ function computeOrthogonalPath(source, target, waypoints, sourcePort, targetPort
 
     const PORT_SNAP = 40;
 
-    // When dragging (waypoints present, no stored ports), check ALL port pairs
-    // to find the closest L-route bend point and snap to it
-    if (waypoints && waypoints.length > 0 && !sourcePort && !targetPort) {
+    // When dragging (waypoints present), check ALL perpendicular port pairs
+    // to find the closest L-route bend point and snap to it.
+    // This works regardless of whether ports are stored — allows dragging S→L.
+    if (waypoints && waypoints.length > 0) {
         const wp = waypoints[0];
         const allSides = ['top', 'right', 'bottom', 'left'];
         let bestDist = PORT_SNAP + 1;
@@ -287,12 +308,20 @@ function computeOrthogonalPath(source, target, waypoints, sourcePort, targetPort
                 const pp2 = shapePortPoint(target, tp);
 
                 // L-route bend point
-                let bend;
-                if (spH) {
-                    bend = { x: pp2.x, y: pp1.y };
-                } else {
-                    bend = { x: pp1.x, y: pp2.y };
-                }
+                const bend = spH
+                    ? { x: pp2.x, y: pp1.y }
+                    : { x: pp1.x, y: pp2.y };
+
+                // Skip if either port faces away from the bend (path would double back)
+                const srcOK = (sp === 'right' && bend.x >= pp1.x) ||
+                              (sp === 'left' && bend.x <= pp1.x) ||
+                              (sp === 'bottom' && bend.y >= pp1.y) ||
+                              (sp === 'top' && bend.y <= pp1.y);
+                const tgtOK = (tp === 'right' && bend.x >= pp2.x) ||
+                              (tp === 'left' && bend.x <= pp2.x) ||
+                              (tp === 'bottom' && bend.y >= pp2.y) ||
+                              (tp === 'top' && bend.y <= pp2.y);
+                if (!srcOK || !tgtOK) continue;
 
                 // Chebyshev distance (max of axis distances)
                 const d = Math.max(Math.abs(wp.x - bend.x), Math.abs(wp.y - bend.y));
@@ -551,6 +580,8 @@ class FieldBuilder extends Component {
         this._nodeIdCounter = 1;
         this._searchTimeout = null;
         const fr = this.props.fieldRecords;
+        // Remember which DB field IDs existed when we opened, so we can detect deletions at save time
+        this._originalFieldIds = new Set((fr || []).filter(r => r.id).map(r => r.id));
         const initialFields = (fr && fr.length > 0)
             ? this._loadFieldRecords(fr)
             : this._parseFields(this.props.dataFields);
@@ -1208,7 +1239,7 @@ class FieldBuilder extends Component {
     }
 
     _buildFieldRecords() {
-        return this._getOrderedFields().map((f, idx) => ({
+        const records = this._getOrderedFields().map((f, idx) => ({
             id: f.id || false,
             sequence: (idx + 1) * 10,
             name: f.name,
@@ -1233,6 +1264,14 @@ class FieldBuilder extends Component {
             default_value: f.default_value || '',
             source_model: f.source_model || '',
         }));
+        // Detect deleted fields by comparing original DB IDs with what remains
+        const currentIds = new Set(records.filter(r => r.id).map(r => r.id));
+        for (const origId of this._originalFieldIds) {
+            if (!currentIds.has(origId)) {
+                records.push({ id: origId, _delete: true });
+            }
+        }
+        return records;
     }
 
     onPaletteDragStart(ev, fieldType) {
@@ -1374,10 +1413,9 @@ class FieldBuilder extends Component {
     onRemoveField(index) {
         const field = this.state.fields[index];
         if (field) {
-            // Also remove from layout if present
             this._removeFieldFromLayout(field._id);
         }
-        this.state.fields.splice(index, 1);
+        this.state.fields = this.state.fields.filter((_, i) => i !== index);
     }
 
     _removeFieldFromLayout(fieldId, root) {
@@ -1396,17 +1434,12 @@ class FieldBuilder extends Component {
     }
 
     onRemoveUnplacedField(fieldId) {
-        const idx = this.state.fields.findIndex(f => f._id === fieldId);
-        if (idx >= 0) this.state.fields.splice(idx, 1);
+        this.state.fields = this.state.fields.filter(f => f._id !== fieldId);
     }
 
     onDeleteField(fieldId) {
-        // Remove from layout tree
         this._removeFieldFromLayout(fieldId);
-        // Remove from fields list
-        const idx = this.state.fields.findIndex(f => f._id === fieldId);
-        if (idx >= 0) this.state.fields.splice(idx, 1);
-        // Clear selection if this field was selected
+        this.state.fields = this.state.fields.filter(f => f._id !== fieldId);
         if (this.state.selectedFieldId === fieldId) {
             this.state.selectedFieldId = null;
         }
@@ -1436,7 +1469,8 @@ class FieldBuilder extends Component {
     }
 
     onClose() {
-        this.props.onClose();
+        // Auto-apply changes when closing so deletions aren't lost
+        this.onSave();
     }
 }
 
@@ -1455,6 +1489,7 @@ class ProcessMapperProperties extends Component {
         orgs: { type: Array },
         availableMaps: { type: Array },
         onPropertyChange: { type: Function },
+        onFieldRecordsSave: { type: Function },
         onDelete: { type: Function },
     };
 
@@ -1476,9 +1511,9 @@ class ProcessMapperProperties extends Component {
     }
 
     onFieldBuilderSave(result) {
-        this.props.onPropertyChange('data_fields', result.text);
-        this.props.onPropertyChange('field_records', result.fieldRecords);
-        this.props.onPropertyChange('form_layout', result.formLayout);
+        // Use dedicated save method with explicit step ID
+        const stepId = this.props.selectedElement && this.props.selectedElement.id;
+        this.props.onFieldRecordsSave(stepId, result);
         this.state.showFieldBuilder = false;
     }
 
@@ -2070,6 +2105,16 @@ class ProcessMapperCanvas extends Component {
                             const bend = csH
                                 ? { x: pp2.x, y: pp1.y }
                                 : { x: pp1.x, y: pp2.y };
+                            // Skip if port faces away from bend
+                            const srcOK = (cs === 'right' && bend.x >= pp1.x) ||
+                                          (cs === 'left' && bend.x <= pp1.x) ||
+                                          (cs === 'bottom' && bend.y >= pp1.y) ||
+                                          (cs === 'top' && bend.y <= pp1.y);
+                            const tgtOK = (ct === 'right' && bend.x >= pp2.x) ||
+                                          (ct === 'left' && bend.x <= pp2.x) ||
+                                          (ct === 'bottom' && bend.y >= pp2.y) ||
+                                          (ct === 'top' && bend.y <= pp2.y);
+                            if (!srcOK || !tgtOK) continue;
                             const d = Math.max(Math.abs(wp.x - bend.x), Math.abs(wp.y - bend.y));
                             if (d < bestDist) {
                                 bestDist = d;
@@ -2375,18 +2420,32 @@ class ProcessMapperCanvas extends Component {
             }
             this.props.onUpdateConnectionWaypoints(conn.id, [], sp, tp);
         } else {
-            // S/Z → L (perpendicular ports)
-            let sp, tp;
-            if (Math.abs(dx) >= Math.abs(dy)) {
-                // More horizontal: source exits horizontally, target enters vertically
-                sp = dx > 0 ? 'right' : 'left';
-                tp = dy > 0 ? 'top' : 'bottom';
-            } else {
-                // More vertical: source exits vertically, target enters horizontally
-                sp = dy > 0 ? 'bottom' : 'top';
-                tp = dx > 0 ? 'left' : 'right';
+            // S/Z → L: pick perpendicular port pair where ports face toward bend
+            const allSides = ['top', 'right', 'bottom', 'left'];
+            const candidates = [];
+            for (const sp of allSides) {
+                for (const tp of allSides) {
+                    const spH = (sp === 'left' || sp === 'right');
+                    const tpH = (tp === 'left' || tp === 'right');
+                    if (spH === tpH) continue;
+                    const pp1 = shapePortPoint(source, sp);
+                    const pp2 = shapePortPoint(target, tp);
+                    const bend = spH ? { x: pp2.x, y: pp1.y } : { x: pp1.x, y: pp2.y };
+                    const srcOK = (sp === 'right' && bend.x >= pp1.x) ||
+                                  (sp === 'left' && bend.x <= pp1.x) ||
+                                  (sp === 'bottom' && bend.y >= pp1.y) ||
+                                  (sp === 'top' && bend.y <= pp1.y);
+                    const tgtOK = (tp === 'right' && bend.x >= pp2.x) ||
+                                  (tp === 'left' && bend.x <= pp2.x) ||
+                                  (tp === 'bottom' && bend.y >= pp2.y) ||
+                                  (tp === 'top' && bend.y <= pp2.y);
+                    const dist = Math.abs(pp1.x - pp2.x) + Math.abs(pp1.y - pp2.y);
+                    const penalty = (srcOK ? 0 : 10000) + (tgtOK ? 0 : 10000);
+                    candidates.push({ sp, tp, score: dist + penalty });
+                }
             }
-            this.props.onUpdateConnectionWaypoints(conn.id, [], sp, tp);
+            candidates.sort((a, b) => a.score - b.score);
+            this.props.onUpdateConnectionWaypoints(conn.id, [], candidates[0].sp, candidates[0].tp);
         }
     }
 
@@ -2487,6 +2546,9 @@ class ProcessMapperClient extends Component {
         this._historyIndex = -1;
         this._clipboard = null;
         this._historyPaused = false;
+        // Pending field record updates (stepId -> fieldRecords array)
+        // Stored outside reactive state to avoid proxy issues
+        this._pendingFieldRecords = {};
 
         this.state = useState({
             mapId: null,
@@ -2648,9 +2710,10 @@ class ProcessMapperClient extends Component {
             this.canvasEngine.render();
         }
 
-        // Initialize history
+        // Initialize history and clear pending
         this._history = [];
         this._historyIndex = -1;
+        this._pendingFieldRecords = {};
         this._pushHistory();
     } catch (e) {
         this.notification.add("Failed to load diagram: " + (e.message || e), { type: "danger" });
@@ -2681,28 +2744,24 @@ class ProcessMapperClient extends Component {
 
     // --- Save ---
 
-    // async saveDiagram() {
-    //     if (!this.state.mapId) return;
-    //     try {
-    //         const data = {
-    //             lanes: this.state.lanes.map(l => ({ ...l })),
-    //             steps: this.state.steps.map(s => ({ ...s })),
-    //             connections: this.state.connections.map(c => ({ ...c })),
-    //         };
-    //         await this.orm.call("process.map", "save_diagram_data", [this.state.mapId, date]);
-    //         await this.loadDiagram();
-    //         this.notification.add("Diagram saved successfully", { type: "success" });
-    //     } catch (e) {
-    //         this.notification.add("Failed to save: " + (e.message || e), { type: "danger" });
-    //     }
-    // }
     async saveDiagram() {
     if (!this.state.mapId) return;
     try {
         // Zorg dat alle coördinaten Integers zijn, Odoo kan struikelen over Floats uit de browser
+        const pending = this._pendingFieldRecords;
         const data = {
             lanes: this.state.lanes.map(l => ({ ...l, y_position: Math.round(l.y_position) })),
-            steps: this.state.steps.map(s => ({ ...s, x_position: Math.round(s.x_position), y_position: Math.round(s.y_position), form_layout: s.form_layout || '' })),
+            steps: this.state.steps.map(s => {
+                const step = { ...s, x_position: Math.round(s.x_position), y_position: Math.round(s.y_position), form_layout: s.form_layout || '' };
+                // Use pending field_records if available (plain JS, no proxy)
+                if (s.id in pending) {
+                    step.field_records = pending[s.id];
+                } else if (step.field_records) {
+                    // Deep copy to strip any reactive proxy
+                    step.field_records = JSON.parse(JSON.stringify(step.field_records));
+                }
+                return step;
+            }),
             connections: this.state.connections.map(c => ({
                 ...c,
                 // Zorg dat we geen 'undefined' sturen naar Python
@@ -2713,6 +2772,9 @@ class ProcessMapperClient extends Component {
 
         // Let op: data is nu het tweede argument in de array []
         await this.orm.call("process.map", "save_diagram_data", [this.state.mapId, data]);
+
+        // Clear pending field records after successful save
+        this._pendingFieldRecords = {};
 
         // Optioneel: Maak de connecties even leeg voor een 'schone' hertekening
         this.state.connections = [];
@@ -3076,6 +3138,23 @@ class ProcessMapperClient extends Component {
         const el = this.getSelectedElement();
         if (!el) return;
         el[field] = value;
+        this.state.dirty = true;
+        this._pushHistory();
+    }
+
+    onFieldRecordsSave(stepId, result) {
+        // Directly find step by ID and store field records as plain data
+        // This bypasses OWL reactive proxy issues entirely
+        if (stepId) {
+            this._pendingFieldRecords[stepId] = JSON.parse(JSON.stringify(result.fieldRecords));
+        }
+        // Also update the step in state for display
+        const el = this.getSelectedElement();
+        if (el) {
+            el.data_fields = result.text;
+            el.field_records = result.fieldRecords;
+            el.form_layout = result.formLayout;
+        }
         this.state.dirty = true;
         this._pushHistory();
     }

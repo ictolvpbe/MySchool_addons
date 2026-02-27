@@ -60,7 +60,7 @@ class ProcessMapStep(models.Model):
     def _compute_data_fields(self):
         for step in self:
             if not step.field_ids:
-                # Keep existing text (backward compat for old data or manual edits)
+                step.data_fields = ''
                 continue
             lines = []
             for f in step.field_ids.sorted('sequence'):

@@ -180,58 +180,6 @@
                         </g>
                     </t>
 
-                    <!-- Connections -->
-                    <t t-foreach="props.connections" t-as="conn" t-key="conn.id">
-                        <g>
-                            <!-- Invisible wider hit area for clicking + dragging -->
-                            <path t-att-d="getConnectionPath(conn)"
-                                  fill="none" stroke="transparent" stroke-width="14"
-                                  t-attf-class="#{this.isConnectionSelected(conn) ? 'pm-connection-hit-selected' : ''}"
-                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
-                                  t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
-                            <path t-att-d="getConnectionPath(conn)"
-                                  t-att-class="getConnectionClass(conn)"
-                                  marker-end="url(#pm-arrowhead)"
-                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
-                                  t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
-                            <t t-if="conn.label">
-                                <t t-set="labelPos" t-value="getConnectionLabelPos(conn)"/>
-                                <rect t-att-x="labelPos.x - 20" t-att-y="labelPos.y - 10"
-                                      width="40" height="20" rx="4" fill="#fff" fill-opacity="0.85"
-                                      stroke="#ccc" stroke-width="0.5"/>
-                                <text t-att-x="labelPos.x" t-att-y="labelPos.y + 4"
-                                      class="pm-connection-label">
-                                    <t t-esc="conn.label"/>
-                                </text>
-                            </t>
-                            <!-- Visual dot on middle segments of selected connections -->
-                            <t t-foreach="getConnectionSegments(conn)" t-as="seg" t-key="seg.segmentIndex">
-                                <t t-if="seg.isMiddle">
-                                    <circle class="pm-segment-handle"
-                                            t-att-cx="seg.midX" t-att-cy="seg.midY" r="4"/>
-                                </t>
-                            </t>
-                            <!-- Route toggle button (L ↔ S/Z) when connection selected -->
-                            <t t-set="toggle" t-value="getRouteToggleInfo(conn)"/>
-                            <t t-if="toggle">
-                                <g class="pm-route-toggle" t-on-click.stop="(ev) => this.onRouteToggle(ev, conn)">
-                                    <circle t-att-cx="toggle.x" t-att-cy="toggle.y" r="9"
-                                            class="pm-route-toggle-bg"/>
-                                    <text t-att-x="toggle.x" t-att-y="toggle.y + 4"
-                                          class="pm-route-toggle-label">
-                                        <t t-if="toggle.isL">S</t>
-                                        <t t-else="">L</t>
-                                    </text>
-                                </g>
-                            </t>
-                        </g>
-                    </t>
-
-                    <!-- Crossing arcs (where connections cross) -->
-                    <t t-foreach="getCrossingArcs()" t-as="cross" t-key="cross_index">
-                        <path t-att-d="cross.d" class="pm-crossing-arc"/>
-                    </t>
-
                     <!-- Steps -->
                     <t t-foreach="props.steps" t-as="step" t-key="step.id">
                         <g t-att-class="getStepClass(step)"
@@ -422,6 +370,58 @@
                                 </foreignObject>
                             </t>
                         </g>
+                    </t>
+
+                    <!-- Connections (rendered after steps so arrowheads aren't hidden behind shapes) -->
+                    <t t-foreach="props.connections" t-as="conn" t-key="conn.id">
+                        <g>
+                            <!-- Invisible wider hit area for clicking + dragging -->
+                            <path t-att-d="getConnectionPath(conn)"
+                                  fill="none" stroke="transparent" stroke-width="14"
+                                  t-attf-class="#{this.isConnectionSelected(conn) ? 'pm-connection-hit-selected' : ''}"
+                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
+                                  t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
+                            <path t-att-d="getConnectionPath(conn)"
+                                  t-att-class="getConnectionClass(conn)"
+                                  marker-end="url(#pm-arrowhead)"
+                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
+                                  t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
+                            <t t-if="conn.label">
+                                <t t-set="labelPos" t-value="getConnectionLabelPos(conn)"/>
+                                <rect t-att-x="labelPos.x - 20" t-att-y="labelPos.y - 10"
+                                      width="40" height="20" rx="4" fill="#fff" fill-opacity="0.85"
+                                      stroke="#ccc" stroke-width="0.5"/>
+                                <text t-att-x="labelPos.x" t-att-y="labelPos.y + 4"
+                                      class="pm-connection-label">
+                                    <t t-esc="conn.label"/>
+                                </text>
+                            </t>
+                            <!-- Visual dot on middle segments of selected connections -->
+                            <t t-foreach="getConnectionSegments(conn)" t-as="seg" t-key="seg.segmentIndex">
+                                <t t-if="seg.isMiddle">
+                                    <circle class="pm-segment-handle"
+                                            t-att-cx="seg.midX" t-att-cy="seg.midY" r="4"/>
+                                </t>
+                            </t>
+                            <!-- Route toggle button (L ↔ S/Z) when connection selected -->
+                            <t t-set="toggle" t-value="getRouteToggleInfo(conn)"/>
+                            <t t-if="toggle">
+                                <g class="pm-route-toggle" t-on-click.stop="(ev) => this.onRouteToggle(ev, conn)">
+                                    <circle t-att-cx="toggle.x" t-att-cy="toggle.y" r="9"
+                                            class="pm-route-toggle-bg"/>
+                                    <text t-att-x="toggle.x" t-att-y="toggle.y + 4"
+                                          class="pm-route-toggle-label">
+                                        <t t-if="toggle.isL">S</t>
+                                        <t t-else="">L</t>
+                                    </text>
+                                </g>
+                            </t>
+                        </g>
+                    </t>
+
+                    <!-- Crossing arcs (where connections cross) -->
+                    <t t-foreach="getCrossingArcs()" t-as="cross" t-key="cross_index">
+                        <path t-att-d="cross.d" class="pm-crossing-arc"/>
                     </t>
 
                     <!-- Rubber band for connection creation -->
@@ -1214,9 +1214,8 @@
                 </div>
 
                 <div class="pm-fb-footer">
-                    <button class="btn btn-secondary btn-sm" t-on-click="onClose">Cancel</button>
-                    <button class="btn btn-primary btn-sm" t-on-click="onSave">
-                        <i class="fa fa-check me-1"/> Apply Fields
+                    <button class="btn btn-primary btn-sm" t-on-click="onClose">
+                        <i class="fa fa-check me-1"/> Done
                     </button>
                 </div>
             </div>
@@ -1583,6 +1582,7 @@
                         orgs="state.orgs"
                         availableMaps="state.availableMaps"
                         onPropertyChange="(f, v) => this.onPropertyChange(f, v)"
+                        onFieldRecordsSave="(stepId, result) => this.onFieldRecordsSave(stepId, result)"
                         onDelete="() => this.onDelete()"/>
                 </div>
 

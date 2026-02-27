@@ -1,11 +1,8 @@
 import json
 import re
-import logging
 
-from odoo import models, fields, api
+from odoo import models, fields, api, Command
 from odoo.exceptions import UserError
-
-_logger = logging.getLogger(__name__)
 
 # Mapping from Field Builder notation to Odoo Python field definitions
 _FB_TYPE_MAP = {
@@ -385,11 +382,10 @@ class ProcessMap(models.Model):
     # ------------------------------------------------------------------
 
     def _save_field_records(self, step_rec, field_records_data, id_map):
-        """Create/update/delete process.map.field records for a step."""
-        Field = self.env['process.map.field']
-        existing_field_ids = set(step_rec.field_ids.ids)
-        incoming_field_ids = set()
+        """Create/update/delete process.map.field records for a step.
 
+        Uses Odoo Command API for reliable One2many writes.
+        """
         FIELD_ATTRS = [
             'sequence', 'name', 'field_description', 'ttype', 'required',
             'readonly', 'store', 'index', 'copy', 'translate',
@@ -398,28 +394,42 @@ class ProcessMap(models.Model):
             'default_value', 'source_model',
         ]
 
+        existing_field_ids = set(step_rec.field_ids.ids)
+        incoming_field_ids = set()
+        explicit_deletes = set()
+        commands = []
+
         for seq, fdata in enumerate(field_records_data):
+            # Handle explicit delete markers from frontend
+            if fdata.get('_delete'):
+                fid = fdata.get('id')
+                if isinstance(fid, int) and fid > 0 and fid in existing_field_ids:
+                    explicit_deletes.add(fid)
+                continue
+
             fid = fdata.get('id')
-            vals = {'step_id': step_rec.id, 'sequence': fdata.get('sequence', (seq + 1) * 10)}
+            vals = {'sequence': fdata.get('sequence', (seq + 1) * 10)}
             for attr in FIELD_ATTRS:
                 if attr in fdata and attr != 'sequence':
                     vals[attr] = fdata[attr]
-            # Ensure required fields have defaults
             vals.setdefault('name', 'field')
             vals.setdefault('ttype', 'char')
 
             if isinstance(fid, int) and fid > 0 and fid in existing_field_ids:
-                Field.browse(fid).write(vals)
+                # Update existing field
+                commands.append(Command.update(fid, vals))
                 incoming_field_ids.add(fid)
             else:
-                new_field = Field.create(vals)
-                if fid:
-                    id_map[fid] = new_field.id
-                incoming_field_ids.add(new_field.id)
+                # Create new field
+                commands.append(Command.create(vals))
 
-        to_delete = existing_field_ids - incoming_field_ids
-        if to_delete:
-            Field.browse(list(to_delete)).unlink()
+        # Delete: explicit deletes + any existing fields not in incoming set
+        to_delete = explicit_deletes | (existing_field_ids - incoming_field_ids)
+        for fid in to_delete:
+            commands.append(Command.delete(fid))
+
+        if commands:
+            step_rec.write({'field_ids': commands})
 
     # ------------------------------------------------------------------
     # Version history
