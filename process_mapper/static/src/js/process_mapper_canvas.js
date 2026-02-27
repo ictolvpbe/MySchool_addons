@@ -3406,23 +3406,57 @@ class ProcessMapperClient extends Component {
         this._pushHistory();
     }
 
-    // --- Move lane (with all steps inside) ---
+    // --- Move lane (snap between other lanes) ---
 
     onMoveLane(laneId, newY) {
-        const lane = this.state.lanes.find(l => l.id === laneId);
-        if (!lane) return;
+        const lanes = this.state.lanes;
+        const draggedLane = lanes.find(l => l.id === laneId);
+        if (!draggedLane) return;
 
-        const dy = newY - lane.y_position;
-        if (Math.abs(dy) < 1) return;
+        // Sort other lanes by current y_position
+        const otherLanes = lanes.filter(l => l.id !== laneId).sort((a, b) => a.y_position - b.y_position);
 
-        // Move all steps that are inside this lane
-        for (const step of this.state.steps) {
-            if (step.lane_id === laneId) {
-                step.y_position += dy;
+        // Find insertion index based on where the dragged lane's center would be
+        const dragCenter = newY + draggedLane.height / 2;
+        let insertIdx = otherLanes.length; // default: at the end
+        for (let i = 0; i < otherLanes.length; i++) {
+            const otherCenter = otherLanes[i].y_position + otherLanes[i].height / 2;
+            if (dragCenter < otherCenter) {
+                insertIdx = i;
+                break;
             }
         }
 
-        lane.y_position = newY;
+        // Build the new lane order
+        const orderedLanes = [...otherLanes];
+        orderedLanes.splice(insertIdx, 0, draggedLane);
+
+        // Determine the starting Y (use the topmost lane's current position, or 0)
+        const firstLaneY = lanes.length > 0
+            ? Math.min(...lanes.map(l => l.y_position))
+            : 0;
+        let currentY = firstLaneY;
+
+        // Reposition all lanes and their steps
+        for (let i = 0; i < orderedLanes.length; i++) {
+            const lane = orderedLanes[i];
+            const oldY = lane.y_position;
+            const dy = currentY - oldY;
+
+            if (Math.abs(dy) > 0.5) {
+                // Move steps inside this lane
+                for (const step of this.state.steps) {
+                    if (step.lane_id === lane.id) {
+                        step.y_position += dy;
+                    }
+                }
+                lane.y_position = currentY;
+            }
+
+            lane.sequence = (i + 1) * 10;
+            currentY += lane.height;
+        }
+
         this.state.dirty = true;
     }
 

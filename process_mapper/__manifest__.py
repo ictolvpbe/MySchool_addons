@@ -1,6 +1,6 @@
 {
     'name': 'Process Mapper',
-    'version': '0.153',
+    'version': '0.155',
     'category': 'Productivity',
     'summary': 'BPMN-like business process mapping with prompt generation',
     'description': """
