@@ -23,6 +23,8 @@ class ProcessMapConnection(models.Model):
     target_port = fields.Selection([
         ('top', 'Top'), ('right', 'Right'), ('bottom', 'Bottom'), ('left', 'Left'),
     ], string='Target Port', help='Port on target shape where connection ends')
+    label_offset = fields.Text(string='Label Offset', default='{}',
+                               help='JSON {x, y} offset for label position')
     map_id = fields.Many2one('process.map', string='Process Map', required=True, ondelete='cascade')
 
     _sql_constraints = [

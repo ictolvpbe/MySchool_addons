@@ -168,8 +168,13 @@
                                   width="5000" t-att-height="lane.height"
                                   t-att-fill="lane.color || '#E3F2FD'" fill-opacity="0.3"
                                   stroke="#bbb" stroke-width="1" stroke-dasharray="4 2"/>
+                            <!-- Lane drag handle (top bar) -->
+                            <rect class="pm-lane-drag-handle"
+                                  t-att-x="0" t-att-y="lane.y_position"
+                                  width="5000" height="28"
+                                  t-on-mousedown.stop="(ev) => this.onLaneDragMouseDown(ev, lane)"/>
                             <text t-att-x="12" t-att-y="lane.y_position + 20"
-                                  class="pm-lane-label">
+                                  class="pm-lane-label" style="pointer-events: none;">
                                 <t t-esc="lane.name"/>
                             </text>
                             <!-- Lane bottom resize handle -->
@@ -386,16 +391,6 @@
                                   marker-end="url(#pm-arrowhead)"
                                   t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
                                   t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
-                            <t t-if="conn.label">
-                                <t t-set="labelPos" t-value="getConnectionLabelPos(conn)"/>
-                                <rect t-att-x="labelPos.x - 20" t-att-y="labelPos.y - 10"
-                                      width="40" height="20" rx="4" fill="#fff" fill-opacity="0.85"
-                                      stroke="#ccc" stroke-width="0.5"/>
-                                <text t-att-x="labelPos.x" t-att-y="labelPos.y + 4"
-                                      class="pm-connection-label">
-                                    <t t-esc="conn.label"/>
-                                </text>
-                            </t>
                             <!-- Visual dot on middle segments of selected connections -->
                             <t t-foreach="getConnectionSegments(conn)" t-as="seg" t-key="seg.segmentIndex">
                                 <t t-if="seg.isMiddle">
@@ -417,6 +412,26 @@
                                 </g>
                             </t>
                         </g>
+                    </t>
+
+                    <!-- Connection labels (rendered on top of all lines, draggable) -->
+                    <t t-foreach="props.connections" t-as="conn" t-key="'label-' + conn.id">
+                        <t t-if="conn.label">
+                            <t t-set="labelPos" t-value="getConnectionLabelPos(conn)"/>
+                            <g class="pm-label-draggable"
+                               t-on-mousedown.stop.prevent="(ev) => this.onLabelMouseDown(ev, conn)">
+                                <rect t-att-x="labelPos.x - (conn.label.length * 4 + 8)"
+                                      t-att-y="labelPos.y - 10"
+                                      t-att-width="conn.label.length * 8 + 16"
+                                      height="20" rx="4"
+                                      fill="#fff" fill-opacity="0.92"
+                                      stroke="#90CAF9" stroke-width="1"/>
+                                <text t-att-x="labelPos.x" t-att-y="labelPos.y + 4"
+                                      class="pm-connection-label">
+                                    <t t-esc="conn.label"/>
+                                </text>
+                            </g>
+                        </t>
                     </t>
 
                     <!-- Crossing arcs (where connections cross) -->
@@ -1434,6 +1449,41 @@
             <!-- Lane properties -->
             <t t-if="props.selectedElement and props.selectedType === 'lane'">
                 <div class="pm-prop-group">
+                    <label>Lane Type</label>
+                    <select t-on-change="(ev) => this.onInputChange('preset', ev)">
+                        <option value="">-- Custom --</option>
+                        <t t-foreach="props.lanePresets" t-as="preset" t-key="preset.id">
+                            <option t-att-value="preset.id"
+                                    t-att-selected="props.selectedElement.name === preset.name">
+                                <t t-esc="preset.name"/>
+                            </option>
+                        </t>
+                        <option value="__new__">+ Create New Type...</option>
+                    </select>
+                </div>
+                <!-- Inline form to create a new lane preset -->
+                <t t-if="state.showNewPresetForm">
+                    <div class="pm-prop-group">
+                        <label>New Type Name</label>
+                        <input type="text" t-att-value="state.newPresetName"
+                               t-on-input="(ev) => this.onNewPresetNameChange(ev)"
+                               placeholder="e.g. Employee"/>
+                    </div>
+                    <div class="pm-prop-group">
+                        <label>New Type Color</label>
+                        <input type="color" t-att-value="state.newPresetColor"
+                               t-on-input="(ev) => this.onNewPresetColorChange(ev)"/>
+                    </div>
+                    <div class="pm-prop-group" style="display: flex; gap: 6px;">
+                        <button class="btn btn-sm btn-primary" t-on-click="() => this.onSaveNewPreset()">
+                            <i class="fa fa-check me-1"/>Save
+                        </button>
+                        <button class="btn btn-sm btn-secondary" t-on-click="() => this.onCancelNewPreset()">
+                            Cancel
+                        </button>
+                    </div>
+                </t>
+                <div class="pm-prop-group">
                     <label>Name</label>
                     <input type="text" t-att-value="props.selectedElement.name"
                            t-on-change="(ev) => this.onInputChange('name', ev)"/>
@@ -1442,6 +1492,11 @@
                     <label>Color</label>
                     <input type="color" t-att-value="props.selectedElement.color || '#E3F2FD'"
                            t-on-change="(ev) => this.onInputChange('color', ev)"/>
+                    <button t-if="this.presetColorChanged"
+                            class="btn btn-sm btn-outline-primary mt-1"
+                            t-on-click="() => this.onSavePresetColor()">
+                        <i class="fa fa-save me-1"/>Update preset color
+                    </button>
                 </div>
                 <div class="pm-prop-group">
                     <label>Height</label>
@@ -1569,8 +1624,10 @@
                         onUpdateConnectionWaypoints="(id, wp, sp, tp) => this.onUpdateConnectionWaypoints(id, wp, sp, tp)"
                         onResizeStep="(id, x, y, w, h) => this.onResizeStep(id, x, y, w, h)"
                         onResizeLane="(id, h) => this.onResizeLane(id, h)"
+                        onMoveLane="(id, y) => this.onMoveLane(id, y)"
                         onSnapStepToGrid="(id) => this.onSnapStepToGrid(id)"
                         onSnapStepsToGrid="(ids) => this.onSnapStepsToGrid(ids)"
+                        onUpdateLabelOffset="(connId, t) => this.onUpdateLabelOffset(connId, t)"
                         snapIndicators="state.snapIndicators"/>
 
                     <ProcessMapperProperties
@@ -1581,8 +1638,11 @@
                         roles="state.roles"
                         orgs="state.orgs"
                         availableMaps="state.availableMaps"
+                        lanePresets="state.lanePresets"
                         onPropertyChange="(f, v) => this.onPropertyChange(f, v)"
                         onFieldRecordsSave="(stepId, result) => this.onFieldRecordsSave(stepId, result)"
+                        onCreatePreset="(name, color) => this.onCreatePreset(name, color)"
+                        onUpdatePresetColor="(id, color) => this.onUpdatePresetColor(id, color)"
                         onDelete="() => this.onDelete()"/>
                 </div>
 

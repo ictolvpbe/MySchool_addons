@@ -336,6 +336,19 @@ function computeOrthogonalPath(source, target, waypoints, sourcePort, targetPort
         if (bestSP && bestDist <= PORT_SNAP) {
             sourceSide = bestSP;
             targetSide = bestTP;
+        } else {
+            // No L-route snap — fall back to S-route (opposite ports)
+            const sc = shapeCenter(source);
+            const tc = shapeCenter(target);
+            const ddx = tc.x - sc.x;
+            const ddy = tc.y - sc.y;
+            if (Math.abs(ddx) > Math.abs(ddy)) {
+                sourceSide = ddx > 0 ? 'right' : 'left';
+                targetSide = ddx > 0 ? 'left' : 'right';
+            } else {
+                sourceSide = ddy > 0 ? 'bottom' : 'top';
+                targetSide = ddy > 0 ? 'top' : 'bottom';
+            }
         }
     }
 
@@ -419,6 +432,187 @@ function detectCrossings(allPaths) {
         }
     }
     return crossings;
+}
+
+// ============================================================
+// Auto Layout: route connections around obstacle shapes
+// ============================================================
+
+/**
+ * Return padded bounding box for a step.
+ */
+function shapeBBox(step, padding = 20) {
+    const ds = defaultSize(step.step_type);
+    const w = step.width || ds.w;
+    const h = step.height || ds.h;
+    return {
+        x: step.x_position - padding,
+        y: step.y_position - padding,
+        x2: step.x_position + w + padding,
+        y2: step.y_position + h + padding,
+    };
+}
+
+/**
+ * Check if a vertical segment at midX spanning y1..y2 intersects a bbox.
+ */
+function verticalSegmentIntersectsBBox(midX, y1, y2, bbox) {
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+    return midX > bbox.x && midX < bbox.x2 && maxY > bbox.y && minY < bbox.y2;
+}
+
+/**
+ * Check if a horizontal segment at midY spanning x1..x2 intersects a bbox.
+ */
+function horizontalSegmentIntersectsBBox(midY, x1, x2, bbox) {
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    return midY > bbox.y && midY < bbox.y2 && maxX > bbox.x && minX < bbox.x2;
+}
+
+/**
+ * Check if the full 3-segment horizontal S-route (H→V→H) at midX is clear of all obstacles.
+ * Segments: (p1x, p1y)→(midX, p1y)→(midX, p2y)→(p2x, p2y)
+ */
+function isHorizontalSRouteClear(midX, p1x, p1y, p2x, p2y, obstacles) {
+    for (const bbox of obstacles) {
+        // Vertical middle segment
+        if (verticalSegmentIntersectsBBox(midX, p1y, p2y, bbox)) return false;
+        // Horizontal segment from source to midX
+        if (horizontalSegmentIntersectsBBox(p1y, p1x, midX, bbox)) return false;
+        // Horizontal segment from midX to target
+        if (horizontalSegmentIntersectsBBox(p2y, midX, p2x, bbox)) return false;
+    }
+    return true;
+}
+
+/**
+ * Check if the full 3-segment vertical S-route (V→H→V) at midY is clear of all obstacles.
+ * Segments: (p1x, p1y)→(p1x, midY)→(p2x, midY)→(p2x, p2y)
+ */
+function isVerticalSRouteClear(midY, p1x, p1y, p2x, p2y, obstacles) {
+    for (const bbox of obstacles) {
+        // Horizontal middle segment
+        if (horizontalSegmentIntersectsBBox(midY, p1x, p2x, bbox)) return false;
+        // Vertical segment from source to midY
+        if (verticalSegmentIntersectsBBox(p1x, p1y, midY, bbox)) return false;
+        // Vertical segment from midY to target
+        if (verticalSegmentIntersectsBBox(p2x, midY, p2y, bbox)) return false;
+    }
+    return true;
+}
+
+/**
+ * Find a clear X position for the middle vertical segment of a horizontal S-route.
+ * Uses obstacle bbox edges as candidate positions (just outside each obstacle).
+ */
+function findClearMidX(defaultMidX, p1x, p1y, p2x, p2y, obstacles) {
+    // Collect candidate X positions from obstacle bbox edges
+    const candidates = [];
+    for (const bbox of obstacles) {
+        candidates.push(bbox.x - 1);   // just left of obstacle (bbox already has padding)
+        candidates.push(bbox.x2 + 1);  // just right of obstacle
+    }
+
+    // Constrain to the range that computeOrthogonalPath will accept
+    const rangeMin = Math.min(p1x, p2x) - 100;
+    const rangeMax = Math.max(p1x, p2x) + 100;
+    const valid = candidates.filter(x => x >= rangeMin && x <= rangeMax);
+
+    // Sort by distance to defaultMidX (prefer closest alternative)
+    valid.sort((a, b) => Math.abs(a - defaultMidX) - Math.abs(b - defaultMidX));
+
+    for (const candX of valid) {
+        if (isHorizontalSRouteClear(candX, p1x, p1y, p2x, p2y, obstacles)) {
+            return candX;
+        }
+    }
+    return defaultMidX; // fallback
+}
+
+/**
+ * Find a clear Y position for the middle horizontal segment of a vertical S-route.
+ * Uses obstacle bbox edges as candidate positions.
+ */
+function findClearMidY(defaultMidY, p1x, p1y, p2x, p2y, obstacles) {
+    // Collect candidate Y positions from obstacle bbox edges
+    const candidates = [];
+    for (const bbox of obstacles) {
+        candidates.push(bbox.y - 1);    // just above obstacle (bbox already has padding)
+        candidates.push(bbox.y2 + 1);   // just below obstacle
+    }
+
+    // Constrain to the range that computeOrthogonalPath will accept
+    const rangeMin = Math.min(p1y, p2y) - 100;
+    const rangeMax = Math.max(p1y, p2y) + 100;
+    const valid = candidates.filter(y => y >= rangeMin && y <= rangeMax);
+
+    // Sort by distance to defaultMidY (prefer closest alternative)
+    valid.sort((a, b) => Math.abs(a - defaultMidY) - Math.abs(b - defaultMidY));
+
+    for (const candY of valid) {
+        if (isVerticalSRouteClear(candY, p1x, p1y, p2x, p2y, obstacles)) {
+            return candY;
+        }
+    }
+    return defaultMidY; // fallback
+}
+
+/**
+ * For each S-route connection, check if the default middle segment
+ * intersects any non-source/non-target shape; if so, set waypoints to route around.
+ */
+function routeAroundObstacles(steps, connections) {
+    const stepsById = {};
+    for (const s of steps) stepsById[s.id] = s;
+
+    for (const conn of connections) {
+        const source = stepsById[conn.source_step_id];
+        const target = stepsById[conn.target_step_id];
+        if (!source || !target) continue;
+
+        const sourceSide = conn.source_port;
+        const targetSide = conn.target_port;
+        if (!sourceSide || !targetSide) continue;
+
+        const sourceH = (sourceSide === 'left' || sourceSide === 'right');
+        const targetH = (targetSide === 'left' || targetSide === 'right');
+
+        // Only process S-routes (both ports on same axis → 3 segments)
+        if (sourceH !== targetH) continue;
+
+        const p1 = shapePortPoint(source, sourceSide);
+        const p2 = shapePortPoint(target, targetSide);
+
+        // Build obstacle list: all shapes except source and target
+        const obstacles = [];
+        for (const s of steps) {
+            if (s.id === conn.source_step_id || s.id === conn.target_step_id) continue;
+            obstacles.push(shapeBBox(s));
+        }
+        if (obstacles.length === 0) continue;
+
+        if (sourceH && targetH) {
+            // Horizontal S-route: H → V → H
+            const defaultMidX = (p1.x + p2.x) / 2;
+            if (!isHorizontalSRouteClear(defaultMidX, p1.x, p1.y, p2.x, p2.y, obstacles)) {
+                const clearX = findClearMidX(defaultMidX, p1.x, p1.y, p2.x, p2.y, obstacles);
+                if (clearX !== defaultMidX) {
+                    conn.waypoints = [{ x: clearX, y: (p1.y + p2.y) / 2 }];
+                }
+            }
+        } else {
+            // Vertical S-route: V → H → V
+            const defaultMidY = (p1.y + p2.y) / 2;
+            if (!isVerticalSRouteClear(defaultMidY, p1.x, p1.y, p2.x, p2.y, obstacles)) {
+                const clearY = findClearMidY(defaultMidY, p1.x, p1.y, p2.x, p2.y, obstacles);
+                if (clearY !== defaultMidY) {
+                    conn.waypoints = [{ x: (p1.x + p2.x) / 2, y: clearY }];
+                }
+            }
+        }
+    }
 }
 
 // ============================================================
@@ -1488,13 +1682,22 @@ class ProcessMapperProperties extends Component {
         roles: { type: Array },
         orgs: { type: Array },
         availableMaps: { type: Array },
+        lanePresets: { type: Array },
         onPropertyChange: { type: Function },
         onFieldRecordsSave: { type: Function },
+        onCreatePreset: { type: Function },
+        onUpdatePresetColor: { type: Function },
         onDelete: { type: Function },
     };
 
     setup() {
-        this.state = useState({ showFieldBuilder: false, showIconPicker: false });
+        this.state = useState({
+            showFieldBuilder: false,
+            showIconPicker: false,
+            showNewPresetForm: false,
+            newPresetName: '',
+            newPresetColor: '#E3F2FD',
+        });
         this.stepIcons = STEP_ICONS;
     }
 
@@ -1503,7 +1706,56 @@ class ProcessMapperProperties extends Component {
         if (field === 'lane_id' || field === 'role_id' || field === 'org_id' || field === 'sub_process_id') {
             value = value ? parseInt(value) : false;
         }
+        if (field === 'preset') {
+            if (value === '__new__') {
+                this.state.showNewPresetForm = true;
+                return;
+            }
+            this.state.showNewPresetForm = false;
+        }
         this.props.onPropertyChange(field, value);
+    }
+
+    onNewPresetNameChange(ev) {
+        this.state.newPresetName = ev.target.value;
+    }
+
+    onNewPresetColorChange(ev) {
+        this.state.newPresetColor = ev.target.value;
+    }
+
+    async onSaveNewPreset() {
+        const name = this.state.newPresetName.trim();
+        if (!name) return;
+        await this.props.onCreatePreset(name, this.state.newPresetColor);
+        this.state.showNewPresetForm = false;
+        this.state.newPresetName = '';
+        this.state.newPresetColor = '#E3F2FD';
+    }
+
+    onCancelNewPreset() {
+        this.state.showNewPresetForm = false;
+        this.state.newPresetName = '';
+        this.state.newPresetColor = '#E3F2FD';
+    }
+
+    get matchedPreset() {
+        const el = this.props.selectedElement;
+        if (!el || this.props.selectedType !== 'lane') return null;
+        return this.props.lanePresets.find(p => p.name === el.name) || null;
+    }
+
+    get presetColorChanged() {
+        const preset = this.matchedPreset;
+        if (!preset) return false;
+        const elColor = (this.props.selectedElement.color || '#E3F2FD').toUpperCase();
+        return elColor !== preset.color.toUpperCase();
+    }
+
+    async onSavePresetColor() {
+        const preset = this.matchedPreset;
+        if (!preset) return;
+        await this.props.onUpdatePresetColor(preset.id, this.props.selectedElement.color);
     }
 
     openFieldBuilder() {
@@ -1679,8 +1931,10 @@ class ProcessMapperCanvas extends Component {
         onUpdateConnectionWaypoints: { type: Function },
         onResizeStep: { type: Function },
         onResizeLane: { type: Function },
+        onMoveLane: { type: Function },
         onSnapStepToGrid: { type: Function },
         onSnapStepsToGrid: { type: Function },
+        onUpdateLabelOffset: { type: Function },
         snapIndicators: { type: Array },
     };
 
@@ -1694,6 +1948,8 @@ class ProcessMapperCanvas extends Component {
         this.segmentDragging = null;
         this.resizing = null;
         this.laneResizing = null;
+        this.laneDragging = null;
+        this.draggingLabel = null;
         this.state = useState({
             rubberBandX: 0,
             rubberBandY: 0,
@@ -1738,14 +1994,80 @@ class ProcessMapperCanvas extends Component {
         return pointsToSvgPath(points);
     }
 
+    /** Compute total polyline length and cumulative segment lengths. */
+    _pathMeasure(points) {
+        const cumLen = [0];
+        for (let i = 1; i < points.length; i++) {
+            const dx = points[i].x - points[i - 1].x;
+            const dy = points[i].y - points[i - 1].y;
+            cumLen.push(cumLen[i - 1] + Math.sqrt(dx * dx + dy * dy));
+        }
+        return cumLen;
+    }
+
+    /** Get {x, y} at parameter t (0–1) along a polyline. */
+    _pointAtT(points, t) {
+        if (points.length === 0) return { x: 0, y: 0 };
+        if (points.length === 1) return { ...points[0] };
+        const cumLen = this._pathMeasure(points);
+        const totalLen = cumLen[cumLen.length - 1];
+        if (totalLen === 0) return { ...points[0] };
+        const target = Math.max(0, Math.min(1, t)) * totalLen;
+        for (let i = 1; i < cumLen.length; i++) {
+            if (cumLen[i] >= target) {
+                const segLen = cumLen[i] - cumLen[i - 1];
+                const frac = segLen > 0 ? (target - cumLen[i - 1]) / segLen : 0;
+                return {
+                    x: points[i - 1].x + (points[i].x - points[i - 1].x) * frac,
+                    y: points[i - 1].y + (points[i].y - points[i - 1].y) * frac,
+                };
+            }
+        }
+        return { ...points[points.length - 1] };
+    }
+
+    /** Project a point onto the polyline and return its t value (0–1). */
+    _projectOntoPath(points, px, py) {
+        if (points.length < 2) return 0.5;
+        const cumLen = this._pathMeasure(points);
+        const totalLen = cumLen[cumLen.length - 1];
+        if (totalLen === 0) return 0.5;
+        let bestDist = Infinity;
+        let bestLen = 0;
+        for (let i = 1; i < points.length; i++) {
+            const ax = points[i - 1].x, ay = points[i - 1].y;
+            const bx = points[i].x, by = points[i].y;
+            const dx = bx - ax, dy = by - ay;
+            const segLen = cumLen[i] - cumLen[i - 1];
+            // Project point onto segment
+            let frac = 0;
+            if (segLen > 0) {
+                frac = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+                frac = Math.max(0, Math.min(1, frac));
+            }
+            const cx = ax + dx * frac;
+            const cy = ay + dy * frac;
+            const dist = (px - cx) ** 2 + (py - cy) ** 2;
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestLen = cumLen[i - 1] + frac * segLen;
+            }
+        }
+        return bestLen / totalLen;
+    }
+
     getConnectionLabelPos(conn) {
         const points = this.getConnectionPoints(conn);
         if (points.length === 0) return { x: 0, y: 0 };
-        // Midpoint of the middle segment
-        const midIdx = Math.floor(points.length / 2);
-        const a = points[midIdx - 1] || points[0];
-        const b = points[midIdx] || points[0];
-        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const off = conn.label_offset || {};
+        const t = (off.t !== undefined && off.t !== null) ? off.t : 0.5;
+        return this._pointAtT(points, t);
+    }
+
+    onLabelMouseDown(ev, conn) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        this.draggingLabel = { connId: conn.id };
     }
 
     getConnectionSegments(conn) {
@@ -1965,6 +2287,19 @@ class ProcessMapperCanvas extends Component {
         }));
     }
 
+    // --- Lane drag handle ---
+    onLaneDragMouseDown(ev, lane) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        const pos = this.screenToSvg(ev.clientX, ev.clientY);
+        this.laneDragging = {
+            laneId: lane.id,
+            startMouseY: pos.y,
+            origY: lane.y_position,
+        };
+        this.props.onSelectElement(lane.id, 'lane');
+    }
+
     // --- Lane resize handle ---
     onLaneResizeMouseDown(ev, lane) {
         ev.stopPropagation();
@@ -2074,6 +2409,14 @@ class ProcessMapperCanvas extends Component {
             newHeight = Math.max(60, newHeight);
             this.props.onResizeLane(this.laneResizing.laneId, newHeight);
         }
+        if (this.laneDragging) {
+            const pos = this.screenToSvg(ev.clientX, ev.clientY);
+            let newY = this.laneDragging.origY + (pos.y - this.laneDragging.startMouseY);
+            if (this.props.gridEnabled) {
+                newY = Math.round(newY / 20) * 20;
+            }
+            this.props.onMoveLane(this.laneDragging.laneId, newY);
+        }
         if (this.segmentDragging) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
             const seg = this.segmentDragging;
@@ -2126,11 +2469,33 @@ class ProcessMapperCanvas extends Component {
                     if (bestSP && bestDist <= SNAP) {
                         sp = bestSP;
                         tp = bestTP;
+                    } else {
+                        // No L-route snap — switch to S-route (opposite ports)
+                        const sc = shapeCenter(source);
+                        const tc = shapeCenter(target);
+                        const ddx = tc.x - sc.x;
+                        const ddy = tc.y - sc.y;
+                        if (Math.abs(ddx) > Math.abs(ddy)) {
+                            sp = ddx > 0 ? 'right' : 'left';
+                            tp = ddx > 0 ? 'left' : 'right';
+                        } else {
+                            sp = ddy > 0 ? 'bottom' : 'top';
+                            tp = ddy > 0 ? 'top' : 'bottom';
+                        }
                     }
                 }
             }
 
             this.props.onUpdateConnectionWaypoints(seg.connId, [wp], sp, tp);
+        }
+        if (this.draggingLabel) {
+            const pos = this.screenToSvg(ev.clientX, ev.clientY);
+            const conn = this.props.connections.find(c => c.id === this.draggingLabel.connId);
+            if (conn) {
+                const points = this.getConnectionPoints(conn);
+                const t = this._projectOntoPath(points, pos.x, pos.y);
+                this.props.onUpdateLabelOffset(this.draggingLabel.connId, t);
+            }
         }
         if (this.connecting) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
@@ -2149,10 +2514,14 @@ class ProcessMapperCanvas extends Component {
     }
 
     onSvgMouseUp(ev) {
+        if (this.draggingLabel) {
+            this.draggingLabel = null;
+        }
         if (this.connecting) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
             const target = this._findStepAt(pos.x, pos.y);
-            if (target && target.id !== this.connecting.sourceId) {
+            const sourceId = this.connecting.sourceId;
+            if (target && target.id !== sourceId) {
                 // Find nearest port on target based on mouse position
                 const sides = ['top', 'right', 'bottom', 'left'];
                 let bestPort = 'top';
@@ -2163,9 +2532,14 @@ class ProcessMapperCanvas extends Component {
                     if (d < bestDist) { bestDist = d; bestPort = side; }
                 }
                 this.props.onCreateConnection(
-                    this.connecting.sourceId, target.id,
+                    sourceId, target.id,
                     this.connecting.sourcePort, bestPort
                 );
+                // Keep gateway/condition selected so user can draw more connections
+                const sourceStep = this.props.steps.find(s => s.id === sourceId);
+                if (sourceStep && ['condition', 'gateway_exclusive', 'gateway_parallel'].includes(sourceStep.step_type)) {
+                    this.props.onSelectElement(sourceId, 'step');
+                }
             }
             this.connecting = null;
             this.state.showRubberBand = false;
@@ -2189,6 +2563,10 @@ class ProcessMapperCanvas extends Component {
         }
         if (this.laneResizing) {
             this.laneResizing = null;
+            this.props.onDragEnd();
+        }
+        if (this.laneDragging) {
+            this.laneDragging = null;
             this.props.onDragEnd();
         }
         if (this.segmentDragging) {
@@ -2577,6 +2955,7 @@ class ProcessMapperClient extends Component {
             snapIndicators: [],
             canvasWidth: 800,
             canvasHeight: 600,
+            lanePresets: [],
         });
 
         this._onKeydown = this._onKeydown.bind(this);
@@ -2693,6 +3072,7 @@ class ProcessMapperClient extends Component {
         this.state.mapState = data.state;
         this.state.steps = data.steps.map(s => ({ ...s }));
         this.state.lanes = data.lanes.map(l => ({ ...l }));
+        this.state.lanePresets = data.lane_presets || [];
 
         // Zorg dat waypoints van een string naar een object gaan als dat nodig is
         this.state.connections = data.connections.map(c => {
@@ -2700,7 +3080,11 @@ class ProcessMapperClient extends Component {
             if (typeof waypoints === 'string') {
                 try { waypoints = JSON.parse(waypoints); } catch(e) { waypoints = []; }
             }
-            return { ...c, waypoints: waypoints || [] };
+            let label_offset = c.label_offset;
+            if (typeof label_offset === 'string') {
+                try { label_offset = JSON.parse(label_offset); } catch(e) { label_offset = {}; }
+            }
+            return { ...c, waypoints: waypoints || [], label_offset: label_offset || {} };
         });
 
         this.state.dirty = false;
@@ -2752,7 +3136,9 @@ class ProcessMapperClient extends Component {
         const data = {
             lanes: this.state.lanes.map(l => ({ ...l, y_position: Math.round(l.y_position) })),
             steps: this.state.steps.map(s => {
-                const step = { ...s, x_position: Math.round(s.x_position), y_position: Math.round(s.y_position), form_layout: s.form_layout || '' };
+                const validTypes = ['start', 'end', 'task', 'subprocess', 'condition', 'gateway_exclusive', 'gateway_parallel'];
+                const stepType = validTypes.includes(s.step_type) ? s.step_type : 'task';
+                const step = { ...s, step_type: stepType, x_position: Math.round(s.x_position), y_position: Math.round(s.y_position), form_layout: s.form_layout || '' };
                 // Use pending field_records if available (plain JS, no proxy)
                 if (s.id in pending) {
                     step.field_records = pending[s.id];
@@ -2762,12 +3148,22 @@ class ProcessMapperClient extends Component {
                 }
                 return step;
             }),
-            connections: this.state.connections.map(c => ({
-                ...c,
-                // Zorg dat we geen 'undefined' sturen naar Python
-                source_port: c.source_port || "",
-                target_port: c.target_port || ""
-            })),
+            connections: this.state.connections.map(c => {
+                // Extract label_offset.t explicitly to avoid reactive proxy issues
+                const lo = c.label_offset;
+                const labelT = (lo && typeof lo.t === 'number') ? lo.t : null;
+                return {
+                    id: c.id,
+                    source_step_id: c.source_step_id,
+                    target_step_id: c.target_step_id,
+                    label: c.label || '',
+                    connection_type: c.connection_type || 'sequence',
+                    waypoints: c.waypoints ? JSON.parse(JSON.stringify(c.waypoints)) : [],
+                    source_port: c.source_port || "",
+                    target_port: c.target_port || "",
+                    label_offset: labelT !== null ? { t: labelT } : {},
+                };
+            }),
         };
 
         // Let op: data is nu het tweede argument in de array []
@@ -2933,6 +3329,14 @@ class ProcessMapperClient extends Component {
         }
     }
 
+    onUpdateLabelOffset(connId, t) {
+        const conn = this.state.connections.find(c => c.id === connId);
+        if (conn) {
+            conn.label_offset = { t };
+            this.state.dirty = true;
+        }
+    }
+
     _showSnapIndicators(steps) {
         const gridSize = 20;
         const indicators = [];
@@ -2996,9 +3400,30 @@ class ProcessMapperClient extends Component {
             waypoints: [],
             source_port: sourcePort || false,
             target_port: targetPort || false,
+            label_offset: { t: 0.5 },
         });
         this.state.dirty = true;
         this._pushHistory();
+    }
+
+    // --- Move lane (with all steps inside) ---
+
+    onMoveLane(laneId, newY) {
+        const lane = this.state.lanes.find(l => l.id === laneId);
+        if (!lane) return;
+
+        const dy = newY - lane.y_position;
+        if (Math.abs(dy) < 1) return;
+
+        // Move all steps that are inside this lane
+        for (const step of this.state.steps) {
+            if (step.lane_id === laneId) {
+                step.y_position += dy;
+            }
+        }
+
+        lane.y_position = newY;
+        this.state.dirty = true;
     }
 
     // --- Resize lane ---
@@ -3137,9 +3562,49 @@ class ProcessMapperClient extends Component {
     onPropertyChange(field, value) {
         const el = this.getSelectedElement();
         if (!el) return;
-        el[field] = value;
+        if (field === 'preset') {
+            // Look up the preset and auto-fill name + color
+            const preset = this.state.lanePresets.find(p => p.id === parseInt(value));
+            if (preset) {
+                el.name = preset.name;
+                el.color = preset.color;
+            }
+        } else {
+            el[field] = value;
+        }
         this.state.dirty = true;
         this._pushHistory();
+    }
+
+    async onCreatePreset(name, color) {
+        try {
+            const id = await this.orm.create("process.map.lane.preset", [{ name, color }]);
+            const newPreset = { id: id[0] || id, name, color };
+            this.state.lanePresets.push(newPreset);
+            // Auto-apply the new preset to the selected lane
+            const el = this.getSelectedElement();
+            if (el) {
+                el.name = name;
+                el.color = color;
+            }
+            this.state.dirty = true;
+            this._pushHistory();
+        } catch (e) {
+            this.notification.add("Failed to create preset: " + (e.message || e), { type: "danger" });
+        }
+    }
+
+    async onUpdatePresetColor(presetId, newColor) {
+        try {
+            await this.orm.write("process.map.lane.preset", [presetId], { color: newColor });
+            const preset = this.state.lanePresets.find(p => p.id === presetId);
+            if (preset) {
+                preset.color = newColor;
+            }
+            this.notification.add("Preset color updated", { type: "success" });
+        } catch (e) {
+            this.notification.add("Failed to update preset: " + (e.message || e), { type: "danger" });
+        }
     }
 
     onFieldRecordsSave(stepId, result) {
@@ -3372,6 +3837,8 @@ class ProcessMapperClient extends Component {
                 conn.target_port = false;
             }
         }
+
+        routeAroundObstacles(this.state.steps, this.state.connections);
 
         this.state.dirty = true;
         this._pushHistory();

@@ -197,8 +197,18 @@
 
 .pm-connection-label {
     font-size: 11px;
-    fill: #666;
+    fill: #333;
     text-anchor: middle;
+    font-weight: 500;
+    pointer-events: none;
+}
+
+.pm-label-draggable {
+    cursor: grab;
+}
+
+.pm-label-draggable:active {
+    cursor: grabbing;
 }
 
 .pm-connector-dot {
@@ -210,7 +220,8 @@
     transition: opacity 0.15s;
 }
 
-.pm-step:hover .pm-connector-dot {
+.pm-step:hover .pm-connector-dot,
+.pm-step.pm-selected .pm-connector-dot {
     opacity: 1;
 }
 
@@ -1201,6 +1212,21 @@
     stroke: #555;
     stroke-width: 2;
     pointer-events: none;
+}
+
+/* --- Lane Drag Handle (top bar) --- */
+.pm-lane-drag-handle {
+    fill: transparent;
+    cursor: grab;
+    pointer-events: all;
+}
+
+.pm-lane-drag-handle:hover {
+    fill: rgba(21, 101, 192, 0.08);
+}
+
+.pm-lane-drag-handle:active {
+    cursor: grabbing;
 }
 
 /* --- Lane Resize Handle --- */

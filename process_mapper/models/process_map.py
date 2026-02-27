@@ -231,6 +231,16 @@ class ProcessMap(models.Model):
                 'waypoints': json.loads(conn.waypoints or '[]'),
                 'source_port': conn.source_port or False,
                 'target_port': conn.target_port or False,
+                'label_offset': json.loads(conn.label_offset or '{}'),
+            })
+
+        # Lane presets (global)
+        lane_presets = []
+        for preset in self.env['process.map.lane.preset'].search([]):
+            lane_presets.append({
+                'id': preset.id,
+                'name': preset.name,
+                'color': preset.color or '#E3F2FD',
             })
 
         return {
@@ -241,6 +251,7 @@ class ProcessMap(models.Model):
             'lanes': lanes,
             'steps': steps,
             'connections': connections,
+            'lane_presets': lane_presets,
         }
 
     def save_diagram_data(self, data):
@@ -301,10 +312,15 @@ class ProcessMap(models.Model):
             # (let the computed field handle it)
             has_field_records = 'field_records' in step_data
 
+            valid_step_types = {'start', 'end', 'task', 'subprocess',
+                                'condition', 'gateway_exclusive', 'gateway_parallel'}
+            raw_type = step_data.get('step_type', 'task')
+            step_type = raw_type if raw_type in valid_step_types else 'task'
+
             vals = {
                 'name': step_data.get('name', 'Step'),
                 'description': step_data.get('description', ''),
-                'step_type': step_data.get('step_type', 'task'),
+                'step_type': step_type,
                 'x_position': step_data.get('x_position', 100),
                 'y_position': step_data.get('y_position', 100),
                 'width': step_data.get('width', 140),
@@ -362,6 +378,7 @@ class ProcessMap(models.Model):
                 'waypoints': json.dumps(conn_data.get('waypoints', [])),
                 'source_port': conn_data.get('source_port') or False,
                 'target_port': conn_data.get('target_port') or False,
+                'label_offset': json.dumps(conn_data.get('label_offset', {})),
                 'map_id': self.id,
             }
             if isinstance(cid, int) and cid > 0 and cid in existing_conn_ids:
