@@ -108,12 +108,44 @@ class ProcessMap(models.Model):
                 continue
             mapped_type = TYPE_MAP.get(f.ttype, 'Char')
             relation = f.relation or ''
+            # Build groups string from group XML IDs
+            group_names = ''
+            if f.groups:
+                try:
+                    group_names = ','.join(
+                        g.get_external_id().get(g.id, '') for g in f.groups
+                    )
+                except Exception:
+                    group_names = ''
+            # Build selection values
+            sel_vals = ''
+            if f.ttype == 'selection' and hasattr(f, 'selection_ids') and f.selection_ids:
+                try:
+                    sel_vals = json.dumps(
+                        [[s.value, s.name] for s in f.selection_ids]
+                    )
+                except Exception:
+                    sel_vals = ''
             result.append({
                 'name': f.name,
                 'type': mapped_type,
                 'label': f.field_description,
                 'required': f.required,
                 'relation': relation,
+                'readonly': f.readonly,
+                'store': f.store,
+                'index': getattr(f, 'index_type', '') or '',
+                'copy': f.copied if hasattr(f, 'copied') else True,
+                'translate': f.translate,
+                'relation_field': f.relation_field or '',
+                'relation_table': f.relation_table or '',
+                'domain': f.domain or '[]',
+                'on_delete': getattr(f, 'on_delete', 'set null') or 'set null',
+                'help': f.help or '',
+                'groups': group_names,
+                'size': getattr(f, 'size', 0) or 0,
+                'selection_values': sel_vals,
+                'source_model': model_name,
             })
         return result
 
@@ -140,6 +172,33 @@ class ProcessMap(models.Model):
 
         steps = []
         for step in self.step_ids:
+            field_records = []
+            for f in step.field_ids.sorted('sequence'):
+                field_records.append({
+                    'id': f.id,
+                    'sequence': f.sequence,
+                    'name': f.name,
+                    'field_description': f.field_description or '',
+                    'ttype': f.ttype,
+                    'required': f.required,
+                    'readonly': f.readonly,
+                    'store': f.store,
+                    'index': f.index or '',
+                    'copy': f.copy,
+                    'translate': f.translate,
+                    'relation': f.relation or '',
+                    'relation_field': f.relation_field or '',
+                    'relation_table': f.relation_table or '',
+                    'domain': f.domain or '[]',
+                    'on_delete': f.on_delete or 'set null',
+                    'help_text': f.help_text or '',
+                    'groups': f.groups or '',
+                    'size': f.size or 0,
+                    'digits': f.digits or '',
+                    'selection_values': f.selection_values or '',
+                    'default_value': f.default_value or '',
+                    'source_model': f.source_model or '',
+                })
             steps.append({
                 'id': step.id,
                 'name': step.name,
@@ -155,11 +214,13 @@ class ProcessMap(models.Model):
                 'responsible': step.responsible or '',
                 'system_action': step.system_action or '',
                 'data_fields': step.data_fields or '',
+                'field_records': field_records,
                 'color': step.color or '',
                 'icon': step.icon or '',
                 'annotation': step.annotation or '',
                 'sub_process_id': step.sub_process_id.id if step.sub_process_id else False,
                 'sub_process_name': step.sub_process_id.name if step.sub_process_id else '',
+                'form_layout': step.form_layout or '',
             })
 
         connections = []
@@ -229,6 +290,7 @@ class ProcessMap(models.Model):
         # --- Process steps ---
         existing_step_ids = set(self.step_ids.ids)
         incoming_step_ids = set()
+        Field = self.env['process.map.field']
 
         for step_data in data.get('steps', []):
             sid = step_data.get('id')
@@ -237,6 +299,10 @@ class ProcessMap(models.Model):
                 lane_id = id_map[lane_id]
 
             sub_process_id = step_data.get('sub_process_id') or False
+
+            # If field_records present, don't write data_fields directly
+            # (let the computed field handle it)
+            has_field_records = 'field_records' in step_data
 
             vals = {
                 'name': step_data.get('name', 'Step'),
@@ -250,21 +316,29 @@ class ProcessMap(models.Model):
                 'role_id': step_data.get('role_id') or False,
                 'responsible': step_data.get('responsible', ''),
                 'system_action': step_data.get('system_action', ''),
-                'data_fields': step_data.get('data_fields', ''),
                 'color': step_data.get('color', ''),
                 'icon': step_data.get('icon', ''),
                 'annotation': step_data.get('annotation', ''),
                 'sub_process_id': sub_process_id,
+                'form_layout': step_data.get('form_layout', ''),
                 'map_id': self.id,
             }
+            if not has_field_records:
+                vals['data_fields'] = step_data.get('data_fields', '')
+
             if isinstance(sid, int) and sid > 0 and sid in existing_step_ids:
-                Step.browse(sid).write(vals)
+                step_rec = Step.browse(sid)
+                step_rec.write(vals)
                 incoming_step_ids.add(sid)
             else:
-                new_step = Step.create(vals)
+                step_rec = Step.create(vals)
                 if sid:
-                    id_map[sid] = new_step.id
-                incoming_step_ids.add(new_step.id)
+                    id_map[sid] = step_rec.id
+                incoming_step_ids.add(step_rec.id)
+
+            # Process field_records if present
+            if has_field_records:
+                self._save_field_records(step_rec, step_data.get('field_records', []), id_map)
 
         to_delete = existing_step_ids - incoming_step_ids
         if to_delete:
@@ -305,6 +379,47 @@ class ProcessMap(models.Model):
             Connection.browse(list(to_delete)).unlink()
 
         return True
+
+    # ------------------------------------------------------------------
+    # Field records helper
+    # ------------------------------------------------------------------
+
+    def _save_field_records(self, step_rec, field_records_data, id_map):
+        """Create/update/delete process.map.field records for a step."""
+        Field = self.env['process.map.field']
+        existing_field_ids = set(step_rec.field_ids.ids)
+        incoming_field_ids = set()
+
+        FIELD_ATTRS = [
+            'sequence', 'name', 'field_description', 'ttype', 'required',
+            'readonly', 'store', 'index', 'copy', 'translate',
+            'relation', 'relation_field', 'relation_table', 'domain', 'on_delete',
+            'help_text', 'groups', 'size', 'digits', 'selection_values',
+            'default_value', 'source_model',
+        ]
+
+        for seq, fdata in enumerate(field_records_data):
+            fid = fdata.get('id')
+            vals = {'step_id': step_rec.id, 'sequence': fdata.get('sequence', (seq + 1) * 10)}
+            for attr in FIELD_ATTRS:
+                if attr in fdata and attr != 'sequence':
+                    vals[attr] = fdata[attr]
+            # Ensure required fields have defaults
+            vals.setdefault('name', 'field')
+            vals.setdefault('ttype', 'char')
+
+            if isinstance(fid, int) and fid > 0 and fid in existing_field_ids:
+                Field.browse(fid).write(vals)
+                incoming_field_ids.add(fid)
+            else:
+                new_field = Field.create(vals)
+                if fid:
+                    id_map[fid] = new_field.id
+                incoming_field_ids.add(new_field.id)
+
+        to_delete = existing_field_ids - incoming_field_ids
+        if to_delete:
+            Field.browse(list(to_delete)).unlink()
 
     # ------------------------------------------------------------------
     # Version history

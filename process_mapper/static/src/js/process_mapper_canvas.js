@@ -142,16 +142,62 @@ function selectPorts(source, target) {
     const dx = tc.x - sc.x;
     const dy = tc.y - sc.y;
 
-    if (Math.abs(dx) > Math.abs(dy)) {
-        // Horizontal dominant
-        return dx > 0
-            ? { sourceSide: 'right', targetSide: 'left' }
-            : { sourceSide: 'left', targetSide: 'right' };
-    } else {
-        // Vertical dominant
+    // Get shape half-sizes to compute actual edge-to-edge gaps
+    const sds = defaultSize(source.step_type);
+    const tds = defaultSize(target.step_type);
+    const shw = (source.width || sds.w) / 2;
+    const shh = (source.height || sds.h) / 2;
+    const thw = (target.width || tds.w) / 2;
+    const thh = (target.height || tds.h) / 2;
+
+    // Compute edge-to-edge gap on each axis (negative = shapes overlap on that axis)
+    const gapX = Math.abs(dx) - shw - thw;
+    const gapY = Math.abs(dy) - shh - thh;
+
+    // S-route (opposite ports, 3 segments): shapes are roughly aligned on one axis
+    // Only use S-route when one axis has clear alignment (small gap or overlap)
+    // and the other axis has a significant gap
+    const alignedX = gapX < 20;  // shapes overlap or nearly touch horizontally
+    const alignedY = gapY < 20;  // shapes overlap or nearly touch vertically
+
+    if (alignedX && alignedY) {
+        // Shapes are very close/overlapping on both axes → use dominant direction
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return dx > 0
+                ? { sourceSide: 'right', targetSide: 'left' }
+                : { sourceSide: 'left', targetSide: 'right' };
+        } else {
+            return dy > 0
+                ? { sourceSide: 'bottom', targetSide: 'top' }
+                : { sourceSide: 'top', targetSide: 'bottom' };
+        }
+    }
+
+    if (alignedX && !alignedY) {
+        // Aligned horizontally (stacked vertically) → vertical S-route
         return dy > 0
             ? { sourceSide: 'bottom', targetSide: 'top' }
             : { sourceSide: 'top', targetSide: 'bottom' };
+    }
+
+    if (!alignedX && alignedY) {
+        // Aligned vertically (side by side) → horizontal S-route
+        return dx > 0
+            ? { sourceSide: 'right', targetSide: 'left' }
+            : { sourceSide: 'left', targetSide: 'right' };
+    }
+
+    // Both axes have significant gaps → shapes are diagonal → L-route (2 segments)
+    if (Math.abs(dx) >= Math.abs(dy)) {
+        // More horizontal: exit horizontal, enter vertical
+        const hSide = dx > 0 ? 'right' : 'left';
+        const vSide = dy > 0 ? 'top' : 'bottom';
+        return { sourceSide: hSide, targetSide: vSide };
+    } else {
+        // More vertical: exit vertical, enter horizontal
+        const vSide = dy > 0 ? 'bottom' : 'top';
+        const hSide = dx > 0 ? 'left' : 'right';
+        return { sourceSide: vSide, targetSide: hSide };
     }
 }
 
@@ -199,44 +245,105 @@ function simplifyPath(points) {
  * @returns {Array} points [{x,y}, ...]
  */
 function computeOrthogonalPath(source, target, waypoints, sourcePort, targetPort) {
-    // Always auto-select the best (closest) ports based on shape positions
+    // Use stored ports if available, otherwise auto-select based on shape positions
     const auto = selectPorts(source, target);
-    const sourceSide = auto.sourceSide;
-    const targetSide = auto.targetSide;
+    let sourceSide = sourcePort || auto.sourceSide;
+    let targetSide = targetPort || auto.targetSide;
+
+    // Validate stored ports: L-routes need perpendicular ports (one H, one V)
+    // If both are the same axis and it's not an opposite-ports S-route, reset to auto
+    const sH = (sourceSide === 'left' || sourceSide === 'right');
+    const tH = (targetSide === 'left' || targetSide === 'right');
+    if (sourcePort && targetPort) {
+        if (sH && tH && sourceSide !== ({ left: 'right', right: 'left' })[targetSide]) {
+            sourceSide = auto.sourceSide;
+            targetSide = auto.targetSide;
+        }
+        if (!sH && !tH && sourceSide !== ({ top: 'bottom', bottom: 'top' })[targetSide]) {
+            sourceSide = auto.sourceSide;
+            targetSide = auto.targetSide;
+        }
+    }
+
+    const PORT_SNAP = 40;
+
+    // When dragging (waypoints present, no stored ports), check ALL port pairs
+    // to find the closest L-route bend point and snap to it
+    if (waypoints && waypoints.length > 0 && !sourcePort && !targetPort) {
+        const wp = waypoints[0];
+        const allSides = ['top', 'right', 'bottom', 'left'];
+        let bestDist = PORT_SNAP + 1;
+        let bestSP = null, bestTP = null;
+
+        for (const sp of allSides) {
+            for (const tp of allSides) {
+                const spH = (sp === 'left' || sp === 'right');
+                const tpH = (tp === 'left' || tp === 'right');
+
+                // Only check perpendicular (L-route) combinations
+                if (spH === tpH) continue;
+
+                const pp1 = shapePortPoint(source, sp);
+                const pp2 = shapePortPoint(target, tp);
+
+                // L-route bend point
+                let bend;
+                if (spH) {
+                    bend = { x: pp2.x, y: pp1.y };
+                } else {
+                    bend = { x: pp1.x, y: pp2.y };
+                }
+
+                // Chebyshev distance (max of axis distances)
+                const d = Math.max(Math.abs(wp.x - bend.x), Math.abs(wp.y - bend.y));
+                if (d < bestDist) {
+                    bestDist = d;
+                    bestSP = sp;
+                    bestTP = tp;
+                }
+            }
+        }
+
+        if (bestSP && bestDist <= PORT_SNAP) {
+            sourceSide = bestSP;
+            targetSide = bestTP;
+        }
+    }
+
     const p1 = shapePortPoint(source, sourceSide);
     const p2 = shapePortPoint(target, targetSide);
 
-    const isHorizontal = (sourceSide === 'left' || sourceSide === 'right');
-    const autoMidX = snapToGrid((p1.x + p2.x) / 2);
-    const autoMidY = snapToGrid((p1.y + p2.y) / 2);
+    const sourceH = (sourceSide === 'left' || sourceSide === 'right');
+    const targetH = (targetSide === 'left' || targetSide === 'right');
 
-    if (isHorizontal) {
-        // H → V → H (3 segments)
-        let midX = autoMidX;
+    if (sourceH && targetH) {
+        // Both horizontal (opposite ports) → H → V → H (3 segments)
+        let midX = snapToGrid((p1.x + p2.x) / 2);
         if (waypoints && waypoints.length > 0) {
             const wpX = waypoints[0].x;
-            // Only use stored X if it's between the two ports (with some margin)
             const minX = Math.min(p1.x, p2.x) - 100;
             const maxX = Math.max(p1.x, p2.x) + 100;
-            if (wpX >= minX && wpX <= maxX) {
-                midX = wpX;
-            }
+            if (wpX >= minX && wpX <= maxX) midX = wpX;
         }
         return simplifyPath([p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2]);
-    } else {
-        // V → H → V (3 segments)
-        let midY = autoMidY;
+    }
+    if (!sourceH && !targetH) {
+        // Both vertical (opposite ports) → V → H → V (3 segments)
+        let midY = snapToGrid((p1.y + p2.y) / 2);
         if (waypoints && waypoints.length > 0) {
             const wpY = waypoints[0].y;
-            // Only use stored Y if it's between the two ports (with some margin)
             const minY = Math.min(p1.y, p2.y) - 100;
             const maxY = Math.max(p1.y, p2.y) + 100;
-            if (wpY >= minY && wpY <= maxY) {
-                midY = wpY;
-            }
+            if (wpY >= minY && wpY <= maxY) midY = wpY;
         }
         return simplifyPath([p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2]);
     }
+    if (sourceH && !targetH) {
+        // L-route: horizontal first, then vertical
+        return simplifyPath([p1, { x: p2.x, y: p1.y }, p2]);
+    }
+    // L-route: vertical first, then horizontal
+    return simplifyPath([p1, { x: p1.x, y: p2.y }, p2]);
 }
 
 /**
@@ -398,21 +505,64 @@ const FIELD_TYPES = [
     { type: 'Many2many', icon: 'fa-exchange', label: 'Many2many', hint: 'Multiple links' },
     { type: 'Binary', icon: 'fa-file', label: 'File', hint: 'File attachment' },
     { type: 'Image', icon: 'fa-picture-o', label: 'Image', hint: 'Image upload' },
+    { type: 'Text', icon: 'fa-pencil-square-o', label: 'Notebook', hint: 'Long text'}
 ];
+
+const LAYOUT_ELEMENTS = [
+    { type: 'group', icon: 'fa-columns', label: 'Group', hint: 'Multi-column section' },
+    { type: 'notebook', icon: 'fa-folder-o', label: 'Tab', hint: 'Tabbed sections' },
+    { type: 'page', icon: 'fa-file-o', label: 'Page', hint: 'Page inside a notebook' },
+    { type: 'separator', icon: 'fa-minus', label: 'Separator', hint: 'Section title with divider' },
+];
+
+// Type maps for converting between display (Char) and DB (char) types
+const TTYPE_MAP = {
+    'Char': 'char', 'Text': 'text', 'Html': 'html',
+    'Integer': 'integer', 'Float': 'float', 'Monetary': 'monetary',
+    'Boolean': 'boolean', 'Date': 'date', 'Datetime': 'datetime',
+    'Selection': 'selection', 'Many2one': 'many2one', 'One2many': 'one2many',
+    'Many2many': 'many2many', 'Binary': 'binary', 'Image': 'image',
+};
+const TTYPE_MAP_REVERSE = Object.fromEntries(
+    Object.entries(TTYPE_MAP).map(([k, v]) => [v, k])
+);
+
+class FieldWidgetPreview extends Component {
+    static template = "process_mapper.FieldWidgetPreview";
+    static props = {
+        field: { type: Object },
+    };
+}
 
 class FieldBuilder extends Component {
     static template = "process_mapper.FieldBuilder";
+    static components = { FieldWidgetPreview };
     static props = {
         dataFields: { type: String },
+        fieldRecords: { type: Array, optional: true },
+        formLayout: { type: String, optional: true },
         onSave: { type: Function },
         onClose: { type: Function },
     };
 
     setup() {
         this.orm = useService("orm");
+        this.nextId = 1000;
+        this._nodeIdCounter = 1;
+        this._searchTimeout = null;
+        const fr = this.props.fieldRecords;
+        const initialFields = (fr && fr.length > 0)
+            ? this._loadFieldRecords(fr)
+            : this._parseFields(this.props.dataFields);
+        const layout = this._initLayout(initialFields);
         this.state = useState({
-            fields: this._parseFields(this.props.dataFields),
+            fields: initialFields,
+            layout: layout,
+            dragOverNodeId: null,
             dragOverIndex: -1,
+            isDragging: false,
+            selectedFieldId: null,
+            activeNotebookPages: {},
             paletteTab: 'types',
             modelQuery: '',
             modelResults: [],
@@ -420,8 +570,413 @@ class FieldBuilder extends Component {
             modelFields: [],
             modelFieldsLoading: false,
         });
-        this.nextId = 1000;
-        this._searchTimeout = null;
+    }
+
+    // ====== Layout tree helpers ======
+
+    _genNodeId() {
+        return `n${this._nodeIdCounter++}`;
+    }
+
+    _initLayout(fields) {
+        const raw = this.props.formLayout;
+        if (raw) {
+            try {
+                const tree = this._deserializeLayout(JSON.parse(raw), fields);
+                if (tree) return tree;
+            } catch { /* fall through to default */ }
+        }
+        return this._buildDefaultLayout(fields);
+    }
+
+    _buildDefaultLayout(fields) {
+        const sheet = { _nodeId: this._genNodeId(), type: 'sheet', children: [] };
+        if (fields.length === 0) return sheet;
+
+        const relational = fields.filter(f => ['One2many', 'Many2many'].includes(f.type));
+        const normal = fields.filter(f => !['One2many', 'Many2many'].includes(f.type));
+
+        if (normal.length > 0) {
+            const group = { _nodeId: this._genNodeId(), type: 'group', cols: 2, children: [] };
+            const left = { _nodeId: this._genNodeId(), type: 'group_column', children: [] };
+            const right = { _nodeId: this._genNodeId(), type: 'group_column', children: [] };
+            const mid = Math.ceil(normal.length / 2);
+            for (let i = 0; i < normal.length; i++) {
+                const col = i < mid ? left : right;
+                col.children.push({ _nodeId: this._genNodeId(), type: 'field', fieldId: normal[i]._id });
+            }
+            group.children.push(left, right);
+            sheet.children.push(group);
+        }
+
+        if (relational.length > 0) {
+            const nb = { _nodeId: this._genNodeId(), type: 'notebook', children: [] };
+            for (const f of relational) {
+                const page = {
+                    _nodeId: this._genNodeId(), type: 'page',
+                    label: f.field_description || f.name, name: f.name,
+                    children: [{ _nodeId: this._genNodeId(), type: 'field', fieldId: f._id }],
+                };
+                nb.children.push(page);
+            }
+            sheet.children.push(nb);
+        }
+        return sheet;
+    }
+
+    _findNode(nodeId, root, parent) {
+        root = root || this.state.layout;
+        if (root._nodeId === nodeId) return { parent, node: root, index: -1 };
+        if (root.children) {
+            for (let i = 0; i < root.children.length; i++) {
+                if (root.children[i]._nodeId === nodeId) {
+                    return { parent: root, node: root.children[i], index: i };
+                }
+                const found = this._findNode(nodeId, root.children[i], root);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    _allFieldNodeIds(root) {
+        const ids = [];
+        root = root || this.state.layout;
+        if (root.type === 'field' && root.fieldId) ids.push(root.fieldId);
+        if (root.children) {
+            for (const c of root.children) ids.push(...this._allFieldNodeIds(c));
+        }
+        return ids;
+    }
+
+    get unplacedFields() {
+        const placed = new Set(this._allFieldNodeIds());
+        return this.state.fields.filter(f => !placed.has(f._id));
+    }
+
+    get layoutElements() {
+        return LAYOUT_ELEMENTS;
+    }
+
+    getColLabel(index, total) {
+        if (total <= 2) return index === 0 ? 'Left' : 'Right';
+        return `Col ${index + 1}`;
+    }
+
+    getGroupGridStyle(group) {
+        const cols = group.cols || group.children.length || 2;
+        return `grid-template-columns: repeat(${cols}, 1fr)`;
+    }
+
+    getFieldById(fieldId) {
+        return this.state.fields.find(f => f._id === fieldId) || null;
+    }
+
+    _isValidDrop(itemType, parentType) {
+        const rules = {
+            sheet: ['group', 'notebook', 'separator', 'field'],
+            group: ['group_column'],
+            group_column: ['field'],
+            notebook: ['page'],
+            page: ['group', 'notebook', 'separator', 'field'],
+        };
+        return (rules[parentType] || []).includes(itemType);
+    }
+
+    // Notebook page management
+    isActiveNotebookPage(notebookNodeId, pageNodeId) {
+        const active = this.state.activeNotebookPages[notebookNodeId];
+        if (active) return active === pageNodeId;
+        // Default: first page
+        const nb = this._findNode(notebookNodeId);
+        if (nb && nb.node.children && nb.node.children.length > 0) {
+            return nb.node.children[0]._nodeId === pageNodeId;
+        }
+        return false;
+    }
+
+    onSelectNotebookPage(notebookNodeId, pageNodeId) {
+        this.state.activeNotebookPages[notebookNodeId] = pageNodeId;
+    }
+
+    onAddPage(notebookNodeId) {
+        const nb = this._findNode(notebookNodeId);
+        if (!nb) return;
+        const page = {
+            _nodeId: this._genNodeId(), type: 'page',
+            label: `Page ${nb.node.children.length + 1}`, name: `page_${nb.node.children.length + 1}`,
+            children: [],
+        };
+        nb.node.children.push(page);
+        this.state.activeNotebookPages[notebookNodeId] = page._nodeId;
+    }
+
+    onRemoveNode(nodeId) {
+        const found = this._findNode(nodeId);
+        if (!found || !found.parent) return;
+        found.parent.children.splice(found.index, 1);
+    }
+
+    onAddGroupColumn(groupNodeId) {
+        const found = this._findNode(groupNodeId);
+        if (!found || found.node.type !== 'group') return;
+        const cols = (found.node.cols || 2);
+        if (cols >= 4) return; // max 4 columns
+        found.node.cols = cols + 1;
+        found.node.children.push({ _nodeId: this._genNodeId(), type: 'group_column', children: [] });
+    }
+
+    onRemoveGroupColumn(groupNodeId) {
+        const found = this._findNode(groupNodeId);
+        if (!found || found.node.type !== 'group') return;
+        const cols = (found.node.cols || 2);
+        if (cols <= 1) return; // min 1 column
+        found.node.cols = cols - 1;
+        // Remove last column; move its fields to the previous column
+        const removed = found.node.children.pop();
+        if (removed && removed.children && removed.children.length > 0) {
+            const lastCol = found.node.children[found.node.children.length - 1];
+            lastCol.children.push(...removed.children);
+        }
+    }
+
+    _moveNode(nodeId, targetParentNodeId, targetIndex) {
+        const found = this._findNode(nodeId);
+        if (!found || !found.parent) return;
+        const sourceParent = found.parent;
+        const sourceIndex = found.index;
+        // Remove from old location
+        sourceParent.children.splice(sourceIndex, 1);
+        // Insert at new location
+        const target = this._findNode(targetParentNodeId);
+        if (!target) return;
+        // Adjust index if moving within the same parent and source was before target
+        let adjustedIndex = targetIndex;
+        if (target.node === sourceParent && sourceIndex < targetIndex) {
+            adjustedIndex--;
+        }
+        target.node.children.splice(adjustedIndex, 0, found.node);
+    }
+
+    // Serialization: convert layout tree to portable JSON (field names, not IDs)
+    _serializeLayout(root) {
+        root = root || this.state.layout;
+        const node = { type: root.type };
+        if (root.label) node.label = root.label;
+        if (root.name) node.name = root.name;
+        if (root.type === 'group' && root.cols) node.cols = root.cols;
+        if (root.type === 'field' && root.fieldId) {
+            const f = this.getFieldById(root.fieldId);
+            node.fieldName = f ? f.name : '';
+        }
+        if (root.children) {
+            node.children = root.children.map(c => this._serializeLayout(c));
+        }
+        return node;
+    }
+
+    _deserializeLayout(data, fields) {
+        if (!data || !data.type) return null;
+        const node = { _nodeId: this._genNodeId(), type: data.type };
+        if (data.label) node.label = data.label;
+        if (data.name) node.name = data.name;
+        if (data.type === 'group' && data.cols) node.cols = data.cols;
+        if (data.type === 'field' && data.fieldName) {
+            const f = fields.find(fd => fd.name === data.fieldName);
+            node.fieldId = f ? f._id : null;
+            if (!node.fieldId) return null; // skip fields no longer present
+        }
+        if (data.children) {
+            node.children = data.children
+                .map(c => this._deserializeLayout(c, fields))
+                .filter(Boolean);
+        }
+        return node;
+    }
+
+    // Insert a new field into the layout at a given parent + index
+    _insertFieldNode(fieldId, parentNodeId, index) {
+        const parent = this._findNode(parentNodeId);
+        if (!parent) return;
+        const parentType = parent.node.type;
+
+        if (parentType === 'sheet' || parentType === 'page' || parentType === 'group_column') {
+            parent.node.children.splice(index, 0, {
+                _nodeId: this._genNodeId(), type: 'field', fieldId,
+            });
+        }
+    }
+
+    _insertLayoutElement(elemType, parentNodeId, index) {
+        const parent = this._findNode(parentNodeId);
+        if (!parent) return;
+        let node;
+        switch (elemType) {
+            case 'group':
+                node = { _nodeId: this._genNodeId(), type: 'group', cols: 2, children: [
+                    { _nodeId: this._genNodeId(), type: 'group_column', children: [] },
+                    { _nodeId: this._genNodeId(), type: 'group_column', children: [] },
+                ] };
+                break;
+            case 'notebook':
+                node = { _nodeId: this._genNodeId(), type: 'notebook', children: [
+                    { _nodeId: this._genNodeId(), type: 'page', label: 'Page 1', name: 'page_1', children: [] },
+                ] };
+                break;
+            case 'page': {
+                if (parent.node.type !== 'notebook') return; // pages only inside notebooks
+                const pn = parent.node.children.length + 1;
+                node = { _nodeId: this._genNodeId(), type: 'page', label: `Page ${pn}`, name: `page_${pn}`, children: [] };
+                break;
+            }
+            case 'separator':
+                node = { _nodeId: this._genNodeId(), type: 'separator', label: 'Section' };
+                break;
+            default:
+                return;
+        }
+        parent.node.children.splice(index, 0, node);
+    }
+
+    // ====== Drag & Drop for Layout ======
+
+    onSheetDragEnd() {
+        this.state.isDragging = false;
+        this.state.dragOverNodeId = null;
+    }
+
+    onLayoutDragOver(ev, parentNodeId, index) {
+        ev.preventDefault();
+        this.state.dragOverNodeId = `${parentNodeId}:${index}`;
+    }
+
+    onLayoutDragLeave(ev) {
+        this.state.dragOverNodeId = null;
+    }
+
+    isDragOver(parentNodeId, index) {
+        return this.state.dragOverNodeId === `${parentNodeId}:${index}`;
+    }
+
+    onLayoutDrop(ev, parentNodeId, index) {
+        ev.preventDefault();
+        this.state.dragOverNodeId = null;
+        this.state.isDragging = false;
+
+        // 0. Unplaced field being dropped back
+        if (this._handleUnplacedFieldDrop(ev, parentNodeId, index)) return;
+
+        // 1. Layout element from palette
+        const layoutElemType = ev.dataTransfer.getData("application/pm-layout-element");
+        if (layoutElemType) {
+            this._insertLayoutElement(layoutElemType, parentNodeId, index);
+            return;
+        }
+
+        // 2. Existing layout node being moved
+        const moveNodeId = ev.dataTransfer.getData("application/pm-layout-node");
+        if (moveNodeId) {
+            this._moveNode(moveNodeId, parentNodeId, index);
+            return;
+        }
+
+        // 3. Model field from model browser
+        const modelFieldData = ev.dataTransfer.getData("application/pm-model-field");
+        if (modelFieldData) {
+            try {
+                const mf = JSON.parse(modelFieldData);
+                const newField = this._makeDefaultField({
+                    name: mf.name,
+                    type: mf.type,
+                    required: mf.required || false,
+                    relation: mf.relation || '',
+                    field_description: mf.label || '',
+                    readonly: mf.readonly || false,
+                    store: mf.store !== undefined ? mf.store : true,
+                    index: mf.index || '',
+                    copy: mf.copy !== undefined ? mf.copy : true,
+                    translate: mf.translate || false,
+                    relation_field: mf.relation_field || '',
+                    relation_table: mf.relation_table || '',
+                    domain: mf.domain || '[]',
+                    on_delete: mf.on_delete || 'set null',
+                    help_text: mf.help || '',
+                    groups: mf.groups || '',
+                    size: mf.size || 0,
+                    selection_values: mf.selection_values || '',
+                    source_model: mf.source_model || '',
+                });
+                this.state.fields.push(newField);
+                this._insertFieldNode(newField._id, parentNodeId, index);
+            } catch { /* ignore */ }
+            return;
+        }
+
+        // 4. Field type from palette
+        const typeName = ev.dataTransfer.getData("application/pm-field-type");
+        if (typeName) {
+            const suggestedName = this._suggestFieldName(typeName);
+            const newField = this._makeDefaultField({ name: suggestedName, type: typeName });
+            this.state.fields.push(newField);
+            this._insertFieldNode(newField._id, parentNodeId, index);
+            return;
+        }
+    }
+
+    onLayoutNodeDragStart(ev, nodeId) {
+        ev.dataTransfer.setData("application/pm-layout-node", nodeId);
+        ev.dataTransfer.effectAllowed = "move";
+        this.state.isDragging = true;
+    }
+
+    onLayoutElemDragStart(ev, elemType) {
+        ev.dataTransfer.setData("application/pm-layout-element", elemType);
+        ev.dataTransfer.effectAllowed = "copy";
+        this.state.isDragging = true;
+    }
+
+    // Clicking a field in layout selects it for detail editing
+    onSelectField(fieldId) {
+        this.state.selectedFieldId = this.state.selectedFieldId === fieldId ? null : fieldId;
+    }
+
+    get selectedField() {
+        if (!this.state.selectedFieldId) return null;
+        return this.state.fields.find(f => f._id === this.state.selectedFieldId) || null;
+    }
+
+    get selectedFieldIndex() {
+        if (!this.state.selectedFieldId) return -1;
+        return this.state.fields.findIndex(f => f._id === this.state.selectedFieldId);
+    }
+
+    onSeparatorLabelChange(nodeId, ev) {
+        const found = this._findNode(nodeId);
+        if (found) found.node.label = ev.target.value;
+    }
+
+    onPageLabelChange(nodeId, ev) {
+        const found = this._findNode(nodeId);
+        if (found) found.node.label = ev.target.value;
+    }
+
+    // Drop an unplaced field back into the layout
+    onUnplacedFieldDragStart(ev, fieldId) {
+        const field = this.getFieldById(fieldId);
+        if (!field) return;
+        ev.dataTransfer.setData("application/pm-unplaced-field", String(fieldId));
+        ev.dataTransfer.effectAllowed = "copy";
+        this.state.isDragging = true;
+    }
+
+    // Handle unplaced field drops in the layout drop handler
+    _handleUnplacedFieldDrop(ev, parentNodeId, index) {
+        const unplacedId = ev.dataTransfer.getData("application/pm-unplaced-field");
+        if (unplacedId) {
+            this._insertFieldNode(parseInt(unplacedId), parentNodeId, index);
+            return true;
+        }
+        return false;
     }
 
     get fieldTypes() {
@@ -476,9 +1031,60 @@ class FieldBuilder extends Component {
             required: mf.required,
             relation: mf.relation || '',
             label: mf.label,
+            readonly: mf.readonly || false,
+            store: mf.store !== undefined ? mf.store : true,
+            index: mf.index || '',
+            copy: mf.copy !== undefined ? mf.copy : true,
+            translate: mf.translate || false,
+            relation_field: mf.relation_field || '',
+            relation_table: mf.relation_table || '',
+            domain: mf.domain || '[]',
+            on_delete: mf.on_delete || 'set null',
+            help: mf.help || '',
+            groups: mf.groups || '',
+            size: mf.size || 0,
+            selection_values: mf.selection_values || '',
+            source_model: mf.source_model || '',
         });
         ev.dataTransfer.setData("application/pm-model-field", data);
         ev.dataTransfer.effectAllowed = "copy";
+        this.state.isDragging = true;
+    }
+
+    _loadFieldRecords(records) {
+        const fields = [];
+        for (const r of records) {
+            fields.push({
+                _id: this.nextId ? this.nextId++ : fields.length + 1000,
+                id: r.id || false,
+                name: r.name || '',
+                type: TTYPE_MAP_REVERSE[r.ttype] || 'Char',
+                required: r.required || false,
+                relation: r.relation || '',
+                options: '',
+                expanded: false,
+                field_description: r.field_description || '',
+                readonly: r.readonly || false,
+                store: r.store !== undefined ? r.store : true,
+                index: r.index || '',
+                copy: r.copy !== undefined ? r.copy : true,
+                translate: r.translate || false,
+                relation_field: r.relation_field || '',
+                relation_table: r.relation_table || '',
+                domain: r.domain || '[]',
+                on_delete: r.on_delete || 'set null',
+                help_text: r.help_text || '',
+                groups: r.groups || '',
+                size: r.size || 0,
+                digits: r.digits || '',
+                selection_values: r.selection_values || '',
+                default_value: r.default_value || '',
+                source_model: r.source_model || '',
+            });
+        }
+        // nextId may not be set yet during constructor; fix it
+        this.nextId = Math.max(1000, ...fields.map(f => f._id)) + 1;
+        return fields;
     }
 
     _parseFields(text) {
@@ -490,35 +1096,90 @@ class FieldBuilder extends Component {
             const match = trimmed.match(/^(\w+)\s*:\s*(\w+)\s*(.*)$/);
             if (match) {
                 const options = match[3] ? match[3].replace(/[()]/g, '').trim() : '';
-                fields.push({
+                const f = {
                     _id: this.nextId++,
+                    id: false,
                     name: match[1],
                     type: match[2],
                     required: options.includes('required'),
                     relation: '',
                     options: options.replace('required', '').replace(',', '').trim(),
-                });
+                    expanded: false,
+                    field_description: '',
+                    readonly: false,
+                    store: true,
+                    index: '',
+                    copy: true,
+                    translate: false,
+                    relation_field: '',
+                    relation_table: '',
+                    domain: '[]',
+                    on_delete: 'set null',
+                    help_text: '',
+                    groups: '',
+                    size: 0,
+                    digits: '',
+                    selection_values: '',
+                    default_value: '',
+                    source_model: '',
+                };
                 const relMatch = options.match(/^([\w.]+)/);
                 if (relMatch && ['Many2one', 'One2many', 'Many2many'].includes(match[2])) {
-                    fields[fields.length - 1].relation = relMatch[1];
-                    fields[fields.length - 1].options = options.replace(relMatch[1], '').replace(',', '').trim();
+                    f.relation = relMatch[1];
+                    f.options = options.replace(relMatch[1], '').replace(',', '').trim();
                 }
+                fields.push(f);
             } else {
                 fields.push({
                     _id: this.nextId++,
+                    id: false,
                     name: trimmed,
                     type: 'Char',
                     required: false,
                     relation: '',
                     options: '',
+                    expanded: false,
+                    field_description: '',
+                    readonly: false,
+                    store: true,
+                    index: '',
+                    copy: true,
+                    translate: false,
+                    relation_field: '',
+                    relation_table: '',
+                    domain: '[]',
+                    on_delete: 'set null',
+                    help_text: '',
+                    groups: '',
+                    size: 0,
+                    digits: '',
+                    selection_values: '',
+                    default_value: '',
+                    source_model: '',
                 });
             }
         }
         return fields;
     }
 
+    _getOrderedFields() {
+        // Return fields in layout tree order, then any unplaced fields
+        const orderedIds = this._allFieldNodeIds();
+        const ordered = [];
+        for (const fid of orderedIds) {
+            const f = this.state.fields.find(fd => fd._id === fid);
+            if (f) ordered.push(f);
+        }
+        // Append unplaced fields at end
+        const placedSet = new Set(orderedIds);
+        for (const f of this.state.fields) {
+            if (!placedSet.has(f._id)) ordered.push(f);
+        }
+        return ordered;
+    }
+
     _serializeFields() {
-        return this.state.fields.map(f => {
+        return this._getOrderedFields().map(f => {
             let line = `${f.name}: ${f.type}`;
             const parts = [];
             if (['Many2one', 'One2many', 'Many2many'].includes(f.type) && f.relation) {
@@ -531,9 +1192,38 @@ class FieldBuilder extends Component {
         }).join('\n');
     }
 
+    _buildFieldRecords() {
+        return this._getOrderedFields().map((f, idx) => ({
+            id: f.id || false,
+            sequence: (idx + 1) * 10,
+            name: f.name,
+            field_description: f.field_description || '',
+            ttype: TTYPE_MAP[f.type] || 'char',
+            required: f.required || false,
+            readonly: f.readonly || false,
+            store: f.store !== undefined ? f.store : true,
+            index: f.index || '',
+            copy: f.copy !== undefined ? f.copy : true,
+            translate: f.translate || false,
+            relation: f.relation || '',
+            relation_field: f.relation_field || '',
+            relation_table: f.relation_table || '',
+            domain: f.domain || '[]',
+            on_delete: f.on_delete || 'set null',
+            help_text: f.help_text || '',
+            groups: f.groups || '',
+            size: f.size || 0,
+            digits: f.digits || '',
+            selection_values: f.selection_values || '',
+            default_value: f.default_value || '',
+            source_model: f.source_model || '',
+        }));
+    }
+
     onPaletteDragStart(ev, fieldType) {
         ev.dataTransfer.setData("application/pm-field-type", fieldType.type);
         ev.dataTransfer.effectAllowed = "copy";
+        this.state.isDragging = true;
     }
 
     onDropZoneDragOver(ev, index) {
@@ -546,6 +1236,36 @@ class FieldBuilder extends Component {
         this.state.dragOverIndex = -1;
     }
 
+    _makeDefaultField(overrides) {
+        return Object.assign({
+            _id: this.nextId++,
+            id: false,
+            name: '',
+            type: 'Char',
+            required: false,
+            relation: '',
+            options: '',
+            expanded: false,
+            field_description: '',
+            readonly: false,
+            store: true,
+            index: '',
+            copy: true,
+            translate: false,
+            relation_field: '',
+            relation_table: '',
+            domain: '[]',
+            on_delete: 'set null',
+            help_text: '',
+            groups: '',
+            size: 0,
+            digits: '',
+            selection_values: '',
+            default_value: '',
+            source_model: '',
+        }, overrides);
+    }
+
     onDropZoneDrop(ev, index) {
         ev.preventDefault();
         this.state.dragOverIndex = -1;
@@ -554,14 +1274,27 @@ class FieldBuilder extends Component {
         if (modelFieldData) {
             try {
                 const mf = JSON.parse(modelFieldData);
-                this.state.fields.splice(index, 0, {
-                    _id: this.nextId++,
+                this.state.fields.splice(index, 0, this._makeDefaultField({
                     name: mf.name,
                     type: mf.type,
                     required: mf.required || false,
                     relation: mf.relation || '',
-                    options: '',
-                });
+                    field_description: mf.label || '',
+                    readonly: mf.readonly || false,
+                    store: mf.store !== undefined ? mf.store : true,
+                    index: mf.index || '',
+                    copy: mf.copy !== undefined ? mf.copy : true,
+                    translate: mf.translate || false,
+                    relation_field: mf.relation_field || '',
+                    relation_table: mf.relation_table || '',
+                    domain: mf.domain || '[]',
+                    on_delete: mf.on_delete || 'set null',
+                    help_text: mf.help || '',
+                    groups: mf.groups || '',
+                    size: mf.size || 0,
+                    selection_values: mf.selection_values || '',
+                    source_model: mf.source_model || '',
+                }));
             } catch { /* ignore parse errors */ }
             return;
         }
@@ -569,15 +1302,10 @@ class FieldBuilder extends Component {
         const typeName = ev.dataTransfer.getData("application/pm-field-type");
         if (!typeName) return;
         const suggestedName = this._suggestFieldName(typeName);
-        const newField = {
-            _id: this.nextId++,
+        this.state.fields.splice(index, 0, this._makeDefaultField({
             name: suggestedName,
             type: typeName,
-            required: false,
-            relation: '',
-            options: '',
-        };
-        this.state.fields.splice(index, 0, newField);
+        }));
     }
 
     _suggestFieldName(typeName) {
@@ -620,8 +1348,53 @@ class FieldBuilder extends Component {
         this.state.fields[index].required = !this.state.fields[index].required;
     }
 
+    onToggleExpand(index) {
+        this.state.fields[index].expanded = !this.state.fields[index].expanded;
+    }
+
+    onToggleAttr(index, attr) {
+        this.state.fields[index][attr] = !this.state.fields[index][attr];
+    }
+
     onRemoveField(index) {
+        const field = this.state.fields[index];
+        if (field) {
+            // Also remove from layout if present
+            this._removeFieldFromLayout(field._id);
+        }
         this.state.fields.splice(index, 1);
+    }
+
+    _removeFieldFromLayout(fieldId, root) {
+        root = root || this.state.layout;
+        if (root.children) {
+            for (let i = root.children.length - 1; i >= 0; i--) {
+                const child = root.children[i];
+                if (child.type === 'field' && child.fieldId === fieldId) {
+                    root.children.splice(i, 1);
+                    return true;
+                }
+                if (this._removeFieldFromLayout(fieldId, child)) return true;
+            }
+        }
+        return false;
+    }
+
+    onRemoveUnplacedField(fieldId) {
+        const idx = this.state.fields.findIndex(f => f._id === fieldId);
+        if (idx >= 0) this.state.fields.splice(idx, 1);
+    }
+
+    onDeleteField(fieldId) {
+        // Remove from layout tree
+        this._removeFieldFromLayout(fieldId);
+        // Remove from fields list
+        const idx = this.state.fields.findIndex(f => f._id === fieldId);
+        if (idx >= 0) this.state.fields.splice(idx, 1);
+        // Clear selection if this field was selected
+        if (this.state.selectedFieldId === fieldId) {
+            this.state.selectedFieldId = null;
+        }
     }
 
     onMoveUp(index) {
@@ -641,7 +1414,10 @@ class FieldBuilder extends Component {
     }
 
     onSave() {
-        this.props.onSave(this._serializeFields());
+        const text = this._serializeFields();
+        const fieldRecords = this._buildFieldRecords();
+        const formLayout = JSON.stringify(this._serializeLayout());
+        this.props.onSave({ text, fieldRecords, formLayout });
     }
 
     onClose() {
@@ -684,8 +1460,10 @@ class ProcessMapperProperties extends Component {
         this.state.showFieldBuilder = true;
     }
 
-    onFieldBuilderSave(serialized) {
-        this.props.onPropertyChange('data_fields', serialized);
+    onFieldBuilderSave(result) {
+        this.props.onPropertyChange('data_fields', result.text);
+        this.props.onPropertyChange('field_records', result.fieldRecords);
+        this.props.onPropertyChange('form_layout', result.formLayout);
         this.state.showFieldBuilder = false;
     }
 
@@ -974,6 +1752,9 @@ class ProcessMapperCanvas extends Component {
             startPos: this.screenToSvg(ev.clientX, ev.clientY),
             // Store the full original path points so we don't recompute mid-drag
             originalPoints: points.map(p => ({ x: p.x, y: p.y })),
+            // Store port points so we can snap to them during drag
+            sourcePort: { x: points[0].x, y: points[0].y },
+            targetPort: { x: points[points.length - 1].x, y: points[points.length - 1].y },
         };
     }
 
@@ -1243,8 +2024,9 @@ class ProcessMapperCanvas extends Component {
             const seg = this.segmentDragging;
             const snappedX = snapToGrid(pos.x);
             const snappedY = snapToGrid(pos.y);
-            // Store both coordinates so the waypoint is valid regardless of routing direction
-            this.props.onUpdateConnectionWaypoints(seg.connId, [{ x: snappedX, y: snappedY }]);
+            // Clear stored ports so computeOrthogonalPath uses auto S-route with snap logic
+            // On mouseup, if the path snapped to L-route, ports will be saved
+            this.props.onUpdateConnectionWaypoints(seg.connId, [{ x: snappedX, y: snappedY }], null, null);
         }
         if (this.connecting) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
@@ -1306,6 +2088,43 @@ class ProcessMapperCanvas extends Component {
             this.props.onDragEnd();
         }
         if (this.segmentDragging) {
+            const seg = this.segmentDragging;
+            // Check if the path snapped to L-route: save the ports so it persists
+            const conn = this.props.connections.find(c => c.id === seg.connId);
+            if (conn) {
+                const points = this.getConnectionPoints(conn);
+                if (points.length === 3) {
+                    // L-route detected: determine port sides from geometry
+                    const p0 = points[0];
+                    const bend = points[1];
+                    const p2 = points[2];
+                    let sp, tp;
+                    // Source port: which side does the line exit?
+                    if (Math.abs(p0.x - bend.x) < 0.5) {
+                        // First segment is vertical
+                        sp = bend.y > p0.y ? 'bottom' : 'top';
+                    } else {
+                        // First segment is horizontal
+                        sp = bend.x > p0.x ? 'right' : 'left';
+                    }
+                    // Target port: which side does the line enter?
+                    if (Math.abs(bend.x - p2.x) < 0.5) {
+                        // Last segment is vertical
+                        tp = p2.y > bend.y ? 'top' : 'bottom';
+                    } else {
+                        // Last segment is horizontal
+                        tp = p2.x > bend.x ? 'left' : 'right';
+                    }
+                    // Validate: L-route must have perpendicular ports
+                    // (one horizontal, one vertical)
+                    const spH = (sp === 'left' || sp === 'right');
+                    const tpH = (tp === 'left' || tp === 'right');
+                    if (spH !== tpH) {
+                        // Perpendicular → valid L-route, save ports
+                        this.props.onUpdateConnectionWaypoints(seg.connId, [], sp, tp);
+                    }
+                }
+            }
             this.segmentDragging = null;
             this.props.onDragEnd();
         }
@@ -1427,6 +2246,66 @@ class ProcessMapperCanvas extends Component {
     onConnectionClick(ev, conn) {
         ev.stopPropagation();
         this.props.onSelectElement(conn.id, 'connection');
+    }
+
+    /**
+     * Returns toggle button info for a selected connection, or null if not selected.
+     * Shows a small button at the midpoint of the connection to toggle L ↔ S/Z route.
+     */
+    getRouteToggleInfo(conn) {
+        if (this.props.selectedType !== 'connection' || !this.props.selectedIds.includes(conn.id)) {
+            return null;
+        }
+        const points = this.getConnectionPoints(conn);
+        if (points.length < 3) return null;
+
+        // Position at the midpoint of the path
+        const midIdx = Math.floor(points.length / 2);
+        const a = points[midIdx - 1];
+        const b = points[midIdx];
+        const x = (a.x + b.x) / 2;
+        const y = (a.y + b.y) / 2;
+
+        // Determine current route type
+        const curSH = conn.source_port === 'left' || conn.source_port === 'right';
+        const curTH = conn.target_port === 'left' || conn.target_port === 'right';
+        const isL = conn.source_port && conn.target_port && (curSH !== curTH);
+
+        return { x, y, isL };
+    }
+
+    onRouteToggle(ev, conn) {
+        ev.stopPropagation();
+
+        const source = this.props.steps.find(s => s.id === conn.source_step_id);
+        const target = this.props.steps.find(s => s.id === conn.target_step_id);
+        if (!source || !target) return;
+
+        const sc = shapeCenter(source);
+        const tc = shapeCenter(target);
+        const dx = tc.x - sc.x;
+        const dy = tc.y - sc.y;
+
+        // Check current state
+        const curSH = conn.source_port === 'left' || conn.source_port === 'right';
+        const curTH = conn.target_port === 'left' || conn.target_port === 'right';
+        const isCurrentlyL = conn.source_port && conn.target_port && (curSH !== curTH);
+
+        if (isCurrentlyL) {
+            // L → S/Z (opposite ports)
+            let sp, tp;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                sp = dx > 0 ? 'right' : 'left';
+                tp = dx > 0 ? 'left' : 'right';
+            } else {
+                sp = dy > 0 ? 'bottom' : 'top';
+                tp = dy > 0 ? 'top' : 'bottom';
+            }
+            this.props.onUpdateConnectionWaypoints(conn.id, [], sp, tp);
+        } else {
+            // S/Z → L (clear ports for auto-route)
+            this.props.onUpdateConnectionWaypoints(conn.id, [], null, null);
+        }
     }
 
     onLaneClick(ev, lane) {
@@ -1741,7 +2620,7 @@ class ProcessMapperClient extends Component {
         // Zorg dat alle coördinaten Integers zijn, Odoo kan struikelen over Floats uit de browser
         const data = {
             lanes: this.state.lanes.map(l => ({ ...l, y_position: Math.round(l.y_position) })),
-            steps: this.state.steps.map(s => ({ ...s, x_position: Math.round(s.x_position), y_position: Math.round(s.y_position) })),
+            steps: this.state.steps.map(s => ({ ...s, x_position: Math.round(s.x_position), y_position: Math.round(s.y_position), form_layout: s.form_layout || '' })),
             connections: this.state.connections.map(c => ({
                 ...c,
                 // Zorg dat we geen 'undefined' sturen naar Python
@@ -1836,6 +2715,7 @@ class ProcessMapperClient extends Component {
     _clearWaypointsForStep(stepId) {
         this.state.connections = this.state.connections.map(c => {
             if (c.source_step_id === stepId || c.target_step_id === stepId) {
+                // Only clear waypoints, keep stored ports so L-routes persist
                 return { ...c, waypoints: [] };
             }
             return c;
@@ -2029,16 +2909,18 @@ class ProcessMapperClient extends Component {
         }
     }
 */
-    onUpdateConnectionWaypoints(connId, waypoints) {
-    this.state.connections = this.state.connections.map(c => {
-        if (c.id === connId) {
-            // Maak een gloednieuwe kopie van de connectie met de nieuwe waypoints
-            return { ...c, waypoints: [...waypoints] };
-        }
-        return c;
-    });
-    this.state.dirty = true;
-}
+    onUpdateConnectionWaypoints(connId, waypoints, sourcePort, targetPort) {
+        this.state.connections = this.state.connections.map(c => {
+            if (c.id === connId) {
+                const updated = { ...c, waypoints: [...waypoints] };
+                if (sourcePort !== undefined) updated.source_port = sourcePort;
+                if (targetPort !== undefined) updated.target_port = targetPort;
+                return updated;
+            }
+            return c;
+        });
+        this.state.dirty = true;
+    }
     // --- Drop from palette ---
 
     onCanvasDrop(elementType, x, y) {
@@ -2165,6 +3047,10 @@ class ProcessMapperClient extends Component {
                 x_position: original.x_position + 20,
                 y_position: original.y_position + 20,
             };
+            // Clear field record IDs so backend creates new records
+            if (newStep.field_records) {
+                newStep.field_records = newStep.field_records.map(fr => ({ ...fr, id: false }));
+            }
             this.state.steps.push(newStep);
             newIds.push(newStep.id);
         }
