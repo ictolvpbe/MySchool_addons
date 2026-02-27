@@ -1707,14 +1707,16 @@ class ProcessMapperCanvas extends Component {
         for (let i = 0; i < points.length - 1; i++) {
             const a = points[i];
             const b = points[i + 1];
-            // Skip first and last segment (attached to shapes)
-            if (i === 0 || i === points.length - 2) continue;
             const isHorizontal = Math.abs(a.y - b.y) < 0.5;
+            const isMiddle = i > 0 && i < points.length - 2;
             segments.push({
                 midX: (a.x + b.x) / 2,
                 midY: (a.y + b.y) / 2,
+                x1: a.x, y1: a.y,
+                x2: b.x, y2: b.y,
                 segmentIndex: i,
                 isHorizontal,
+                isMiddle,
             });
         }
         return segments;
@@ -1755,6 +1757,9 @@ class ProcessMapperCanvas extends Component {
             // Store port points so we can snap to them during drag
             sourcePort: { x: points[0].x, y: points[0].y },
             targetPort: { x: points[points.length - 1].x, y: points[points.length - 1].y },
+            // Preserve the connection's route type (ports) during drag
+            connSourcePort: conn.source_port || null,
+            connTargetPort: conn.target_port || null,
         };
     }
 
@@ -2024,9 +2029,48 @@ class ProcessMapperCanvas extends Component {
             const seg = this.segmentDragging;
             const snappedX = snapToGrid(pos.x);
             const snappedY = snapToGrid(pos.y);
-            // Clear stored ports so computeOrthogonalPath uses auto S-route with snap logic
-            // On mouseup, if the path snapped to L-route, ports will be saved
-            this.props.onUpdateConnectionWaypoints(seg.connId, [{ x: snappedX, y: snappedY }], null, null);
+            const wp = { x: snappedX, y: snappedY };
+
+            // Start with the original ports (preserve route type)
+            let sp = seg.connSourcePort;
+            let tp = seg.connTargetPort;
+
+            // Check if waypoint is close to an L-route bend point — if so, snap to L
+            const conn = this.props.connections.find(c => c.id === seg.connId);
+            if (conn) {
+                const source = this.props.steps.find(s => s.id === conn.source_step_id);
+                const target = this.props.steps.find(s => s.id === conn.target_step_id);
+                if (source && target) {
+                    const SNAP = 40;
+                    const allSides = ['top', 'right', 'bottom', 'left'];
+                    let bestDist = SNAP + 1;
+                    let bestSP = null, bestTP = null;
+                    for (const cs of allSides) {
+                        for (const ct of allSides) {
+                            const csH = (cs === 'left' || cs === 'right');
+                            const ctH = (ct === 'left' || ct === 'right');
+                            if (csH === ctH) continue; // only perpendicular (L-route)
+                            const pp1 = shapePortPoint(source, cs);
+                            const pp2 = shapePortPoint(target, ct);
+                            const bend = csH
+                                ? { x: pp2.x, y: pp1.y }
+                                : { x: pp1.x, y: pp2.y };
+                            const d = Math.max(Math.abs(wp.x - bend.x), Math.abs(wp.y - bend.y));
+                            if (d < bestDist) {
+                                bestDist = d;
+                                bestSP = cs;
+                                bestTP = ct;
+                            }
+                        }
+                    }
+                    if (bestSP && bestDist <= SNAP) {
+                        sp = bestSP;
+                        tp = bestTP;
+                    }
+                }
+            }
+
+            this.props.onUpdateConnectionWaypoints(seg.connId, [wp], sp, tp);
         }
         if (this.connecting) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
@@ -2088,41 +2132,17 @@ class ProcessMapperCanvas extends Component {
             this.props.onDragEnd();
         }
         if (this.segmentDragging) {
+            // If the drag ended on an L-route, clear waypoints (L-routes don't use them)
             const seg = this.segmentDragging;
-            // Check if the path snapped to L-route: save the ports so it persists
             const conn = this.props.connections.find(c => c.id === seg.connId);
-            if (conn) {
-                const points = this.getConnectionPoints(conn);
-                if (points.length === 3) {
-                    // L-route detected: determine port sides from geometry
-                    const p0 = points[0];
-                    const bend = points[1];
-                    const p2 = points[2];
-                    let sp, tp;
-                    // Source port: which side does the line exit?
-                    if (Math.abs(p0.x - bend.x) < 0.5) {
-                        // First segment is vertical
-                        sp = bend.y > p0.y ? 'bottom' : 'top';
-                    } else {
-                        // First segment is horizontal
-                        sp = bend.x > p0.x ? 'right' : 'left';
-                    }
-                    // Target port: which side does the line enter?
-                    if (Math.abs(bend.x - p2.x) < 0.5) {
-                        // Last segment is vertical
-                        tp = p2.y > bend.y ? 'top' : 'bottom';
-                    } else {
-                        // Last segment is horizontal
-                        tp = p2.x > bend.x ? 'left' : 'right';
-                    }
-                    // Validate: L-route must have perpendicular ports
-                    // (one horizontal, one vertical)
-                    const spH = (sp === 'left' || sp === 'right');
-                    const tpH = (tp === 'left' || tp === 'right');
-                    if (spH !== tpH) {
-                        // Perpendicular → valid L-route, save ports
-                        this.props.onUpdateConnectionWaypoints(seg.connId, [], sp, tp);
-                    }
+            if (conn && conn.source_port && conn.target_port) {
+                const spH = (conn.source_port === 'left' || conn.source_port === 'right');
+                const tpH = (conn.target_port === 'left' || conn.target_port === 'right');
+                if (spH !== tpH) {
+                    // Perpendicular ports = L-route: clear waypoints
+                    this.props.onUpdateConnectionWaypoints(
+                        seg.connId, [], conn.source_port, conn.target_port
+                    );
                 }
             }
             this.segmentDragging = null;
@@ -2243,9 +2263,46 @@ class ProcessMapperCanvas extends Component {
         return { x: center.x - w / 2, y: center.y - h / 2, w, h };
     }
 
+    isConnectionSelected(conn) {
+        return this.props.selectedType === 'connection' && this.props.selectedIds.includes(conn.id);
+    }
+
     onConnectionClick(ev, conn) {
         ev.stopPropagation();
         this.props.onSelectElement(conn.id, 'connection');
+    }
+
+    onConnectionPathMouseDown(ev, conn) {
+        // Only initiate drag on already-selected connections
+        if (!this.isConnectionSelected(conn)) return;
+        // Find the closest segment to the mouse position
+        const pos = this.screenToSvg(ev.clientX, ev.clientY);
+        const points = this.getConnectionPoints(conn);
+        if (points.length < 3) return;
+
+        let bestIdx = 1; // default to first middle segment
+        let bestDist = Infinity;
+        for (let i = 0; i < points.length - 1; i++) {
+            const a = points[i];
+            const b = points[i + 1];
+            // Distance from point to line segment
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const lenSq = dx * dx + dy * dy;
+            let t = lenSq > 0 ? ((pos.x - a.x) * dx + (pos.y - a.y) * dy) / lenSq : 0;
+            t = Math.max(0, Math.min(1, t));
+            const px = a.x + t * dx;
+            const py = a.y + t * dy;
+            const d = (pos.x - px) ** 2 + (pos.y - py) ** 2;
+            if (d < bestDist) {
+                bestDist = d;
+                bestIdx = i;
+            }
+        }
+
+        ev.stopPropagation();
+        ev.preventDefault();
+        this.onSegmentHandleMouseDown(ev, conn, bestIdx);
     }
 
     /**
@@ -2303,8 +2360,18 @@ class ProcessMapperCanvas extends Component {
             }
             this.props.onUpdateConnectionWaypoints(conn.id, [], sp, tp);
         } else {
-            // S/Z → L (clear ports for auto-route)
-            this.props.onUpdateConnectionWaypoints(conn.id, [], null, null);
+            // S/Z → L (perpendicular ports)
+            let sp, tp;
+            if (Math.abs(dx) >= Math.abs(dy)) {
+                // More horizontal: source exits horizontally, target enters vertically
+                sp = dx > 0 ? 'right' : 'left';
+                tp = dy > 0 ? 'top' : 'bottom';
+            } else {
+                // More vertical: source exits vertically, target enters horizontally
+                sp = dy > 0 ? 'bottom' : 'top';
+                tp = dx > 0 ? 'left' : 'right';
+            }
+            this.props.onUpdateConnectionWaypoints(conn.id, [], sp, tp);
         }
     }
 
@@ -3098,36 +3165,118 @@ class ProcessMapperClient extends Component {
             }
         }
 
-        // Assign positions: unvisited steps get depth 0
+        // Assign depth 0 to unvisited steps
         for (const s of this.state.steps) {
             if (depth[s.id] === undefined) depth[s.id] = 0;
         }
 
-        // Group by depth
-        const byDepth = {};
-        for (const s of this.state.steps) {
-            const d = depth[s.id];
-            if (!byDepth[d]) byDepth[d] = [];
-            byDepth[d].push(s);
-        }
-
         const xSpacing = 200;
-        const ySpacing = 100;
+        const yPadding = 20;
+        const yStepSpacing = 80;
         const startX = 100;
-        const startY = 80;
+        const lanes = this.state.lanes;
+        const hasLanes = lanes.length > 0;
 
-        for (const [d, steps] of Object.entries(byDepth)) {
-            for (let i = 0; i < steps.length; i++) {
-                steps[i].x_position = startX + parseInt(d) * xSpacing;
-                steps[i].y_position = startY + i * ySpacing;
+        if (hasLanes) {
+            // Sort lanes by y_position
+            const sortedLanes = [...lanes].sort((a, b) => a.y_position - b.y_position);
+
+            // Build a map: laneId → steps grouped by depth
+            // Also collect unassigned steps (no lane or lane not found)
+            const laneSteps = {};  // laneId → { depth → [step, ...] }
+            const unassignedByDepth = {};
+            for (const lane of sortedLanes) {
+                laneSteps[lane.id] = {};
+            }
+            for (const s of this.state.steps) {
+                const d = depth[s.id];
+                if (s.lane_id && laneSteps[s.lane_id]) {
+                    if (!laneSteps[s.lane_id][d]) laneSteps[s.lane_id][d] = [];
+                    laneSteps[s.lane_id][d].push(s);
+                } else {
+                    if (!unassignedByDepth[d]) unassignedByDepth[d] = [];
+                    unassignedByDepth[d].push(s);
+                }
+            }
+
+            // Calculate the required height for each lane based on how many steps
+            // it has at the most populated depth level
+            const laneMinHeight = 100;
+            for (const lane of sortedLanes) {
+                const depthGroups = laneSteps[lane.id];
+                let maxCount = 0;
+                for (const d of Object.keys(depthGroups)) {
+                    maxCount = Math.max(maxCount, depthGroups[d].length);
+                }
+                const needed = maxCount > 0
+                    ? yPadding * 2 + maxCount * yStepSpacing
+                    : laneMinHeight;
+                lane.height = Math.max(lane.height, needed);
+            }
+
+            // Reflow lane y positions so they stack without gaps
+            let currentY = sortedLanes[0].y_position;
+            for (const lane of sortedLanes) {
+                lane.y_position = currentY;
+                currentY += lane.height;
+            }
+
+            // Position steps within their lane
+            for (const lane of sortedLanes) {
+                const depthGroups = laneSteps[lane.id];
+                for (const [d, steps] of Object.entries(depthGroups)) {
+                    const totalHeight = steps.length * yStepSpacing;
+                    // Center the group vertically within the lane
+                    const startY = lane.y_position + (lane.height - totalHeight) / 2 + yStepSpacing / 2 - 30;
+                    for (let i = 0; i < steps.length; i++) {
+                        steps[i].x_position = startX + parseInt(d) * xSpacing;
+                        steps[i].y_position = startY + i * yStepSpacing;
+                    }
+                }
+            }
+
+            // Position unassigned steps below all lanes
+            if (Object.keys(unassignedByDepth).length > 0) {
+                const belowY = currentY + 40;
+                for (const [d, steps] of Object.entries(unassignedByDepth)) {
+                    for (let i = 0; i < steps.length; i++) {
+                        steps[i].x_position = startX + parseInt(d) * xSpacing;
+                        steps[i].y_position = belowY + i * yStepSpacing;
+                    }
+                }
+            }
+        } else {
+            // No lanes: simple layout like before
+            const byDepth = {};
+            for (const s of this.state.steps) {
+                const d = depth[s.id];
+                if (!byDepth[d]) byDepth[d] = [];
+                byDepth[d].push(s);
+            }
+            const startY = 80;
+            for (const [d, steps] of Object.entries(byDepth)) {
+                for (let i = 0; i < steps.length; i++) {
+                    steps[i].x_position = startX + parseInt(d) * xSpacing;
+                    steps[i].y_position = startY + i * yStepSpacing;
+                }
             }
         }
 
-        // Reset all connection waypoints and ports for clean auto-routing
+        // Reset waypoints and compute correct ports based on new step positions
+        const stepsById = {};
+        for (const s of this.state.steps) stepsById[s.id] = s;
         for (const conn of this.state.connections) {
             conn.waypoints = [];
-            conn.source_port = false;
-            conn.target_port = false;
+            const source = stepsById[conn.source_step_id];
+            const target = stepsById[conn.target_step_id];
+            if (source && target) {
+                const auto = selectPorts(source, target);
+                conn.source_port = auto.sourceSide;
+                conn.target_port = auto.targetSide;
+            } else {
+                conn.source_port = false;
+                conn.target_port = false;
+            }
         }
 
         this.state.dirty = true;

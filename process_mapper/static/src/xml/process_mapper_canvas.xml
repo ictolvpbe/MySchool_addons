@@ -183,14 +183,17 @@
                     <!-- Connections -->
                     <t t-foreach="props.connections" t-as="conn" t-key="conn.id">
                         <g>
-                            <!-- Invisible wider hit area for easier clicking -->
+                            <!-- Invisible wider hit area for clicking + dragging -->
                             <path t-att-d="getConnectionPath(conn)"
-                                  fill="none" stroke="transparent" stroke-width="12"
-                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"/>
+                                  fill="none" stroke="transparent" stroke-width="14"
+                                  t-attf-class="#{this.isConnectionSelected(conn) ? 'pm-connection-hit-selected' : ''}"
+                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
+                                  t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
                             <path t-att-d="getConnectionPath(conn)"
                                   t-att-class="getConnectionClass(conn)"
                                   marker-end="url(#pm-arrowhead)"
-                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"/>
+                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
+                                  t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
                             <t t-if="conn.label">
                                 <t t-set="labelPos" t-value="getConnectionLabelPos(conn)"/>
                                 <rect t-att-x="labelPos.x - 20" t-att-y="labelPos.y - 10"
@@ -201,11 +204,12 @@
                                     <t t-esc="conn.label"/>
                                 </text>
                             </t>
-                            <!-- Segment drag handles (when connection selected) -->
+                            <!-- Visual dot on middle segments of selected connections -->
                             <t t-foreach="getConnectionSegments(conn)" t-as="seg" t-key="seg.segmentIndex">
-                                <circle class="pm-segment-handle"
-                                        t-att-cx="seg.midX" t-att-cy="seg.midY" r="4"
-                                        t-on-mousedown.stop="(ev) => this.onSegmentHandleMouseDown(ev, conn, seg.segmentIndex)"/>
+                                <t t-if="seg.isMiddle">
+                                    <circle class="pm-segment-handle"
+                                            t-att-cx="seg.midX" t-att-cy="seg.midY" r="4"/>
+                                </t>
                             </t>
                             <!-- Route toggle button (L ↔ S/Z) when connection selected -->
                             <t t-set="toggle" t-value="getRouteToggleInfo(conn)"/>

@@ -1159,16 +1159,17 @@
 }
 
 /* --- Segment Drag Handles --- */
+.pm-connection-hit-selected {
+    cursor: move;
+}
+
 .pm-segment-handle {
     fill: #1565C0;
     stroke: #fff;
     stroke-width: 1.5;
     cursor: move;
     opacity: 0.7;
-}
-
-.pm-segment-handle:hover {
-    opacity: 1;
+    pointer-events: none;
 }
 
 /* --- Route Toggle Button (L ↔ S/Z) --- */
