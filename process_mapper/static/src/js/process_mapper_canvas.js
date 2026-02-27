@@ -711,6 +711,21 @@ class FieldBuilder extends Component {
         this.state.activeNotebookPages[notebookNodeId] = page._nodeId;
     }
 
+    onRemovePage(notebookNodeId, pageNodeId) {
+        const nb = this._findNode(notebookNodeId);
+        if (!nb || !nb.node.children) return;
+        // Don't delete the last page
+        if (nb.node.children.length <= 1) return;
+        const idx = nb.node.children.findIndex(p => p._nodeId === pageNodeId);
+        if (idx === -1) return;
+        nb.node.children.splice(idx, 1);
+        // If the deleted page was active, switch to the nearest page
+        if (this.state.activeNotebookPages[notebookNodeId] === pageNodeId) {
+            const newIdx = Math.min(idx, nb.node.children.length - 1);
+            this.state.activeNotebookPages[notebookNodeId] = nb.node.children[newIdx]._nodeId;
+        }
+    }
+
     onRemoveNode(nodeId) {
         const found = this._findNode(nodeId);
         if (!found || !found.parent) return;

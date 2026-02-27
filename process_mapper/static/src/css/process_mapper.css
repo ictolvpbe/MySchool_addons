@@ -1889,6 +1889,23 @@
     color: #fff;
 }
 
+.pm-fb-nb-tab-delete {
+    margin-left: 4px;
+    font-size: 9px;
+    opacity: 0;
+    cursor: pointer;
+    color: inherit;
+    transition: opacity 0.12s;
+}
+
+.pm-fb-nb-tab:hover .pm-fb-nb-tab-delete {
+    opacity: 0.5;
+}
+
+.pm-fb-nb-tab-delete:hover {
+    opacity: 1 !important;
+}
+
 .pm-fb-nb-add {
     padding: 2px 6px;
     border: 1px dashed #ccc;

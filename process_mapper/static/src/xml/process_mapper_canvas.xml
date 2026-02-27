@@ -875,6 +875,9 @@
                                                                t-att-value="pg.label || 'Page'"
                                                                t-on-change="(ev) => this.onPageLabelChange(pg._nodeId, ev)"
                                                                t-on-click.stop=""/>
+                                                        <span class="pm-fb-nb-tab-delete"
+                                                              t-on-click.stop="() => this.onRemovePage(child._nodeId, pg._nodeId)"
+                                                              title="Delete page"><i class="fa fa-times"/></span>
                                                     </button>
                                                 </t>
                                                 <button class="pm-fb-nb-add" t-on-click.stop="() => this.onAddPage(child._nodeId)"
