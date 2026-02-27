@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+    <!-- Result: List View (Dashboard) -->
+    <record id="view_phishing_result_list" model="ir.ui.view">
+        <field name="name">phishing.result.list</field>
+        <field name="model">phishing.result</field>
+        <field name="arch" type="xml">
+            <list create="false" edit="false">
+                <field name="campaign_id"/>
+                <field name="sent_count"/>
+                <field name="clicked_count"/>
+                <field name="reported_count"/>
+                <field name="credentials_count"/>
+                <field name="click_rate" widget="progressbar"/>
+                <field name="report_rate" widget="progressbar"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Result: Form View -->
+    <record id="view_phishing_result_form" model="ir.ui.view">
+        <field name="name">phishing.result.form</field>
+        <field name="model">phishing.result</field>
+        <field name="arch" type="xml">
+            <form string="Campagne Resultaat" create="false" edit="false">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="campaign_id"/>
+                        <h1>
+                            <field name="campaign_id"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Aantallen">
+                            <field name="sent_count"/>
+                            <field name="clicked_count"/>
+                            <field name="reported_count"/>
+                            <field name="credentials_count"/>
+                        </group>
+                        <group string="Percentages">
+                            <field name="click_rate" widget="progressbar"/>
+                            <field name="report_rate" widget="progressbar"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Result: Pivot View -->
+    <record id="view_phishing_result_pivot" model="ir.ui.view">
+        <field name="name">phishing.result.pivot</field>
+        <field name="model">phishing.result</field>
+        <field name="arch" type="xml">
+            <pivot string="Campagne Dashboard">
+                <field name="campaign_id" type="row"/>
+                <field name="sent_count" type="measure"/>
+                <field name="clicked_count" type="measure"/>
+                <field name="reported_count" type="measure"/>
+                <field name="credentials_count" type="measure"/>
+                <field name="click_rate" type="measure"/>
+                <field name="report_rate" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <!-- Result: Graph View -->
+    <record id="view_phishing_result_graph" model="ir.ui.view">
+        <field name="name">phishing.result.graph</field>
+        <field name="model">phishing.result</field>
+        <field name="arch" type="xml">
+            <graph string="Campagne Dashboard" type="bar">
+                <field name="campaign_id"/>
+                <field name="click_rate" type="measure"/>
+                <field name="report_rate" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <!-- Result: Action (Dashboard) -->
+    <record id="action_phishing_dashboard" model="ir.actions.act_window">
+        <field name="name">Dashboard</field>
+        <field name="res_model">phishing.result</field>
+        <field name="view_mode">graph,pivot,list,form</field>
+    </record>
+
+    </data>
+</odoo>

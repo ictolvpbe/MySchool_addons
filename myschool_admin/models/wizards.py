@@ -743,304 +743,102 @@ class CreatePersonWizard(models.TransientModel):
         if self.create_odoo_user:
             self.link_existing_user = False
 
-    def action_create(self):
-        """Create the person and optionally link/create Odoo user."""
+    def _build_person_task_data(self):
+        """Build the data dict for a MANUAL/PERSON/ADD betask from wizard fields."""
         self.ensure_one()
-        
-        Person = self.env['myschool.person']
-        PropRelation = self.env['myschool.proprelation']
-        
-        # Prepare person values
-        person_vals = {
-            'first_name': self.first_name,
-            'name': self.last_name,
-            'is_active': True,
-        }
-        
+
         # Get external_domain (can't rely on readonly field being sent back)
         external_domain = self._get_domain_external_static(self.org_id, [])
-        _logger.info(f"external_domain for email generation: {external_domain}")
-        
+
         # Generate email based on person type
         email_cloud = None
         if self.person_type in ('employee', 'student_so'):
-            # Standard email: firstname.lastname@domain
             if self.first_name and self.last_name and external_domain:
                 clean_first = self._remove_diacritics(self.first_name).replace(' ', '').lower()
                 clean_last = self._remove_diacritics(self.last_name).replace(' ', '').lower()
                 email_cloud = f"{clean_first}.{clean_last}@{external_domain}"
         elif self.person_type == 'student_basis':
-            # Student basis email: b+sap_ref+1631@domain
             if self.sap_ref and external_domain:
                 clean_sap_ref = self.sap_ref.replace(' ', '')
                 email_cloud = f"b{clean_sap_ref}1631@{external_domain}"
-        
-        if email_cloud:
-            person_vals['email_cloud'] = email_cloud
-            _logger.info(f"Generated email_cloud: {email_cloud}")
-        else:
-            _logger.warning(f"Could not generate email: person_type={self.person_type}, first_name={self.first_name}, last_name={self.last_name}, sap_ref={self.sap_ref}, external_domain={external_domain}")
-        
-        # Store email_private if provided
-        if self.email_private:
-            person_vals['email_private'] = self.email_private
-            _logger.info(f"Storing email_private: {self.email_private}")
-        
-        # Store sap_ref directly
-        if self.sap_ref:
-            person_vals['sap_ref'] = self.sap_ref
-            _logger.info(f"Storing sap_ref: {self.sap_ref}")
-        
-        # Set person_type_id based on wizard selection
+
+        # Determine person_type_name
         person_type_name = None
         if self.person_type == 'employee':
             person_type_name = 'EMPLOYEE'
         elif self.person_type in ('student_so', 'student_basis'):
             person_type_name = 'STUDENT'
-        
+
+        data = {
+            'first_name': self.first_name,
+            'name': self.last_name,
+            'org_id': self.org_id.id,
+        }
+        if email_cloud:
+            data['email_cloud'] = email_cloud
+        if self.email_private:
+            data['email_private'] = self.email_private
+        if self.sap_ref:
+            data['sap_ref'] = self.sap_ref
         if person_type_name:
-            try:
-                PersonType = self.env['myschool.person.type']
-                # Log all available person types for debugging
-                all_types = PersonType.search([])
-                _logger.info(f"Available person types: {[(t.id, t.name) for t in all_types]}")
-                
-                # Search case-insensitive
-                pt = PersonType.search([('name', '=ilike', person_type_name)], limit=1)
-                if pt:
-                    person_vals['person_type_id'] = pt.id
-                    _logger.info(f"Found person type: {pt.name} (id={pt.id})")
-                else:
-                    _logger.warning(f"Person type '{person_type_name}' not found in database")
-            except Exception as e:
-                _logger.warning(f"Error looking up person type: {str(e)}")
-        
-        # Store employee-specific fields
-        if self.person_type == 'employee':
-            if self.abbreviation:
-                person_vals['abbreviation'] = self.abbreviation
-        
-        _logger.info(f"Final person_vals before create: {person_vals}")
-        
-        # Handle Odoo user linking/creation
-        user = None
-        hr_employee = None
+            data['person_type_name'] = person_type_name
+        if self.person_type == 'employee' and self.abbreviation:
+            data['abbreviation'] = self.abbreviation
+
+        # Odoo user linking/creation
         if self.link_existing_user and self.existing_user_id:
-            user = self.existing_user_id
+            data['link_user_id'] = self.existing_user_id.id
         elif self.create_odoo_user:
-            # Create new Odoo user
-            login = self.odoo_user_login or self.email_cloud
+            login = self.odoo_user_login or email_cloud
             if not login:
                 raise UserError("Login or email is required to create Odoo user")
-            
-            # Check if login already exists
-            existing_user = self.env['res.users'].search([('login', '=', login)], limit=1)
-            if existing_user:
-                raise UserError(f"A user with login '{login}' already exists")
-            
-            user = self.env['res.users'].create({
-                'name': f"{self.first_name} {self.last_name}",
-                'login': login,
-                'email': self.email_cloud or login,
-            })
-            
-            # Create HR employee for employees
-            if self.person_type == 'employee' and 'hr.employee' in self.env:
-                hr_employee = self.env['hr.employee'].create({
-                    'name': f"{self.first_name} {self.last_name}",
-                    'user_id': user.id,
-                    'work_email': self.email_cloud or login,
-                })
-                _logger.info(f"Created HR employee {hr_employee.name} with id={hr_employee.id}")
-        
-        # Link user if available
-        if user and 'user_id' in Person._fields:
-            person_vals['user_id'] = user.id
-        
-        # Create person
-        _logger.info(f"Creating person with vals: {person_vals}")
-        person = Person.create(person_vals)
-        _logger.info(f"Created person id={person.id}, email_cloud={person.email_cloud}, person_type_id={person.person_type_id.id if person.person_type_id else None}")
-        
-        # Determine role based on selection
-        role = None
-        if self.person_type == 'employee':
-            role = self._get_role_by_name('EMPLOYEE')
-        elif self.person_type == 'student_so':
-            role = self._get_role_by_name('STUDENT_SO')
-        elif self.person_type == 'student_basis':
-            role = self._get_role_by_name('STUDENT_BASIS')
-        
-        # Get or create PERSON-TREE relation type
-        relation_type = self._get_or_create_proprelation_type('PERSON-TREE')
-        
-        # Build proprelation name using standardized format (PERSON-TREE only uses person and org)
-        proprel_name = build_proprelation_name(
-            'PERSON-TREE',
-            id_person=person,
-            id_org=self.org_id
-        )
-        
-        # Create proprelation to org (PERSON-TREE only links person to org, no role)
-        proprel_vals = {
-            'name': proprel_name,
-            'id_person': person.id,
-            'id_org': self.org_id.id,
-            'is_active': True,
-        }
-        if relation_type:
-            proprel_vals['proprelation_type_id'] = relation_type.id
-        
-        PropRelation.create(proprel_vals)
-        
-        # Assign roles from parent org tree to person (creates separate PPSBR relations)
-        self._assign_roles_to_person(person)
-        
-        _logger.info(f"Created person {person.name} in org {self.org_id.name}")
-        
-        # Open the person form for editing in a new dialog
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.person',
-            'res_id': person.id,
-            'views': [[False, 'form']],
-            'target': 'new',
-            'context': {'form_view_initial_mode': 'edit'},
-        }
+            data['create_user'] = True
+            data['user_login'] = login
+            if self.person_type == 'employee':
+                data['create_employee'] = True
+
+        return data
+
+    def action_create(self):
+        """Create the person via betask and open the person form."""
+        self.ensure_one()
+
+        service = self.env['myschool.manual.task.service']
+        task = service.create_manual_task('PERSON', 'ADD', self._build_person_task_data())
+
+        # In immediate mode the person was created; find it from the task data
+        # The task changes field contains the person ID
+        person_id = self._extract_person_id_from_task(task)
+        if person_id:
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'myschool.person',
+                'res_id': person_id,
+                'views': [[False, 'form']],
+                'target': 'new',
+                'context': {'form_view_initial_mode': 'edit'},
+            }
+
+        # Queued mode or couldn't extract ID — just close
+        return {'type': 'ir.actions.act_window_close'}
 
     def action_create_and_close(self):
-        """Create person and return to browser."""
+        """Create person via betask and return to browser."""
         self.ensure_one()
-        
-        Person = self.env['myschool.person']
-        PropRelation = self.env['myschool.proprelation']
-        
-        # Prepare person values
-        person_vals = {
-            'first_name': self.first_name,
-            'name': self.last_name,
-            'is_active': True,
-        }
-        
-        # Get external_domain (can't rely on readonly field being sent back)
-        external_domain = self._get_domain_external_static(self.org_id, [])
-        
-        # Generate email based on person type
-        email_cloud = None
-        if self.person_type in ('employee', 'student_so'):
-            # Standard email: firstname.lastname@domain
-            if self.first_name and self.last_name and external_domain:
-                clean_first = self._remove_diacritics(self.first_name).replace(' ', '').lower()
-                clean_last = self._remove_diacritics(self.last_name).replace(' ', '').lower()
-                email_cloud = f"{clean_first}.{clean_last}@{external_domain}"
-        elif self.person_type == 'student_basis':
-            # Student basis email: b+sap_ref+1631@domain
-            if self.sap_ref and external_domain:
-                clean_sap_ref = self.sap_ref.replace(' ', '')
-                email_cloud = f"b{clean_sap_ref}1631@{external_domain}"
-        
-        if email_cloud:
-            person_vals['email_cloud'] = email_cloud
-        
-        # Store email_private if provided
-        if self.email_private:
-            person_vals['email_private'] = self.email_private
-        
-        # Store sap_ref directly
-        if self.sap_ref:
-            person_vals['sap_ref'] = self.sap_ref
-        
-        # Set person_type_id based on wizard selection
-        person_type_name = None
-        if self.person_type == 'employee':
-            person_type_name = 'EMPLOYEE'
-        elif self.person_type in ('student_so', 'student_basis'):
-            person_type_name = 'STUDENT'
-        
-        if person_type_name:
-            try:
-                PersonType = self.env['myschool.person.type']
-                # Search case-insensitive
-                pt = PersonType.search([('name', '=ilike', person_type_name)], limit=1)
-                if pt:
-                    person_vals['person_type_id'] = pt.id
-            except Exception:
-                pass
-        
-        # Store employee-specific fields
-        if self.person_type == 'employee':
-            if self.abbreviation:
-                person_vals['abbreviation'] = self.abbreviation
-        
-        # Handle Odoo user
-        user = None
-        hr_employee = None
-        if self.link_existing_user and self.existing_user_id:
-            user = self.existing_user_id
-        elif self.create_odoo_user:
-            login = self.odoo_user_login or self.email_cloud
-            if not login:
-                raise UserError("Login or email is required to create Odoo user")
-            
-            existing_user = self.env['res.users'].search([('login', '=', login)], limit=1)
-            if existing_user:
-                raise UserError(f"A user with login '{login}' already exists")
-            
-            user = self.env['res.users'].create({
-                'name': f"{self.first_name} {self.last_name}",
-                'login': login,
-                'email': self.email_cloud or login,
-            })
-            
-            # Create HR employee for employees
-            if self.person_type == 'employee' and 'hr.employee' in self.env:
-                hr_employee = self.env['hr.employee'].create({
-                    'name': f"{self.first_name} {self.last_name}",
-                    'user_id': user.id,
-                    'work_email': self.email_cloud or login,
-                })
-                _logger.info(f"Created HR employee {hr_employee.name} with id={hr_employee.id}")
-        
-        if user and 'user_id' in Person._fields:
-            person_vals['user_id'] = user.id
-        
-        person = Person.create(person_vals)
-        
-        # Determine role based on selection
-        role = None
-        if self.person_type == 'employee':
-            role = self._get_role_by_name('EMPLOYEE')
-        elif self.person_type == 'student_so':
-            role = self._get_role_by_name('STUDENT_SO')
-        elif self.person_type == 'student_basis':
-            role = self._get_role_by_name('STUDENT_BASIS')
-        
-        # Get or create PERSON-TREE relation type
-        relation_type = self._get_or_create_proprelation_type('PERSON-TREE')
-        
-        # Build proprelation name using standardized format (PERSON-TREE only uses person and org)
-        proprel_name = build_proprelation_name(
-            'PERSON-TREE',
-            id_person=person,
-            id_org=self.org_id
-        )
-        
-        # Create proprelation to org (PERSON-TREE only links person to org, no role)
-        proprel_vals = {
-            'name': proprel_name,
-            'id_person': person.id,
-            'id_org': self.org_id.id,
-            'is_active': True,
-        }
-        if relation_type:
-            proprel_vals['proprelation_type_id'] = relation_type.id
-        
-        PropRelation.create(proprel_vals)
-        
-        # Assign roles from parent org tree to person (creates separate PPSBR relations)
-        self._assign_roles_to_person(person)
-        
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'ADD', self._build_person_task_data())
+
         return {'type': 'ir.actions.act_window_close'}
+
+    def _extract_person_id_from_task(self, task):
+        """Try to extract the created person ID from the task's changes field."""
+        import re
+        if task.changes:
+            match = re.search(r'Created person:.*\(ID:\s*(\d+)\)', task.changes)
+            if match:
+                return int(match.group(1))
+        return None
 
 
 class AddChildOrgWizard(models.TransientModel):
@@ -1454,17 +1252,18 @@ class AddChildOrgWizard(models.TransientModel):
             else:
                 self.new_org_name_short = self.new_org_name[:10].upper()
 
-    def action_add(self):
-        """Add the child organization and open it for editing."""
+    def _build_org_task_data(self):
+        """Build the data dict for a MANUAL/ORG/ADD betask from wizard fields."""
         self.ensure_one()
-        
-        PropRelation = self.env['myschool.proprelation']
+
         Org = self.env['myschool.org']
-        
+
+        data = {'parent_org_id': self.parent_org_id.id}
+
         if self.use_existing:
             if not self.existing_org_id:
                 raise UserError("Please select an existing organization")
-            child_org = self.existing_org_id
+            data['existing_org_id'] = self.existing_org_id.id
         else:
             if not self.new_org_name:
                 raise UserError("Please enter a name for the new organization")
@@ -1472,254 +1271,101 @@ class AddChildOrgWizard(models.TransientModel):
                 raise UserError("Please enter a short name for the organization")
             if not self.new_org_inst_nr:
                 raise UserError("Please enter an institution number")
-            
-            # Create new org with required fields
-            org_vals = {
-                'name': self.new_org_name,
-                'name_short': self.new_org_name_short,
-                'inst_nr': self.new_org_inst_nr,
-                'is_active': True,
-            }
-            
-            # Add OU FQDN fields if present
+
+            data['name'] = self.new_org_name
+            data['name_short'] = self.new_org_name_short
+            data['inst_nr'] = self.new_org_inst_nr
+
+            # OU FQDN fields
             if self.new_org_ou_fqdn_intern:
-                org_vals['ou_fqdn_internal'] = self.new_org_ou_fqdn_intern
+                data['ou_fqdn_internal'] = self.new_org_ou_fqdn_intern
             if self.new_org_ou_fqdn_extern:
-                org_vals['ou_fqdn_external'] = self.new_org_ou_fqdn_extern
-            
-            # Add com_group fields if present
+                data['ou_fqdn_external'] = self.new_org_ou_fqdn_extern
+
+            # Com group fields
             if self.new_org_com_group_name:
-                org_vals['com_group_name'] = self.new_org_com_group_name
+                data['com_group_name'] = self.new_org_com_group_name
             if self.new_org_com_group_fqdn_internal:
-                org_vals['com_group_fqdn_internal'] = self.new_org_com_group_fqdn_internal
+                data['com_group_fqdn_internal'] = self.new_org_com_group_fqdn_internal
             if self.new_org_com_group_fqdn_external:
-                org_vals['com_group_fqdn_external'] = self.new_org_com_group_fqdn_external
-            
-            # Add sec_group fields if present
+                data['com_group_fqdn_external'] = self.new_org_com_group_fqdn_external
+
+            # Sec group fields
             if self.new_org_sec_group_name:
-                org_vals['sec_group_name'] = self.new_org_sec_group_name
+                data['sec_group_name'] = self.new_org_sec_group_name
             if self.new_org_sec_group_fqdn_internal:
-                org_vals['sec_group_fqdn_internal'] = self.new_org_sec_group_fqdn_internal
+                data['sec_group_fqdn_internal'] = self.new_org_sec_group_fqdn_internal
             if self.new_org_sec_group_fqdn_external:
-                org_vals['sec_group_fqdn_external'] = self.new_org_sec_group_fqdn_external
-            
-            # Add boolean flags
-            org_vals['has_ou'] = self.new_org_has_ou
-            org_vals['has_role'] = self.new_org_has_role
-            org_vals['has_comgroup'] = self.new_org_has_comgroup
-            org_vals['has_secgroup'] = self.new_org_has_secgroup
-            
-            # Compute and set name_tree from ou_fqdn_internal
+                data['sec_group_fqdn_external'] = self.new_org_sec_group_fqdn_external
+
+            # Boolean flags
+            data['has_ou'] = self.new_org_has_ou
+            data['has_role'] = self.new_org_has_role
+            data['has_comgroup'] = self.new_org_has_comgroup
+            data['has_secgroup'] = self.new_org_has_secgroup
+
+            # name_tree
             if self.new_org_ou_fqdn_intern:
-                name_tree = compute_name_tree(self.env, {'name_short': self.new_org_name_short, 'ou_fqdn_internal': self.new_org_ou_fqdn_intern}, None)
+                name_tree = compute_name_tree(
+                    self.env,
+                    {'name_short': self.new_org_name_short, 'ou_fqdn_internal': self.new_org_ou_fqdn_intern},
+                    None,
+                )
                 if name_tree:
-                    org_vals['name_tree'] = name_tree
-            
+                    data['name_tree'] = name_tree
+
             if self.new_org_type_id:
-                org_vals['org_type_id'] = self.new_org_type_id.id
-            if self.new_org_description and 'description' in Org._fields:
-                org_vals['description'] = self.new_org_description
-            
-            child_org = Org.create(org_vals)
-        
-        # Check for circular reference
-        if child_org.id == self.parent_org_id.id:
-            raise UserError("An organization cannot be its own parent")
+                data['org_type_id'] = self.new_org_type_id.id
 
-        # Get or create ORG-TREE proprelation type (needed for the checks below)
-        PropRelationType = self.env['myschool.proprelation.type']
-        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        return data
 
-        # Check if already a child (via ORG-TREE relation)
-        existing_domain = [
-            ('id_org', '=', child_org.id),
-            ('id_org_parent', '=', self.parent_org_id.id),
-            ('is_active', '=', True),
-        ]
-        if org_tree_type:
-            existing_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+    def action_add(self):
+        """Add the child organization via betask and open it for editing."""
+        self.ensure_one()
 
-        existing = PropRelation.search(existing_domain, limit=1)
+        service = self.env['myschool.manual.task.service']
+        task = service.create_manual_task('ORG', 'ADD', self._build_org_task_data())
 
-        if existing:
-            raise UserError(f"{child_org.name} is already a child of {self.parent_org_id.name}")
+        # Try to extract the org ID from the task changes for immediate mode
+        org_id = self._extract_org_id_from_task(task)
+        if org_id:
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'myschool.org',
+                'res_id': org_id,
+                'views': [[False, 'form']],
+                'target': 'new',
+                'context': {'form_view_initial_mode': 'edit'},
+            }
 
-        # Deactivate any existing ORG-TREE parent relation
-        old_parent_domain = [
-            ('id_org', '=', child_org.id),
-            ('id_org_parent', '!=', False),
-            ('is_active', '=', True),
-        ]
-        if org_tree_type:
-            old_parent_domain.append(('proprelation_type_id', '=', org_tree_type.id))
-
-        old_parent = PropRelation.search(old_parent_domain)
-        if old_parent:
-            old_parent.write({'is_active': False})
-
-        # Create ORG-TREE type if it doesn't exist
-        if not org_tree_type:
-            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-        if not org_tree_type:
-            org_tree_type = PropRelationType.create({
-                'name': 'ORG-TREE',
-                'usage': 'Organization hierarchy relationship',
-                'is_active': True,
-            })
-        
-        # Build the relation name using standardized format
-        relation_name = build_proprelation_name(
-            'ORG-TREE',
-            id_org=child_org,
-            id_org_parent=self.parent_org_id
-        )
-        
-        # Create new parent relation
-        PropRelation.create({
-            'name': relation_name,
-            'proprelation_type_id': org_tree_type.id,
-            'id_org': child_org.id,
-            'id_org_parent': self.parent_org_id.id,
-            'is_active': True,
-        })
-        
-        _logger.info(f"Added org {child_org.name} under {self.parent_org_id.name}")
-        
-        # Open the org form for further editing in a new dialog
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.org',
-            'res_id': child_org.id,
-            'views': [[False, 'form']],
-            'target': 'new',
-            'context': {'form_view_initial_mode': 'edit'},
-        }
+        return {'type': 'ir.actions.act_window_close'}
 
     def action_add_and_close(self):
-        """Add org and return to browser without opening form."""
+        """Add org via betask and return to browser."""
         self.ensure_one()
-        
-        PropRelation = self.env['myschool.proprelation']
-        Org = self.env['myschool.org']
-        
-        if self.use_existing:
-            if not self.existing_org_id:
-                raise UserError("Please select an existing organization")
-            child_org = self.existing_org_id
-        else:
-            if not self.new_org_name:
-                raise UserError("Please enter a name for the new organization")
-            if not self.new_org_name_short:
-                raise UserError("Please enter a short name for the organization")
-            if not self.new_org_inst_nr:
-                raise UserError("Please enter an institution number")
-            
-            org_vals = {
-                'name': self.new_org_name,
-                'name_short': self.new_org_name_short,
-                'inst_nr': self.new_org_inst_nr,
-                'is_active': True,
-            }
-            
-            # Add OU FQDN fields if present
-            if self.new_org_ou_fqdn_intern:
-                org_vals['ou_fqdn_internal'] = self.new_org_ou_fqdn_intern
-            if self.new_org_ou_fqdn_extern:
-                org_vals['ou_fqdn_external'] = self.new_org_ou_fqdn_extern
-            
-            # Add com_group fields if present
-            if self.new_org_com_group_name:
-                org_vals['com_group_name'] = self.new_org_com_group_name
-            if self.new_org_com_group_fqdn_internal:
-                org_vals['com_group_fqdn_internal'] = self.new_org_com_group_fqdn_internal
-            if self.new_org_com_group_fqdn_external:
-                org_vals['com_group_fqdn_external'] = self.new_org_com_group_fqdn_external
-            
-            # Add sec_group fields if present
-            if self.new_org_sec_group_name:
-                org_vals['sec_group_name'] = self.new_org_sec_group_name
-            if self.new_org_sec_group_fqdn_internal:
-                org_vals['sec_group_fqdn_internal'] = self.new_org_sec_group_fqdn_internal
-            if self.new_org_sec_group_fqdn_external:
-                org_vals['sec_group_fqdn_external'] = self.new_org_sec_group_fqdn_external
-            
-            # Add boolean flags
-            org_vals['has_ou'] = self.new_org_has_ou
-            org_vals['has_role'] = self.new_org_has_role
-            org_vals['has_comgroup'] = self.new_org_has_comgroup
-            org_vals['has_secgroup'] = self.new_org_has_secgroup
-            
-            # Compute and set name_tree from ou_fqdn_internal
-            if self.new_org_ou_fqdn_intern:
-                name_tree = compute_name_tree(self.env, {'name_short': self.new_org_name_short, 'ou_fqdn_internal': self.new_org_ou_fqdn_intern}, None)
-                if name_tree:
-                    org_vals['name_tree'] = name_tree
-            
-            if self.new_org_type_id:
-                org_vals['org_type_id'] = self.new_org_type_id.id
-            if self.new_org_description and 'description' in Org._fields:
-                org_vals['description'] = self.new_org_description
-            
-            child_org = Org.create(org_vals)
-        
-        if child_org.id == self.parent_org_id.id:
-            raise UserError("An organization cannot be its own parent")
 
-        # Get or create ORG-TREE proprelation type (needed for the checks below)
-        PropRelationType = self.env['myschool.proprelation.type']
-        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('ORG', 'ADD', self._build_org_task_data())
 
-        # Check if already a child (via ORG-TREE relation)
-        existing_domain = [
-            ('id_org', '=', child_org.id),
-            ('id_org_parent', '=', self.parent_org_id.id),
-            ('is_active', '=', True),
-        ]
-        if org_tree_type:
-            existing_domain.append(('proprelation_type_id', '=', org_tree_type.id))
-
-        existing = PropRelation.search(existing_domain, limit=1)
-
-        if existing:
-            raise UserError(f"{child_org.name} is already a child of {self.parent_org_id.name}")
-
-        # Deactivate any existing ORG-TREE parent relation
-        old_parent_domain = [
-            ('id_org', '=', child_org.id),
-            ('id_org_parent', '!=', False),
-            ('is_active', '=', True),
-        ]
-        if org_tree_type:
-            old_parent_domain.append(('proprelation_type_id', '=', org_tree_type.id))
-
-        old_parent = PropRelation.search(old_parent_domain)
-        if old_parent:
-            old_parent.write({'is_active': False})
-
-        # Create ORG-TREE type if it doesn't exist
-        if not org_tree_type:
-            org_tree_type = PropRelationType.create({
-                'name': 'ORG-TREE',
-                'usage': 'Organization hierarchy relationship',
-                'is_active': True,
-            })
-
-        # Build the relation name using standardized format
-        relation_name = build_proprelation_name(
-            'ORG-TREE',
-            id_org=child_org,
-            id_org_parent=self.parent_org_id
-        )
-        
-        PropRelation.create({
-            'name': relation_name,
-            'proprelation_type_id': org_tree_type.id,
-            'id_org': child_org.id,
-            'id_org_parent': self.parent_org_id.id,
-            'is_active': True,
-        })
-        
         return {'type': 'ir.actions.act_window_close'}
+
+    def _extract_org_id_from_task(self, task):
+        """Try to extract the created org ID from the task's changes field."""
+        import re
+        if task.changes:
+            match = re.search(r'Created org:.*\(ID:\s*(\d+)\)', task.changes)
+            if match:
+                return int(match.group(1))
+        # For existing org attachment, try to get from data
+        if task.data:
+            try:
+                import json
+                data = json.loads(task.data)
+                if data.get('existing_org_id'):
+                    return data['existing_org_id']
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return None
 
 
 class MoveOrgWizard(models.TransientModel):
@@ -1733,35 +1379,21 @@ class MoveOrgWizard(models.TransientModel):
     move_to_root = fields.Boolean(string='Move to Root (no parent)')
 
     def action_move(self):
-        """Move the organization."""
+        """Move the organization via betask."""
         self.ensure_one()
 
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
+        if not self.move_to_root and not self.new_parent_id:
+            raise UserError("Please select a new parent organization or check 'Move to Root'")
 
-        # Get ORG-TREE type
-        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-
+        data = {'org_id': self.org_id.id}
         if self.move_to_root:
-            # Remove ORG-TREE parent relation only
-            search_domain = [
-                ('id_org', '=', self.org_id.id),
-                ('id_org_parent', '!=', False),
-                ('is_active', '=', True),
-            ]
-            if org_tree_type:
-                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
-
-            existing = PropRelation.search(search_domain)
-            if existing:
-                existing.write({'is_active': False})
+            data['move_to_root'] = True
         else:
-            if not self.new_parent_id:
-                raise UserError("Please select a new parent organization or check 'Move to Root'")
-            
-            # Use the object browser method for validation
-            self.env['myschool.object.browser'].move_org(self.org_id.id, self.new_parent_id.id)
-        
+            data['new_parent_id'] = self.new_parent_id.id
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('ORG', 'UPD', data)
+
         return {'type': 'ir.actions.act_window_close'}
 
 
@@ -1776,14 +1408,15 @@ class MovePersonWizard(models.TransientModel):
     keep_roles = fields.Boolean(string='Keep Existing Roles', default=True)
 
     def action_move(self):
-        """Move the person."""
+        """Move the person via betask."""
         self.ensure_one()
-        
-        self.env['myschool.object.browser'].move_person_to_org(
-            self.person_id.id, 
-            self.new_org_id.id
-        )
-        
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'UPD', {
+            'person_id': self.person_id.id,
+            'new_org_id': self.new_org_id.id,
+        })
+
         return {'type': 'ir.actions.act_window_close'}
 
 
@@ -1799,35 +1432,20 @@ class AssignRoleWizard(models.TransientModel):
                              help='Assign role in context of this organization')
 
     def action_assign(self):
-        """Assign the role."""
+        """Assign the role via betask."""
         self.ensure_one()
-        
-        PropRelation = self.env['myschool.proprelation']
-        
-        # Check if already exists
-        domain = [
-            ('id_person', '=', self.person_id.id),
-            ('id_role', '=', self.role_id.id),
-            ('is_active', '=', True),
-        ]
-        if self.org_id:
-            domain.append(('id_org', '=', self.org_id.id))
-        
-        existing = PropRelation.search(domain, limit=1)
-        
-        if existing:
-            raise UserError(f"{self.person_id.name} already has role {self.role_id.name}")
-        
-        vals = {
-            'id_person': self.person_id.id,
-            'id_role': self.role_id.id,
-            'is_active': True,
+
+        data = {
+            'type': 'PPSBR',
+            'person_id': self.person_id.id,
+            'role_id': self.role_id.id,
         }
         if self.org_id:
-            vals['id_org'] = self.org_id.id
-        
-        PropRelation.create(vals)
-        
+            data['org_id'] = self.org_id.id
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PROPRELATION', 'ADD', data)
+
         return {'type': 'ir.actions.act_window_close'}
 
 
@@ -2325,46 +1943,18 @@ class AddSRBRWizard(models.TransientModel):
         return rel_type
     
     def action_add(self):
-        """Create the SRBR relation."""
+        """Create the SRBR relation via betask."""
         self.ensure_one()
-        
-        PropRelation = self.env['myschool.proprelation']
-        
-        # Get or create SRBR type
-        rel_type = self._get_or_create_relation_type(
-            'SRBR', 
-            'SAP-Role to Backend-Role mapping'
-        )
-        
-        # Check if relation already exists
-        existing = PropRelation.search([
-            ('proprelation_type_id', '=', rel_type.id),
-            ('id_role', '=', self.sap_role_id.id),
-            ('id_role_parent', '=', self.backend_role_id.id),
-            ('is_active', '=', True),
-        ], limit=1)
-        
-        if existing:
-            raise UserError('This relation already exists.')
-        
-        # Build relation name using standardized format
-        rel_name = build_proprelation_name(
-            'SRBR',
-            id_role=self.sap_role_id,
-            id_role_parent=self.backend_role_id
-        )
-        
-        # Create the relation
-        PropRelation.create({
-            'name': rel_name,
-            'proprelation_type_id': rel_type.id,
-            'id_role': self.sap_role_id.id,
-            'id_role_parent': self.backend_role_id.id,
-            'is_active': True,
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PROPRELATION', 'ADD', {
+            'type': 'SRBR',
+            'role_id': self.sap_role_id.id,
+            'role_parent_id': self.backend_role_id.id,
         })
-        
+
         return {'type': 'ir.actions.act_window_close'}
-    
+
     def action_add_and_new(self):
         """Create and open new wizard."""
         self.action_add()
@@ -2425,51 +2015,19 @@ class AddBRSOWizard(models.TransientModel):
         return rel_type
     
     def action_add(self):
-        """Create the BRSO relation."""
+        """Create the BRSO relation via betask."""
         self.ensure_one()
-        
-        PropRelation = self.env['myschool.proprelation']
-        
-        # Get or create BRSO type
-        rel_type = self._get_or_create_relation_type(
-            'BRSO', 
-            'Backend-Role to School/Department mapping for person creation'
-        )
-        
-        # Check if relation already exists
-        # id_org = department, id_org_parent = school
-        existing = PropRelation.search([
-            ('proprelation_type_id', '=', rel_type.id),
-            ('id_role', '=', self.backend_role_id.id),
-            ('id_org', '=', self.department_id.id),
-            ('id_org_parent', '=', self.school_id.id),
-            ('is_active', '=', True),
-        ], limit=1)
-        
-        if existing:
-            raise UserError('This relation already exists.')
-        
-        # Build relation name using standardized format
-        rel_name = build_proprelation_name(
-            'BRSO',
-            id_role=self.backend_role_id,
-            id_org_parent=self.school_id,
-            id_org=self.department_id
-        )
-        
-        # Create the relation
-        # id_org = department (where person created), id_org_parent = school (higher level)
-        PropRelation.create({
-            'name': rel_name,
-            'proprelation_type_id': rel_type.id,
-            'id_role': self.backend_role_id.id,
-            'id_org': self.department_id.id,
-            'id_org_parent': self.school_id.id,
-            'is_active': True,
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PROPRELATION', 'ADD', {
+            'type': 'BRSO',
+            'role_id': self.backend_role_id.id,
+            'org_id': self.department_id.id,
+            'org_parent_id': self.school_id.id,
         })
-        
+
         return {'type': 'ir.actions.act_window_close'}
-    
+
     def action_add_and_new(self):
         """Create and open new wizard."""
         self.action_add()
@@ -2601,50 +2159,20 @@ class LinkRoleToOrgWizard(models.TransientModel):
         return rel_type
     
     def action_link(self):
-        """Create the BRSO relation."""
+        """Create the BRSO relation via betask."""
         self.ensure_one()
-        
+
         if not self.school_id:
             raise UserError('Please select a school.')
-        
-        PropRelation = self.env['myschool.proprelation']
-        
-        # Get or create BRSO type
-        rel_type = self._get_or_create_relation_type(
-            'BRSO', 
-            'Backend-Role to School/Department mapping for person creation'
-        )
-        
-        # Check if relation already exists
-        existing = PropRelation.search([
-            ('proprelation_type_id', '=', rel_type.id),
-            ('id_role', '=', self.backend_role_id.id),
-            ('id_org', '=', self.org_id.id),
-            ('id_org_parent', '=', self.school_id.id),
-            ('is_active', '=', True),
-        ], limit=1)
-        
-        if existing:
-            raise UserError('This relation already exists.')
-        
-        # Build relation name using standardized format
-        rel_name = build_proprelation_name(
-            'BRSO',
-            id_role=self.backend_role_id,
-            id_org_parent=self.school_id,
-            id_org=self.org_id
-        )
-        
-        # Create the relation
-        PropRelation.create({
-            'name': rel_name,
-            'proprelation_type_id': rel_type.id,
-            'id_role': self.backend_role_id.id,
-            'id_org': self.org_id.id,
-            'id_org_parent': self.school_id.id,
-            'is_active': True,
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PROPRELATION', 'ADD', {
+            'type': 'BRSO',
+            'role_id': self.backend_role_id.id,
+            'org_id': self.org_id.id,
+            'org_parent_id': self.school_id.id,
         })
-        
+
         return {'type': 'ir.actions.act_window_close'}
     
     def action_link_and_new(self):
@@ -2710,63 +2238,17 @@ class AddBRSORoleWizard(models.TransientModel):
         return res
 
     def action_add_role(self):
-        """Create the BRSO proprelation."""
+        """Create the BRSO proprelation via betask."""
         self.ensure_one()
-        
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        
-        # Get or create BRSO proprelation type
-        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
-        if not brso_type:
-            brso_type = PropRelationType.create({
-                'name': 'BRSO',
-                'usage': 'Backend Role - Organization relation',
-                'is_active': True,
-            })
-        
-        # Check if relation already exists (active)
-        existing = PropRelation.search([
-            ('proprelation_type_id', '=', brso_type.id),
-            ('id_org', '=', self.org_id.id),
-            ('id_org_parent', '=', self.school_id.id),
-            ('id_role', '=', self.role_id.id),
-            ('is_active', '=', True),
-        ], limit=1)
-        
-        if existing:
-            raise UserError(f"Role '{self.role_id.name}' is already linked to this organization.")
-        
-        # Check for inactive relation and reactivate
-        inactive = PropRelation.search([
-            ('proprelation_type_id', '=', brso_type.id),
-            ('id_org', '=', self.org_id.id),
-            ('id_org_parent', '=', self.school_id.id),
-            ('id_role', '=', self.role_id.id),
-            ('is_active', '=', False),
-        ], limit=1)
-        
-        if inactive:
-            inactive.write({'is_active': True})
-            _logger.info(f"Reactivated BRSO relation: role {self.role_id.name} to org {self.org_id.name}")
-        else:
-            # Create the relation with standardized name
-            rel_name = build_proprelation_name(
-                'BRSO',
-                id_role=self.role_id,
-                id_org_parent=self.school_id,
-                id_org=self.org_id
-            )
-            PropRelation.create({
-                'name': rel_name,
-                'proprelation_type_id': brso_type.id,
-                'id_org': self.org_id.id,
-                'id_org_parent': self.school_id.id,
-                'id_role': self.role_id.id,
-                'is_active': True,
-            })
-            _logger.info(f"Created BRSO relation: role {self.role_id.name} to org {self.org_id.name} (school: {self.school_id.name})")
-        
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PROPRELATION', 'ADD', {
+            'type': 'BRSO',
+            'role_id': self.role_id.id,
+            'org_id': self.org_id.id,
+            'org_parent_id': self.school_id.id,
+        })
+
         return {'type': 'ir.actions.act_window_close'}
 
 
@@ -2780,8 +2262,6 @@ class ManageOrgRolesWizard(models.TransientModel):
     school_id = fields.Many2one(
         'myschool.org',
         string='School',
-        required=True,
-        domain="[('org_type_id.name', '=', 'SCHOOL')]",
         help='Select the school organization (parent)'
     )
 
@@ -2804,25 +2284,36 @@ class ManageOrgRolesWizard(models.TransientModel):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
 
-        # Traverse ORG-TREE upward to find the nearest parent with org_type SCHOOL
+        # Find the school: check the org itself, then traverse ORG-TREE upward
         school_id = False
-        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-        if org_tree_type:
-            current_org_id = org_id
-            for _guard in range(10):  # prevent infinite loops
-                parent_rel = PropRelation.search([
-                    ('id_org', '=', current_org_id),
-                    ('id_org_parent', '!=', False),
-                    ('proprelation_type_id', '=', org_tree_type.id),
-                    ('is_active', '=', True),
-                ], limit=1)
-                if not parent_rel or not parent_rel.id_org_parent:
-                    break
-                parent_org = parent_rel.id_org_parent
-                if parent_org.org_type_id and parent_org.org_type_id.name == 'SCHOOL':
-                    school_id = parent_org.id
-                    break
-                current_org_id = parent_org.id
+        first_parent_id = False
+        Org = self.env['myschool.org']
+        org = Org.browse(org_id)
+        if org.org_type_id and org.org_type_id.name == 'SCHOOL':
+            school_id = org.id
+        else:
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+            if org_tree_type:
+                current_org_id = org_id
+                for _guard in range(10):  # prevent infinite loops
+                    parent_rel = PropRelation.search([
+                        ('id_org', '=', current_org_id),
+                        ('id_org_parent', '!=', False),
+                        ('proprelation_type_id', '=', org_tree_type.id),
+                        ('is_active', '=', True),
+                    ], limit=1)
+                    if not parent_rel or not parent_rel.id_org_parent:
+                        break
+                    parent_org = parent_rel.id_org_parent
+                    if not first_parent_id:
+                        first_parent_id = parent_org.id
+                    if parent_org.org_type_id and parent_org.org_type_id.name == 'SCHOOL':
+                        school_id = parent_org.id
+                        break
+                    current_org_id = parent_org.id
+            # Fallback: use nearest parent if no SCHOOL-type ancestor found
+            if not school_id:
+                school_id = first_parent_id
 
         # Build line vals from BRSO relations
         lines = []
@@ -2841,12 +2332,14 @@ class ManageOrgRolesWizard(models.TransientModel):
                     'is_active': rel.is_active,
                 }))
 
-        wizard = self.create({
+        wizard_vals = {
             'org_id': org_id,
             'org_name': org_name,
-            'school_id': school_id,
             'line_ids': lines,
-        })
+        }
+        if school_id:
+            wizard_vals['school_id'] = school_id
+        wizard = self.create(wizard_vals)
 
         return {
             'type': 'ir.actions.act_window',
@@ -2857,66 +2350,21 @@ class ManageOrgRolesWizard(models.TransientModel):
         }
 
     def action_add_role(self):
-        """Add the selected role to the organization."""
+        """Add the selected role to the organization via betask."""
         self.ensure_one()
-        
+
         if not self.new_role_id:
             raise UserError("Please select a role to add.")
-        
         if not self.school_id:
             raise UserError("Please select a school organization.")
-        
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        
-        # Get or create BRSO proprelation type
-        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
-        if not brso_type:
-            brso_type = PropRelationType.create({
-                'name': 'BRSO',
-                'usage': 'Backend Role - Organization relation',
-                'is_active': True,
-            })
-        
-        # Check if relation already exists
-        existing = PropRelation.search([
-            ('proprelation_type_id', '=', brso_type.id),
-            ('id_org', '=', self.org_id.id),
-            ('id_org_parent', '=', self.school_id.id),
-            ('id_role', '=', self.new_role_id.id),
-            ('is_active', '=', True),
-        ], limit=1)
-        
-        if existing:
-            raise UserError(f"Role '{self.new_role_id.name}' is already linked to this organization.")
-        
-        # Check for inactive and reactivate
-        inactive = PropRelation.search([
-            ('proprelation_type_id', '=', brso_type.id),
-            ('id_org', '=', self.org_id.id),
-            ('id_org_parent', '=', self.school_id.id),
-            ('id_role', '=', self.new_role_id.id),
-            ('is_active', '=', False),
-        ], limit=1)
-        
-        if inactive:
-            inactive.write({'is_active': True})
-        else:
-            # Create with standardized name
-            rel_name = build_proprelation_name(
-                'BRSO',
-                id_role=self.new_role_id,
-                id_org_parent=self.school_id,
-                id_org=self.org_id
-            )
-            PropRelation.create({
-                'name': rel_name,
-                'proprelation_type_id': brso_type.id,
-                'id_org': self.org_id.id,
-                'id_org_parent': self.school_id.id,
-                'id_role': self.new_role_id.id,
-                'is_active': True,
-            })
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PROPRELATION', 'ADD', {
+            'type': 'BRSO',
+            'role_id': self.new_role_id.id,
+            'org_id': self.org_id.id,
+            'org_parent_id': self.school_id.id,
+        })
 
         # Reopen wizard with saved records
         return self.action_open(self.org_id.id, self.org_name)
@@ -2983,59 +2431,18 @@ class ManagePersonRolesWizard(models.TransientModel):
         }
 
     def action_add_role(self):
-        """Add the selected role to the person."""
+        """Add the selected role to the person via betask."""
         self.ensure_one()
 
         if not self.new_role_id:
             raise UserError("Please select a role to add.")
 
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-
-        # Get or create PPSBR proprelation type
-        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
-        if not ppsbr_type:
-            ppsbr_type = PropRelationType.create({
-                'name': 'PPSBR',
-                'usage': 'Person - Role relation',
-                'is_active': True,
-            })
-
-        # Check if relation already exists
-        existing = PropRelation.search([
-            ('proprelation_type_id', '=', ppsbr_type.id),
-            ('id_person', '=', self.person_id.id),
-            ('id_role', '=', self.new_role_id.id),
-            ('is_active', '=', True),
-        ], limit=1)
-
-        if existing:
-            raise UserError(f"Role '{self.new_role_id.name}' is already linked to this person.")
-
-        # Check for inactive and reactivate
-        inactive = PropRelation.search([
-            ('proprelation_type_id', '=', ppsbr_type.id),
-            ('id_person', '=', self.person_id.id),
-            ('id_role', '=', self.new_role_id.id),
-            ('is_active', '=', False),
-        ], limit=1)
-
-        if inactive:
-            inactive.write({'is_active': True})
-        else:
-            # Create with standardized name
-            rel_name = build_proprelation_name(
-                'PPSBR',
-                id_role=self.new_role_id,
-                id_person=self.person_id
-            )
-            PropRelation.create({
-                'name': rel_name,
-                'proprelation_type_id': ppsbr_type.id,
-                'id_person': self.person_id.id,
-                'id_role': self.new_role_id.id,
-                'is_active': True,
-            })
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PROPRELATION', 'ADD', {
+            'type': 'PPSBR',
+            'person_id': self.person_id.id,
+            'role_id': self.new_role_id.id,
+        })
 
         # Reopen wizard with saved records
         return self.action_open(self.person_id.id, self.person_name)

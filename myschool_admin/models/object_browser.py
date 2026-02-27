@@ -319,83 +319,12 @@ class ObjectBrowser(models.TransientModel):
 
     @api.model
     def move_org(self, org_id, new_parent_id):
-        """Move an organization under a new parent using proprelation."""
-        if 'myschool.proprelation' not in self.env:
-            raise UserError("PropRelation model not found")
-        
-        Org = self.env['myschool.org']
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        
-        org = Org.browse(org_id)
-        new_parent = Org.browse(new_parent_id)
-        
-        if not org.exists():
-            raise UserError("Organization not found")
-        if not new_parent.exists():
-            raise UserError("New parent organization not found")
-        
-        # Check for circular reference
-        if self._would_create_cycle(org_id, new_parent_id):
-            raise UserError("Cannot move: would create circular reference")
-        
-        # Get or create ORG-TREE proprelation type
-        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-        if not org_tree_type:
-            org_tree_type = PropRelationType.create({
-                'name': 'ORG-TREE',
-                'usage': 'Organization hierarchy relationship',
-                'is_active': True,
-            })
-        
-        # Build the relation name using standardized format
-        relation_name = build_proprelation_name(
-            'ORG-TREE',
-            id_org=org,
-            id_org_parent=new_parent
-        )
-        
-        # Find existing parent relation
-        existing = PropRelation.search([
-            ('id_org', '=', org_id),
-            ('id_org_parent', '!=', False),
-            ('is_active', '=', True),
-        ], limit=1)
-        
-        if existing:
-            # Update existing relation
-            existing.write({
-                'name': relation_name,
-                'proprelation_type_id': org_tree_type.id,
-                'id_org_parent': new_parent_id,
-            })
-        else:
-            # Create new relation
-            PropRelation.create({
-                'name': relation_name,
-                'proprelation_type_id': org_tree_type.id,
-                'id_org': org_id,
-                'id_org_parent': new_parent_id,
-                'is_active': True,
-            })
-        
-        # Update ou_fqdn fields based on new parent
-        org_short = org.name_short if hasattr(org, 'name_short') and org.name_short else org.name
-        if hasattr(new_parent, 'ou_fqdn_internal') and new_parent.ou_fqdn_internal:
-            new_ou_internal = f"ou={org_short.lower()},{new_parent.ou_fqdn_internal.lower()}"
-            org.write({'ou_fqdn_internal': new_ou_internal})
-        
-        if hasattr(new_parent, 'ou_fqdn_external') and new_parent.ou_fqdn_external:
-            new_ou_external = f"ou={org_short.lower()},{new_parent.ou_fqdn_external.lower()}"
-            org.write({'ou_fqdn_external': new_ou_external})
-        
-        # Update name_tree for this org and all descendants
-        self._update_name_tree_recursive(org_id)
-        
-        # Update role names that reference this org
-        self._update_roles_for_org(org)
-        
-        _logger.info(f"Moved org {org.name} under {new_parent.name}")
+        """Move an organization under a new parent via betask."""
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('ORG', 'UPD', {
+            'org_id': org_id,
+            'new_parent_id': new_parent_id,
+        })
         return True
     
     def _update_name_tree_recursive(self, org_id):
@@ -537,166 +466,40 @@ class ObjectBrowser(models.TransientModel):
 
     @api.model
     def move_person_to_org(self, person_id, new_org_id):
-        """Move a person to a different organization by updating PERSON-TREE relation."""
-        if 'myschool.proprelation' not in self.env:
-            raise UserError("PropRelation model not found")
-        
-        Person = self.env['myschool.person']
-        Org = self.env['myschool.org']
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        
-        person = Person.browse(person_id)
-        new_org = Org.browse(new_org_id)
-        
-        if not person.exists():
-            raise UserError("Person not found")
-        if not new_org.exists():
-            raise UserError("Organization not found")
-        
-        # Get PERSON-TREE type
-        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
-        
-        # Find existing PERSON-TREE relation for this person
-        search_domain = [
-            ('id_person', '=', person_id),
-            ('id_org', '!=', False),
-            ('is_active', '=', True),
-        ]
-        if person_tree_type:
-            search_domain.append(('proprelation_type_id', '=', person_tree_type.id))
-        
-        existing = PropRelation.search(search_domain)
-        
-        if existing:
-            # Deactivate old PERSON-TREE relations
-            existing.write({'is_active': False})
-            _logger.info(f"Deactivated {len(existing)} old PERSON-TREE relations for person {person.name}")
-        
-        # Create new PERSON-TREE relation
-        rel_name = f"PERSON-TREE:Pn={person.name},Or={new_org.name_tree or new_org.name}"
-        
-        proprel_vals = {
-            'name': rel_name,
-            'id_person': person_id,
-            'id_org': new_org_id,
-            'is_active': True,
-        }
-        if person_tree_type:
-            proprel_vals['proprelation_type_id'] = person_tree_type.id
-        
-        PropRelation.create(proprel_vals)
-        
-        _logger.info(f"Moved person {person.name} to org {new_org.name}")
+        """Move a person to a different organization via betask."""
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'UPD', {
+            'person_id': person_id,
+            'new_org_id': new_org_id,
+        })
         return True
 
     @api.model
     def remove_person_from_org(self, person_id, org_id):
-        """Remove a person from an organization (deactivate PERSON-TREE proprelation)."""
-        if 'myschool.proprelation' not in self.env:
-            raise UserError("PropRelation model not found")
-        
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        
-        # Get PERSON-TREE type
-        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
-        
-        # Find and deactivate PERSON-TREE relations
-        search_domain = [
-            ('id_person', '=', person_id),
-            ('id_org', '=', org_id),
-            ('is_active', '=', True),
-        ]
-        if person_tree_type:
-            search_domain.append(('proprelation_type_id', '=', person_tree_type.id))
-        
-        relations = PropRelation.search(search_domain)
-        
-        if relations:
-            relations.write({'is_active': False})
-            _logger.info(f"Removed person {person_id} from org {org_id} ({len(relations)} PERSON-TREE relations deactivated)")
-        
+        """Remove a person from an organization via betask."""
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PROPRELATION', 'DEACT', {
+            'person_id': person_id,
+            'org_id': org_id,
+        })
         return True
 
     @api.model
     def deactivate_person(self, person_id):
-        """Deactivate a person and all related proprelations."""
-        if 'myschool.person' not in self.env:
-            raise UserError("Person model not found")
-        
-        Person = self.env['myschool.person']
-        person = Person.browse(person_id)
-        
-        if not person.exists():
-            raise UserError("Person not found")
-        
-        # Get person name for logging
-        person_name = person.name
-        if hasattr(person, 'first_name') and person.first_name:
-            person_name = f"{person.first_name} {person_name}"
-        
-        # Deactivate the person
-        person.write({'is_active': False})
-        _logger.info(f"Deactivated person: {person_name} (id={person_id})")
-        
-        # Deactivate all related proprelations
-        if 'myschool.proprelation' in self.env:
-            PropRelation = self.env['myschool.proprelation']
-            
-            # Find all proprelations involving this person
-            relations = PropRelation.search([
-                '|', '|',
-                ('id_person', '=', person_id),
-                ('id_person_parent', '=', person_id),
-                ('id_person_child', '=', person_id),
-                ('is_active', '=', True),
-            ])
-            
-            if relations:
-                relations.write({'is_active': False})
-                _logger.info(f"Deactivated {len(relations)} proprelations for person {person_id}")
-        
+        """Deactivate a person and all related proprelations via betask."""
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'DEACT', {
+            'person_id': person_id,
+        })
         return True
 
     @api.model
     def delete_person(self, person_id):
-        """Delete a person and all related proprelations."""
-        if 'myschool.person' not in self.env:
-            raise UserError("Person model not found")
-        
-        Person = self.env['myschool.person']
-        person = Person.browse(person_id)
-        
-        if not person.exists():
-            raise UserError("Person not found")
-        
-        # Get person name for logging/messages
-        person_name = person.name
-        if hasattr(person, 'first_name') and person.first_name:
-            person_name = f"{person.first_name} {person_name}"
-        
-        # Delete all related proprelations first
-        if 'myschool.proprelation' in self.env:
-            PropRelation = self.env['myschool.proprelation']
-            
-            # Find all proprelations involving this person
-            relations = PropRelation.search([
-                '|', '|',
-                ('id_person', '=', person_id),
-                ('id_person_parent', '=', person_id),
-                ('id_person_child', '=', person_id),
-            ])
-            
-            if relations:
-                relation_count = len(relations)
-                relations.unlink()
-                _logger.info(f"Deleted {relation_count} proprelations for person {person_id}")
-        
-        # Delete the person
-        person.unlink()
-        _logger.info(f"Deleted person: {person_name} (id={person_id})")
-        
+        """Delete a person and all related proprelations via betask."""
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'DEL', {
+            'person_id': person_id,
+        })
         return True
 
     @api.model

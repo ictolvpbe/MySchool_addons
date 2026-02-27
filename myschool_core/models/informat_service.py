@@ -300,8 +300,8 @@ class InformatService(models.AbstractModel):
 
             # Analyze and create employee roles
             self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
-            #self._process_betasks('DB', 'ROLE', 'ADD')
-            #self._process_betasks('DB', 'ROLE', 'UPD')
+            self._process_betasks('DB', 'ROLE', 'ADD')
+            self._process_betasks('DB', 'ROLE', 'UPD')
 
             # NEW: Analyze employee data and create employee DB tasks (ADD/UPD/DEACT)
             if not self._sync_employees(
@@ -977,22 +977,17 @@ class InformatService(models.AbstractModel):
                 employee_json = json.loads(employee_value)
                 employee_json['instNr'] = inst_nr
 
-# 20260205 : move assignment/ambt processing to other procedure
-
-                # # Include assignments for this person and instNr
-                # if all_imported_employee_assignments:
-                #     person_assignments = []
-                #     for assign_key, assign_value in all_imported_employee_assignments.items():
-                #         # Key format: personId&instNr&assignmentId
-                #         assign_parts = assign_key.split('&')
-                #         if len(assign_parts) >= 2:
-                #             if assign_parts[0] == person_uuid and assign_parts[1] == inst_nr:
-                #                 person_assignments.append(json.loads(assign_value))
-                #     if person_assignments:
-                #         employee_json['assignments'] = person_assignments
-                #         self._create_sys_event("BETASK-001", f"Added {len(person_assignments)} assignments for {person_uuid} at {inst_nr}")
-                # else:
-                #     self._create_sys_event("BETASK-001", f"No assignments dict available for {person_uuid}")
+                # Include assignments for this person and instNr
+                if all_imported_employee_assignments:
+                    person_assignments = []
+                    for assign_key, assign_value in all_imported_employee_assignments.items():
+                        # Key format: personId&instNr&assignmentId
+                        assign_parts = assign_key.split('&')
+                        if len(assign_parts) >= 2:
+                            if assign_parts[0] == person_uuid and assign_parts[1] == inst_nr:
+                                person_assignments.append(json.loads(assign_value))
+                    if person_assignments:
+                        employee_json['assignments'] = person_assignments
 
                 # Get key fields
                 is_active_import = employee_json.get('isActive', True)
@@ -1107,11 +1102,11 @@ class InformatService(models.AbstractModel):
                 if person_details and person_details.full_json_string:
                     try:
                         current_json = json.loads(person_details.full_json_string)
-                        # Remove fields that shouldn't trigger update
+                        # Remove instNr from comparison (it's metadata, not employee data)
                         compare_current = {k: v for k, v in current_json.items()
-                                           if k not in ['instNr', 'assignments']}
+                                           if k not in ['instNr']}
                         compare_new = {k: v for k, v in employee_json.items()
-                                       if k not in ['instNr', 'assignments']}
+                                       if k not in ['instNr']}
 
                         if compare_current != compare_new:
                             data2 = {'action': 'UPDATE'}
