@@ -703,9 +703,9 @@
     min-height: 0 !important;
 }
 
-/* Ensure proper height in Odoo action manager */
-.o_action_manager,
-.o_content {
+/* Ensure proper height in Odoo action manager (scoped to object browser) */
+.o_action_manager:has(> .ob-container),
+.o_content:has(> .ob-container) {
     display: flex !important;
     flex-direction: column !important;
     height: 100% !important;
