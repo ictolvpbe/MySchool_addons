@@ -12,7 +12,7 @@
     <li>Referentie: {{ object.name }}</li>
     <li>Titel: {{ object.titel }}</li>
     <li>Type: {{ object.type }}</li>
-    <li>Datum: {{ object.datum }}</li>
+    <li>Datum: {{ object.start_date }}</li>
     <li>Kost: € {{ object.cost }}</li>
 </ul>
 <p>Gelieve deze aanvraag te beoordelen.</p>

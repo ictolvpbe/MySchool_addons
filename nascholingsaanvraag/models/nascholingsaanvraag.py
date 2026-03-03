@@ -22,6 +22,7 @@ class NascholingsaanvraagRecord(models.Model):
         required=True,
         default=lambda self: self.env.user.employee_ids[:1],
     )
+    is_owner = fields.Boolean(compute='_compute_is_owner')
     start_date = fields.Date(string='Startdatum', required=True)
     end_date = fields.Date(string='Einddatum')
     verschillende_dagen = fields.Boolean(string='Verschillende dagen', default=False)
@@ -44,6 +45,12 @@ class NascholingsaanvraagRecord(models.Model):
     )
     payment_done = fields.Boolean(string='Betaling bevestigd', default=False)
     replacement_done = fields.Boolean(string='Vervanging ingepland', default=False)
+
+    @api.depends('employee_id')
+    @api.depends_context('uid')
+    def _compute_is_owner(self):
+        for record in self:
+            record.is_owner = record.employee_id and record.employee_id.user_id == self.env.user
 
     @api.depends('verschillende_dagen', 'start_date', 'end_date', 'date_line_ids.date', 'date_line_ids.cost')
     def _compute_dates_display(self):
@@ -155,6 +162,10 @@ class NascholingsaanvraagRecord(models.Model):
             if not record.verschillende_dagen and record.end_date and record.start_date:
                 if record.end_date < record.start_date:
                     raise ValidationError("De einddatum moet op of na de startdatum liggen.")
+
+    def action_delete(self):
+        self.unlink()
+        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
 
     def _send_notification(self, template_xmlid):
         template = self.env.ref(template_xmlid, raise_if_not_found=False)

@@ -1,7 +1,7 @@
 from odoo import models, fields, api
 
 
-class MySchoolDashboard(models.TransientModel):
+class MySchoolDashboard(models.Model):
     _name = 'myschool.dashboard'
     _description = 'Mijn Dashboard'
 
@@ -73,21 +73,18 @@ class MySchoolDashboard(models.TransientModel):
     professionalisering_ids = fields.Many2many(
         'professionalisering.record', string="Professionalisering",
         compute='_compute_professionalisering_ids')
-    # --- Bypass ACL on M2M comodels for this dashboard ---
-    # The transient model only shows the current user's own records,
-    # so bypassing ACL checks is safe. Visibility is controlled by
-    # has_*_access booleans which check real permissions.
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        return super(
-            MySchoolDashboard, self.with_env(self.env(su=True))
-        ).create(vals_list)
+    # Map each comodel to its directie group (admin implies directie)
+    _DIRECTIE_GROUPS = {
+        'nascholingsaanvraag.record':
+            'nascholingsaanvraag.group_nascholingsaanvraag_directie',
+        'aanvraag_buitenschoolse_activiteit.record':
+            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie',
+        'professionalisering.record':
+            'professionalisering.group_professionalisering_directie',
+    }
 
-    def write(self, vals):
-        return super(
-            MySchoolDashboard, self.with_env(self.env(su=True))
-        ).write(vals)
+    # --- Bypass ACL on read so computed fields can access comodels ---
 
     def read(self, fields=None, load='_classic_read'):
         return super(
@@ -109,6 +106,18 @@ class MySchoolDashboard(models.TransientModel):
         except Exception:
             return False
 
+    def _is_directie_or_admin(self, model_name):
+        group_xmlid = self._DIRECTIE_GROUPS.get(model_name)
+        if not group_xmlid:
+            return False
+        return self.env(su=False).user.has_group(group_xmlid)
+
+    def _get_base_domain(self, model_name):
+        """Directie/admin see all records, medewerker only their own."""
+        if self._is_directie_or_admin(model_name):
+            return []
+        return [('employee_id.user_id', '=', self.env.uid)]
+
     @api.depends_context('uid')
     def _compute_access_rights(self):
         nascholing = self._has_access('nascholingsaanvraag.record')
@@ -125,9 +134,9 @@ class MySchoolDashboard(models.TransientModel):
     def _get_state_counts(self, model_name):
         if not self._has_access(model_name):
             return {}
-        base_domain = [('employee_id.user_id', '=', self.env.uid)]
+        domain = self._get_base_domain(model_name)
         state_counts = self.env[model_name]._read_group(
-            base_domain, groupby=['state'], aggregates=['__count'],
+            domain, groupby=['state'], aggregates=['__count'],
         )
         return {state: count for state, count in state_counts}
 
@@ -153,7 +162,17 @@ class MySchoolDashboard(models.TransientModel):
 
     @api.depends_context('uid')
     def _compute_professionalisering_counts(self):
-        counts = self._get_state_counts('professionalisering.record')
+        raw = self._get_state_counts('professionalisering.record')
+        counts = {
+            'draft': raw.get('selection_of_form', 0),
+            'submitted': (
+                raw.get('fill_in_form_binnenschoolse', 0)
+                + raw.get('fill_in_form_buitenschoolse', 0)
+                + raw.get('fill_in_form_externe', 0)
+            ),
+            'approved': raw.get('bevestiging', 0),
+            'done': raw.get('done', 0),
+        }
         for rec in self:
             rec._set_counts(rec, 'prof', counts)
 
@@ -162,7 +181,7 @@ class MySchoolDashboard(models.TransientModel):
     def _search_records(self, model_name):
         if not self._has_access(model_name):
             return False
-        domain = [('employee_id.user_id', '=', self.env.uid)]
+        domain = self._get_base_domain(model_name)
         if self.state_filter and self.state_filter != 'all':
             domain.append(('state', '=', self.state_filter))
         return self.env[model_name].search(domain)
@@ -187,13 +206,31 @@ class MySchoolDashboard(models.TransientModel):
             else:
                 rec.activiteit_ids = False
 
+    _PROF_STATE_MAP = {
+        'draft': [('state', '=', 'selection_of_form')],
+        'submitted': [('state', 'in', [
+            'fill_in_form_binnenschoolse',
+            'fill_in_form_buitenschoolse',
+            'fill_in_form_externe',
+        ])],
+        'approved': [('state', '=', 'bevestiging')],
+        'done': [('state', '=', 'done')],
+    }
+
     @api.depends('module_filter', 'state_filter')
     @api.depends_context('uid')
     def _compute_professionalisering_ids(self):
         for rec in self:
             if rec.module_filter in ('all', 'professionalisering'):
-                rec.professionalisering_ids = rec._search_records(
-                    'professionalisering.record')
+                if not self._has_access('professionalisering.record'):
+                    rec.professionalisering_ids = False
+                    continue
+                domain = self._get_base_domain('professionalisering.record')
+                if rec.state_filter and rec.state_filter != 'all':
+                    domain += self._PROF_STATE_MAP.get(
+                        rec.state_filter, [('state', '=', rec.state_filter)])
+                rec.professionalisering_ids = self.env[
+                    'professionalisering.record'].search(domain)
             else:
                 rec.professionalisering_ids = False
 
@@ -237,4 +274,3 @@ class MySchoolDashboard(models.TransientModel):
             'view_mode': 'form',
             'target': 'current',
         }
-

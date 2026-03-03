@@ -1,5 +1,5 @@
 from odoo import models, fields, api
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
 
 class ProfessionaliseringRecord(models.Model):
@@ -27,8 +27,14 @@ class ProfessionaliseringRecord(models.Model):
         required=True,
         default=lambda self: self.env.user.employee_ids[:1],
     )
-    datum = fields.Date(string='Datum', required=True)
+    is_owner = fields.Boolean(compute='_compute_is_owner')
+    start_date = fields.Date(string='Startdatum', required=True)
+    end_date = fields.Date(string='Einddatum')
+    verschillende_dagen = fields.Boolean(string='Verschillende dagen', default=False)
+    date_line_ids = fields.One2many('professionalisering.date.line', 'professionalisering_id', string='Datums')
+    dates_display = fields.Html(string='Datums', compute='_compute_dates_display', sanitize=False)
     cost = fields.Float(string='Kost (€)')
+    total_cost = fields.Float(string='Totale kost (€)', compute='_compute_total_cost')
     vak = fields.Selection([
         ('wiskunde', 'Wiskunde'),
         ('nederlands', 'Nederlands'),
@@ -44,9 +50,9 @@ class ProfessionaliseringRecord(models.Model):
     ], string='Vak')
     state = fields.Selection([
         ('selection_of_form', 'Formulier kiezen'),
-        ('fill_in_form_binnenschoolse', 'Binnenschoolse ingediend'),
-        ('fill_in_form_buitenschoolse', 'Buitenschoolse ingediend'),
-        ('fill_in_form_externe', 'Externe ingediend'),
+        ('fill_in_form_binnenschoolse', 'Ingediend'),
+        ('fill_in_form_buitenschoolse', 'Ingediend'),
+        ('fill_in_form_externe', 'Ingediend'),
         ('bevestiging', 'Bevestigd'),
         ('weigering', 'Geweigerd'),
         ('done', 'Afgerond'),
@@ -59,6 +65,46 @@ class ProfessionaliseringRecord(models.Model):
     )
     payment_done = fields.Boolean(string='Betaling bevestigd', default=False)
     replacement_done = fields.Boolean(string='Vervanging ingepland', default=False)
+
+    @api.depends('employee_id')
+    @api.depends_context('uid')
+    def _compute_is_owner(self):
+        for record in self:
+            record.is_owner = record.employee_id and record.employee_id.user_id == self.env.user
+
+    @api.depends('verschillende_dagen', 'start_date', 'end_date', 'date_line_ids.date', 'date_line_ids.cost')
+    def _compute_dates_display(self):
+        for record in self:
+            if record.verschillende_dagen:
+                all_dates = []
+                if record.start_date:
+                    all_dates.append('%s &nbsp;-&nbsp; €%.2f' % (
+                        record.start_date.strftime('%d/%m/%Y'), record.cost or 0,
+                    ))
+                for line in record.date_line_ids.sorted('date'):
+                    if line.date:
+                        all_dates.append('%s &nbsp;-&nbsp; €%.2f' % (
+                            line.date.strftime('%d/%m/%Y'), line.cost or 0,
+                        ))
+                record.dates_display = '<br/>'.join(all_dates)
+            elif record.start_date and record.end_date:
+                record.dates_display = '%s → %s' % (
+                    record.start_date.strftime('%d/%m/%Y'),
+                    record.end_date.strftime('%d/%m/%Y'),
+                )
+            elif record.start_date:
+                record.dates_display = record.start_date.strftime('%d/%m/%Y')
+            else:
+                record.dates_display = ''
+
+    @api.depends('verschillende_dagen', 'cost', 'date_line_ids.cost')
+    def _compute_total_cost(self):
+        for record in self:
+            if record.verschillende_dagen:
+                record.total_cost = (record.cost or 0) + sum(
+                    record.date_line_ids.mapped('cost'))
+            else:
+                record.total_cost = record.cost or 0
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -134,8 +180,40 @@ class ProfessionaliseringRecord(models.Model):
             if record.payment_done and record.replacement_done:
                 record.state = 'done'
 
+    @api.constrains('date_line_ids', 'start_date')
+    def _check_date_lines(self):
+        today = fields.Date.context_today(self)
+        for record in self:
+            for line in record.date_line_ids:
+                if record.start_date and line.date < record.start_date:
+                    raise ValidationError("Elke datum moet op of na de startdatum liggen.")
+                if line.date < today:
+                    raise ValidationError("Elke datum moet vandaag of in de toekomst liggen.")
+
+    @api.constrains('start_date', 'end_date', 'verschillende_dagen')
+    def _check_end_date(self):
+        for record in self:
+            if not record.verschillende_dagen and record.end_date and record.start_date:
+                if record.end_date < record.start_date:
+                    raise ValidationError("De einddatum moet op of na de startdatum liggen.")
+
+    def action_delete(self):
+        self.unlink()
+        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+
     def _send_notification(self, template_xmlid):
         template = self.env.ref(template_xmlid, raise_if_not_found=False)
         if template:
             for record in self:
                 template.send_mail(record.id, force_send=True)
+
+
+class ProfessionaliseringDateLine(models.Model):
+    _name = 'professionalisering.date.line'
+    _description = 'Professionalisering Datum'
+    _order = 'date'
+
+    professionalisering_id = fields.Many2one('professionalisering.record', required=True, ondelete='cascade')
+    professionalisering_titel = fields.Char(related='professionalisering_id.titel', string='Professionalisering')
+    date = fields.Date(string='Datum', required=True)
+    cost = fields.Float(string='Kost (€)')

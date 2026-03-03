@@ -138,6 +138,10 @@
                                    decoration-warning="state == 'submitted'"
                                    decoration-success="state in ('approved', 'done')"
                                    decoration-danger="state == 'rejected'"/>
+                            <button name="action_delete" type="object"
+                                    icon="fa-trash" title="Verwijderen"
+                                    groups="nascholingsaanvraag.group_nascholingsaanvraag_admin"
+                                    confirm="Weet u zeker dat u dit record wilt verwijderen?"/>
                         </list>
                     </field>
 
@@ -157,6 +161,10 @@
                                    decoration-warning="state == 'submitted'"
                                    decoration-success="state in ('approved', 'done')"
                                    decoration-danger="state == 'rejected'"/>
+                            <button name="action_delete" type="object"
+                                    icon="fa-trash" title="Verwijderen"
+                                    groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_admin"
+                                    confirm="Weet u zeker dat u dit record wilt verwijderen?"/>
                         </list>
                     </field>
 
@@ -168,13 +176,17 @@
                             <field name="type"/>
                             <field name="titel"/>
                             <field name="employee_id"/>
-                            <field name="datum"/>
-                            <field name="cost"/>
+                            <field name="dates_display" widget="html"/>
+                            <field name="total_cost" string="Kost"/>
                             <field name="state" widget="badge"
-                                   decoration-info="state == 'draft'"
-                                   decoration-warning="state == 'submitted'"
-                                   decoration-success="state in ('approved', 'done')"
-                                   decoration-danger="state == 'rejected'"/>
+                                   decoration-info="state == 'selection_of_form'"
+                                   decoration-warning="state in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"
+                                   decoration-success="state in ('bevestiging', 'done')"
+                                   decoration-danger="state == 'weigering'"/>
+                            <button name="action_delete" type="object"
+                                    icon="fa-trash" title="Verwijderen"
+                                    groups="professionalisering.group_professionalisering_admin"
+                                    confirm="Weet u zeker dat u dit record wilt verwijderen?"/>
                         </list>
                     </field>
                 </div>
@@ -230,6 +242,7 @@
         <field name="name">Aanvragen</field>
         <field name="res_model">myschool.dashboard</field>
         <field name="view_mode">form</field>
+        <field name="res_id" eval="ref('dashboard_singleton')"/>
         <field name="target">current</field>
     </record>
 </odoo>

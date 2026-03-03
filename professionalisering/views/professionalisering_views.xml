@@ -7,6 +7,7 @@
         <field name="arch" type="xml">
             <form>
                 <header>
+                    <field name="is_owner" invisible="1"/>
                     <!-- Employee: Submit -->
                     <button name="action_submit"
                             string="Indienen"
@@ -18,7 +19,7 @@
                             string="Opnieuw indienen"
                             type="object"
                             class="btn-secondary"
-                            invisible="state != 'weigering'"/>
+                            invisible="state != 'weigering' or not is_owner"/>
                     <!-- Directie: Approve -->
                     <button name="action_approve"
                             string="Goedkeuren"
@@ -60,7 +61,9 @@
                             <field name="type" readonly="state != 'selection_of_form'"/>
                             <field name="titel" readonly="state != 'selection_of_form'"/>
                             <field name="employee_id" readonly="state != 'selection_of_form'"/>
-                            <field name="datum" readonly="state != 'selection_of_form'"/>
+                            <field name="verschillende_dagen" readonly="state != 'selection_of_form'"/>
+                            <field name="start_date" readonly="state != 'selection_of_form'"/>
+                            <field name="end_date" readonly="state != 'selection_of_form'" invisible="verschillende_dagen == True"/>
                             <field name="cost" readonly="state != 'selection_of_form'"/>
                             <field name="vak" readonly="state != 'selection_of_form'"/>
                         </group>
@@ -71,10 +74,25 @@
                         </group>
                     </group>
                     <notebook>
+                        <page string="Datums" invisible="verschillende_dagen != True">
+                            <field name="date_line_ids" readonly="state != 'selection_of_form'">
+                                <list editable="bottom">
+                                    <field name="date"/>
+                                    <field name="cost"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Beschrijving">
                             <field name="description" readonly="state != 'selection_of_form'"/>
                         </page>
-                        <page string="Afkeuring" invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe', 'weigering')">
+                        <page string="Afkeuring" invisible="state != 'weigering'"
+                              groups="professionalisering.group_professionalisering_user">
+                            <group>
+                                <field name="rejection_reason" readonly="1"/>
+                            </group>
+                        </page>
+                        <page string="Afkeuring" invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe', 'weigering')"
+                              groups="professionalisering.group_professionalisering_directie">
                             <group>
                                 <field name="rejection_reason"
                                        readonly="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
@@ -97,8 +115,8 @@
                 <field name="type"/>
                 <field name="titel"/>
                 <field name="employee_id"/>
-                <field name="datum"/>
-                <field name="cost"/>
+                <field name="dates_display" widget="html"/>
+                <field name="total_cost" string="Kost"/>
                 <field name="state" widget="badge" decoration-info="state == 'selection_of_form'" decoration-warning="state in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')" decoration-success="state in ('bevestiging', 'done')" decoration-danger="state == 'weigering'"/>
             </list>
         </field>

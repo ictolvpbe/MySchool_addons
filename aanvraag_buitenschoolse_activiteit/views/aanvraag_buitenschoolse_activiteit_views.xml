@@ -7,6 +7,7 @@
         <field name="arch" type="xml">
             <form>
                 <header>
+                    <field name="is_owner" invisible="1"/>
                     <button name="action_submit"
                             string="Indienen"
                             type="object"
@@ -16,7 +17,7 @@
                             string="Opnieuw indienen"
                             type="object"
                             class="btn-secondary"
-                            invisible="state != 'rejected'"/>
+                            invisible="state != 'rejected' or not is_owner"/>
                     <button name="action_approve"
                             string="Goedkeuren"
                             type="object"
