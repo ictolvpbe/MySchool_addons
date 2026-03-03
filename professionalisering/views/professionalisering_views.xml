@@ -12,42 +12,42 @@
                             string="Indienen"
                             type="object"
                             class="btn-primary"
-                            invisible="state != 'draft'"/>
+                            invisible="state != 'selection_of_form'"/>
                     <!-- Employee: Reset to draft after rejection -->
                     <button name="action_reset_draft"
                             string="Opnieuw indienen"
                             type="object"
                             class="btn-secondary"
-                            invisible="state != 'rejected'"/>
+                            invisible="state != 'weigering'"/>
                     <!-- Directie: Approve -->
                     <button name="action_approve"
                             string="Goedkeuren"
                             type="object"
                             class="btn-primary"
                             groups="professionalisering.group_professionalisering_directie"
-                            invisible="state != 'submitted'"/>
+                            invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
                     <!-- Directie: Reject -->
                     <button name="action_reject"
                             string="Afkeuren"
                             type="object"
                             class="btn-danger"
                             groups="professionalisering.group_professionalisering_directie"
-                            invisible="state != 'submitted'"/>
+                            invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
                     <!-- Boekhouding: Confirm payment -->
                     <button name="action_confirm_payment"
                             string="Betaling bevestigd"
                             type="object"
                             class="btn-primary"
                             groups="professionalisering.group_professionalisering_boekhouding"
-                            invisible="state != 'approved' or payment_done == True"/>
+                            invisible="state != 'bevestiging' or payment_done == True"/>
                     <!-- Vervangingen: Confirm replacement -->
                     <button name="action_confirm_replacement"
                             string="Vervanging ingepland"
                             type="object"
                             class="btn-primary"
                             groups="professionalisering.group_professionalisering_vervangingen"
-                            invisible="state != 'approved' or replacement_done == True"/>
-                    <field name="state" widget="statusbar" statusbar_visible="draft,submitted,approved,done"/>
+                            invisible="state != 'bevestiging' or replacement_done == True"/>
+                    <field name="state" widget="statusbar" statusbar_visible="selection_of_form,fill_in_form_binnenschoolse,bevestiging,done"/>
                 </header>
                 <sheet>
                     <div class="oe_title">
@@ -57,28 +57,27 @@
                     </div>
                     <group>
                         <group>
-                            <field name="type" readonly="state != 'draft'"/>
-                            <field name="titel" readonly="state != 'draft'"/>
-                            <field name="employee_id" readonly="state != 'draft'"/>
-                            <field name="datum" readonly="state != 'draft'"/>
-                            <field name="cost" readonly="state != 'draft'"/>
-                            <field name="vak" readonly="state != 'draft'"
-                                   invisible="type != 'binnenschools'"/>
+                            <field name="type" readonly="state != 'selection_of_form'"/>
+                            <field name="titel" readonly="state != 'selection_of_form'"/>
+                            <field name="employee_id" readonly="state != 'selection_of_form'"/>
+                            <field name="datum" readonly="state != 'selection_of_form'"/>
+                            <field name="cost" readonly="state != 'selection_of_form'"/>
+                            <field name="vak" readonly="state != 'selection_of_form'"/>
                         </group>
                         <group>
-                            <field name="directie_id" invisible="state not in ('approved', 'rejected', 'done')"/>
-                            <field name="payment_done" readonly="1" invisible="state not in ('approved', 'done')"/>
-                            <field name="replacement_done" readonly="1" invisible="state not in ('approved', 'done')"/>
+                            <field name="directie_id" invisible="state not in ('bevestiging', 'weigering', 'done')"/>
+                            <field name="payment_done" readonly="1" invisible="state not in ('bevestiging', 'done')"/>
+                            <field name="replacement_done" readonly="1" invisible="state not in ('bevestiging', 'done')"/>
                         </group>
                     </group>
                     <notebook>
                         <page string="Beschrijving">
-                            <field name="description" readonly="state != 'draft'"/>
+                            <field name="description" readonly="state != 'selection_of_form'"/>
                         </page>
-                        <page string="Afkeuring" invisible="state not in ('submitted', 'rejected')">
+                        <page string="Afkeuring" invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe', 'weigering')">
                             <group>
                                 <field name="rejection_reason"
-                                       readonly="state != 'submitted'"/>
+                                       readonly="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
                             </group>
                         </page>
                     </notebook>
@@ -100,7 +99,7 @@
                 <field name="employee_id"/>
                 <field name="datum"/>
                 <field name="cost"/>
-                <field name="state" widget="badge" decoration-info="state == 'draft'" decoration-warning="state == 'submitted'" decoration-success="state in ('approved', 'done')" decoration-danger="state == 'rejected'"/>
+                <field name="state" widget="badge" decoration-info="state == 'selection_of_form'" decoration-warning="state in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')" decoration-success="state in ('bevestiging', 'done')" decoration-danger="state == 'weigering'"/>
             </list>
         </field>
     </record>
@@ -116,14 +115,14 @@
                 <field name="name"/>
                 <filter string="Mijn aanvragen" name="my_requests" domain="[('employee_id.user_id', '=', uid)]"/>
                 <separator/>
-                <filter string="Te beoordelen" name="to_approve" domain="[('state', '=', 'submitted')]"/>
-                <filter string="Betaling openstaand" name="payment_pending" domain="[('state', '=', 'approved'), ('payment_done', '=', False)]"/>
-                <filter string="Vervanging openstaand" name="replacement_pending" domain="[('state', '=', 'approved'), ('replacement_done', '=', False)]"/>
+                <filter string="Te beoordelen" name="to_approve" domain="[('state', 'in', ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe'))]"/>
+                <filter string="Betaling openstaand" name="payment_pending" domain="[('state', '=', 'bevestiging'), ('payment_done', '=', False)]"/>
+                <filter string="Vervanging openstaand" name="replacement_pending" domain="[('state', '=', 'bevestiging'), ('replacement_done', '=', False)]"/>
                 <separator/>
-                <filter string="Concept" name="state_draft" domain="[('state', '=', 'draft')]"/>
-                <filter string="Ingediend" name="state_submitted" domain="[('state', '=', 'submitted')]"/>
-                <filter string="Goedgekeurd" name="state_approved" domain="[('state', '=', 'approved')]"/>
-                <filter string="Afgekeurd" name="state_rejected" domain="[('state', '=', 'rejected')]"/>
+                <filter string="Formulier kiezen" name="state_selection_of_form" domain="[('state', '=', 'selection_of_form')]"/>
+                <filter string="Ingediend" name="state_submitted" domain="[('state', 'in', ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe'))]"/>
+                <filter string="Bevestigd" name="state_bevestiging" domain="[('state', '=', 'bevestiging')]"/>
+                <filter string="Geweigerd" name="state_weigering" domain="[('state', '=', 'weigering')]"/>
                 <filter string="Afgerond" name="state_done" domain="[('state', '=', 'done')]"/>
                 <group>
                     <filter string="Status" name="group_state" domain="[]" context="{'group_by': 'state'}"/>

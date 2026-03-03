@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_myschool_dashboard_form" model="ir.ui.view">
+        <field name="name">myschool.dashboard.form</field>
+        <field name="model">myschool.dashboard</field>
+        <field name="arch" type="xml">
+            <form string="Aanvragen" create="false" delete="false" class="o_myschool_dashboard">
+                <header>
+                    <field name="has_nascholing_access" invisible="1"/>
+                    <field name="has_activiteit_access" invisible="1"/>
+                    <field name="has_professionalisering_access" invisible="1"/>
+                    <field name="module_filter" invisible="1"/>
+                    <button name="action_select_all"
+                            type="object"
+                            string="Alle Aanvragen"
+                            class="btn btn-secondary"/>
+                    <button name="action_select_nascholing"
+                            type="object"
+                            string="Nascholingsaanvragen"
+                            class="btn btn-secondary"
+                            invisible="not has_nascholing_access"/>
+                    <button name="action_select_activiteit"
+                            type="object"
+                            string="Buitenschoolse Activiteiten"
+                            class="btn btn-secondary"
+                            invisible="not has_activiteit_access"/>
+                    <button name="action_select_professionalisering"
+                            type="object"
+                            string="Professionalisering"
+                            class="btn btn-secondary"
+                            invisible="not has_professionalisering_access"/>
+                    <button name="action_create_nascholing"
+                            type="object"
+                            string="Nieuwe Nascholingsaanvraag"
+                            class="btn btn-primary"
+                            icon="fa-plus"
+                            invisible="module_filter != 'nascholingsaanvraag' or not has_nascholing_access"/>
+                    <button name="action_create_activiteit"
+                            type="object"
+                            string="Nieuwe Buitenschoolse Activiteit"
+                            class="btn btn-primary"
+                            icon="fa-plus"
+                            invisible="module_filter != 'buitenschoolse_activiteit' or not has_activiteit_access"/>
+                    <button name="action_create_professionalisering"
+                            type="object"
+                            string="Nieuwe Professionalisering"
+                            class="btn btn-primary"
+                            icon="fa-plus"
+                            invisible="module_filter != 'professionalisering' or not has_professionalisering_access"/>
+                </header>
+                <div class="o_form_view">
+
+                    <!-- Nascholingsaanvragen counters -->
+                    <div class="mb-3 ms-2"
+                         invisible="not has_nascholing_access or module_filter not in ('all', 'nascholingsaanvraag')">
+                        <h5>Nascholingsaanvragen</h5>
+                        <div class="d-flex gap-3">
+                            <span class="badge text-bg-info fs-6">
+                                <field name="nascholing_draft" class="d-inline"/> Concept
+                            </span>
+                            <span class="badge text-bg-warning fs-6">
+                                <field name="nascholing_submitted" class="d-inline"/> Ingediend
+                            </span>
+                            <span class="badge text-bg-success fs-6">
+                                <field name="nascholing_approved" class="d-inline"/> Goedgekeurd
+                            </span>
+                            <span class="badge text-bg-success fs-6">
+                                <field name="nascholing_done" class="d-inline"/> Afgerond
+                            </span>
+                            <span class="badge text-bg-secondary fs-6">
+                                <field name="nascholing_total" class="d-inline"/> Totaal
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Buitenschoolse Activiteiten counters -->
+                    <div class="mb-3 ms-2"
+                         invisible="not has_activiteit_access or module_filter not in ('all', 'buitenschoolse_activiteit')">
+                        <h5>Buitenschoolse Activiteiten</h5>
+                        <div class="d-flex gap-3">
+                            <span class="badge text-bg-info fs-6">
+                                <field name="activiteit_draft" class="d-inline"/> Concept
+                            </span>
+                            <span class="badge text-bg-warning fs-6">
+                                <field name="activiteit_submitted" class="d-inline"/> Ingediend
+                            </span>
+                            <span class="badge text-bg-success fs-6">
+                                <field name="activiteit_approved" class="d-inline"/> Goedgekeurd
+                            </span>
+                            <span class="badge text-bg-success fs-6">
+                                <field name="activiteit_done" class="d-inline"/> Afgerond
+                            </span>
+                            <span class="badge text-bg-secondary fs-6">
+                                <field name="activiteit_total" class="d-inline"/> Totaal
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Professionalisering counters -->
+                    <div class="mb-3 ms-2"
+                         invisible="not has_professionalisering_access or module_filter not in ('all', 'professionalisering')">
+                        <h5>Professionalisering</h5>
+                        <div class="d-flex gap-3">
+                            <span class="badge text-bg-info fs-6">
+                                <field name="prof_draft" class="d-inline"/> Concept
+                            </span>
+                            <span class="badge text-bg-warning fs-6">
+                                <field name="prof_submitted" class="d-inline"/> Ingediend
+                            </span>
+                            <span class="badge text-bg-success fs-6">
+                                <field name="prof_approved" class="d-inline"/> Goedgekeurd
+                            </span>
+                            <span class="badge text-bg-success fs-6">
+                                <field name="prof_done" class="d-inline"/> Afgerond
+                            </span>
+                            <span class="badge text-bg-secondary fs-6">
+                                <field name="prof_total" class="d-inline"/> Totaal
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Status filter -->
+                    <group invisible="module_filter == 'all'">
+                        <field name="state_filter" widget="radio" options="{'horizontal': true}"/>
+                    </group>
+
+                    <!-- Nascholingsaanvragen list -->
+                    <field name="nascholing_ids" nolabel="1" readonly="1"
+                           invisible="not has_nascholing_access or module_filter != 'nascholingsaanvraag'">
+                        <list>
+                            <field name="name"/>
+                            <field name="titel"/>
+                            <field name="employee_id"/>
+                            <field name="dates_display" widget="html"/>
+                            <field name="total_cost" string="Kost"/>
+                            <field name="state" widget="badge"
+                                   decoration-info="state == 'draft'"
+                                   decoration-warning="state == 'submitted'"
+                                   decoration-success="state in ('approved', 'done')"
+                                   decoration-danger="state == 'rejected'"/>
+                        </list>
+                    </field>
+
+                    <!-- Buitenschoolse Activiteiten list -->
+                    <field name="activiteit_ids" nolabel="1" readonly="1"
+                           invisible="not has_activiteit_access or module_filter != 'buitenschoolse_activiteit'">
+                        <list>
+                            <field name="name"/>
+                            <field name="titel"/>
+                            <field name="employee_id"/>
+                            <field name="bestemming"/>
+                            <field name="datum"/>
+                            <field name="aantal_leerlingen"/>
+                            <field name="cost"/>
+                            <field name="state" widget="badge"
+                                   decoration-info="state == 'draft'"
+                                   decoration-warning="state == 'submitted'"
+                                   decoration-success="state in ('approved', 'done')"
+                                   decoration-danger="state == 'rejected'"/>
+                        </list>
+                    </field>
+
+                    <!-- Professionalisering list -->
+                    <field name="professionalisering_ids" nolabel="1" readonly="1"
+                           invisible="not has_professionalisering_access or module_filter != 'professionalisering'">
+                        <list>
+                            <field name="name"/>
+                            <field name="type"/>
+                            <field name="titel"/>
+                            <field name="employee_id"/>
+                            <field name="datum"/>
+                            <field name="cost"/>
+                            <field name="state" widget="badge"
+                                   decoration-info="state == 'draft'"
+                                   decoration-warning="state == 'submitted'"
+                                   decoration-success="state in ('approved', 'done')"
+                                   decoration-danger="state == 'rejected'"/>
+                        </list>
+                    </field>
+                </div>
+            </form>
+        </field>
+    </record>
+
+    <!-- Add module name title to each form view -->
+    <record id="view_nascholingsaanvraag_form_title" model="ir.ui.view">
+        <field name="name">nascholingsaanvraag.record.form.title</field>
+        <field name="model">nascholingsaanvraag.record</field>
+        <field name="inherit_id" ref="nascholingsaanvraag.view_nascholingsaanvraag_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@class='oe_title']" position="before">
+                <h2 class="text-muted">Nascholingsaanvraag</h2>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_buitenschoolse_activiteit_form_title" model="ir.ui.view">
+        <field name="name">aanvraag_buitenschoolse_activiteit.record.form.title</field>
+        <field name="model">aanvraag_buitenschoolse_activiteit.record</field>
+        <field name="inherit_id" ref="aanvraag_buitenschoolse_activiteit.view_buitenschoolse_activiteit_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@class='oe_title']" position="before">
+                <h2 class="text-muted">Buitenschoolse Activiteit</h2>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_professionalisering_form_title" model="ir.ui.view">
+        <field name="name">professionalisering.record.form.title</field>
+        <field name="model">professionalisering.record</field>
+        <field name="inherit_id" ref="professionalisering.view_professionalisering_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@class='oe_title']" position="before">
+                <h2 class="text-muted">Professionalisering</h2>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Hide the individual module root menus -->
+    <record id="nascholingsaanvraag.menu_nascholingsaanvraag_root" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+    <record id="aanvraag_buitenschoolse_activiteit.menu_buitenschoolse_activiteit_root" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+    <record id="professionalisering.menu_professionalisering_root" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+    <record id="action_myschool_dashboard" model="ir.actions.act_window">
+        <field name="name">Aanvragen</field>
+        <field name="res_model">myschool.dashboard</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+    </record>
+</odoo>

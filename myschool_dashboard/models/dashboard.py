@@ -103,8 +103,11 @@ class MySchoolDashboard(models.TransientModel):
 
     def _has_access(self, model_name):
         env_real = self.env(su=False)
-        return env_real[model_name].check_access_rights(
-            'read', raise_exception=False)
+        try:
+            env_real[model_name].check_access('read')
+            return True
+        except Exception:
+            return False
 
     @api.depends_context('uid')
     def _compute_access_rights(self):
