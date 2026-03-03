@@ -124,9 +124,10 @@
          Canvas (SVG)
          ============================================================ -->
     <t t-name="process_mapper.Canvas">
-        <div class="pm-canvas-wrapper"
+        <div t-att-class="'pm-canvas-wrapper' + (state.cursorGrab ? ' pm-grab-cursor' : '')"
              t-on-dragover="onDragOver"
-             t-on-drop="onDrop">
+             t-on-drop="onDrop"
+             t-on-auxclick.prevent="() => {}">
             <svg t-ref="svgCanvas" class="pm-canvas"
                  t-on-mousedown="onSvgMouseDown"
                  t-on-mousemove="onSvgMouseMove"
@@ -173,10 +174,7 @@
                                   t-att-x="0" t-att-y="lane.y_position"
                                   width="5000" height="28"
                                   t-on-mousedown.stop="(ev) => this.onLaneDragMouseDown(ev, lane)"/>
-                            <text t-att-x="12" t-att-y="lane.y_position + 20"
-                                  class="pm-lane-label" style="pointer-events: none;">
-                                <t t-esc="lane.name"/>
-                            </text>
+                            <!-- Label rendered in sticky overlay group below -->
                             <!-- Lane bottom resize handle -->
                             <rect class="pm-lane-resize-handle"
                                   t-att-x="0" t-att-y="lane.y_position + lane.height - 4"
@@ -465,6 +463,20 @@
                               class="pm-selection-rect"/>
                     </t>
 
+                </g>
+
+                <!-- Sticky lane labels: follow vertical pan + zoom, stay at left edge -->
+                <g t-att-transform="getStickyLabelTransform()">
+                    <t t-foreach="props.lanes" t-as="lane" t-key="lane.id">
+                        <rect t-att-x="0" t-att-y="lane.y_position"
+                              width="28" t-att-height="lane.height"
+                              t-att-fill="lane.color || '#E3F2FD'" fill-opacity="0.85"
+                              style="pointer-events: none;"/>
+                        <text t-att-x="14" t-att-y="lane.y_position + 20"
+                              class="pm-lane-label" style="pointer-events: none;">
+                            <t t-esc="lane.name"/>
+                        </text>
+                    </t>
                 </g>
             </svg>
             <div class="pm-canvas-info">

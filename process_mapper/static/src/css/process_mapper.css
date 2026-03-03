@@ -123,6 +123,14 @@
     display: block;
 }
 
+.pm-canvas-wrapper.pm-grab-cursor .pm-canvas {
+    cursor: grab;
+}
+
+.pm-canvas-wrapper.pm-grab-cursor .pm-canvas:active {
+    cursor: grabbing;
+}
+
 .pm-canvas-info {
     position: absolute;
     bottom: 8px;

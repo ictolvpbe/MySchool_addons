@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="email_template_notify_directie" model="mail.template">
+        <field name="name">Buitenschoolse Activiteit - Notificatie Directie</field>
+        <field name="model_id" ref="model_aanvraag_buitenschoolse_activiteit_record"/>
+        <field name="subject">Nieuwe aanvraag buitenschoolse activiteit: {{ object.name }}</field>
+        <field name="email_to">{{ (object.directie_id.work_email or '') }}</field>
+        <field name="body_html"><![CDATA[
+<p>Beste Directie,</p>
+<p>Er is een nieuwe aanvraag voor een buitenschoolse activiteit ingediend door <strong>{{ object.employee_id.name }}</strong>.</p>
+<ul>
+    <li>Referentie: {{ object.name }}</li>
+    <li>Titel: {{ object.titel }}</li>
+    <li>Bestemming: {{ object.bestemming }}</li>
+    <li>Datum: {{ object.datum }}</li>
+    <li>Aantal leerlingen: {{ object.aantal_leerlingen }}</li>
+    <li>Geschatte kost: € {{ object.cost }}</li>
+</ul>
+<p>Gelieve deze aanvraag te beoordelen.</p>
+        ]]></field>
+    </record>
+
+    <record id="email_template_notify_employee_approved" model="mail.template">
+        <field name="name">Buitenschoolse Activiteit - Goedgekeurd</field>
+        <field name="model_id" ref="model_aanvraag_buitenschoolse_activiteit_record"/>
+        <field name="subject">Uw aanvraag {{ object.name }} is goedgekeurd</field>
+        <field name="email_to">{{ (object.employee_id.work_email or '') }}</field>
+        <field name="body_html"><![CDATA[
+<p>Beste {{ object.employee_id.name }},</p>
+<p>Uw aanvraag voor buitenschoolse activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is goedgekeurd.</p>
+<p>De reservatie en betaling worden verder afgehandeld.</p>
+        ]]></field>
+    </record>
+
+    <record id="email_template_notify_employee_rejected" model="mail.template">
+        <field name="name">Buitenschoolse Activiteit - Afgekeurd</field>
+        <field name="model_id" ref="model_aanvraag_buitenschoolse_activiteit_record"/>
+        <field name="subject">Uw aanvraag {{ object.name }} is afgekeurd</field>
+        <field name="email_to">{{ (object.employee_id.work_email or '') }}</field>
+        <field name="body_html"><![CDATA[
+<p>Beste {{ object.employee_id.name }},</p>
+<p>Uw aanvraag voor buitenschoolse activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is helaas afgekeurd.</p>
+{% if object.rejection_reason %}
+<p>Reden: {{ object.rejection_reason }}</p>
+{% endif %}
+<p>U kunt de aanvraag aanpassen en opnieuw indienen.</p>
+        ]]></field>
+    </record>
+</odoo>

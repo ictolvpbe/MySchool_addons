@@ -1950,6 +1950,7 @@ class ProcessMapperCanvas extends Component {
         this.laneResizing = null;
         this.laneDragging = null;
         this.draggingLabel = null;
+        this.spaceHeld = false;
         this.state = useState({
             rubberBandX: 0,
             rubberBandY: 0,
@@ -1958,11 +1959,44 @@ class ProcessMapperCanvas extends Component {
             editingStepId: null,
             editingText: '',
             selectionRect: null,
+            cursorGrab: false,
+        });
+
+        // Spacebar pan: hold Space to enter pan mode
+        this._onKeyDown = (ev) => {
+            const tag = document.activeElement?.tagName;
+            const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+            if (ev.code === 'Space' && !this.spaceHeld && !this.state.editingStepId && !isTyping) {
+                ev.preventDefault();
+                this.spaceHeld = true;
+                this.state.cursorGrab = true;
+            }
+        };
+        this._onKeyUp = (ev) => {
+            if (ev.code === 'Space') {
+                this.spaceHeld = false;
+                if (!this.panning) {
+                    this.state.cursorGrab = false;
+                }
+            }
+        };
+
+        onMounted(() => {
+            document.addEventListener('keydown', this._onKeyDown);
+            document.addEventListener('keyup', this._onKeyUp);
+        });
+        onWillUnmount(() => {
+            document.removeEventListener('keydown', this._onKeyDown);
+            document.removeEventListener('keyup', this._onKeyUp);
         });
     }
 
     getTransform() {
         return `translate(${this.props.panX}, ${this.props.panY}) scale(${this.props.zoom})`;
+    }
+
+    getStickyLabelTransform() {
+        return `translate(0, ${this.props.panY}) scale(${this.props.zoom})`;
     }
 
     getStepClass(step) {
@@ -2323,6 +2357,13 @@ class ProcessMapperCanvas extends Component {
 
     // --- Event handlers ---
     onSvgMouseDown(ev) {
+        // Middle mouse button or spacebar+click: always pan (even over elements)
+        if (ev.button === 1 || (ev.button === 0 && this.spaceHeld)) {
+            ev.preventDefault();
+            this.panning = { startX: ev.clientX, startY: ev.clientY, origPanX: this.props.panX, origPanY: this.props.panY };
+            this.state.cursorGrab = true;
+            return;
+        }
         if (ev.button !== 0) return;
         if (ev.target === this.svgRef.el || ev.target.tagName === 'rect' && ev.target.classList.contains('pm-canvas-bg')) {
             if (ev.shiftKey) {
@@ -2604,6 +2645,9 @@ class ProcessMapperCanvas extends Component {
         }
         this.panning = null;
         this.dragging = null;
+        if (!this.spaceHeld) {
+            this.state.cursorGrab = false;
+        }
     }
 
     onStepMouseDown(ev, step) {
@@ -2846,7 +2890,22 @@ class ProcessMapperCanvas extends Component {
     onWheel(ev) {
         ev.preventDefault();
         const delta = ev.deltaY > 0 ? -0.1 : 0.1;
-        this.props.onZoom(delta);
+        // Zoom toward cursor position
+        const svg = this.svgRef.el;
+        if (svg) {
+            const rect = svg.getBoundingClientRect();
+            const mouseX = ev.clientX - rect.left;
+            const mouseY = ev.clientY - rect.top;
+            const oldZoom = this.props.zoom;
+            const newZoom = Math.min(3.0, Math.max(0.25, oldZoom + delta));
+            const scale = newZoom / oldZoom;
+            const newPanX = mouseX - (mouseX - this.props.panX) * scale;
+            const newPanY = mouseY - (mouseY - this.props.panY) * scale;
+            this.props.onPan(newPanX, newPanY);
+            this.props.onZoom(delta);
+        } else {
+            this.props.onZoom(delta);
+        }
     }
 
     onDragOver(ev) {
@@ -4005,8 +4064,14 @@ class ProcessMapperClient extends Component {
 
     onFitView() {
         this.state.zoom = 1.0;
-        this.state.panX = 0;
-        this.state.panY = 0;
+        const margin = 20;
+        this.state.panX = margin;
+        if (this.state.lanes.length > 0) {
+            const minY = Math.min(...this.state.lanes.map(l => l.y_position));
+            this.state.panY = -(minY - margin);
+        } else {
+            this.state.panY = margin;
+        }
     }
 
     onToggleGrid() {
@@ -4014,6 +4079,24 @@ class ProcessMapperClient extends Component {
     }
 
     onPan(x, y) {
+        const margin = 20;
+        const zoom = this.state.zoom;
+
+        // Don't pan past the left edge of lanes (x=0 in SVG)
+        // Screen left edge in SVG coords: -panX / zoom
+        // Constraint: -panX / zoom >= -margin  →  panX <= margin * zoom
+        x = Math.min(x, margin * zoom);
+
+        // Don't pan past the top of the first lane
+        // Screen top edge in SVG coords: -panY / zoom
+        // Constraint: -panY / zoom >= minLaneY - margin  →  panY <= -(minLaneY - margin) * zoom
+        if (this.state.lanes.length > 0) {
+            const minY = Math.min(...this.state.lanes.map(l => l.y_position));
+            y = Math.min(y, -(minY - margin) * zoom);
+        } else {
+            y = Math.min(y, margin * zoom);
+        }
+
         this.state.panX = x;
         this.state.panY = y;
     }

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="module_category_nascholingsaanvraag" model="ir.module.category">
+        <field name="name">Nascholingsaanvraag</field>
+        <field name="sequence">50</field>
+    </record>
+
+    <!-- Privilege: hierarchical role selection (dropdown in user settings) -->
+    <record id="privilege_nascholingsaanvraag" model="res.groups.privilege">
+        <field name="name">Rol</field>
+        <field name="placeholder">Geen toegang</field>
+        <field name="category_id" ref="module_category_nascholingsaanvraag"/>
+        <field name="sequence">10</field>
+    </record>
+
+    <!-- Hierarchical groups: Medewerker → Directie → Beheerder -->
+    <record id="group_nascholingsaanvraag_user" model="res.groups">
+        <field name="name">Medewerker</field>
+        <field name="privilege_id" ref="privilege_nascholingsaanvraag"/>
+        <field name="sequence">10</field>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <record id="group_nascholingsaanvraag_directie" model="res.groups">
+        <field name="name">Directie</field>
+        <field name="privilege_id" ref="privilege_nascholingsaanvraag"/>
+        <field name="sequence">20</field>
+        <field name="implied_ids" eval="[(4, ref('group_nascholingsaanvraag_user'))]"/>
+    </record>
+
+    <record id="group_nascholingsaanvraag_admin" model="res.groups">
+        <field name="name">Beheerder</field>
+        <field name="privilege_id" ref="privilege_nascholingsaanvraag"/>
+        <field name="sequence">30</field>
+        <field name="implied_ids" eval="[(4, ref('group_nascholingsaanvraag_directie'))]"/>
+    </record>
+
+    <!-- Independent groups: checkboxes in user settings (no privilege_id) -->
+    <record id="group_nascholingsaanvraag_boekhouding" model="res.groups">
+        <field name="name">Nascholing - Boekhouding</field>
+        <field name="implied_ids" eval="[(4, ref('group_nascholingsaanvraag_user'))]"/>
+    </record>
+
+    <record id="group_nascholingsaanvraag_vervangingen" model="res.groups">
+        <field name="name">Nascholing - Vervangingen</field>
+        <field name="implied_ids" eval="[(4, ref('group_nascholingsaanvraag_user'))]"/>
+    </record>
+</odoo>
