@@ -85,7 +85,8 @@ class BeTaskService(models.AbstractModel):
             domain.append(('status', '=', status))
         
         return self.env['myschool.betask'].search(domain)
-    
+
+
     @api.model
     def find_by_data_and_status(self, data, status):
         """

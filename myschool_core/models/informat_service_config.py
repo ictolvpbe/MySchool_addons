@@ -85,7 +85,31 @@ class InformatServiceConfig(models.Model):
         default=False,
         help='If enabled, use local files instead of API calls'
     )
-    
+
+    sync_roles = fields.Boolean(
+        string='Sync Roles',
+        default=True,
+        help='Sync employee roles from Informat'
+    )
+
+    sync_employees = fields.Boolean(
+        string='Sync Employees',
+        default=True,
+        help='Sync employee data from Informat'
+    )
+
+    sync_classes = fields.Boolean(
+        string='Sync Classes',
+        default=False,
+        help='Sync class groups (orgs) from student registrations'
+    )
+
+    sync_students = fields.Boolean(
+        string='Sync Students',
+        default=False,
+        help='Sync student data and relations from Informat'
+    )
+
     sync_days_back = fields.Integer(
         string='Sync Days Back',
         default=15,

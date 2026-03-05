@@ -54,6 +54,7 @@ class BeTaskType(models.Model):
             ('ROLE', 'Role'),
             ('PERIOD', 'Period'),
             ('PROPRELATION', 'Prop Relation'),
+            ('RELATION', 'Relation'),
             ('COM_EMAIL', 'Email Address'),
             ('COM_ADDRESS', 'Physical Address'),
             ('COM_PHONE', 'Phone Number'),

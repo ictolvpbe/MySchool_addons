@@ -44,6 +44,14 @@
                             <field name="timeout_seconds"/>
                         </group>
                     </group>
+                    <group>
+                        <group string="Sync Phases">
+                            <field name="sync_roles"/>
+                            <field name="sync_employees"/>
+                            <field name="sync_classes"/>
+                            <field name="sync_students"/>
+                        </group>
+                    </group>
                     
                     <notebook>
                         <page string="API Configuration" name="api_config">

@@ -88,7 +88,7 @@ class InformatService(models.AbstractModel):
     def _get_module_path(self) -> str:
         """
         Get the path to this module's directory.
-        
+
         @return: Absolute path to the module directory
         """
         # Get the path of this file and navigate up to module root
@@ -96,6 +96,21 @@ class InformatService(models.AbstractModel):
         service_dir = os.path.dirname(current_file)
         module_dir = os.path.dirname(service_dir)
         return module_dir
+
+    def _get_admin_module_path(self) -> str:
+        """
+        Get the path to the myschool_admin module directory.
+        Student dev files are stored in myschool_admin, not myschool_core.
+
+        @return: Absolute path to the myschool_admin module directory
+        """
+        from odoo.modules.module import get_module_path
+        path = get_module_path('myschool_admin')
+        if path:
+            return path
+        # Fallback: navigate from myschool_core sibling directory
+        addons_dir = os.path.dirname(self._get_module_path())
+        return os.path.join(addons_dir, 'myschool_admin')
 
     def _get_odoo_data_dir(self) -> str:
         """
@@ -156,8 +171,9 @@ class InformatService(models.AbstractModel):
     def _get_storage_path_for_students(self, dev_mode: bool = False) -> str:
         """
         Get storage path specifically for student files.
-        Students have a subdirectory in dev mode.
-        
+        In dev mode, student files are in a students subdirectory:
+            myschool_core/storage/sapimport/dev/students/
+
         @param dev_mode: If True, return dev path with students subdirectory
         @return: Absolute path to students storage directory
         """
@@ -237,112 +253,123 @@ class InformatService(models.AbstractModel):
     # =========================================================================
 
     @api.model
-    def execute_sync(self, dev_mode: bool = True) -> bool:
+    def execute_sync(self, dev_mode: bool = None) -> bool:
         """
         Main synchronization method - retrieves data from SAP, analyzes it,
         and creates the required tasks.
-        
+
         This method is designed to be called by a scheduled cron job.
         Equivalent to Java: executeSync()
-        
-        @param dev_mode: If True, uses local dev files instead of API calls
+
+        @param dev_mode: If provided, overrides config setting. Otherwise reads from config.
         @return: True if successful, False if errors occurred
         """
+        # Load configuration
+        config = self.env['myschool.informat.service.config'].get_config()
+        if dev_mode is None:
+            dev_mode = config.dev_mode
 
-        dev_mode = False
-        _logger.info("SAPSYNC-001: Starting Informat sync process")
+        _logger.info("SAPSYNC-001: Starting Informat sync process (dev_mode=%s)", dev_mode)
 
-
-
-        # # Debug: print all myschool models
-        # myschool_models = [m for m in self.env.registry.models.keys() if 'myschool' in m]
-        # print("Available models:", sorted(myschool_models))
-        #
-        # # Check if sys_event exists
-        # print("sys_event exists:", 'myschool.sys.event' in self.env.registry.models)
-        #
-        # SysEvent = self.env.get('myschool.sys.event')
-        # print("SysEvent:", SysEvent, type(SysEvent))
-        #
-        #
-        #
         SysEvent = self.env.get('myschool.sys.event.service')
-        SysEvent.create_sys_event("SAPSYNC-001", "Start Syncing Employee information",True)
+        SysEvent.create_sys_event("SAPSYNC-001", "Start Syncing information", True)
 
         try:
             # Ensure storage directories exist
             if not self._ensure_storage_directories(dev_mode):
                 return False
-            
+
             # Calculate timestamp for last sync (15 days ago)
             timestamp_latest_sync = (datetime.now() - timedelta(days=15)).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-            
+
             # Check for blocking tasks
             if self._check_blocking_tasks():
                 return False
-            
-            # =====================================================
-            # PHASE 1: Employee Processing
-            # =====================================================
-            
-            # Get Employee related information
-            all_imported_employees = self._get_employees_from_informat('', dev_mode)
-            all_imported_employee_assignments = self._get_employee_assignments_from_informat(dev_mode)
-            
-            if all_imported_employees is None:
-                self._create_sys_error("SAPSYNC-900", "Error in getEmployeesFromInformat")
-                return False
-                
-            if all_imported_employee_assignments is None:
-                self._create_sys_error("SAPSYNC-900", "Error in getEmployeeAssignmentsFromInformat")
-            else:
-                self._create_sys_event("SAPSYNC-001", f"Loaded {len(all_imported_employee_assignments)} employee assignments")
-
-            # Analyze and create employee roles
-            self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
-            self._process_betasks('DB', 'ROLE', 'ADD')
-            self._process_betasks('DB', 'ROLE', 'UPD')
-
-            # NEW: Analyze employee data and create employee DB tasks (ADD/UPD/DEACT)
-            if not self._sync_employees(
-                all_imported_employees,
-                all_imported_employee_assignments
-            ):
-                self._create_sys_error("SAPSYNC-900", "Error in _sync_employees")
-                return False
 
             # =====================================================
-            # PHASE 2: Student Processing
+            # PHASE 1a: Role Processing
             # =====================================================
-            
-            # Retrieve Registration and Student information
-            # all_imported_registrations = self._get_registrations_from_informat('', dev_mode)
-            # all_imported_students = self._get_students_from_informat('', '', dev_mode)
-            #
-            # if all_imported_registrations is None:
-            #     self._create_sys_error("SAPSYNC-900", "Error in getRegistrationsFromInformat")
-            #     return False
-            #
-            # if all_imported_students is None:
-            #     self._create_sys_error("SAPSYNC-900", "Error in getStudentsFromInformat")
-            #     return False
-            #
-            # Process Org (class groups) tasks
-            # self._analyze_student_data_and_create_org_tasks(all_imported_registrations)
-            # self._process_betasks('DB', 'ORG', 'ADD')
-            # self._process_betasks('DB', 'ORG', 'UPDATE')
-            #
-            # # Process Relations
-            # self._analyze_data_and_create_relation_tasks(all_imported_students)
-            # self._process_betasks('DB', 'RELATION', 'ADD')
-            # self._process_betasks('DB', 'RELATION', 'UPD')
-            #
-            # # Process Students
-            # self._analyze_data_and_create_student_tasks(all_imported_registrations, all_imported_students)
-            # self._process_betasks('DB', 'STUDENT', 'ADD')
-            # self._process_betasks('LDAP', 'STUDENT', 'ADD')
-            # self._process_betasks('DB', 'STUDENT', 'UPD')
-            #
+
+            all_imported_employee_assignments = None
+
+            if config.sync_roles or config.sync_employees:
+                # Assignments are needed for both roles and employees
+                all_imported_employee_assignments = self._get_employee_assignments_from_informat(dev_mode)
+
+                if all_imported_employee_assignments is None:
+                    self._create_sys_error("SAPSYNC-900", "Error in getEmployeeAssignmentsFromInformat")
+                else:
+                    self._create_sys_event("SAPSYNC-001", f"Loaded {len(all_imported_employee_assignments)} employee assignments")
+
+            if config.sync_roles and all_imported_employee_assignments is not None:
+                self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
+                self._process_betasks('DB', 'ROLE', 'ADD')
+                self._process_betasks('DB', 'ROLE', 'UPD')
+
+            # =====================================================
+            # PHASE 1b: Employee Processing
+            # =====================================================
+
+            if config.sync_employees:
+                all_imported_employees = self._get_employees_from_informat('', dev_mode)
+
+                if all_imported_employees is None:
+                    self._create_sys_error("SAPSYNC-900", "Error in getEmployeesFromInformat")
+                    return False
+
+                if not self._sync_employees(
+                    all_imported_employees,
+                    all_imported_employee_assignments
+                ):
+                    self._create_sys_error("SAPSYNC-900", "Error in _sync_employees")
+                    return False
+
+            # =====================================================
+            # PHASE 2a: Class (Org) Processing
+            # =====================================================
+
+            all_imported_registrations = None
+            all_imported_students = None
+
+            if config.sync_classes or config.sync_students:
+                # Registrations are needed for both classes and students
+                all_imported_registrations = self._get_registrations_from_informat('', dev_mode)
+
+                if all_imported_registrations is None:
+                    self._create_sys_error("SAPSYNC-900", "Error in getRegistrationsFromInformat")
+                    return False
+
+            if config.sync_classes and all_imported_registrations is not None:
+                self._analyze_student_data_and_create_org_tasks(all_imported_registrations)
+                self._process_betasks('DB', 'ORG', 'ADD')
+                self._process_betasks('DB', 'ORG', 'UPD')
+
+            # =====================================================
+            # PHASE 2b: Student Processing
+            # =====================================================
+
+            if config.sync_students:
+                all_imported_students = self._get_students_from_informat('', '', dev_mode)
+
+                if all_imported_students is None:
+                    self._create_sys_error("SAPSYNC-900", "Error in getStudentsFromInformat")
+                    return False
+
+                # Process Students (needs registrations too)
+                if all_imported_registrations is not None:
+                    self._analyze_data_and_create_student_tasks(all_imported_registrations, all_imported_students)
+                    self._process_betasks('DB', 'STUDENT', 'ADD')
+                    self._process_betasks('DB', 'STUDENT', 'UPD')
+
+
+
+                # Process Relations
+                # self._analyze_data_and_create_relation_tasks(all_imported_students)   TODO: reactivate when parents need to be able to login
+                # self._process_betasks('DB', 'RELATION', 'ADD')
+                # self._process_betasks('DB', 'RELATION', 'UPD')
+
+
+
             self._create_sys_event("SAPSYNC", "All tasks processed without errors")
             return True
             
@@ -473,10 +500,11 @@ class InformatService(models.AbstractModel):
                 institution_number = school.inst_nr
                 
                 if dev_mode:
-                    # Use local development files
+                    # Use local development files (registrations are in students subdirectory)
                     json_file_path = self._get_file_path(
-                        f"dev-registrations-{institution_number}.json", 
-                        dev_mode=True
+                        f"dev-registrations-{institution_number}.json",
+                        dev_mode=True,
+                        is_student=True
                     )
                     registrations_data = self._read_json_file(json_file_path)
                     
@@ -1717,92 +1745,85 @@ class InformatService(models.AbstractModel):
         
         try:
             self._create_sys_event("SAPSYNC-001", "Start analysing Registrations for ORG Betask creation")
-            
+
             # Get current period
             Period = self.env['myschool.period']
             PeriodType = self.env['myschool.period.type']
-            
+
             school_year_type = PeriodType.search([('name', '=', 'SCHOOLJAAR')], limit=1)
             current_period = Period.search([
                 ('is_active', '=', True),
                 ('period_type_id', '=', school_year_type.id)
             ], limit=1)
-            
+
+            schoolyear_name = current_period.name if current_period else ''
+
             # Get org types
             OrgType = self.env['myschool.org.type']
-            org_type_group = OrgType.search([('name', '=', 'GROUP')], limit=1)
-            
+            org_type_group = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
+
             Org = self.env['myschool.org']
             checked_classes: List[str] = []
-            
+
             for persoon_id, registration_json in all_registrations.items():
                 registration = json.loads(registration_json)
-                
+
                 self._create_sys_event("SAPSYNC-001", f"Processing registration for {persoon_id}")
-                
+
                 # Process inschrKlassen (class registrations)
                 inschr_klassen = registration.get('inschrklassen', []) or registration.get('inschrKlassen', [])
                 inst_nr = registration.get('instelnr', '')
-                
+
                 for klas in inschr_klassen:
                     klas_code = klas.get('klasCode', '')
-                    this_class = f"{klas_code}-{inst_nr}"
+                    classgroup_fullname = f"{klas_code}-{inst_nr}"
                     task_action = ''
-                    
+
                     # Skip if already checked
-                    if this_class in checked_classes:
+                    if classgroup_fullname in checked_classes:
                         continue
-                    
-                    # Check if class exists in database
-                    existing_classes = Org.search([
-                        ('name_short', '=', klas_code),
-                        ('period_id', '=', current_period.id),
+
+                    # Check if classgroup exists in database by its unique fullname
+                    existing_class = Org.search([
+                        ('name', '=', classgroup_fullname),
                         ('org_type_id', '=', org_type_group.id),
                         ('is_active', '=', True)
-                    ])
-                    
-                    if not existing_classes:
+                    ], limit=1)
+
+                    if not existing_class:
                         task_action = 'ADD'
-                        checked_classes.append(this_class)
-                    else:
-                        # Check if class exists for this institution
-                        class_found = False
-                        for org in existing_classes:
-                            if org.inst_nr == inst_nr:
-                                class_found = True
-                                checked_classes.append(this_class)
-                                break
-                        
-                        if not class_found:
-                            task_action = 'ADD'
-                            checked_classes.append(this_class)
-                    
+
+                    checked_classes.append(classgroup_fullname)
+
                     # Create task if needed
                     if task_action:
                         task_data = {
-                            'orgtype': 'GROUP',
+                            'orgtype': 'CLASSGROUP',
                             'isadm': 'false',
-                            'name': klas_code,
+                            'name': classgroup_fullname,
+                            'name_short': klas_code,
                             'instnr': inst_nr,
-                            'period': current_period.id
+                            'period': current_period.id,
+                            'schoolyear': schoolyear_name
                         }
                         self._create_betask('DB', 'ORG', task_action, json.dumps(task_data), '')
-            
+
             # Check for classes to deactivate
             all_active_classes = Org.search([
-                ('period_id', '=', current_period.id),
                 ('org_type_id', '=', org_type_group.id),
                 ('is_active', '=', True)
             ])
-            
+
             for org in all_active_classes:
                 class_key = f"{org.name_short}-{org.inst_nr}"
                 if class_key not in checked_classes:
                     task_data = {
                         'orgId': org.id,
-                        'name': org.name_short,
+                        'name': org.name,
+                        'name_short': org.name_short,
                         'instnr': org.inst_nr,
-                        'period': current_period.id
+                        'period': current_period.id,
+                        'schoolyear': schoolyear_name
                     }
                     self._create_betask('DB', 'ORG', 'DEACT', json.dumps(task_data), '')
             

@@ -2884,3 +2884,177 @@ class BackendTaskRollbackWizard(models.TransientModel):
                 })
             except Exception as e:
                 _logger.warning(f"Could not create rollback system event: {e}")
+
+
+class InitSchoolyearWizard(models.TransientModel):
+    _name = 'myschool.init.schoolyear.wizard'
+    _description = 'Init Schooljaar Wizard'
+
+    new_schoolyear_name = fields.Char(
+        string='New Schoolyear',
+        required=True,
+        default=lambda self: self._default_new_schoolyear_name(),
+    )
+
+    def _default_new_schoolyear_name(self):
+        """Suggest next schoolyear by parsing CurrentSchoolYear and incrementing."""
+        ConfigItem = self.env['myschool.config.item']
+        current = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
+        if current and '-' in current:
+            try:
+                parts = current.split('-')
+                return f"{int(parts[0]) + 1}-{int(parts[1]) + 1}"
+            except (ValueError, IndexError):
+                pass
+        return ''
+
+    def action_init(self):
+        """Create PPSBR relations for all students in active classgroups for the new schoolyear."""
+        self.ensure_one()
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+        OrgType = self.env['myschool.org.type']
+        Role = self.env['myschool.role']
+        Period = self.env['myschool.period']
+        PeriodType = self.env['myschool.period.type']
+        ConfigItem = self.env['myschool.config.item']
+        CiRelation = self.env['myschool.ci.relation']
+
+        # TODO: reactivate steps below when ready
+
+        # # 1. Find Period with name = new_schoolyear_name and type SCHOOLJAAR
+        # school_year_type = PeriodType.search([('name', '=', 'SCHOOLJAAR')], limit=1)
+        # if not school_year_type:
+        #     return self._notify('danger', 'PeriodType SCHOOLJAAR not found.')
+        #
+        # new_period = Period.search([
+        #     ('name', '=', self.new_schoolyear_name),
+        #     ('period_type_id', '=', school_year_type.id),
+        # ], limit=1)
+        # if not new_period:
+        #     return self._notify('danger',
+        #         f'Period "{self.new_schoolyear_name}" with type SCHOOLJAAR not found. '
+        #         'Create it first via Master Data > Periods.')
+
+        # # 2. Find STUDENT backend role
+        # student_role = Role.search([('name', '=', 'STUDENT')], limit=1)
+        # if not student_role:
+        #     return self._notify('danger', 'Backend role STUDENT not found.')
+
+        # # 3. Find PPSBR and PERSON-TREE proprelation types
+        # ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        # person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        # if not ppsbr_type:
+        #     return self._notify('danger', 'PropRelation type PPSBR not found.')
+
+        # # 4. Find all active classgroup orgs
+        # classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
+        # if not classgroup_type:
+        #     return self._notify('danger', 'OrgType CLASSGROUP not found.')
+        #
+        # classgroups = Org.search([
+        #     ('org_type_id', '=', classgroup_type.id),
+        #     ('is_active', '=', True),
+        # ])
+        # if not classgroups:
+        #     return self._notify('warning', 'No active classgroups found.')
+        #
+        # created = 0
+        # skipped = 0
+        # errors = 0
+        #
+        # for cg in classgroups:
+        #     # Find school org by inst_nr (first active non-CLASSGROUP org with same inst_nr)
+        #     school_org = Org.search([
+        #         ('inst_nr', '=', cg.inst_nr),
+        #         ('is_active', '=', True),
+        #         ('org_type_id', '!=', classgroup_type.id),
+        #     ], limit=1) if cg.inst_nr else None
+        #
+        #     if not school_org:
+        #         _logger.warning(f'[INIT-SY] No school org found for classgroup {cg.name} (inst_nr={cg.inst_nr})')
+        #         errors += 1
+        #         continue
+        #
+        #     # Find all students via PERSON-TREE relations
+        #     if not person_tree_type:
+        #         continue
+        #
+        #     person_trees = PropRelation.search([
+        #         ('proprelation_type_id', '=', person_tree_type.id),
+        #         ('id_org', '=', cg.id),
+        #         ('is_active', '=', True),
+        #     ])
+        #
+        #     for pt in person_trees:
+        #         person = pt.id_person
+        #         if not person:
+        #             continue
+        #
+        #         # Check if PPSBR already exists for this person + period + org + role
+        #         existing = PropRelation.search([
+        #             ('proprelation_type_id', '=', ppsbr_type.id),
+        #             ('id_person', '=', person.id),
+        #             ('id_period', '=', new_period.id),
+        #             ('id_org', '=', school_org.id),
+        #             ('id_role', '=', student_role.id),
+        #         ], limit=1)
+        #
+        #         if existing:
+        #             skipped += 1
+        #             continue
+        #
+        #         try:
+        #             ppsbr_name = build_proprelation_name(
+        #                 'PPSBR',
+        #                 id_person=person,
+        #                 id_role=student_role,
+        #                 id_org=school_org,
+        #                 id_period=new_period,
+        #             )
+        #             PropRelation.create({
+        #                 'name': ppsbr_name,
+        #                 'proprelation_type_id': ppsbr_type.id,
+        #                 'id_person': person.id,
+        #                 'id_role': student_role.id,
+        #                 'id_org': school_org.id,
+        #                 'id_org_parent': school_org.id,
+        #                 'id_period': new_period.id,
+        #                 'is_active': True,
+        #                 'is_organisational': True,
+        #                 'automatic_sync': True,
+        #                 'start_date': fields.Datetime.now(),
+        #             })
+        #             created += 1
+        #         except Exception as e:
+        #             _logger.error(f'[INIT-SY] Error creating PPSBR for {person.name}: {e}')
+        #             errors += 1
+
+        # # 5. Update CurrentSchoolYear config item
+        # ci_relation = CiRelation.search([
+        #     ('id_ci.name', '=', 'CurrentSchoolYear'),
+        #     ('isactive', '=', True),
+        # ], limit=1)
+        # if ci_relation and ci_relation.id_ci:
+        #     ci_relation.id_ci.set_value(self.new_schoolyear_name)
+        #     _logger.info(f'[INIT-SY] Updated CurrentSchoolYear to {self.new_schoolyear_name}')
+
+        # 6. Return placeholder notification
+        return self._notify('info',
+            f'Init Schooljaar wizard opened for "{self.new_schoolyear_name}". '
+            'Processing steps are currently deactivated.')
+
+    def _notify(self, ntype, message):
+        """Return a notification action."""
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Init Schooljaar',
+                'message': message,
+                'type': ntype,
+                'sticky': True,
+            },
+        }

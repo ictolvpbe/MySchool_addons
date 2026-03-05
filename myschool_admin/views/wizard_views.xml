@@ -639,4 +639,37 @@
         <field name="target">new</field>
     </record>
 
+    <!-- ========================================= -->
+    <!-- INIT SCHOOLJAAR WIZARD -->
+    <!-- ========================================= -->
+
+    <record id="view_init_schoolyear_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.init.schoolyear.wizard.form</field>
+        <field name="model">myschool.init.schoolyear.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Init Schooljaar">
+                <group>
+                    <div class="alert alert-info" role="alert">
+                        <strong>Init Schooljaar</strong> creates PPSBR relations for all students
+                        in active classgroups for the new schoolyear period.
+                    </div>
+                </group>
+                <group>
+                    <field name="new_schoolyear_name"/>
+                </group>
+                <footer>
+                    <button name="action_init" type="object" string="Init" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_init_schoolyear_wizard" model="ir.actions.act_window">
+        <field name="name">Init Schooljaar</field>
+        <field name="res_model">myschool.init.schoolyear.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
 </odoo>

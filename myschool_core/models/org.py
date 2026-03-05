@@ -230,3 +230,149 @@ class Org(models.Model):
         })
 
         _logger.info(f'Audit task created: MANUAL_ORG_{action} for {self.name}')
+
+    # =========================================================================
+    # Recalculate ORG-TREE for Classgroups
+    # =========================================================================
+
+    @api.model
+    def recalculate_classgroup_org_trees(self):
+        """Recalculate ORG-TREE relations for all active classgroups.
+
+        For each classgroup, the parent org is resolved via the OuForClasses
+        CI relation linked to the school org (found by inst_nr).
+        """
+        Org = self.env['myschool.org']
+        OrgType = self.env['myschool.org.type']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        ConfigItem = self.env['myschool.config.item']
+        CiRelation = self.env['myschool.ci.relation']
+
+        # Get ORG-TREE type
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        if not org_tree_type:
+            org_tree_type = PropRelationType.create({'name': 'ORG-TREE', 'is_active': True})
+
+        # Get CLASSGROUP org type
+        classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
+        if not classgroup_type:
+            _logger.warning('[ORG-TREE-RECALC] CLASSGROUP org type NOT FOUND')
+            return {'removed': 0, 'created': 0, 'skipped': 0, 'errors': ['CLASSGROUP org type not found']}
+
+        classgroups = Org.search([
+            ('org_type_id', '=', classgroup_type.id),
+            ('is_active', '=', True)
+        ])
+        _logger.info(f'[ORG-TREE-RECALC] Found {len(classgroups)} active classgroups')
+
+        # Remove existing ORG-TREE relations for classgroups
+        removed = 0
+        if classgroups:
+            old_rels = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org', 'in', classgroups.ids),
+                ('id_org_parent', '!=', False),
+            ])
+            removed = len(old_rels)
+            _logger.info(f'[ORG-TREE-RECALC] Removing {removed} old ORG-TREE relations')
+            old_rels.unlink()
+
+        # Cache: inst_nr -> parent org (resolved via OuForClasses CI)
+        parent_cache = {}
+        success = 0
+        skipped = 0
+        errors = []
+
+        for cg in classgroups:
+            inst_nr = cg.inst_nr
+            if inst_nr in parent_cache:
+                parent_org = parent_cache[inst_nr]
+                _logger.info(f'[ORG-TREE-RECALC] Cache hit for inst_nr={inst_nr} -> parent={parent_org.name if parent_org else "None"}')
+            else:
+                parent_org = None
+                # Step 1: Find school org for this inst_nr
+                school_org = Org.search([
+                    ('inst_nr', '=', inst_nr),
+                    ('org_type_id', '!=', classgroup_type.id),
+                    ('is_active', '=', True),
+                ], limit=1)
+
+                if not school_org:
+                    _logger.warning(f'[ORG-TREE-RECALC] inst_nr={inst_nr}: NO school_org found')
+                    parent_cache[inst_nr] = None
+                    skipped += 1
+                    errors.append(f"{cg.name}: no school_org for inst_nr {inst_nr}")
+                    continue
+
+                _logger.info(f'[ORG-TREE-RECALC] inst_nr={inst_nr}: school_org={school_org.name} '
+                    f'(name_short={school_org.name_short}, is_administrative={school_org.is_administrative})')
+
+                # Step 2: Determine which org to use for OuForClasses CI lookup
+                # If administrative, get its parent from ORG-TREE
+                ci_lookup_org = school_org
+                if school_org.is_administrative:
+                    parent_rel = PropRelation.search([
+                        ('proprelation_type_id', '=', org_tree_type.id),
+                        ('id_org', '=', school_org.id),
+                        ('id_org_parent', '!=', False),
+                        ('is_active', '=', True),
+                    ], limit=1)
+                    if parent_rel and parent_rel.id_org_parent:
+                        ci_lookup_org = parent_rel.id_org_parent
+                        _logger.info(f'[ORG-TREE-RECALC]   administrative -> ORG-TREE parent: {ci_lookup_org.name} '
+                            f'(name_short={ci_lookup_org.name_short})')
+                    else:
+                        _logger.warning(f'[ORG-TREE-RECALC]   administrative but no ORG-TREE parent found for {school_org.name_short}')
+
+                # Step 3: Look up OuForClasses CI
+                ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')
+                _logger.info(f'[ORG-TREE-RECALC]   OuForClasses on {ci_lookup_org.name_short} -> {ou_value!r}')
+
+                # Step 4: Find the org with that name_short as a direct child of ci_lookup_org
+                if ou_value:
+                    child_rels = PropRelation.search([
+                        ('proprelation_type_id', '=', org_tree_type.id),
+                        ('id_org_parent', '=', ci_lookup_org.id),
+                        ('is_active', '=', True),
+                    ])
+                    child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+
+                    if child_org_ids:
+                        parent_org = Org.search([
+                            ('id', 'in', child_org_ids),
+                            ('name_short', '=', ou_value),
+                            ('is_active', '=', True),
+                        ], limit=1)
+
+                    if parent_org:
+                        _logger.info(f'[ORG-TREE-RECALC]   parent org -> {parent_org.name} '
+                            f'(name_short={parent_org.name_short}, inst_nr={parent_org.inst_nr})')
+                    else:
+                        _logger.warning(f'[ORG-TREE-RECALC]   parent org NOT FOUND as child of {ci_lookup_org.name_short} with name_short={ou_value}')
+
+                parent_cache[inst_nr] = parent_org
+
+            if not parent_org or parent_org.id == cg.id:
+                skipped += 1
+                errors.append(f"{cg.name}: no parent resolved for inst_nr {inst_nr}")
+                _logger.warning(f'[ORG-TREE-RECALC] SKIPPED {cg.name}: no parent org resolved for inst_nr={inst_nr}')
+                continue
+
+            or_p = parent_org.name_tree or parent_org.name
+            or_c = cg.name_tree or cg.name
+            rel_name = f"ORG-TREE|OrP:{or_p}|Or:{or_c}"
+
+            _logger.info(f'[ORG-TREE-RECALC] LINK {cg.name} (inst_nr={inst_nr}) -> {parent_org.name} (name_short={parent_org.name_short}, inst_nr={parent_org.inst_nr})')
+
+            PropRelation.create({
+                'name': rel_name,
+                'proprelation_type_id': org_tree_type.id,
+                'id_org': cg.id,
+                'id_org_parent': parent_org.id,
+                'is_active': True,
+            })
+            success += 1
+
+        _logger.info(f'[ORG-TREE-RECALC] DONE: removed={removed}, created={success}, skipped={skipped}')
+        return {'removed': removed, 'created': success, 'skipped': skipped, 'total': len(classgroups), 'errors': errors}

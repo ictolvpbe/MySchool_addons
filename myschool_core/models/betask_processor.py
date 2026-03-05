@@ -477,7 +477,8 @@ class BeTaskProcessor(models.AbstractModel):
         
         if 'name' in org_json:
             vals['name'] = org_json['name']
-            vals['name_short'] = org_json.get('name', '')[:20]
+            # Use explicit name_short if provided, otherwise fall back to name
+            vals['name_short'] = org_json.get('name_short', org_json['name'])[:20]
         
         if 'instnr' in org_json:
             vals['inst_nr'] = org_json['instnr']
@@ -852,7 +853,229 @@ class BeTaskProcessor(models.AbstractModel):
         PersonDetails.create(details_vals)
 
         _logger.info(f"Created student {new_person.name} (ID: {new_person.id})")
+
+        # Create PPSBR and PERSON-TREE relations for the student
+        effective_inst_nr = inst_nr or registration_json.get('instelnr', '')
+        self._create_student_relations(new_person, registration_json, effective_inst_nr)
+
         return new_person
+
+    def _create_student_relations(self, person, registration_json: dict, inst_nr: str):
+        """
+        Create PPSBR and PERSON-TREE relations for a student.
+
+        1. Determine active class from inschrKlassen (no einddatum).
+        2. Create PPSBR: person + current schoolyear + school org (instnr) + STUDENT role.
+        3. Create PERSON-TREE: person linked to the class-org.
+           The class-org is found by matching klasCode under the non-admin parent
+           of the org with the given instnr.
+        """
+        Org = self.env['myschool.org']
+        OrgType = self.env['myschool.org.type']
+        Role = self.env['myschool.role']
+        Period = self.env['myschool.period']
+        PeriodType = self.env['myschool.period.type']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        ConfigItem = self.env['myschool.config.item']
+
+        # --- Determine active class from inschrKlassen ---
+        inschr_klassen = registration_json.get('inschrKlassen', []) or registration_json.get('inschrklassen', [])
+        if not inschr_klassen:
+            _logger.warning(f'[STUDENT-REL] No inschrKlassen for {person.name}, skipping relations')
+            return
+
+        # Active class = the one without einddatum
+        active_class = None
+        for klas in inschr_klassen:
+            if not klas.get('einddatum'):
+                active_class = klas
+                break
+
+        if not active_class:
+            _logger.warning(f'[STUDENT-REL] No active class (without einddatum) for {person.name}, skipping relations')
+            return
+
+        klas_code = active_class.get('klasCode', '')
+        _logger.info(f'[STUDENT-REL] {person.name}: active class={klas_code}, inst_nr={inst_nr}')
+
+        # --- Get current schoolyear period ---
+        school_year_type = PeriodType.search([('name', '=', 'SCHOOLJAAR')], limit=1)
+        current_period = None
+        if school_year_type:
+            current_period = Period.search([
+                ('is_active', '=', True),
+                ('period_type_id', '=', school_year_type.id)
+            ], limit=1)
+        if not current_period:
+            current_period = Period.search([('is_active', '=', True)], limit=1)
+
+        schoolyear_name = current_period.name if current_period else ''
+
+        # --- Find school org by instnr ---
+        school_org = Org.search([
+            ('inst_nr', '=', inst_nr),
+            ('is_active', '=', True),
+        ], limit=1)
+        if not school_org:
+            _logger.warning(f'[STUDENT-REL] No school org found for inst_nr={inst_nr}')
+            return
+
+        # --- Find STUDENT backend role ---
+        student_role = Role.search([('name', '=', 'STUDENT')], limit=1)
+        if not student_role:
+            _logger.warning(f'[STUDENT-REL] STUDENT role not found')
+            return
+
+        # --- Create PPSBR: person + period + school org + STUDENT role ---
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if not ppsbr_type:
+            _logger.warning(f'[STUDENT-REL] PPSBR proprelation type not found')
+            return
+
+        # Check if PPSBR already exists
+        existing_ppsbr = PropRelation.search([
+            ('id_person', '=', person.id),
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('id_org', '=', school_org.id),
+            ('id_role', '=', student_role.id),
+            ('is_active', '=', True),
+        ], limit=1)
+
+        if not existing_ppsbr:
+            ppsbr_name = build_proprelation_name(
+                'PPSBR', id_person=person, id_role=student_role,
+                id_org=school_org, id_period=current_period)
+            ppsbr_vals = {
+                'name': ppsbr_name,
+                'proprelation_type_id': ppsbr_type.id,
+                'id_person': person.id,
+                'id_role': student_role.id,
+                'id_org': school_org.id,
+                'id_org_parent': school_org.id,
+                'is_active': True,
+                'is_organisational': True,
+                'automatic_sync': True,
+                'start_date': fields.Datetime.now(),
+            }
+            if current_period:
+                ppsbr_vals['id_period'] = current_period.id
+            if hasattr(student_role, 'priority'):
+                ppsbr_vals['priority'] = student_role.priority
+
+            PropRelation.create(ppsbr_vals)
+            _logger.info(f'[STUDENT-REL] Created PPSBR for {person.name} at {school_org.name} with STUDENT role')
+        else:
+            _logger.info(f'[STUDENT-REL] PPSBR already exists for {person.name} at {school_org.name}')
+
+        # --- Find class-org for PERSON-TREE ---
+        classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        if not classgroup_type or not org_tree_type:
+            _logger.warning(f'[STUDENT-REL] CLASSGROUP type or ORG-TREE type not found, skipping PERSON-TREE')
+            return
+
+        # Determine non-admin parent for CI lookup (same logic as recalculate_classgroup_org_trees)
+        ci_lookup_org = school_org
+        if school_org.is_administrative:
+            parent_rel = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org', '=', school_org.id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ], limit=1)
+            if parent_rel and parent_rel.id_org_parent:
+                ci_lookup_org = parent_rel.id_org_parent
+                _logger.info(f'[STUDENT-REL] admin org {school_org.name_short} -> non-admin parent {ci_lookup_org.name_short}')
+
+        # Get OuForClasses CI to find the parent org for classgroups
+        ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')
+
+        class_org = None
+        if ou_value:
+            # Find the OuForClasses org as a direct child of ci_lookup_org
+            child_rels = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org_parent', '=', ci_lookup_org.id),
+                ('is_active', '=', True),
+            ])
+            child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+
+            ou_for_classes_org = None
+            if child_org_ids:
+                ou_for_classes_org = Org.search([
+                    ('id', 'in', child_org_ids),
+                    ('name_short', '=', ou_value),
+                    ('is_active', '=', True),
+                ], limit=1)
+
+            if ou_for_classes_org:
+                # Find the class-org by fullname under ou_for_classes_org
+                classgroup_fullname = f"{klas_code}-{inst_nr}"
+                class_org = Org.search([
+                    ('name', '=', classgroup_fullname),
+                    ('org_type_id', '=', classgroup_type.id),
+                    ('is_active', '=', True),
+                ], limit=1)
+                if not class_org:
+                    # Fallback: search by name_short
+                    class_org_candidates = PropRelation.search([
+                        ('proprelation_type_id', '=', org_tree_type.id),
+                        ('id_org_parent', '=', ou_for_classes_org.id),
+                        ('is_active', '=', True),
+                    ])
+                    candidate_ids = [r.id_org.id for r in class_org_candidates if r.id_org]
+                    if candidate_ids:
+                        class_org = Org.search([
+                            ('id', 'in', candidate_ids),
+                            ('name_short', '=', klas_code),
+                            ('org_type_id', '=', classgroup_type.id),
+                            ('is_active', '=', True),
+                        ], limit=1)
+
+        if not class_org:
+            _logger.warning(f'[STUDENT-REL] Class org not found for klasCode={klas_code}, inst_nr={inst_nr}, skipping PERSON-TREE')
+            return
+
+        _logger.info(f'[STUDENT-REL] Class org resolved: {class_org.name} (id={class_org.id})')
+
+        # --- Create PERSON-TREE: person linked to class-org ---
+        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        if not person_tree_type:
+            _logger.warning(f'[STUDENT-REL] PERSON-TREE proprelation type not found')
+            return
+
+        # Check if PERSON-TREE already exists
+        existing_tree = PropRelation.search([
+            ('id_person', '=', person.id),
+            ('proprelation_type_id', '=', person_tree_type.id),
+            ('is_active', '=', True),
+        ], limit=1)
+
+        tree_name = build_proprelation_name(
+            'PERSON-TREE', id_person=person, id_role=student_role, id_org=class_org)
+        tree_vals = {
+            'name': tree_name,
+            'proprelation_type_id': person_tree_type.id,
+            'id_person': person.id,
+            'id_org': class_org.id,
+            'id_role': student_role.id,
+            'is_active': True,
+            'is_organisational': True,
+            'automatic_sync': True,
+        }
+        if current_period:
+            tree_vals['id_period'] = current_period.id
+        if hasattr(student_role, 'priority'):
+            tree_vals['priority'] = student_role.priority
+
+        if existing_tree:
+            existing_tree.write(tree_vals)
+            _logger.info(f'[STUDENT-REL] Updated PERSON-TREE for {person.name} -> {class_org.name}')
+        else:
+            PropRelation.create(tree_vals)
+            _logger.info(f'[STUDENT-REL] Created PERSON-TREE for {person.name} -> {class_org.name}')
 
     def _update_person_from_student_json(
         self,
@@ -1534,11 +1757,19 @@ class BeTaskProcessor(models.AbstractModel):
         inst_nr = data.get('instnr', '')
 
         Org = self.env['myschool.org']
+        # Search by fullname first (handles classgroups with schoolyear in name),
+        # then fall back to name_short + inst_nr for other org types
         existing = Org.search([
-            ('name_short', '=', org_name),
+            ('name', '=', org_name),
             ('inst_nr', '=', inst_nr),
             ('is_active', '=', True)
         ], limit=1)
+        if not existing:
+            existing = Org.search([
+                ('name_short', '=', data.get('name_short', org_name)),
+                ('inst_nr', '=', inst_nr),
+                ('is_active', '=', True)
+            ], limit=1)
 
         if existing:
             _logger.warning(f'Org {org_name} already exists, converting to UPDATE')

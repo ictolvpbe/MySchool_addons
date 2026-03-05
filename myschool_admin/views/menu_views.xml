@@ -287,7 +287,7 @@
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_recalculate_org_trees"
-              name="Recalculate ORG-TREE"
+              name="Recalculate ORG-TREE Classgroups"
               parent="menu_configuration"
               action="action_recalculate_all_org_trees"
               sequence="115"
@@ -298,6 +298,13 @@
               parent="menu_configuration"
               action="action_recalculate_all_person_trees"
               sequence="120"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_init_schoolyear"
+              name="Init Schooljaar"
+              parent="menu_configuration"
+              action="action_init_schoolyear_wizard"
+              sequence="130"
               groups="myschool_core.group_myschool_core_admin"/>
 
 </odoo>
