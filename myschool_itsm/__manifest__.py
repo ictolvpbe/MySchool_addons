@@ -1,7 +1,7 @@
 {
     'name': 'MySchool IT Service Management',
     'version': '19.0.1.0.0',
-    'category': 'Education',
+    'category': 'MySchool',
     'summary': 'ITIL 4 compliant IT Service Management for school environments',
     'description': """
         MySchool IT Service Management

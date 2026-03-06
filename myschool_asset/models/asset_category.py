@@ -40,6 +40,4 @@ class AssetCategory(models.Model):
         default=True,
     )
 
-    _sql_constraints = [
-        ('name_unique', 'UNIQUE(name)', 'The category name must be unique!'),
-    ]
+    _name_unique = models.Constraint('UNIQUE(name)', 'The category name must be unique!')

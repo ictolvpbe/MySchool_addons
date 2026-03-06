@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Form View -->
+    <record id="view_professionalisering_form" model="ir.ui.view">
+        <field name="name">professionalisering.record.form</field>
+        <field name="model">professionalisering.record</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <field name="is_owner" invisible="1"/>
+                    <!-- Employee: Submit -->
+                    <button name="action_submit"
+                            string="Indienen"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'selection_of_form'"/>
+                    <!-- Employee: Reset to draft after rejection -->
+                    <button name="action_reset_draft"
+                            string="Opnieuw indienen"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state != 'weigering' or not is_owner"/>
+                    <!-- Directie: Approve -->
+                    <button name="action_approve"
+                            string="Goedkeuren"
+                            type="object"
+                            class="btn-primary"
+                            groups="professionalisering.group_professionalisering_directie"
+                            invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
+                    <!-- Directie: Reject -->
+                    <button name="action_reject"
+                            string="Afkeuren"
+                            type="object"
+                            class="btn-danger"
+                            groups="professionalisering.group_professionalisering_directie"
+                            invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
+                    <!-- Boekhouding: Confirm payment -->
+                    <button name="action_confirm_payment"
+                            string="Betaling bevestigd"
+                            type="object"
+                            class="btn-primary"
+                            groups="professionalisering.group_professionalisering_boekhouding"
+                            invisible="state != 'bevestiging' or payment_done == True"/>
+                    <!-- Vervangingen: Confirm replacement -->
+                    <button name="action_confirm_replacement"
+                            string="Vervanging ingepland"
+                            type="object"
+                            class="btn-primary"
+                            groups="professionalisering.group_professionalisering_vervangingen"
+                            invisible="state != 'bevestiging' or replacement_done == True"/>
+                    <field name="state" widget="statusbar" statusbar_visible="selection_of_form,fill_in_form_binnenschoolse,bevestiging,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+                    <field name="priority" widget="priority"
+                           groups="professionalisering.group_professionalisering_directie"/>
+                    <group>
+                        <group>
+                            <field name="type" readonly="state != 'selection_of_form'"/>
+                            <field name="titel" readonly="state != 'selection_of_form'"/>
+                            <field name="employee_id" readonly="state != 'selection_of_form'"/>
+                            <field name="school_id" readonly="state != 'selection_of_form'"/>
+                            <field name="verschillende_dagen" readonly="state != 'selection_of_form'"/>
+                            <field name="start_date" readonly="state != 'selection_of_form'"/>
+                            <field name="end_date" readonly="state != 'selection_of_form'" invisible="verschillende_dagen == True"/>
+                            <field name="cost" readonly="state != 'selection_of_form'"/>
+                            <field name="vak" readonly="state != 'selection_of_form'"/>
+                        </group>
+                        <group>
+                            <field name="assigned_to"
+                                   invisible="state == 'selection_of_form'"
+                                   readonly="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe', 'bevestiging')"
+                                   groups="professionalisering.group_professionalisering_directie"/>
+                            <field name="directie_id" invisible="state not in ('bevestiging', 'weigering', 'done')"/>
+                            <field name="payment_done" readonly="1" invisible="state not in ('bevestiging', 'done')"/>
+                            <field name="replacement_id"
+                                   invisible="state not in ('bevestiging', 'done')"
+                                   readonly="replacement_done == True"/>
+                            <field name="replacement_done" readonly="1" invisible="state not in ('bevestiging', 'done')"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Datums" invisible="verschillende_dagen != True">
+                            <field name="date_line_ids" readonly="state != 'selection_of_form'">
+                                <list editable="bottom">
+                                    <field name="date"/>
+                                    <field name="cost"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Beschrijving">
+                            <field name="description" readonly="state != 'selection_of_form'"/>
+                        </page>
+                        <page string="Afkeuring" invisible="state != 'weigering'"
+                              groups="professionalisering.group_professionalisering_user">
+                            <group>
+                                <field name="rejection_reason" readonly="1"/>
+                            </group>
+                        </page>
+                        <page string="Afkeuring" invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe', 'weigering')"
+                              groups="professionalisering.group_professionalisering_directie">
+                            <group>
+                                <field name="rejection_reason"
+                                       readonly="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="view_professionalisering_list" model="ir.ui.view">
+        <field name="name">professionalisering.record.list</field>
+        <field name="model">professionalisering.record</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="priority" widget="priority" optional="show"
+                       groups="professionalisering.group_professionalisering_directie"/>
+                <field name="type"/>
+                <field name="titel"/>
+                <field name="employee_id"/>
+                <field name="school_id"/>
+                <field name="dates_display" widget="html"/>
+                <field name="total_cost" string="Kost"/>
+                <field name="assigned_to" optional="show"
+                       groups="professionalisering.group_professionalisering_directie"/>
+                <field name="replacement_id" optional="hide"/>
+                <field name="state" widget="badge" decoration-info="state == 'selection_of_form'" decoration-warning="state in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')" decoration-success="state in ('bevestiging', 'done')" decoration-danger="state == 'weigering'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_professionalisering_search" model="ir.ui.view">
+        <field name="name">professionalisering.record.search</field>
+        <field name="model">professionalisering.record</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="titel"/>
+                <field name="employee_id"/>
+                <field name="name"/>
+                <field name="assigned_to"/>
+                <filter string="Mijn aanvragen" name="my_requests" domain="[('employee_id.user_id', '=', uid)]"/>
+                <separator/>
+                <filter string="Aan mij toegewezen" name="assigned_to_me" domain="[('assigned_to.user_id', '=', uid)]"/>
+                <filter string="Te beoordelen" name="to_approve" domain="[('state', 'in', ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe'))]"/>
+                <filter string="Betaling openstaand" name="payment_pending" domain="[('state', '=', 'bevestiging'), ('payment_done', '=', False)]"/>
+                <filter string="Vervanging openstaand" name="replacement_pending" domain="[('state', '=', 'bevestiging'), ('replacement_done', '=', False)]"/>
+                <separator/>
+                <filter string="Formulier kiezen" name="state_selection_of_form" domain="[('state', '=', 'selection_of_form')]"/>
+                <filter string="Ingediend" name="state_submitted" domain="[('state', 'in', ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe'))]"/>
+                <filter string="Bevestigd" name="state_bevestiging" domain="[('state', '=', 'bevestiging')]"/>
+                <filter string="Geweigerd" name="state_weigering" domain="[('state', '=', 'weigering')]"/>
+                <filter string="Afgerond" name="state_done" domain="[('state', '=', 'done')]"/>
+                <group>
+                    <filter string="Status" name="group_state" domain="[]" context="{'group_by': 'state'}"/>
+                    <filter string="Medewerker" name="group_employee" domain="[]" context="{'group_by': 'employee_id'}"/>
+                    <filter string="School" name="group_school" domain="[]" context="{'group_by': 'school_id'}"/>
+                    <filter string="Prioriteit" name="group_priority" domain="[]" context="{'group_by': 'priority'}"/>
+                    <filter string="Type" name="group_type" domain="[]" context="{'group_by': 'type'}"/>
+                    <filter string="Toegewezen aan" name="group_assigned" domain="[]" context="{'group_by': 'assigned_to'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+</odoo>

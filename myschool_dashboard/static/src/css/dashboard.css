@@ -1,0 +1,13 @@
+/* Quick-access cards */
+.o_dashboard_card {
+    border-width: 2px !important;
+    border-radius: 8px !important;
+    transition: box-shadow 0.15s, border-color 0.15s;
+    cursor: pointer;
+    min-width: 280px;
+}
+
+.o_dashboard_card:hover {
+    box-shadow: 0 4px 12px rgba(0, 125, 140, 0.2);
+    border-color: #007d8c !important;
+}

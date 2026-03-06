@@ -114,10 +114,10 @@ class ConfigItem(models.Model):
     # Constraints
     # =========================================================================
 
-    _sql_constraints = [
-        ('name_scope_unique', 'UNIQUE(name, scope)', 
-         'Configuration item name must be unique within the same scope!'),
-    ]
+    _name_scope_unique = models.Constraint(
+        'UNIQUE(name, scope)',
+        'Configuration item name must be unique within the same scope!',
+    )
 
     # =========================================================================
     # CRUD Methods

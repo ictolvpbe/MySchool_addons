@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_activiteiten_personeelslid,activiteiten.record.personeelslid,model_activiteiten_record,group_activiteiten_personeelslid,1,1,1,0
+access_activiteiten_directie,activiteiten.record.directie,model_activiteiten_record,group_activiteiten_directie,1,1,1,0
+access_activiteiten_aankoop,activiteiten.record.aankoop,model_activiteiten_record,group_activiteiten_aankoop,1,1,0,0
+access_activiteiten_boekhouding,activiteiten.record.boekhouding,model_activiteiten_record,group_activiteiten_boekhouding,1,1,0,0
+access_activiteiten_vervangingen,activiteiten.record.vervangingen,model_activiteiten_record,group_activiteiten_vervangingen,1,1,0,0
+access_activiteiten_admin,activiteiten.record.admin,model_activiteiten_record,group_activiteiten_admin,1,1,1,1

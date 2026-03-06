@@ -125,10 +125,8 @@ class SysEventType(models.Model):
                 vals['code'] = vals['name'].replace(' ', '_').replace('-', '_').upper()
         return super().create(vals_list)
     
-    _sql_constraints = [
-        ('code_unique', 'unique(code)', 'The event type code must be unique!'),
-        ('name_unique', 'unique(name)', 'The event type name must be unique!')
-    ]
+    _code_unique = models.Constraint('unique(code)', 'The event type code must be unique!')
+    _name_unique = models.Constraint('unique(name)', 'The event type name must be unique!')
 
     def action_view_events(self):
         """Open events of this type"""

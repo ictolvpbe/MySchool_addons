@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="module_category_activiteiten" model="ir.module.category">
+        <field name="name">Activiteiten</field>
+        <field name="sequence">60</field>
+    </record>
+
+    <record id="privilege_activiteiten" model="res.groups.privilege">
+        <field name="name">Rol</field>
+        <field name="placeholder">Geen toegang</field>
+        <field name="category_id" ref="module_category_activiteiten"/>
+        <field name="sequence">10</field>
+    </record>
+
+    <!-- Personeelslid -->
+    <record id="group_activiteiten_personeelslid" model="res.groups">
+        <field name="name">Personeelslid</field>
+        <field name="privilege_id" ref="privilege_activiteiten"/>
+        <field name="sequence">10</field>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <!-- Aankoop -->
+    <record id="group_activiteiten_aankoop" model="res.groups">
+        <field name="name">Aankoop</field>
+        <field name="privilege_id" ref="privilege_activiteiten"/>
+        <field name="sequence">20</field>
+        <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
+    </record>
+
+    <!-- Boekhouding -->
+    <record id="group_activiteiten_boekhouding" model="res.groups">
+        <field name="name">Boekhouding</field>
+        <field name="privilege_id" ref="privilege_activiteiten"/>
+        <field name="sequence">30</field>
+        <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
+    </record>
+
+    <!-- Vervangingen -->
+    <record id="group_activiteiten_vervangingen" model="res.groups">
+        <field name="name">Vervangingen</field>
+        <field name="privilege_id" ref="privilege_activiteiten"/>
+        <field name="sequence">40</field>
+        <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
+    </record>
+
+    <!-- Directie -->
+    <record id="group_activiteiten_directie" model="res.groups">
+        <field name="name">Directie</field>
+        <field name="privilege_id" ref="privilege_activiteiten"/>
+        <field name="sequence">50</field>
+        <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
+    </record>
+
+    <!-- Beheerder (Admin) -->
+    <record id="group_activiteiten_admin" model="res.groups">
+        <field name="name">Beheerder</field>
+        <field name="privilege_id" ref="privilege_activiteiten"/>
+        <field name="sequence">60</field>
+        <field name="implied_ids" eval="[
+            (4, ref('group_activiteiten_directie')),
+            (4, ref('group_activiteiten_boekhouding')),
+            (4, ref('group_activiteiten_aankoop')),
+            (4, ref('group_activiteiten_vervangingen')),
+        ]"/>
+    </record>
+</odoo>

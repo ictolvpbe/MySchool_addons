@@ -76,7 +76,7 @@ class ItsmCiRelationship(models.Model):
         required=True,
     )
 
-    _sql_constraints = [
-        ('no_self_relationship', 'CHECK(source_ci_id != target_ci_id)',
-         'A CI cannot have a relationship with itself.'),
-    ]
+    _no_self_relationship = models.Constraint(
+        'CHECK(source_ci_id != target_ci_id)',
+        'A CI cannot have a relationship with itself.',
+    )

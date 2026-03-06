@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="module_view_kanban_upgrade_button" model="ir.ui.view">
+        <field name="name">ir.module.module.kanban.upgrade.button</field>
+        <field name="model">ir.module.module</field>
+        <field name="inherit_id" ref="base.module_view_kanban"/>
+        <field name="arch" type="xml">
+            <xpath expr="//footer/button[@invisible=&quot;state != 'to install'&quot;]" position="after">
+                <button type="object" class="btn btn-sm btn-outline-primary"
+                        name="button_immediate_upgrade"
+                        invisible="state != 'installed'"
+                        groups="base.group_system">Upgrade</button>
+            </xpath>
+        </field>
+    </record>
+</odoo>

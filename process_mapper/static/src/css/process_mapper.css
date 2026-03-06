@@ -123,6 +123,14 @@
     display: block;
 }
 
+.pm-canvas-wrapper.pm-grab-cursor .pm-canvas {
+    cursor: grab;
+}
+
+.pm-canvas-wrapper.pm-grab-cursor .pm-canvas:active {
+    cursor: grabbing;
+}
+
 .pm-canvas-info {
     position: absolute;
     bottom: 8px;
@@ -197,8 +205,18 @@
 
 .pm-connection-label {
     font-size: 11px;
-    fill: #666;
+    fill: #333;
     text-anchor: middle;
+    font-weight: 500;
+    pointer-events: none;
+}
+
+.pm-label-draggable {
+    cursor: grab;
+}
+
+.pm-label-draggable:active {
+    cursor: grabbing;
 }
 
 .pm-connector-dot {
@@ -210,7 +228,8 @@
     transition: opacity 0.15s;
 }
 
-.pm-step:hover .pm-connector-dot {
+.pm-step:hover .pm-connector-dot,
+.pm-step.pm-selected .pm-connector-dot {
     opacity: 1;
 }
 
@@ -436,7 +455,7 @@
 .pm-fb-modal {
     background: #fff;
     border-radius: 8px;
-    width: 780px;
+    width: 1050px;
     max-width: 95vw;
     max-height: 85vh;
     display: flex;
@@ -769,7 +788,7 @@
     border: 1px solid #dee2e6;
     border-radius: 6px;
     background: #fff;
-    cursor: grab;
+    cursor: pointer;
     transition: box-shadow 0.12s;
 }
 
@@ -901,6 +920,109 @@
 
 .pm-fb-remove-btn:hover {
     color: #dc3545 !important;
+}
+
+/* --- Expand icon on field rows --- */
+.pm-fb-expand-icon {
+    color: #999;
+    font-size: 11px;
+    margin-left: 4px;
+    transition: color 0.12s;
+    cursor: pointer;
+}
+
+.pm-fb-field-row:hover .pm-fb-expand-icon {
+    color: #714B67;
+}
+
+/* --- Expanded field detail panel --- */
+.pm-fb-field-detail {
+    background: #f5f0f4;
+    border: 1px solid #e0d5de;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: 10px 12px;
+    margin-top: -1px;
+    margin-bottom: 4px;
+}
+
+.pm-fb-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.pm-fb-detail-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pm-fb-detail-field label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #888;
+    letter-spacing: 0.3px;
+}
+
+.pm-fb-detail-field input,
+.pm-fb-detail-field select,
+.pm-fb-detail-field textarea {
+    padding: 4px 6px;
+    border: 1px solid #d0c4cc;
+    border-radius: 3px;
+    font-size: 12px;
+    background: #fff;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.pm-fb-detail-field input:focus,
+.pm-fb-detail-field select:focus,
+.pm-fb-detail-field textarea:focus {
+    border-color: #714B67;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(113, 75, 103, 0.12);
+}
+
+.pm-fb-detail-field textarea {
+    resize: vertical;
+    min-height: 40px;
+    font-family: monospace;
+    font-size: 11px;
+}
+
+.pm-fb-detail-full {
+    grid-column: 1 / -1;
+}
+
+.pm-fb-detail-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 4px 0;
+}
+
+.pm-fb-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #555;
+    cursor: pointer;
+    user-select: none;
+}
+
+.pm-fb-toggle input[type="checkbox"] {
+    width: auto;
+    accent-color: #714B67;
+    cursor: pointer;
+}
+
+.pm-fb-readonly {
+    background: #f0eeef !important;
+    color: #999;
 }
 
 .pm-fb-empty {
@@ -1056,16 +1178,40 @@
 }
 
 /* --- Segment Drag Handles --- */
+.pm-connection-hit-selected {
+    cursor: move;
+}
+
 .pm-segment-handle {
     fill: #1565C0;
     stroke: #fff;
     stroke-width: 1.5;
     cursor: move;
     opacity: 0.7;
+    pointer-events: none;
 }
 
-.pm-segment-handle:hover {
+/* --- Route Toggle Button (L ↔ S/Z) --- */
+.pm-route-toggle {
+    cursor: pointer;
+}
+.pm-route-toggle-bg {
+    fill: #1565C0;
+    stroke: #fff;
+    stroke-width: 1.5;
+    opacity: 0.8;
+}
+.pm-route-toggle:hover .pm-route-toggle-bg {
     opacity: 1;
+    fill: #0D47A1;
+}
+.pm-route-toggle-label {
+    fill: #fff;
+    font-size: 11px;
+    font-weight: bold;
+    text-anchor: middle;
+    pointer-events: none;
+    user-select: none;
 }
 
 /* --- Crossing Arcs --- */
@@ -1074,6 +1220,21 @@
     stroke: #555;
     stroke-width: 2;
     pointer-events: none;
+}
+
+/* --- Lane Drag Handle (top bar) --- */
+.pm-lane-drag-handle {
+    fill: transparent;
+    cursor: grab;
+    pointer-events: all;
+}
+
+.pm-lane-drag-handle:hover {
+    fill: rgba(21, 101, 192, 0.08);
+}
+
+.pm-lane-drag-handle:active {
+    cursor: grabbing;
 }
 
 /* --- Lane Resize Handle --- */
@@ -1249,6 +1410,752 @@
 .pm-icon-none {
     font-size: 11px;
     color: #999;
+}
+
+/* ============================================================
+   Form Layout Grid - Field Builder
+   ============================================================ */
+
+/* --- Form Preview container --- */
+.pm-fb-form-preview {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+    background: #e8e4e7;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* --- Sheet (white card like Odoo form) --- */
+.pm-fb-sheet {
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+    padding: 16px;
+    min-height: 200px;
+}
+
+/* --- Group --- */
+.pm-fb-group {
+    border: 1px dashed #c9b8c4;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    background: #fdfbfc;
+}
+
+.pm-fb-group-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 1px dashed #e0d5de;
+}
+
+.pm-fb-group-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* fallback; overridden by inline style */
+    gap: 0;
+}
+
+/* --- Group Column Controls --- */
+.pm-fb-group-cols-ctrl {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 6px;
+}
+
+.pm-fb-col-btn {
+    background: none;
+    border: 1px solid #d0c4cc;
+    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 9px;
+    color: #888;
+    cursor: pointer;
+    line-height: 16px;
+    transition: all 0.12s;
+}
+
+.pm-fb-col-btn:hover:not(:disabled) {
+    background: #714B67;
+    color: #fff;
+    border-color: #714B67;
+}
+
+.pm-fb-col-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.pm-fb-col-count {
+    font-size: 10px;
+    font-weight: 700;
+    color: #714B67;
+    min-width: 28px;
+    text-align: center;
+}
+
+.pm-fb-group-col {
+    padding: 8px;
+    min-height: 50px;
+    border-right: 1px dashed #e0d5de;
+}
+
+.pm-fb-group-col:last-child {
+    border-right: none;
+}
+
+.pm-fb-col-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: #bbb;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+    font-weight: 700;
+}
+
+.pm-fb-col-empty {
+    font-size: 11px;
+    color: #ccc;
+    font-style: italic;
+    text-align: center;
+    padding: 12px 4px;
+}
+
+.pm-fb-dragging .pm-fb-col-empty {
+    color: #b09aab;
+    background: #f8f4f7;
+    border: 1px dashed #d0c4cc;
+    border-radius: 4px;
+    padding: 16px 4px;
+}
+
+/* --- Form Field (label + fake widget) --- */
+.pm-fb-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 6px 4px 20px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.12s;
+    margin-bottom: 2px;
+    position: relative;
+}
+
+.pm-fb-ff-drag-handle {
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #ccc;
+    cursor: grab;
+    font-size: 10px;
+    opacity: 0;
+    transition: opacity 0.12s;
+    user-select: none;
+}
+
+.pm-fb-form-field:hover .pm-fb-ff-drag-handle {
+    opacity: 1;
+    color: #999;
+}
+
+.pm-fb-ff-drag-handle:active {
+    cursor: grabbing;
+}
+
+.pm-fb-form-field:hover {
+    border-color: #d0c4cc;
+    background: #faf5f8;
+}
+
+.pm-fb-form-field-selected {
+    border-color: #714B67 !important;
+    background: #f0e8ee !important;
+    box-shadow: 0 0 0 2px rgba(113, 75, 103, 0.15);
+}
+
+.pm-fb-form-field-sheet {
+    padding: 6px 8px;
+    margin: 2px 0;
+}
+
+.pm-fb-ff-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+}
+
+.pm-fb-ff-req {
+    color: #dc3545;
+    font-weight: 700;
+    margin-left: 2px;
+}
+
+.pm-fb-ff-widget {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* --- Mock widget inputs for field preview --- */
+.pm-fb-ff-mock-input {
+    flex: 1;
+    padding: 3px 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    background: #fff;
+    font-size: 11px;
+    color: #888;
+    min-height: 22px;
+    line-height: 16px;
+    min-width: 0;
+}
+
+.pm-fb-ff-mock-input:disabled {
+    background: #fff;
+    cursor: default;
+    opacity: 0.8;
+}
+
+.pm-fb-ff-mock-number {
+    text-align: right;
+    font-family: monospace;
+}
+
+.pm-fb-ff-mock-textarea {
+    flex: 1;
+    padding: 3px 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    background: #fff;
+    font-size: 11px;
+    color: #888;
+    resize: none;
+    min-height: 36px;
+    line-height: 14px;
+    min-width: 0;
+}
+
+.pm-fb-ff-mock-textarea:disabled {
+    background: #fff;
+    cursor: default;
+    opacity: 0.8;
+}
+
+.pm-fb-ff-mock-html {
+    flex: 1;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.pm-fb-ff-mock-html-toolbar {
+    display: flex;
+    gap: 6px;
+    padding: 2px 6px;
+    background: #f1f3f5;
+    border-bottom: 1px solid #dee2e6;
+    font-size: 10px;
+    color: #888;
+}
+
+.pm-fb-ff-mock-html-body {
+    min-height: 24px;
+    padding: 3px 6px;
+    background: #fff;
+    font-size: 11px;
+    color: #aaa;
+}
+
+.pm-fb-ff-mock-html-body::after {
+    content: attr(data-placeholder);
+    color: #ccc;
+}
+
+.pm-fb-ff-mock-boolean {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 2px 0;
+}
+
+.pm-fb-ff-mock-boolean input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #714B67;
+    cursor: default;
+}
+
+.pm-fb-ff-mock-date {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.pm-fb-ff-mock-date .pm-fb-ff-mock-input {
+    padding-right: 22px;
+}
+
+.pm-fb-ff-mock-icon {
+    position: absolute;
+    right: 6px;
+    font-size: 10px;
+    color: #aaa;
+    pointer-events: none;
+}
+
+.pm-fb-ff-mock-select {
+    flex: 1;
+    padding: 3px 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    background: #fff;
+    font-size: 11px;
+    color: #888;
+    min-height: 22px;
+    min-width: 0;
+    cursor: default;
+}
+
+.pm-fb-ff-mock-select:disabled {
+    opacity: 0.8;
+    background: #fff;
+}
+
+.pm-fb-ff-mock-m2o {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.pm-fb-ff-mock-m2o .pm-fb-ff-mock-input {
+    padding-right: 22px;
+}
+
+.pm-fb-ff-mock-monetary {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.pm-fb-ff-mock-currency {
+    font-size: 10px;
+    font-weight: 600;
+    color: #888;
+    white-space: nowrap;
+}
+
+.pm-fb-ff-mock-x2m {
+    flex: 1;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.pm-fb-ff-mock-x2m-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 6px;
+    background: #f1f3f5;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.pm-fb-ff-mock-x2m-label {
+    font-size: 10px;
+    color: #888;
+    font-family: monospace;
+}
+
+.pm-fb-ff-mock-x2m-add {
+    font-size: 10px;
+    border: none;
+    background: none;
+    color: #714B67;
+    cursor: default;
+    padding: 1px 4px;
+}
+
+.pm-fb-ff-mock-x2m-empty {
+    padding: 6px;
+    text-align: center;
+    font-size: 10px;
+    color: #ccc;
+    font-style: italic;
+}
+
+.pm-fb-ff-mock-binary {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 3px 6px;
+    border: 1px dashed #dee2e6;
+    border-radius: 3px;
+    background: #f8f9fa;
+    font-size: 11px;
+    color: #888;
+    gap: 4px;
+    cursor: default;
+}
+
+.pm-fb-ff-mock-image {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border: 1px dashed #dee2e6;
+    border-radius: 3px;
+    background: #f8f9fa;
+    font-size: 10px;
+    color: #aaa;
+    gap: 2px;
+    cursor: default;
+    min-height: 36px;
+}
+
+.pm-fb-ff-mock-image .fa {
+    font-size: 16px;
+}
+
+.pm-fb-ff-type-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #714B67;
+    color: #fff;
+    font-weight: 600;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+}
+
+.pm-fb-ff-delete {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    font-size: 11px;
+    color: #ccc;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.12s;
+}
+
+.pm-fb-form-field:hover .pm-fb-ff-delete {
+    opacity: 1;
+}
+
+.pm-fb-ff-delete:hover {
+    color: #dc3545;
+}
+
+/* --- Notebook --- */
+.pm-fb-notebook {
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    background: #fff;
+}
+
+.pm-fb-nb-header {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #dee2e6;
+    background: #f8f9fa;
+    border-radius: 6px 6px 0 0;
+    flex-wrap: wrap;
+}
+
+.pm-fb-nb-tab {
+    padding: 4px 8px;
+    border: 1px solid #dee2e6;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    background: #fff;
+    font-size: 11px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.12s;
+}
+
+.pm-fb-nb-tab:hover {
+    background: #f0e8ee;
+}
+
+.pm-fb-nb-tab-active {
+    background: #714B67;
+    color: #fff;
+    border-color: #714B67;
+}
+
+.pm-fb-nb-tab-active:hover {
+    background: #5a3b52;
+}
+
+.pm-fb-nb-tab-input {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    width: 70px;
+    padding: 0;
+    text-align: center;
+    outline: none;
+}
+
+.pm-fb-nb-tab-active .pm-fb-nb-tab-input {
+    color: #fff;
+}
+
+.pm-fb-nb-tab-delete {
+    margin-left: 4px;
+    font-size: 9px;
+    opacity: 0;
+    cursor: pointer;
+    color: inherit;
+    transition: opacity 0.12s;
+}
+
+.pm-fb-nb-tab:hover .pm-fb-nb-tab-delete {
+    opacity: 0.5;
+}
+
+.pm-fb-nb-tab-delete:hover {
+    opacity: 1 !important;
+}
+
+.pm-fb-nb-add {
+    padding: 2px 6px;
+    border: 1px dashed #ccc;
+    border-radius: 4px;
+    background: transparent;
+    color: #999;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.12s;
+}
+
+.pm-fb-nb-add:hover {
+    border-color: #714B67;
+    color: #714B67;
+    background: #faf5f8;
+}
+
+.pm-fb-nb-page {
+    padding: 12px;
+    min-height: 60px;
+}
+
+/* --- Separator --- */
+.pm-fb-separator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    margin-bottom: 4px;
+    position: relative;
+}
+
+.pm-fb-sep-label {
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 700;
+    color: #333;
+    padding: 2px 4px;
+    width: 120px;
+    outline: none;
+}
+
+.pm-fb-sep-label:focus {
+    border-bottom: 2px solid #714B67;
+}
+
+.pm-fb-sep-hr {
+    flex: 1;
+    border: none;
+    border-top: 1px solid #dee2e6;
+    margin: 0;
+}
+
+/* --- Layout Drop Zones --- */
+.pm-fb-layout-dropzone {
+    height: 4px;
+    border-radius: 2px;
+    transition: all 0.15s;
+    margin: 1px 0;
+}
+
+/* When dragging: make ALL drop zones visible */
+.pm-fb-dragging .pm-fb-layout-dropzone {
+    height: 24px;
+    border: 2px dashed #d0c4cc;
+    background: #f8f4f7;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 3px 0;
+}
+
+.pm-fb-dragging .pm-fb-layout-dropzone::after {
+    content: '+ drop here';
+    font-size: 10px;
+    color: #b09aab;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.pm-fb-layout-dropzone-active,
+.pm-fb-dragging .pm-fb-layout-dropzone-active {
+    height: 28px;
+    background: #e8d5e3;
+    border: 2px dashed #714B67;
+    border-radius: 4px;
+}
+
+.pm-fb-dragging .pm-fb-layout-dropzone-active::after {
+    content: 'drop here';
+    color: #714B67;
+}
+
+.pm-fb-layout-dropzone-big {
+    height: 60px;
+    border: 2px dashed #d0c4cc;
+    background: #f8f4f7;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pm-fb-layout-dropzone-big .pm-fb-dropzone-text {
+    font-size: 12px;
+    color: #b09aab;
+}
+
+.pm-fb-layout-dropzone-big.pm-fb-layout-dropzone-active {
+    height: 60px;
+    background: #e8d5e3;
+    border-color: #714B67;
+}
+
+.pm-fb-layout-dropzone-big.pm-fb-layout-dropzone-active .pm-fb-dropzone-text {
+    color: #714B67;
+    font-weight: 600;
+}
+
+/* --- Node Remove Button --- */
+.pm-fb-node-remove {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    font-size: 11px;
+    color: #ccc;
+    cursor: pointer;
+    margin-left: auto;
+    transition: color 0.12s;
+}
+
+.pm-fb-node-remove:hover {
+    color: #dc3545;
+}
+
+/* --- Unplaced Fields Section --- */
+.pm-fb-unplaced {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+.pm-fb-unplaced-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #f57f17;
+    margin-bottom: 6px;
+}
+
+.pm-fb-unplaced-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.pm-fb-unplaced-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: #fff;
+    border: 1px solid #ffe082;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: grab;
+    transition: all 0.12s;
+}
+
+.pm-fb-unplaced-item:hover {
+    border-color: #714B67;
+    background: #faf5f8;
+}
+
+.pm-fb-unplaced-name {
+    font-family: monospace;
+    font-weight: 600;
+    color: #333;
+}
+
+.pm-fb-unplaced-remove {
+    background: none;
+    border: none;
+    padding: 0 2px;
+    font-size: 10px;
+    color: #ccc;
+    cursor: pointer;
+}
+
+.pm-fb-unplaced-remove:hover {
+    color: #dc3545;
+}
+
+/* --- Field Detail Panel (bottom) --- */
+.pm-fb-field-detail-bottom {
+    border-radius: 6px;
+    border: 1px solid #e0d5de;
+    margin-top: 0;
+}
+
+.pm-fb-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-bottom: 1px solid #e0d5de;
+    background: #f5f0f4;
+    border-radius: 6px 6px 0 0;
+}
+
+.pm-fb-detail-header strong {
+    font-size: 12px;
+    font-family: monospace;
+    color: #714B67;
 }
 
 /* --- Print Legend Table --- */

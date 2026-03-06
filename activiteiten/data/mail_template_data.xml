@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="email_template_notify_directie" model="mail.template">
+        <field name="name">Activiteiten - Notificatie Directie</field>
+        <field name="model_id" ref="model_activiteiten_record"/>
+        <field name="subject">Nieuwe aanvraag activiteit: {{ object.name }}</field>
+        <field name="body_html"><![CDATA[
+<p>Beste Directie,</p>
+<p>Er is een nieuwe aanvraag voor een activiteit ingediend.</p>
+<ul>
+    <li>Referentie: {{ object.name }}</li>
+    <li>Titel: {{ object.titel }}</li>
+    <li>Type: {{ object.activity_type }}</li>
+    <li>Datum: {{ object.datetime }}</li>
+    <li>Geschatte kost: {{ object.price }}</li>
+</ul>
+<p>Gelieve deze aanvraag te beoordelen.</p>
+        ]]></field>
+    </record>
+
+    <record id="email_template_approved" model="mail.template">
+        <field name="name">Activiteiten - Goedgekeurd</field>
+        <field name="model_id" ref="model_activiteiten_record"/>
+        <field name="subject">Uw aanvraag {{ object.name }} is goedgekeurd</field>
+        <field name="body_html"><![CDATA[
+<p>Beste,</p>
+<p>Uw aanvraag voor activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is goedgekeurd.</p>
+<p>De verdere afhandeling (S-Code, verzekering, vervanging) wordt opgestart.</p>
+        ]]></field>
+    </record>
+
+    <record id="email_template_rejected" model="mail.template">
+        <field name="name">Activiteiten - Afgekeurd</field>
+        <field name="model_id" ref="model_activiteiten_record"/>
+        <field name="subject">Uw aanvraag {{ object.name }} is afgekeurd</field>
+        <field name="body_html"><![CDATA[
+<p>Beste,</p>
+<p>Uw aanvraag voor activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is helaas afgekeurd.</p>
+{% if object.rejection_reason %}
+<p>Reden: {{ object.rejection_reason }}</p>
+{% endif %}
+<p>U kunt de aanvraag aanpassen en opnieuw indienen.</p>
+        ]]></field>
+    </record>
+
+    <record id="email_template_bus_refused" model="mail.template">
+        <field name="name">Activiteiten - Bus geweigerd</field>
+        <field name="model_id" ref="model_activiteiten_record"/>
+        <field name="subject">Bus niet beschikbaar voor {{ object.name }}</field>
+        <field name="body_html"><![CDATA[
+<p>Beste,</p>
+<p>Er is helaas geen bus beschikbaar voor uw activiteit <strong>{{ object.name }} - {{ object.titel }}</strong>.</p>
+<p>U kunt het formulier aanpassen en opnieuw indienen.</p>
+        ]]></field>
+    </record>
+</odoo>

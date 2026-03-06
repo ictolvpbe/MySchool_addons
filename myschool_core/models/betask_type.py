@@ -132,7 +132,6 @@ class BeTaskType(models.Model):
     task_count = fields.Integer(
         string='Total Tasks',
         compute='_compute_task_statistics',
-        store=True
     )
     
     pending_task_count = fields.Integer(
@@ -182,12 +181,11 @@ class BeTaskType(models.Model):
                 vals['name'] = f"{target}_{obj}_{action}"
         return super().write(vals)
     
-    _sql_constraints = [
-        ('name_unique', 'UNIQUE(name)', 'Task type name must be unique!'),
-        ('target_object_action_unique', 
-         'UNIQUE(target, object, action)', 
-         'The combination of Target, Object, and Action must be unique!')
-    ]
+    _name_unique = models.Constraint('UNIQUE(name)', 'Task type name must be unique!')
+    _target_object_action_unique = models.Constraint(
+        'UNIQUE(target, object, action)',
+        'The combination of Target, Object, and Action must be unique!',
+    )
     
     def action_view_tasks(self):
         """Open tasks of this type"""

@@ -142,22 +142,117 @@ function selectPorts(source, target) {
     const dx = tc.x - sc.x;
     const dy = tc.y - sc.y;
 
-    if (Math.abs(dx) > Math.abs(dy)) {
-        // Horizontal dominant
-        return dx > 0
-            ? { sourceSide: 'right', targetSide: 'left' }
-            : { sourceSide: 'left', targetSide: 'right' };
-    } else {
-        // Vertical dominant
+    // Get shape half-sizes to compute actual edge-to-edge gaps
+    const sds = defaultSize(source.step_type);
+    const tds = defaultSize(target.step_type);
+    const shw = (source.width || sds.w) / 2;
+    const shh = (source.height || sds.h) / 2;
+    const thw = (target.width || tds.w) / 2;
+    const thh = (target.height || tds.h) / 2;
+
+    // Compute edge-to-edge gap on each axis (negative = shapes overlap on that axis)
+    const gapX = Math.abs(dx) - shw - thw;
+    const gapY = Math.abs(dy) - shh - thh;
+
+    // S-route (opposite ports, 3 segments): shapes are roughly aligned on one axis
+    // Only use S-route when one axis has clear alignment (small gap or overlap)
+    // and the other axis has a significant gap
+    const alignedX = gapX < 20;  // shapes overlap or nearly touch horizontally
+    const alignedY = gapY < 20;  // shapes overlap or nearly touch vertically
+
+    if (alignedX && alignedY) {
+        // Shapes are very close/overlapping on both axes → use dominant direction
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return dx > 0
+                ? { sourceSide: 'right', targetSide: 'left' }
+                : { sourceSide: 'left', targetSide: 'right' };
+        } else {
+            return dy > 0
+                ? { sourceSide: 'bottom', targetSide: 'top' }
+                : { sourceSide: 'top', targetSide: 'bottom' };
+        }
+    }
+
+    if (alignedX && !alignedY) {
+        // Aligned horizontally (stacked vertically) → vertical S-route
         return dy > 0
             ? { sourceSide: 'bottom', targetSide: 'top' }
             : { sourceSide: 'top', targetSide: 'bottom' };
     }
+
+    if (!alignedX && alignedY) {
+        // Aligned vertically (side by side) → horizontal S-route
+        return dx > 0
+            ? { sourceSide: 'right', targetSide: 'left' }
+            : { sourceSide: 'left', targetSide: 'right' };
+    }
+
+    // Both axes have significant gaps → shapes are diagonal → L-route (2 segments)
+    // Pick the perpendicular port pair where both ports face toward the bend point
+    // and the total path length is shortest.
+    const candidates = [];
+    const allSides = ['top', 'right', 'bottom', 'left'];
+    for (const sp of allSides) {
+        for (const tp of allSides) {
+            const spH = (sp === 'left' || sp === 'right');
+            const tpH = (tp === 'left' || tp === 'right');
+            if (spH === tpH) continue; // need perpendicular
+            const pp1 = shapePortPoint(source, sp);
+            const pp2 = shapePortPoint(target, tp);
+            // Compute bend point for this L-route
+            const bend = spH ? { x: pp2.x, y: pp1.y } : { x: pp1.x, y: pp2.y };
+            // Check that source port faces toward the bend (not away from shape)
+            const srcOK = (sp === 'right' && bend.x >= pp1.x) ||
+                          (sp === 'left' && bend.x <= pp1.x) ||
+                          (sp === 'bottom' && bend.y >= pp1.y) ||
+                          (sp === 'top' && bend.y <= pp1.y);
+            // Check that target port faces toward the bend (not away from shape)
+            const tgtOK = (tp === 'right' && bend.x >= pp2.x) ||
+                          (tp === 'left' && bend.x <= pp2.x) ||
+                          (tp === 'bottom' && bend.y >= pp2.y) ||
+                          (tp === 'top' && bend.y <= pp2.y);
+            const dist = Math.abs(pp1.x - pp2.x) + Math.abs(pp1.y - pp2.y);
+            // Heavy penalty for ports facing away from the bend
+            const penalty = (srcOK ? 0 : 10000) + (tgtOK ? 0 : 10000);
+            candidates.push({ sp, tp, score: dist + penalty });
+        }
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    return { sourceSide: candidates[0].sp, targetSide: candidates[0].tp };
 }
 
 const GRID_SNAP = 20;
 function snapToGrid(val) {
     return Math.round(val / GRID_SNAP) * GRID_SNAP;
+}
+
+/**
+ * Simplify a path by removing redundant points:
+ * - Remove zero-length segments (duplicate consecutive points)
+ * - Remove collinear middle points (3 points on same horizontal or vertical line)
+ */
+function simplifyPath(points) {
+    if (points.length <= 2) return points;
+    const result = [points[0]];
+    for (let i = 1; i < points.length; i++) {
+        const prev = result[result.length - 1];
+        const cur = points[i];
+        // Skip duplicate points (zero-length segments)
+        if (Math.abs(prev.x - cur.x) < 0.5 && Math.abs(prev.y - cur.y) < 0.5) continue;
+        // Remove collinear middle point: if prev, last-added and cur are all on same line
+        if (result.length >= 2) {
+            const mid = result[result.length - 1];
+            const before = result[result.length - 2];
+            const allSameX = Math.abs(before.x - mid.x) < 0.5 && Math.abs(mid.x - cur.x) < 0.5;
+            const allSameY = Math.abs(before.y - mid.y) < 0.5 && Math.abs(mid.y - cur.y) < 0.5;
+            if (allSameX || allSameY) {
+                // Middle point is redundant, replace it with current
+                result.pop();
+            }
+        }
+        result.push(cur);
+    }
+    return result;
 }
 
 /**
@@ -170,80 +265,127 @@ function snapToGrid(val) {
  * @returns {Array} points [{x,y}, ...]
  */
 function computeOrthogonalPath(source, target, waypoints, sourcePort, targetPort) {
+    // Use stored ports if available, otherwise auto-select based on shape positions
     const auto = selectPorts(source, target);
-    const sourceSide = sourcePort || auto.sourceSide;
-    const targetSide = targetPort || auto.targetSide;
+    let sourceSide = sourcePort || auto.sourceSide;
+    let targetSide = targetPort || auto.targetSide;
+
+    // Validate stored ports: L-routes need perpendicular ports (one H, one V)
+    // If both are the same axis and it's not an opposite-ports S-route, reset to auto
+    const sH = (sourceSide === 'left' || sourceSide === 'right');
+    const tH = (targetSide === 'left' || targetSide === 'right');
+    if (sourcePort && targetPort) {
+        if (sH && tH && sourceSide !== ({ left: 'right', right: 'left' })[targetSide]) {
+            sourceSide = auto.sourceSide;
+            targetSide = auto.targetSide;
+        }
+        if (!sH && !tH && sourceSide !== ({ top: 'bottom', bottom: 'top' })[targetSide]) {
+            sourceSide = auto.sourceSide;
+            targetSide = auto.targetSide;
+        }
+    }
+
+    const PORT_SNAP = 40;
+
+    // When dragging (waypoints present), check ALL perpendicular port pairs
+    // to find the closest L-route bend point and snap to it.
+    // This works regardless of whether ports are stored — allows dragging S→L.
+    if (waypoints && waypoints.length > 0) {
+        const wp = waypoints[0];
+        const allSides = ['top', 'right', 'bottom', 'left'];
+        let bestDist = PORT_SNAP + 1;
+        let bestSP = null, bestTP = null;
+
+        for (const sp of allSides) {
+            for (const tp of allSides) {
+                const spH = (sp === 'left' || sp === 'right');
+                const tpH = (tp === 'left' || tp === 'right');
+
+                // Only check perpendicular (L-route) combinations
+                if (spH === tpH) continue;
+
+                const pp1 = shapePortPoint(source, sp);
+                const pp2 = shapePortPoint(target, tp);
+
+                // L-route bend point
+                const bend = spH
+                    ? { x: pp2.x, y: pp1.y }
+                    : { x: pp1.x, y: pp2.y };
+
+                // Skip if either port faces away from the bend (path would double back)
+                const srcOK = (sp === 'right' && bend.x >= pp1.x) ||
+                              (sp === 'left' && bend.x <= pp1.x) ||
+                              (sp === 'bottom' && bend.y >= pp1.y) ||
+                              (sp === 'top' && bend.y <= pp1.y);
+                const tgtOK = (tp === 'right' && bend.x >= pp2.x) ||
+                              (tp === 'left' && bend.x <= pp2.x) ||
+                              (tp === 'bottom' && bend.y >= pp2.y) ||
+                              (tp === 'top' && bend.y <= pp2.y);
+                if (!srcOK || !tgtOK) continue;
+
+                // Chebyshev distance (max of axis distances)
+                const d = Math.max(Math.abs(wp.x - bend.x), Math.abs(wp.y - bend.y));
+                if (d < bestDist) {
+                    bestDist = d;
+                    bestSP = sp;
+                    bestTP = tp;
+                }
+            }
+        }
+
+        if (bestSP && bestDist <= PORT_SNAP) {
+            sourceSide = bestSP;
+            targetSide = bestTP;
+        } else {
+            // No L-route snap — fall back to S-route (opposite ports)
+            const sc = shapeCenter(source);
+            const tc = shapeCenter(target);
+            const ddx = tc.x - sc.x;
+            const ddy = tc.y - sc.y;
+            if (Math.abs(ddx) > Math.abs(ddy)) {
+                sourceSide = ddx > 0 ? 'right' : 'left';
+                targetSide = ddx > 0 ? 'left' : 'right';
+            } else {
+                sourceSide = ddy > 0 ? 'bottom' : 'top';
+                targetSide = ddy > 0 ? 'top' : 'bottom';
+            }
+        }
+    }
+
     const p1 = shapePortPoint(source, sourceSide);
     const p2 = shapePortPoint(target, targetSide);
 
-    // With user-defined waypoints: connect start → waypoints → end via H/V segments
-    if (waypoints && waypoints.length > 0) {
-        const points = [p1];
-        let prev = p1;
-        for (const wp of waypoints) {
-            // Alternate H then V to reach waypoint
-            points.push({ x: wp.x, y: prev.y });
-            points.push({ x: wp.x, y: wp.y });
-            prev = wp;
-        }
-        // Connect last waypoint to end
-        points.push({ x: p2.x, y: prev.y });
-        points.push(p2);
-        return points;
-    }
+    const sourceH = (sourceSide === 'left' || sourceSide === 'right');
+    const targetH = (targetSide === 'left' || targetSide === 'right');
 
-    // Auto-route without waypoints
-    const MARGIN = 30;
-
-    if (sourceSide === 'right' && targetSide === 'left') {
-        if (p2.x > p1.x + MARGIN) {
-            // Simple 3-segment: H → V → H
-            const midX = snapToGrid((p1.x + p2.x) / 2);
-            return [p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2];
-        } else {
-            // U-route: go right, then up/down, then left
-            const extX = snapToGrid(p1.x + MARGIN);
-            const extX2 = snapToGrid(p2.x - MARGIN);
-            const midY = snapToGrid(p1.y < p2.y ? Math.min(p1.y, p2.y) - 40 : Math.max(p1.y, p2.y) + 40);
-            return [p1, { x: extX, y: p1.y }, { x: extX, y: midY }, { x: extX2, y: midY }, { x: extX2, y: p2.y }, p2];
+    if (sourceH && targetH) {
+        // Both horizontal (opposite ports) → H → V → H (3 segments)
+        let midX = snapToGrid((p1.x + p2.x) / 2);
+        if (waypoints && waypoints.length > 0) {
+            const wpX = waypoints[0].x;
+            const minX = Math.min(p1.x, p2.x) - 100;
+            const maxX = Math.max(p1.x, p2.x) + 100;
+            if (wpX >= minX && wpX <= maxX) midX = wpX;
         }
+        return simplifyPath([p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2]);
     }
-    if (sourceSide === 'left' && targetSide === 'right') {
-        if (p2.x < p1.x - MARGIN) {
-            const midX = snapToGrid((p1.x + p2.x) / 2);
-            return [p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2];
-        } else {
-            const extX = snapToGrid(p1.x - MARGIN);
-            const extX2 = snapToGrid(p2.x + MARGIN);
-            const midY = snapToGrid(p1.y < p2.y ? Math.min(p1.y, p2.y) - 40 : Math.max(p1.y, p2.y) + 40);
-            return [p1, { x: extX, y: p1.y }, { x: extX, y: midY }, { x: extX2, y: midY }, { x: extX2, y: p2.y }, p2];
+    if (!sourceH && !targetH) {
+        // Both vertical (opposite ports) → V → H → V (3 segments)
+        let midY = snapToGrid((p1.y + p2.y) / 2);
+        if (waypoints && waypoints.length > 0) {
+            const wpY = waypoints[0].y;
+            const minY = Math.min(p1.y, p2.y) - 100;
+            const maxY = Math.max(p1.y, p2.y) + 100;
+            if (wpY >= minY && wpY <= maxY) midY = wpY;
         }
+        return simplifyPath([p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2]);
     }
-    if (sourceSide === 'bottom' && targetSide === 'top') {
-        if (p2.y > p1.y + MARGIN) {
-            const midY = snapToGrid((p1.y + p2.y) / 2);
-            return [p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2];
-        } else {
-            const extY = snapToGrid(p1.y + MARGIN);
-            const extY2 = snapToGrid(p2.y - MARGIN);
-            const midX = snapToGrid(p1.x < p2.x ? Math.min(p1.x, p2.x) - 40 : Math.max(p1.x, p2.x) + 40);
-            return [p1, { x: p1.x, y: extY }, { x: midX, y: extY }, { x: midX, y: extY2 }, { x: p2.x, y: extY2 }, p2];
-        }
+    if (sourceH && !targetH) {
+        // L-route: horizontal first, then vertical
+        return simplifyPath([p1, { x: p2.x, y: p1.y }, p2]);
     }
-    if (sourceSide === 'top' && targetSide === 'bottom') {
-        if (p2.y < p1.y - MARGIN) {
-            const midY = snapToGrid((p1.y + p2.y) / 2);
-            return [p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2];
-        } else {
-            const extY = snapToGrid(p1.y - MARGIN);
-            const extY2 = snapToGrid(p2.y + MARGIN);
-            const midX = snapToGrid(p1.x < p2.x ? Math.min(p1.x, p2.x) - 40 : Math.max(p1.x, p2.x) + 40);
-            return [p1, { x: p1.x, y: extY }, { x: midX, y: extY }, { x: midX, y: extY2 }, { x: p2.x, y: extY2 }, p2];
-        }
-    }
-
-    // Fallback: simple L-route
-    return [p1, { x: p2.x, y: p1.y }, p2];
+    // L-route: vertical first, then horizontal
+    return simplifyPath([p1, { x: p1.x, y: p2.y }, p2]);
 }
 
 /**
@@ -290,6 +432,187 @@ function detectCrossings(allPaths) {
         }
     }
     return crossings;
+}
+
+// ============================================================
+// Auto Layout: route connections around obstacle shapes
+// ============================================================
+
+/**
+ * Return padded bounding box for a step.
+ */
+function shapeBBox(step, padding = 20) {
+    const ds = defaultSize(step.step_type);
+    const w = step.width || ds.w;
+    const h = step.height || ds.h;
+    return {
+        x: step.x_position - padding,
+        y: step.y_position - padding,
+        x2: step.x_position + w + padding,
+        y2: step.y_position + h + padding,
+    };
+}
+
+/**
+ * Check if a vertical segment at midX spanning y1..y2 intersects a bbox.
+ */
+function verticalSegmentIntersectsBBox(midX, y1, y2, bbox) {
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+    return midX > bbox.x && midX < bbox.x2 && maxY > bbox.y && minY < bbox.y2;
+}
+
+/**
+ * Check if a horizontal segment at midY spanning x1..x2 intersects a bbox.
+ */
+function horizontalSegmentIntersectsBBox(midY, x1, x2, bbox) {
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    return midY > bbox.y && midY < bbox.y2 && maxX > bbox.x && minX < bbox.x2;
+}
+
+/**
+ * Check if the full 3-segment horizontal S-route (H→V→H) at midX is clear of all obstacles.
+ * Segments: (p1x, p1y)→(midX, p1y)→(midX, p2y)→(p2x, p2y)
+ */
+function isHorizontalSRouteClear(midX, p1x, p1y, p2x, p2y, obstacles) {
+    for (const bbox of obstacles) {
+        // Vertical middle segment
+        if (verticalSegmentIntersectsBBox(midX, p1y, p2y, bbox)) return false;
+        // Horizontal segment from source to midX
+        if (horizontalSegmentIntersectsBBox(p1y, p1x, midX, bbox)) return false;
+        // Horizontal segment from midX to target
+        if (horizontalSegmentIntersectsBBox(p2y, midX, p2x, bbox)) return false;
+    }
+    return true;
+}
+
+/**
+ * Check if the full 3-segment vertical S-route (V→H→V) at midY is clear of all obstacles.
+ * Segments: (p1x, p1y)→(p1x, midY)→(p2x, midY)→(p2x, p2y)
+ */
+function isVerticalSRouteClear(midY, p1x, p1y, p2x, p2y, obstacles) {
+    for (const bbox of obstacles) {
+        // Horizontal middle segment
+        if (horizontalSegmentIntersectsBBox(midY, p1x, p2x, bbox)) return false;
+        // Vertical segment from source to midY
+        if (verticalSegmentIntersectsBBox(p1x, p1y, midY, bbox)) return false;
+        // Vertical segment from midY to target
+        if (verticalSegmentIntersectsBBox(p2x, midY, p2y, bbox)) return false;
+    }
+    return true;
+}
+
+/**
+ * Find a clear X position for the middle vertical segment of a horizontal S-route.
+ * Uses obstacle bbox edges as candidate positions (just outside each obstacle).
+ */
+function findClearMidX(defaultMidX, p1x, p1y, p2x, p2y, obstacles) {
+    // Collect candidate X positions from obstacle bbox edges
+    const candidates = [];
+    for (const bbox of obstacles) {
+        candidates.push(bbox.x - 1);   // just left of obstacle (bbox already has padding)
+        candidates.push(bbox.x2 + 1);  // just right of obstacle
+    }
+
+    // Constrain to the range that computeOrthogonalPath will accept
+    const rangeMin = Math.min(p1x, p2x) - 100;
+    const rangeMax = Math.max(p1x, p2x) + 100;
+    const valid = candidates.filter(x => x >= rangeMin && x <= rangeMax);
+
+    // Sort by distance to defaultMidX (prefer closest alternative)
+    valid.sort((a, b) => Math.abs(a - defaultMidX) - Math.abs(b - defaultMidX));
+
+    for (const candX of valid) {
+        if (isHorizontalSRouteClear(candX, p1x, p1y, p2x, p2y, obstacles)) {
+            return candX;
+        }
+    }
+    return defaultMidX; // fallback
+}
+
+/**
+ * Find a clear Y position for the middle horizontal segment of a vertical S-route.
+ * Uses obstacle bbox edges as candidate positions.
+ */
+function findClearMidY(defaultMidY, p1x, p1y, p2x, p2y, obstacles) {
+    // Collect candidate Y positions from obstacle bbox edges
+    const candidates = [];
+    for (const bbox of obstacles) {
+        candidates.push(bbox.y - 1);    // just above obstacle (bbox already has padding)
+        candidates.push(bbox.y2 + 1);   // just below obstacle
+    }
+
+    // Constrain to the range that computeOrthogonalPath will accept
+    const rangeMin = Math.min(p1y, p2y) - 100;
+    const rangeMax = Math.max(p1y, p2y) + 100;
+    const valid = candidates.filter(y => y >= rangeMin && y <= rangeMax);
+
+    // Sort by distance to defaultMidY (prefer closest alternative)
+    valid.sort((a, b) => Math.abs(a - defaultMidY) - Math.abs(b - defaultMidY));
+
+    for (const candY of valid) {
+        if (isVerticalSRouteClear(candY, p1x, p1y, p2x, p2y, obstacles)) {
+            return candY;
+        }
+    }
+    return defaultMidY; // fallback
+}
+
+/**
+ * For each S-route connection, check if the default middle segment
+ * intersects any non-source/non-target shape; if so, set waypoints to route around.
+ */
+function routeAroundObstacles(steps, connections) {
+    const stepsById = {};
+    for (const s of steps) stepsById[s.id] = s;
+
+    for (const conn of connections) {
+        const source = stepsById[conn.source_step_id];
+        const target = stepsById[conn.target_step_id];
+        if (!source || !target) continue;
+
+        const sourceSide = conn.source_port;
+        const targetSide = conn.target_port;
+        if (!sourceSide || !targetSide) continue;
+
+        const sourceH = (sourceSide === 'left' || sourceSide === 'right');
+        const targetH = (targetSide === 'left' || targetSide === 'right');
+
+        // Only process S-routes (both ports on same axis → 3 segments)
+        if (sourceH !== targetH) continue;
+
+        const p1 = shapePortPoint(source, sourceSide);
+        const p2 = shapePortPoint(target, targetSide);
+
+        // Build obstacle list: all shapes except source and target
+        const obstacles = [];
+        for (const s of steps) {
+            if (s.id === conn.source_step_id || s.id === conn.target_step_id) continue;
+            obstacles.push(shapeBBox(s));
+        }
+        if (obstacles.length === 0) continue;
+
+        if (sourceH && targetH) {
+            // Horizontal S-route: H → V → H
+            const defaultMidX = (p1.x + p2.x) / 2;
+            if (!isHorizontalSRouteClear(defaultMidX, p1.x, p1.y, p2.x, p2.y, obstacles)) {
+                const clearX = findClearMidX(defaultMidX, p1.x, p1.y, p2.x, p2.y, obstacles);
+                if (clearX !== defaultMidX) {
+                    conn.waypoints = [{ x: clearX, y: (p1.y + p2.y) / 2 }];
+                }
+            }
+        } else {
+            // Vertical S-route: V → H → V
+            const defaultMidY = (p1.y + p2.y) / 2;
+            if (!isVerticalSRouteClear(defaultMidY, p1.x, p1.y, p2.x, p2.y, obstacles)) {
+                const clearY = findClearMidY(defaultMidY, p1.x, p1.y, p2.x, p2.y, obstacles);
+                if (clearY !== defaultMidY) {
+                    conn.waypoints = [{ x: (p1.x + p2.x) / 2, y: clearY }];
+                }
+            }
+        }
+    }
 }
 
 // ============================================================
@@ -405,21 +728,66 @@ const FIELD_TYPES = [
     { type: 'Many2many', icon: 'fa-exchange', label: 'Many2many', hint: 'Multiple links' },
     { type: 'Binary', icon: 'fa-file', label: 'File', hint: 'File attachment' },
     { type: 'Image', icon: 'fa-picture-o', label: 'Image', hint: 'Image upload' },
+    { type: 'Text', icon: 'fa-pencil-square-o', label: 'Notebook', hint: 'Long text'}
 ];
+
+const LAYOUT_ELEMENTS = [
+    { type: 'group', icon: 'fa-columns', label: 'Group', hint: 'Multi-column section' },
+    { type: 'notebook', icon: 'fa-folder-o', label: 'Tab', hint: 'Tabbed sections' },
+    { type: 'page', icon: 'fa-file-o', label: 'Page', hint: 'Page inside a notebook' },
+    { type: 'separator', icon: 'fa-minus', label: 'Separator', hint: 'Section title with divider' },
+];
+
+// Type maps for converting between display (Char) and DB (char) types
+const TTYPE_MAP = {
+    'Char': 'char', 'Text': 'text', 'Html': 'html',
+    'Integer': 'integer', 'Float': 'float', 'Monetary': 'monetary',
+    'Boolean': 'boolean', 'Date': 'date', 'Datetime': 'datetime',
+    'Selection': 'selection', 'Many2one': 'many2one', 'One2many': 'one2many',
+    'Many2many': 'many2many', 'Binary': 'binary', 'Image': 'image',
+};
+const TTYPE_MAP_REVERSE = Object.fromEntries(
+    Object.entries(TTYPE_MAP).map(([k, v]) => [v, k])
+);
+
+class FieldWidgetPreview extends Component {
+    static template = "process_mapper.FieldWidgetPreview";
+    static props = {
+        field: { type: Object },
+    };
+}
 
 class FieldBuilder extends Component {
     static template = "process_mapper.FieldBuilder";
+    static components = { FieldWidgetPreview };
     static props = {
         dataFields: { type: String },
+        fieldRecords: { type: Array, optional: true },
+        formLayout: { type: String, optional: true },
         onSave: { type: Function },
         onClose: { type: Function },
     };
 
     setup() {
         this.orm = useService("orm");
+        this.nextId = 1000;
+        this._nodeIdCounter = 1;
+        this._searchTimeout = null;
+        const fr = this.props.fieldRecords;
+        // Remember which DB field IDs existed when we opened, so we can detect deletions at save time
+        this._originalFieldIds = new Set((fr || []).filter(r => r.id).map(r => r.id));
+        const initialFields = (fr && fr.length > 0)
+            ? this._loadFieldRecords(fr)
+            : this._parseFields(this.props.dataFields);
+        const layout = this._initLayout(initialFields);
         this.state = useState({
-            fields: this._parseFields(this.props.dataFields),
+            fields: initialFields,
+            layout: layout,
+            dragOverNodeId: null,
             dragOverIndex: -1,
+            isDragging: false,
+            selectedFieldId: null,
+            activeNotebookPages: {},
             paletteTab: 'types',
             modelQuery: '',
             modelResults: [],
@@ -427,8 +795,428 @@ class FieldBuilder extends Component {
             modelFields: [],
             modelFieldsLoading: false,
         });
-        this.nextId = 1000;
-        this._searchTimeout = null;
+    }
+
+    // ====== Layout tree helpers ======
+
+    _genNodeId() {
+        return `n${this._nodeIdCounter++}`;
+    }
+
+    _initLayout(fields) {
+        const raw = this.props.formLayout;
+        if (raw) {
+            try {
+                const tree = this._deserializeLayout(JSON.parse(raw), fields);
+                if (tree) return tree;
+            } catch { /* fall through to default */ }
+        }
+        return this._buildDefaultLayout(fields);
+    }
+
+    _buildDefaultLayout(fields) {
+        const sheet = { _nodeId: this._genNodeId(), type: 'sheet', children: [] };
+        if (fields.length === 0) return sheet;
+
+        const relational = fields.filter(f => ['One2many', 'Many2many'].includes(f.type));
+        const normal = fields.filter(f => !['One2many', 'Many2many'].includes(f.type));
+
+        if (normal.length > 0) {
+            const group = { _nodeId: this._genNodeId(), type: 'group', cols: 2, children: [] };
+            const left = { _nodeId: this._genNodeId(), type: 'group_column', children: [] };
+            const right = { _nodeId: this._genNodeId(), type: 'group_column', children: [] };
+            const mid = Math.ceil(normal.length / 2);
+            for (let i = 0; i < normal.length; i++) {
+                const col = i < mid ? left : right;
+                col.children.push({ _nodeId: this._genNodeId(), type: 'field', fieldId: normal[i]._id });
+            }
+            group.children.push(left, right);
+            sheet.children.push(group);
+        }
+
+        if (relational.length > 0) {
+            const nb = { _nodeId: this._genNodeId(), type: 'notebook', children: [] };
+            for (const f of relational) {
+                const page = {
+                    _nodeId: this._genNodeId(), type: 'page',
+                    label: f.field_description || f.name, name: f.name,
+                    children: [{ _nodeId: this._genNodeId(), type: 'field', fieldId: f._id }],
+                };
+                nb.children.push(page);
+            }
+            sheet.children.push(nb);
+        }
+        return sheet;
+    }
+
+    _findNode(nodeId, root, parent) {
+        root = root || this.state.layout;
+        if (root._nodeId === nodeId) return { parent, node: root, index: -1 };
+        if (root.children) {
+            for (let i = 0; i < root.children.length; i++) {
+                if (root.children[i]._nodeId === nodeId) {
+                    return { parent: root, node: root.children[i], index: i };
+                }
+                const found = this._findNode(nodeId, root.children[i], root);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    _allFieldNodeIds(root) {
+        const ids = [];
+        root = root || this.state.layout;
+        if (root.type === 'field' && root.fieldId) ids.push(root.fieldId);
+        if (root.children) {
+            for (const c of root.children) ids.push(...this._allFieldNodeIds(c));
+        }
+        return ids;
+    }
+
+    get unplacedFields() {
+        const placed = new Set(this._allFieldNodeIds());
+        return this.state.fields.filter(f => !placed.has(f._id));
+    }
+
+    get layoutElements() {
+        return LAYOUT_ELEMENTS;
+    }
+
+    getColLabel(index, total) {
+        if (total <= 2) return index === 0 ? 'Left' : 'Right';
+        return `Col ${index + 1}`;
+    }
+
+    getGroupGridStyle(group) {
+        const cols = group.cols || group.children.length || 2;
+        return `grid-template-columns: repeat(${cols}, 1fr)`;
+    }
+
+    getFieldById(fieldId) {
+        return this.state.fields.find(f => f._id === fieldId) || null;
+    }
+
+    _isValidDrop(itemType, parentType) {
+        const rules = {
+            sheet: ['group', 'notebook', 'separator', 'field'],
+            group: ['group_column'],
+            group_column: ['field'],
+            notebook: ['page'],
+            page: ['group', 'notebook', 'separator', 'field'],
+        };
+        return (rules[parentType] || []).includes(itemType);
+    }
+
+    // Notebook page management
+    isActiveNotebookPage(notebookNodeId, pageNodeId) {
+        const active = this.state.activeNotebookPages[notebookNodeId];
+        if (active) return active === pageNodeId;
+        // Default: first page
+        const nb = this._findNode(notebookNodeId);
+        if (nb && nb.node.children && nb.node.children.length > 0) {
+            return nb.node.children[0]._nodeId === pageNodeId;
+        }
+        return false;
+    }
+
+    onSelectNotebookPage(notebookNodeId, pageNodeId) {
+        this.state.activeNotebookPages[notebookNodeId] = pageNodeId;
+    }
+
+    onAddPage(notebookNodeId) {
+        const nb = this._findNode(notebookNodeId);
+        if (!nb) return;
+        const page = {
+            _nodeId: this._genNodeId(), type: 'page',
+            label: `Page ${nb.node.children.length + 1}`, name: `page_${nb.node.children.length + 1}`,
+            children: [],
+        };
+        nb.node.children.push(page);
+        this.state.activeNotebookPages[notebookNodeId] = page._nodeId;
+    }
+
+    onRemovePage(notebookNodeId, pageNodeId) {
+        const nb = this._findNode(notebookNodeId);
+        if (!nb || !nb.node.children) return;
+        // Don't delete the last page
+        if (nb.node.children.length <= 1) return;
+        const idx = nb.node.children.findIndex(p => p._nodeId === pageNodeId);
+        if (idx === -1) return;
+        nb.node.children.splice(idx, 1);
+        // If the deleted page was active, switch to the nearest page
+        if (this.state.activeNotebookPages[notebookNodeId] === pageNodeId) {
+            const newIdx = Math.min(idx, nb.node.children.length - 1);
+            this.state.activeNotebookPages[notebookNodeId] = nb.node.children[newIdx]._nodeId;
+        }
+    }
+
+    onRemoveNode(nodeId) {
+        const found = this._findNode(nodeId);
+        if (!found || !found.parent) return;
+        found.parent.children.splice(found.index, 1);
+    }
+
+    onAddGroupColumn(groupNodeId) {
+        const found = this._findNode(groupNodeId);
+        if (!found || found.node.type !== 'group') return;
+        const cols = (found.node.cols || 2);
+        if (cols >= 4) return; // max 4 columns
+        found.node.cols = cols + 1;
+        found.node.children.push({ _nodeId: this._genNodeId(), type: 'group_column', children: [] });
+    }
+
+    onRemoveGroupColumn(groupNodeId) {
+        const found = this._findNode(groupNodeId);
+        if (!found || found.node.type !== 'group') return;
+        const cols = (found.node.cols || 2);
+        if (cols <= 1) return; // min 1 column
+        found.node.cols = cols - 1;
+        // Remove last column; move its fields to the previous column
+        const removed = found.node.children.pop();
+        if (removed && removed.children && removed.children.length > 0) {
+            const lastCol = found.node.children[found.node.children.length - 1];
+            lastCol.children.push(...removed.children);
+        }
+    }
+
+    _moveNode(nodeId, targetParentNodeId, targetIndex) {
+        const found = this._findNode(nodeId);
+        if (!found || !found.parent) return;
+        const sourceParent = found.parent;
+        const sourceIndex = found.index;
+        // Remove from old location
+        sourceParent.children.splice(sourceIndex, 1);
+        // Insert at new location
+        const target = this._findNode(targetParentNodeId);
+        if (!target) return;
+        // Adjust index if moving within the same parent and source was before target
+        let adjustedIndex = targetIndex;
+        if (target.node === sourceParent && sourceIndex < targetIndex) {
+            adjustedIndex--;
+        }
+        target.node.children.splice(adjustedIndex, 0, found.node);
+    }
+
+    // Serialization: convert layout tree to portable JSON (field names, not IDs)
+    _serializeLayout(root) {
+        root = root || this.state.layout;
+        const node = { type: root.type };
+        if (root.label) node.label = root.label;
+        if (root.name) node.name = root.name;
+        if (root.type === 'group' && root.cols) node.cols = root.cols;
+        if (root.type === 'field' && root.fieldId) {
+            const f = this.getFieldById(root.fieldId);
+            node.fieldName = f ? f.name : '';
+        }
+        if (root.children) {
+            node.children = root.children.map(c => this._serializeLayout(c));
+        }
+        return node;
+    }
+
+    _deserializeLayout(data, fields) {
+        if (!data || !data.type) return null;
+        const node = { _nodeId: this._genNodeId(), type: data.type };
+        if (data.label) node.label = data.label;
+        if (data.name) node.name = data.name;
+        if (data.type === 'group' && data.cols) node.cols = data.cols;
+        if (data.type === 'field' && data.fieldName) {
+            const f = fields.find(fd => fd.name === data.fieldName);
+            node.fieldId = f ? f._id : null;
+            if (!node.fieldId) return null; // skip fields no longer present
+        }
+        if (data.children) {
+            node.children = data.children
+                .map(c => this._deserializeLayout(c, fields))
+                .filter(Boolean);
+        }
+        return node;
+    }
+
+    // Insert a new field into the layout at a given parent + index
+    _insertFieldNode(fieldId, parentNodeId, index) {
+        const parent = this._findNode(parentNodeId);
+        if (!parent) return;
+        const parentType = parent.node.type;
+
+        if (parentType === 'sheet' || parentType === 'page' || parentType === 'group_column') {
+            parent.node.children.splice(index, 0, {
+                _nodeId: this._genNodeId(), type: 'field', fieldId,
+            });
+        }
+    }
+
+    _insertLayoutElement(elemType, parentNodeId, index) {
+        const parent = this._findNode(parentNodeId);
+        if (!parent) return;
+        let node;
+        switch (elemType) {
+            case 'group':
+                node = { _nodeId: this._genNodeId(), type: 'group', cols: 2, children: [
+                    { _nodeId: this._genNodeId(), type: 'group_column', children: [] },
+                    { _nodeId: this._genNodeId(), type: 'group_column', children: [] },
+                ] };
+                break;
+            case 'notebook':
+                node = { _nodeId: this._genNodeId(), type: 'notebook', children: [
+                    { _nodeId: this._genNodeId(), type: 'page', label: 'Page 1', name: 'page_1', children: [] },
+                ] };
+                break;
+            case 'page': {
+                if (parent.node.type !== 'notebook') return; // pages only inside notebooks
+                const pn = parent.node.children.length + 1;
+                node = { _nodeId: this._genNodeId(), type: 'page', label: `Page ${pn}`, name: `page_${pn}`, children: [] };
+                break;
+            }
+            case 'separator':
+                node = { _nodeId: this._genNodeId(), type: 'separator', label: 'Section' };
+                break;
+            default:
+                return;
+        }
+        parent.node.children.splice(index, 0, node);
+    }
+
+    // ====== Drag & Drop for Layout ======
+
+    onSheetDragEnd() {
+        this.state.isDragging = false;
+        this.state.dragOverNodeId = null;
+    }
+
+    onLayoutDragOver(ev, parentNodeId, index) {
+        ev.preventDefault();
+        this.state.dragOverNodeId = `${parentNodeId}:${index}`;
+    }
+
+    onLayoutDragLeave(ev) {
+        this.state.dragOverNodeId = null;
+    }
+
+    isDragOver(parentNodeId, index) {
+        return this.state.dragOverNodeId === `${parentNodeId}:${index}`;
+    }
+
+    onLayoutDrop(ev, parentNodeId, index) {
+        ev.preventDefault();
+        this.state.dragOverNodeId = null;
+        this.state.isDragging = false;
+
+        // 0. Unplaced field being dropped back
+        if (this._handleUnplacedFieldDrop(ev, parentNodeId, index)) return;
+
+        // 1. Layout element from palette
+        const layoutElemType = ev.dataTransfer.getData("application/pm-layout-element");
+        if (layoutElemType) {
+            this._insertLayoutElement(layoutElemType, parentNodeId, index);
+            return;
+        }
+
+        // 2. Existing layout node being moved
+        const moveNodeId = ev.dataTransfer.getData("application/pm-layout-node");
+        if (moveNodeId) {
+            this._moveNode(moveNodeId, parentNodeId, index);
+            return;
+        }
+
+        // 3. Model field from model browser
+        const modelFieldData = ev.dataTransfer.getData("application/pm-model-field");
+        if (modelFieldData) {
+            try {
+                const mf = JSON.parse(modelFieldData);
+                const newField = this._makeDefaultField({
+                    name: mf.name,
+                    type: mf.type,
+                    required: mf.required || false,
+                    relation: mf.relation || '',
+                    field_description: mf.label || '',
+                    readonly: mf.readonly || false,
+                    store: mf.store !== undefined ? mf.store : true,
+                    index: mf.index || '',
+                    copy: mf.copy !== undefined ? mf.copy : true,
+                    translate: mf.translate || false,
+                    relation_field: mf.relation_field || '',
+                    relation_table: mf.relation_table || '',
+                    domain: mf.domain || '[]',
+                    on_delete: mf.on_delete || 'set null',
+                    help_text: mf.help || '',
+                    groups: mf.groups || '',
+                    size: mf.size || 0,
+                    selection_values: mf.selection_values || '',
+                    source_model: mf.source_model || '',
+                });
+                this.state.fields.push(newField);
+                this._insertFieldNode(newField._id, parentNodeId, index);
+            } catch { /* ignore */ }
+            return;
+        }
+
+        // 4. Field type from palette
+        const typeName = ev.dataTransfer.getData("application/pm-field-type");
+        if (typeName) {
+            const suggestedName = this._suggestFieldName(typeName);
+            const newField = this._makeDefaultField({ name: suggestedName, type: typeName });
+            this.state.fields.push(newField);
+            this._insertFieldNode(newField._id, parentNodeId, index);
+            return;
+        }
+    }
+
+    onLayoutNodeDragStart(ev, nodeId) {
+        ev.dataTransfer.setData("application/pm-layout-node", nodeId);
+        ev.dataTransfer.effectAllowed = "move";
+        this.state.isDragging = true;
+    }
+
+    onLayoutElemDragStart(ev, elemType) {
+        ev.dataTransfer.setData("application/pm-layout-element", elemType);
+        ev.dataTransfer.effectAllowed = "copy";
+        this.state.isDragging = true;
+    }
+
+    // Clicking a field in layout selects it for detail editing
+    onSelectField(fieldId) {
+        this.state.selectedFieldId = this.state.selectedFieldId === fieldId ? null : fieldId;
+    }
+
+    get selectedField() {
+        if (!this.state.selectedFieldId) return null;
+        return this.state.fields.find(f => f._id === this.state.selectedFieldId) || null;
+    }
+
+    get selectedFieldIndex() {
+        if (!this.state.selectedFieldId) return -1;
+        return this.state.fields.findIndex(f => f._id === this.state.selectedFieldId);
+    }
+
+    onSeparatorLabelChange(nodeId, ev) {
+        const found = this._findNode(nodeId);
+        if (found) found.node.label = ev.target.value;
+    }
+
+    onPageLabelChange(nodeId, ev) {
+        const found = this._findNode(nodeId);
+        if (found) found.node.label = ev.target.value;
+    }
+
+    // Drop an unplaced field back into the layout
+    onUnplacedFieldDragStart(ev, fieldId) {
+        const field = this.getFieldById(fieldId);
+        if (!field) return;
+        ev.dataTransfer.setData("application/pm-unplaced-field", String(fieldId));
+        ev.dataTransfer.effectAllowed = "copy";
+        this.state.isDragging = true;
+    }
+
+    // Handle unplaced field drops in the layout drop handler
+    _handleUnplacedFieldDrop(ev, parentNodeId, index) {
+        const unplacedId = ev.dataTransfer.getData("application/pm-unplaced-field");
+        if (unplacedId) {
+            this._insertFieldNode(parseInt(unplacedId), parentNodeId, index);
+            return true;
+        }
+        return false;
     }
 
     get fieldTypes() {
@@ -483,9 +1271,60 @@ class FieldBuilder extends Component {
             required: mf.required,
             relation: mf.relation || '',
             label: mf.label,
+            readonly: mf.readonly || false,
+            store: mf.store !== undefined ? mf.store : true,
+            index: mf.index || '',
+            copy: mf.copy !== undefined ? mf.copy : true,
+            translate: mf.translate || false,
+            relation_field: mf.relation_field || '',
+            relation_table: mf.relation_table || '',
+            domain: mf.domain || '[]',
+            on_delete: mf.on_delete || 'set null',
+            help: mf.help || '',
+            groups: mf.groups || '',
+            size: mf.size || 0,
+            selection_values: mf.selection_values || '',
+            source_model: mf.source_model || '',
         });
         ev.dataTransfer.setData("application/pm-model-field", data);
         ev.dataTransfer.effectAllowed = "copy";
+        this.state.isDragging = true;
+    }
+
+    _loadFieldRecords(records) {
+        const fields = [];
+        for (const r of records) {
+            fields.push({
+                _id: this.nextId ? this.nextId++ : fields.length + 1000,
+                id: r.id || false,
+                name: r.name || '',
+                type: TTYPE_MAP_REVERSE[r.ttype] || 'Char',
+                required: r.required || false,
+                relation: r.relation || '',
+                options: '',
+                expanded: false,
+                field_description: r.field_description || '',
+                readonly: r.readonly || false,
+                store: r.store !== undefined ? r.store : true,
+                index: r.index || '',
+                copy: r.copy !== undefined ? r.copy : true,
+                translate: r.translate || false,
+                relation_field: r.relation_field || '',
+                relation_table: r.relation_table || '',
+                domain: r.domain || '[]',
+                on_delete: r.on_delete || 'set null',
+                help_text: r.help_text || '',
+                groups: r.groups || '',
+                size: r.size || 0,
+                digits: r.digits || '',
+                selection_values: r.selection_values || '',
+                default_value: r.default_value || '',
+                source_model: r.source_model || '',
+            });
+        }
+        // nextId may not be set yet during constructor; fix it
+        this.nextId = Math.max(1000, ...fields.map(f => f._id)) + 1;
+        return fields;
     }
 
     _parseFields(text) {
@@ -497,35 +1336,90 @@ class FieldBuilder extends Component {
             const match = trimmed.match(/^(\w+)\s*:\s*(\w+)\s*(.*)$/);
             if (match) {
                 const options = match[3] ? match[3].replace(/[()]/g, '').trim() : '';
-                fields.push({
+                const f = {
                     _id: this.nextId++,
+                    id: false,
                     name: match[1],
                     type: match[2],
                     required: options.includes('required'),
                     relation: '',
                     options: options.replace('required', '').replace(',', '').trim(),
-                });
+                    expanded: false,
+                    field_description: '',
+                    readonly: false,
+                    store: true,
+                    index: '',
+                    copy: true,
+                    translate: false,
+                    relation_field: '',
+                    relation_table: '',
+                    domain: '[]',
+                    on_delete: 'set null',
+                    help_text: '',
+                    groups: '',
+                    size: 0,
+                    digits: '',
+                    selection_values: '',
+                    default_value: '',
+                    source_model: '',
+                };
                 const relMatch = options.match(/^([\w.]+)/);
                 if (relMatch && ['Many2one', 'One2many', 'Many2many'].includes(match[2])) {
-                    fields[fields.length - 1].relation = relMatch[1];
-                    fields[fields.length - 1].options = options.replace(relMatch[1], '').replace(',', '').trim();
+                    f.relation = relMatch[1];
+                    f.options = options.replace(relMatch[1], '').replace(',', '').trim();
                 }
+                fields.push(f);
             } else {
                 fields.push({
                     _id: this.nextId++,
+                    id: false,
                     name: trimmed,
                     type: 'Char',
                     required: false,
                     relation: '',
                     options: '',
+                    expanded: false,
+                    field_description: '',
+                    readonly: false,
+                    store: true,
+                    index: '',
+                    copy: true,
+                    translate: false,
+                    relation_field: '',
+                    relation_table: '',
+                    domain: '[]',
+                    on_delete: 'set null',
+                    help_text: '',
+                    groups: '',
+                    size: 0,
+                    digits: '',
+                    selection_values: '',
+                    default_value: '',
+                    source_model: '',
                 });
             }
         }
         return fields;
     }
 
+    _getOrderedFields() {
+        // Return fields in layout tree order, then any unplaced fields
+        const orderedIds = this._allFieldNodeIds();
+        const ordered = [];
+        for (const fid of orderedIds) {
+            const f = this.state.fields.find(fd => fd._id === fid);
+            if (f) ordered.push(f);
+        }
+        // Append unplaced fields at end
+        const placedSet = new Set(orderedIds);
+        for (const f of this.state.fields) {
+            if (!placedSet.has(f._id)) ordered.push(f);
+        }
+        return ordered;
+    }
+
     _serializeFields() {
-        return this.state.fields.map(f => {
+        return this._getOrderedFields().map(f => {
             let line = `${f.name}: ${f.type}`;
             const parts = [];
             if (['Many2one', 'One2many', 'Many2many'].includes(f.type) && f.relation) {
@@ -538,9 +1432,46 @@ class FieldBuilder extends Component {
         }).join('\n');
     }
 
+    _buildFieldRecords() {
+        const records = this._getOrderedFields().map((f, idx) => ({
+            id: f.id || false,
+            sequence: (idx + 1) * 10,
+            name: f.name,
+            field_description: f.field_description || '',
+            ttype: TTYPE_MAP[f.type] || 'char',
+            required: f.required || false,
+            readonly: f.readonly || false,
+            store: f.store !== undefined ? f.store : true,
+            index: f.index || '',
+            copy: f.copy !== undefined ? f.copy : true,
+            translate: f.translate || false,
+            relation: f.relation || '',
+            relation_field: f.relation_field || '',
+            relation_table: f.relation_table || '',
+            domain: f.domain || '[]',
+            on_delete: f.on_delete || 'set null',
+            help_text: f.help_text || '',
+            groups: f.groups || '',
+            size: f.size || 0,
+            digits: f.digits || '',
+            selection_values: f.selection_values || '',
+            default_value: f.default_value || '',
+            source_model: f.source_model || '',
+        }));
+        // Detect deleted fields by comparing original DB IDs with what remains
+        const currentIds = new Set(records.filter(r => r.id).map(r => r.id));
+        for (const origId of this._originalFieldIds) {
+            if (!currentIds.has(origId)) {
+                records.push({ id: origId, _delete: true });
+            }
+        }
+        return records;
+    }
+
     onPaletteDragStart(ev, fieldType) {
         ev.dataTransfer.setData("application/pm-field-type", fieldType.type);
         ev.dataTransfer.effectAllowed = "copy";
+        this.state.isDragging = true;
     }
 
     onDropZoneDragOver(ev, index) {
@@ -553,6 +1484,36 @@ class FieldBuilder extends Component {
         this.state.dragOverIndex = -1;
     }
 
+    _makeDefaultField(overrides) {
+        return Object.assign({
+            _id: this.nextId++,
+            id: false,
+            name: '',
+            type: 'Char',
+            required: false,
+            relation: '',
+            options: '',
+            expanded: false,
+            field_description: '',
+            readonly: false,
+            store: true,
+            index: '',
+            copy: true,
+            translate: false,
+            relation_field: '',
+            relation_table: '',
+            domain: '[]',
+            on_delete: 'set null',
+            help_text: '',
+            groups: '',
+            size: 0,
+            digits: '',
+            selection_values: '',
+            default_value: '',
+            source_model: '',
+        }, overrides);
+    }
+
     onDropZoneDrop(ev, index) {
         ev.preventDefault();
         this.state.dragOverIndex = -1;
@@ -561,14 +1522,27 @@ class FieldBuilder extends Component {
         if (modelFieldData) {
             try {
                 const mf = JSON.parse(modelFieldData);
-                this.state.fields.splice(index, 0, {
-                    _id: this.nextId++,
+                this.state.fields.splice(index, 0, this._makeDefaultField({
                     name: mf.name,
                     type: mf.type,
                     required: mf.required || false,
                     relation: mf.relation || '',
-                    options: '',
-                });
+                    field_description: mf.label || '',
+                    readonly: mf.readonly || false,
+                    store: mf.store !== undefined ? mf.store : true,
+                    index: mf.index || '',
+                    copy: mf.copy !== undefined ? mf.copy : true,
+                    translate: mf.translate || false,
+                    relation_field: mf.relation_field || '',
+                    relation_table: mf.relation_table || '',
+                    domain: mf.domain || '[]',
+                    on_delete: mf.on_delete || 'set null',
+                    help_text: mf.help || '',
+                    groups: mf.groups || '',
+                    size: mf.size || 0,
+                    selection_values: mf.selection_values || '',
+                    source_model: mf.source_model || '',
+                }));
             } catch { /* ignore parse errors */ }
             return;
         }
@@ -576,15 +1550,10 @@ class FieldBuilder extends Component {
         const typeName = ev.dataTransfer.getData("application/pm-field-type");
         if (!typeName) return;
         const suggestedName = this._suggestFieldName(typeName);
-        const newField = {
-            _id: this.nextId++,
+        this.state.fields.splice(index, 0, this._makeDefaultField({
             name: suggestedName,
             type: typeName,
-            required: false,
-            relation: '',
-            options: '',
-        };
-        this.state.fields.splice(index, 0, newField);
+        }));
     }
 
     _suggestFieldName(typeName) {
@@ -627,8 +1596,47 @@ class FieldBuilder extends Component {
         this.state.fields[index].required = !this.state.fields[index].required;
     }
 
+    onToggleExpand(index) {
+        this.state.fields[index].expanded = !this.state.fields[index].expanded;
+    }
+
+    onToggleAttr(index, attr) {
+        this.state.fields[index][attr] = !this.state.fields[index][attr];
+    }
+
     onRemoveField(index) {
-        this.state.fields.splice(index, 1);
+        const field = this.state.fields[index];
+        if (field) {
+            this._removeFieldFromLayout(field._id);
+        }
+        this.state.fields = this.state.fields.filter((_, i) => i !== index);
+    }
+
+    _removeFieldFromLayout(fieldId, root) {
+        root = root || this.state.layout;
+        if (root.children) {
+            for (let i = root.children.length - 1; i >= 0; i--) {
+                const child = root.children[i];
+                if (child.type === 'field' && child.fieldId === fieldId) {
+                    root.children.splice(i, 1);
+                    return true;
+                }
+                if (this._removeFieldFromLayout(fieldId, child)) return true;
+            }
+        }
+        return false;
+    }
+
+    onRemoveUnplacedField(fieldId) {
+        this.state.fields = this.state.fields.filter(f => f._id !== fieldId);
+    }
+
+    onDeleteField(fieldId) {
+        this._removeFieldFromLayout(fieldId);
+        this.state.fields = this.state.fields.filter(f => f._id !== fieldId);
+        if (this.state.selectedFieldId === fieldId) {
+            this.state.selectedFieldId = null;
+        }
     }
 
     onMoveUp(index) {
@@ -648,11 +1656,15 @@ class FieldBuilder extends Component {
     }
 
     onSave() {
-        this.props.onSave(this._serializeFields());
+        const text = this._serializeFields();
+        const fieldRecords = this._buildFieldRecords();
+        const formLayout = JSON.stringify(this._serializeLayout());
+        this.props.onSave({ text, fieldRecords, formLayout });
     }
 
     onClose() {
-        this.props.onClose();
+        // Auto-apply changes when closing so deletions aren't lost
+        this.onSave();
     }
 }
 
@@ -670,12 +1682,22 @@ class ProcessMapperProperties extends Component {
         roles: { type: Array },
         orgs: { type: Array },
         availableMaps: { type: Array },
+        lanePresets: { type: Array },
         onPropertyChange: { type: Function },
+        onFieldRecordsSave: { type: Function },
+        onCreatePreset: { type: Function },
+        onUpdatePresetColor: { type: Function },
         onDelete: { type: Function },
     };
 
     setup() {
-        this.state = useState({ showFieldBuilder: false, showIconPicker: false });
+        this.state = useState({
+            showFieldBuilder: false,
+            showIconPicker: false,
+            showNewPresetForm: false,
+            newPresetName: '',
+            newPresetColor: '#E3F2FD',
+        });
         this.stepIcons = STEP_ICONS;
     }
 
@@ -684,15 +1706,66 @@ class ProcessMapperProperties extends Component {
         if (field === 'lane_id' || field === 'role_id' || field === 'org_id' || field === 'sub_process_id') {
             value = value ? parseInt(value) : false;
         }
+        if (field === 'preset') {
+            if (value === '__new__') {
+                this.state.showNewPresetForm = true;
+                return;
+            }
+            this.state.showNewPresetForm = false;
+        }
         this.props.onPropertyChange(field, value);
+    }
+
+    onNewPresetNameChange(ev) {
+        this.state.newPresetName = ev.target.value;
+    }
+
+    onNewPresetColorChange(ev) {
+        this.state.newPresetColor = ev.target.value;
+    }
+
+    async onSaveNewPreset() {
+        const name = this.state.newPresetName.trim();
+        if (!name) return;
+        await this.props.onCreatePreset(name, this.state.newPresetColor);
+        this.state.showNewPresetForm = false;
+        this.state.newPresetName = '';
+        this.state.newPresetColor = '#E3F2FD';
+    }
+
+    onCancelNewPreset() {
+        this.state.showNewPresetForm = false;
+        this.state.newPresetName = '';
+        this.state.newPresetColor = '#E3F2FD';
+    }
+
+    get matchedPreset() {
+        const el = this.props.selectedElement;
+        if (!el || this.props.selectedType !== 'lane') return null;
+        return this.props.lanePresets.find(p => p.name === el.name) || null;
+    }
+
+    get presetColorChanged() {
+        const preset = this.matchedPreset;
+        if (!preset) return false;
+        const elColor = (this.props.selectedElement.color || '#E3F2FD').toUpperCase();
+        return elColor !== preset.color.toUpperCase();
+    }
+
+    async onSavePresetColor() {
+        const preset = this.matchedPreset;
+        if (!preset) return;
+        await this.props.onUpdatePresetColor(preset.id, this.props.selectedElement.color);
     }
 
     openFieldBuilder() {
         this.state.showFieldBuilder = true;
     }
 
-    onFieldBuilderSave(serialized) {
-        this.props.onPropertyChange('data_fields', serialized);
+    onFieldBuilderSave(result) {
+        // Use dedicated save method with explicit step ID
+        const stepId = this.props.selectedElement && this.props.selectedElement.id;
+        this.props.onFieldRecordsSave(stepId, result);
         this.state.showFieldBuilder = false;
     }
 
@@ -858,8 +1931,10 @@ class ProcessMapperCanvas extends Component {
         onUpdateConnectionWaypoints: { type: Function },
         onResizeStep: { type: Function },
         onResizeLane: { type: Function },
+        onMoveLane: { type: Function },
         onSnapStepToGrid: { type: Function },
         onSnapStepsToGrid: { type: Function },
+        onUpdateLabelOffset: { type: Function },
         snapIndicators: { type: Array },
     };
 
@@ -873,6 +1948,9 @@ class ProcessMapperCanvas extends Component {
         this.segmentDragging = null;
         this.resizing = null;
         this.laneResizing = null;
+        this.laneDragging = null;
+        this.draggingLabel = null;
+        this.spaceHeld = false;
         this.state = useState({
             rubberBandX: 0,
             rubberBandY: 0,
@@ -881,11 +1959,44 @@ class ProcessMapperCanvas extends Component {
             editingStepId: null,
             editingText: '',
             selectionRect: null,
+            cursorGrab: false,
+        });
+
+        // Spacebar pan: hold Space to enter pan mode
+        this._onKeyDown = (ev) => {
+            const tag = document.activeElement?.tagName;
+            const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+            if (ev.code === 'Space' && !this.spaceHeld && !this.state.editingStepId && !isTyping) {
+                ev.preventDefault();
+                this.spaceHeld = true;
+                this.state.cursorGrab = true;
+            }
+        };
+        this._onKeyUp = (ev) => {
+            if (ev.code === 'Space') {
+                this.spaceHeld = false;
+                if (!this.panning) {
+                    this.state.cursorGrab = false;
+                }
+            }
+        };
+
+        onMounted(() => {
+            document.addEventListener('keydown', this._onKeyDown);
+            document.addEventListener('keyup', this._onKeyUp);
+        });
+        onWillUnmount(() => {
+            document.removeEventListener('keydown', this._onKeyDown);
+            document.removeEventListener('keyup', this._onKeyUp);
         });
     }
 
     getTransform() {
         return `translate(${this.props.panX}, ${this.props.panY}) scale(${this.props.zoom})`;
+    }
+
+    getStickyLabelTransform() {
+        return `translate(0, ${this.props.panY}) scale(${this.props.zoom})`;
     }
 
     getStepClass(step) {
@@ -917,14 +2028,80 @@ class ProcessMapperCanvas extends Component {
         return pointsToSvgPath(points);
     }
 
+    /** Compute total polyline length and cumulative segment lengths. */
+    _pathMeasure(points) {
+        const cumLen = [0];
+        for (let i = 1; i < points.length; i++) {
+            const dx = points[i].x - points[i - 1].x;
+            const dy = points[i].y - points[i - 1].y;
+            cumLen.push(cumLen[i - 1] + Math.sqrt(dx * dx + dy * dy));
+        }
+        return cumLen;
+    }
+
+    /** Get {x, y} at parameter t (0–1) along a polyline. */
+    _pointAtT(points, t) {
+        if (points.length === 0) return { x: 0, y: 0 };
+        if (points.length === 1) return { ...points[0] };
+        const cumLen = this._pathMeasure(points);
+        const totalLen = cumLen[cumLen.length - 1];
+        if (totalLen === 0) return { ...points[0] };
+        const target = Math.max(0, Math.min(1, t)) * totalLen;
+        for (let i = 1; i < cumLen.length; i++) {
+            if (cumLen[i] >= target) {
+                const segLen = cumLen[i] - cumLen[i - 1];
+                const frac = segLen > 0 ? (target - cumLen[i - 1]) / segLen : 0;
+                return {
+                    x: points[i - 1].x + (points[i].x - points[i - 1].x) * frac,
+                    y: points[i - 1].y + (points[i].y - points[i - 1].y) * frac,
+                };
+            }
+        }
+        return { ...points[points.length - 1] };
+    }
+
+    /** Project a point onto the polyline and return its t value (0–1). */
+    _projectOntoPath(points, px, py) {
+        if (points.length < 2) return 0.5;
+        const cumLen = this._pathMeasure(points);
+        const totalLen = cumLen[cumLen.length - 1];
+        if (totalLen === 0) return 0.5;
+        let bestDist = Infinity;
+        let bestLen = 0;
+        for (let i = 1; i < points.length; i++) {
+            const ax = points[i - 1].x, ay = points[i - 1].y;
+            const bx = points[i].x, by = points[i].y;
+            const dx = bx - ax, dy = by - ay;
+            const segLen = cumLen[i] - cumLen[i - 1];
+            // Project point onto segment
+            let frac = 0;
+            if (segLen > 0) {
+                frac = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+                frac = Math.max(0, Math.min(1, frac));
+            }
+            const cx = ax + dx * frac;
+            const cy = ay + dy * frac;
+            const dist = (px - cx) ** 2 + (py - cy) ** 2;
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestLen = cumLen[i - 1] + frac * segLen;
+            }
+        }
+        return bestLen / totalLen;
+    }
+
     getConnectionLabelPos(conn) {
         const points = this.getConnectionPoints(conn);
         if (points.length === 0) return { x: 0, y: 0 };
-        // Midpoint of the middle segment
-        const midIdx = Math.floor(points.length / 2);
-        const a = points[midIdx - 1] || points[0];
-        const b = points[midIdx] || points[0];
-        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const off = conn.label_offset || {};
+        const t = (off.t !== undefined && off.t !== null) ? off.t : 0.5;
+        return this._pointAtT(points, t);
+    }
+
+    onLabelMouseDown(ev, conn) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        this.draggingLabel = { connId: conn.id };
     }
 
     getConnectionSegments(conn) {
@@ -936,14 +2113,16 @@ class ProcessMapperCanvas extends Component {
         for (let i = 0; i < points.length - 1; i++) {
             const a = points[i];
             const b = points[i + 1];
-            // Skip first and last segment (attached to shapes)
-            if (i === 0 || i === points.length - 2) continue;
             const isHorizontal = Math.abs(a.y - b.y) < 0.5;
+            const isMiddle = i > 0 && i < points.length - 2;
             segments.push({
                 midX: (a.x + b.x) / 2,
                 midY: (a.y + b.y) / 2,
+                x1: a.x, y1: a.y,
+                x2: b.x, y2: b.y,
                 segmentIndex: i,
                 isHorizontal,
+                isMiddle,
             });
         }
         return segments;
@@ -968,6 +2147,7 @@ class ProcessMapperCanvas extends Component {
     onSegmentHandleMouseDown(ev, conn, segIdx) {
         ev.stopPropagation();
         ev.preventDefault();
+        // Capture current full path so we can manipulate it stably during drag
         const points = this.getConnectionPoints(conn);
         const a = points[segIdx];
         const b = points[segIdx + 1];
@@ -978,6 +2158,14 @@ class ProcessMapperCanvas extends Component {
             segmentIndex: segIdx,
             isHorizontal,
             startPos: this.screenToSvg(ev.clientX, ev.clientY),
+            // Store the full original path points so we don't recompute mid-drag
+            originalPoints: points.map(p => ({ x: p.x, y: p.y })),
+            // Store port points so we can snap to them during drag
+            sourcePort: { x: points[0].x, y: points[0].y },
+            targetPort: { x: points[points.length - 1].x, y: points[points.length - 1].y },
+            // Preserve the connection's route type (ports) during drag
+            connSourcePort: conn.source_port || null,
+            connTargetPort: conn.target_port || null,
         };
     }
 
@@ -1133,6 +2321,19 @@ class ProcessMapperCanvas extends Component {
         }));
     }
 
+    // --- Lane drag handle ---
+    onLaneDragMouseDown(ev, lane) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        const pos = this.screenToSvg(ev.clientX, ev.clientY);
+        this.laneDragging = {
+            laneId: lane.id,
+            startMouseY: pos.y,
+            origY: lane.y_position,
+        };
+        this.props.onSelectElement(lane.id, 'lane');
+    }
+
     // --- Lane resize handle ---
     onLaneResizeMouseDown(ev, lane) {
         ev.stopPropagation();
@@ -1156,6 +2357,13 @@ class ProcessMapperCanvas extends Component {
 
     // --- Event handlers ---
     onSvgMouseDown(ev) {
+        // Middle mouse button or spacebar+click: always pan (even over elements)
+        if (ev.button === 1 || (ev.button === 0 && this.spaceHeld)) {
+            ev.preventDefault();
+            this.panning = { startX: ev.clientX, startY: ev.clientY, origPanX: this.props.panX, origPanY: this.props.panY };
+            this.state.cursorGrab = true;
+            return;
+        }
         if (ev.button !== 0) return;
         if (ev.target === this.svgRef.el || ev.target.tagName === 'rect' && ev.target.classList.contains('pm-canvas-bg')) {
             if (ev.shiftKey) {
@@ -1242,38 +2450,92 @@ class ProcessMapperCanvas extends Component {
             newHeight = Math.max(60, newHeight);
             this.props.onResizeLane(this.laneResizing.laneId, newHeight);
         }
+        if (this.laneDragging) {
+            const pos = this.screenToSvg(ev.clientX, ev.clientY);
+            let newY = this.laneDragging.origY + (pos.y - this.laneDragging.startMouseY);
+            if (this.props.gridEnabled) {
+                newY = Math.round(newY / 20) * 20;
+            }
+            this.props.onMoveLane(this.laneDragging.laneId, newY);
+        }
         if (this.segmentDragging) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
-            const conn = this.props.connections.find(c => c.id === this.segmentDragging.connId);
+            const seg = this.segmentDragging;
+            const snappedX = snapToGrid(pos.x);
+            const snappedY = snapToGrid(pos.y);
+            const wp = { x: snappedX, y: snappedY };
+
+            // Start with the original ports (preserve route type)
+            let sp = seg.connSourcePort;
+            let tp = seg.connTargetPort;
+
+            // Check if waypoint is close to an L-route bend point — if so, snap to L
+            const conn = this.props.connections.find(c => c.id === seg.connId);
             if (conn) {
                 const source = this.props.steps.find(s => s.id === conn.source_step_id);
                 const target = this.props.steps.find(s => s.id === conn.target_step_id);
                 if (source && target) {
-                    const points = computeOrthogonalPath(source, target, conn.waypoints || []);
-                    const segIdx = this.segmentDragging.segmentIndex;
-                    if (segIdx >= 0 && segIdx < points.length - 1) {
-                        // Build waypoints from the intermediate points (exclude first/last which are ports)
-                        const newWaypoints = [];
-                        for (let i = 1; i < points.length - 1; i++) {
-                            newWaypoints.push({ ...points[i] });
+                    const SNAP = 40;
+                    const allSides = ['top', 'right', 'bottom', 'left'];
+                    let bestDist = SNAP + 1;
+                    let bestSP = null, bestTP = null;
+                    for (const cs of allSides) {
+                        for (const ct of allSides) {
+                            const csH = (cs === 'left' || cs === 'right');
+                            const ctH = (ct === 'left' || ct === 'right');
+                            if (csH === ctH) continue; // only perpendicular (L-route)
+                            const pp1 = shapePortPoint(source, cs);
+                            const pp2 = shapePortPoint(target, ct);
+                            const bend = csH
+                                ? { x: pp2.x, y: pp1.y }
+                                : { x: pp1.x, y: pp2.y };
+                            // Skip if port faces away from bend
+                            const srcOK = (cs === 'right' && bend.x >= pp1.x) ||
+                                          (cs === 'left' && bend.x <= pp1.x) ||
+                                          (cs === 'bottom' && bend.y >= pp1.y) ||
+                                          (cs === 'top' && bend.y <= pp1.y);
+                            const tgtOK = (ct === 'right' && bend.x >= pp2.x) ||
+                                          (ct === 'left' && bend.x <= pp2.x) ||
+                                          (ct === 'bottom' && bend.y >= pp2.y) ||
+                                          (ct === 'top' && bend.y <= pp2.y);
+                            if (!srcOK || !tgtOK) continue;
+                            const d = Math.max(Math.abs(wp.x - bend.x), Math.abs(wp.y - bend.y));
+                            if (d < bestDist) {
+                                bestDist = d;
+                                bestSP = cs;
+                                bestTP = ct;
+                            }
                         }
-                        // Adjust the segment being dragged
-                        const wpIdxA = segIdx - 1; // index in waypoints array
-                        const wpIdxB = segIdx;
-                        if (this.segmentDragging.isHorizontal) {
-                            // H-segment: move vertically
-                            const newY = snapToGrid(pos.y);
-                            if (wpIdxA >= 0 && wpIdxA < newWaypoints.length) newWaypoints[wpIdxA].y = newY;
-                            if (wpIdxB >= 0 && wpIdxB < newWaypoints.length) newWaypoints[wpIdxB].y = newY;
+                    }
+                    if (bestSP && bestDist <= SNAP) {
+                        sp = bestSP;
+                        tp = bestTP;
+                    } else {
+                        // No L-route snap — switch to S-route (opposite ports)
+                        const sc = shapeCenter(source);
+                        const tc = shapeCenter(target);
+                        const ddx = tc.x - sc.x;
+                        const ddy = tc.y - sc.y;
+                        if (Math.abs(ddx) > Math.abs(ddy)) {
+                            sp = ddx > 0 ? 'right' : 'left';
+                            tp = ddx > 0 ? 'left' : 'right';
                         } else {
-                            // V-segment: move horizontally
-                            const newX = snapToGrid(pos.x);
-                            if (wpIdxA >= 0 && wpIdxA < newWaypoints.length) newWaypoints[wpIdxA].x = newX;
-                            if (wpIdxB >= 0 && wpIdxB < newWaypoints.length) newWaypoints[wpIdxB].x = newX;
+                            sp = ddy > 0 ? 'bottom' : 'top';
+                            tp = ddy > 0 ? 'top' : 'bottom';
                         }
-                        this.props.onUpdateConnectionWaypoints(conn.id, newWaypoints);
                     }
                 }
+            }
+
+            this.props.onUpdateConnectionWaypoints(seg.connId, [wp], sp, tp);
+        }
+        if (this.draggingLabel) {
+            const pos = this.screenToSvg(ev.clientX, ev.clientY);
+            const conn = this.props.connections.find(c => c.id === this.draggingLabel.connId);
+            if (conn) {
+                const points = this.getConnectionPoints(conn);
+                const t = this._projectOntoPath(points, pos.x, pos.y);
+                this.props.onUpdateLabelOffset(this.draggingLabel.connId, t);
             }
         }
         if (this.connecting) {
@@ -1293,10 +2555,14 @@ class ProcessMapperCanvas extends Component {
     }
 
     onSvgMouseUp(ev) {
+        if (this.draggingLabel) {
+            this.draggingLabel = null;
+        }
         if (this.connecting) {
             const pos = this.screenToSvg(ev.clientX, ev.clientY);
             const target = this._findStepAt(pos.x, pos.y);
-            if (target && target.id !== this.connecting.sourceId) {
+            const sourceId = this.connecting.sourceId;
+            if (target && target.id !== sourceId) {
                 // Find nearest port on target based on mouse position
                 const sides = ['top', 'right', 'bottom', 'left'];
                 let bestPort = 'top';
@@ -1307,9 +2573,14 @@ class ProcessMapperCanvas extends Component {
                     if (d < bestDist) { bestDist = d; bestPort = side; }
                 }
                 this.props.onCreateConnection(
-                    this.connecting.sourceId, target.id,
+                    sourceId, target.id,
                     this.connecting.sourcePort, bestPort
                 );
+                // Keep gateway/condition selected so user can draw more connections
+                const sourceStep = this.props.steps.find(s => s.id === sourceId);
+                if (sourceStep && ['condition', 'gateway_exclusive', 'gateway_parallel'].includes(sourceStep.step_type)) {
+                    this.props.onSelectElement(sourceId, 'step');
+                }
             }
             this.connecting = null;
             this.state.showRubberBand = false;
@@ -1335,7 +2606,24 @@ class ProcessMapperCanvas extends Component {
             this.laneResizing = null;
             this.props.onDragEnd();
         }
+        if (this.laneDragging) {
+            this.laneDragging = null;
+            this.props.onDragEnd();
+        }
         if (this.segmentDragging) {
+            // If the drag ended on an L-route, clear waypoints (L-routes don't use them)
+            const seg = this.segmentDragging;
+            const conn = this.props.connections.find(c => c.id === seg.connId);
+            if (conn && conn.source_port && conn.target_port) {
+                const spH = (conn.source_port === 'left' || conn.source_port === 'right');
+                const tpH = (conn.target_port === 'left' || conn.target_port === 'right');
+                if (spH !== tpH) {
+                    // Perpendicular ports = L-route: clear waypoints
+                    this.props.onUpdateConnectionWaypoints(
+                        seg.connId, [], conn.source_port, conn.target_port
+                    );
+                }
+            }
             this.segmentDragging = null;
             this.props.onDragEnd();
         }
@@ -1357,6 +2645,9 @@ class ProcessMapperCanvas extends Component {
         }
         this.panning = null;
         this.dragging = null;
+        if (!this.spaceHeld) {
+            this.state.cursorGrab = false;
+        }
     }
 
     onStepMouseDown(ev, step) {
@@ -1454,9 +2745,130 @@ class ProcessMapperCanvas extends Component {
         return { x: center.x - w / 2, y: center.y - h / 2, w, h };
     }
 
+    isConnectionSelected(conn) {
+        return this.props.selectedType === 'connection' && this.props.selectedIds.includes(conn.id);
+    }
+
     onConnectionClick(ev, conn) {
         ev.stopPropagation();
         this.props.onSelectElement(conn.id, 'connection');
+    }
+
+    onConnectionPathMouseDown(ev, conn) {
+        // Only initiate drag on already-selected connections
+        if (!this.isConnectionSelected(conn)) return;
+        // Find the closest segment to the mouse position
+        const pos = this.screenToSvg(ev.clientX, ev.clientY);
+        const points = this.getConnectionPoints(conn);
+        if (points.length < 3) return;
+
+        let bestIdx = 1; // default to first middle segment
+        let bestDist = Infinity;
+        for (let i = 0; i < points.length - 1; i++) {
+            const a = points[i];
+            const b = points[i + 1];
+            // Distance from point to line segment
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const lenSq = dx * dx + dy * dy;
+            let t = lenSq > 0 ? ((pos.x - a.x) * dx + (pos.y - a.y) * dy) / lenSq : 0;
+            t = Math.max(0, Math.min(1, t));
+            const px = a.x + t * dx;
+            const py = a.y + t * dy;
+            const d = (pos.x - px) ** 2 + (pos.y - py) ** 2;
+            if (d < bestDist) {
+                bestDist = d;
+                bestIdx = i;
+            }
+        }
+
+        ev.stopPropagation();
+        ev.preventDefault();
+        this.onSegmentHandleMouseDown(ev, conn, bestIdx);
+    }
+
+    /**
+     * Returns toggle button info for a selected connection, or null if not selected.
+     * Shows a small button at the midpoint of the connection to toggle L ↔ S/Z route.
+     */
+    getRouteToggleInfo(conn) {
+        if (this.props.selectedType !== 'connection' || !this.props.selectedIds.includes(conn.id)) {
+            return null;
+        }
+        const points = this.getConnectionPoints(conn);
+        if (points.length < 3) return null;
+
+        // Position at the midpoint of the path
+        const midIdx = Math.floor(points.length / 2);
+        const a = points[midIdx - 1];
+        const b = points[midIdx];
+        const x = (a.x + b.x) / 2;
+        const y = (a.y + b.y) / 2;
+
+        // Determine current route type
+        const curSH = conn.source_port === 'left' || conn.source_port === 'right';
+        const curTH = conn.target_port === 'left' || conn.target_port === 'right';
+        const isL = conn.source_port && conn.target_port && (curSH !== curTH);
+
+        return { x, y, isL };
+    }
+
+    onRouteToggle(ev, conn) {
+        ev.stopPropagation();
+
+        const source = this.props.steps.find(s => s.id === conn.source_step_id);
+        const target = this.props.steps.find(s => s.id === conn.target_step_id);
+        if (!source || !target) return;
+
+        const sc = shapeCenter(source);
+        const tc = shapeCenter(target);
+        const dx = tc.x - sc.x;
+        const dy = tc.y - sc.y;
+
+        // Check current state
+        const curSH = conn.source_port === 'left' || conn.source_port === 'right';
+        const curTH = conn.target_port === 'left' || conn.target_port === 'right';
+        const isCurrentlyL = conn.source_port && conn.target_port && (curSH !== curTH);
+
+        if (isCurrentlyL) {
+            // L → S/Z (opposite ports)
+            let sp, tp;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                sp = dx > 0 ? 'right' : 'left';
+                tp = dx > 0 ? 'left' : 'right';
+            } else {
+                sp = dy > 0 ? 'bottom' : 'top';
+                tp = dy > 0 ? 'top' : 'bottom';
+            }
+            this.props.onUpdateConnectionWaypoints(conn.id, [], sp, tp);
+        } else {
+            // S/Z → L: pick perpendicular port pair where ports face toward bend
+            const allSides = ['top', 'right', 'bottom', 'left'];
+            const candidates = [];
+            for (const sp of allSides) {
+                for (const tp of allSides) {
+                    const spH = (sp === 'left' || sp === 'right');
+                    const tpH = (tp === 'left' || tp === 'right');
+                    if (spH === tpH) continue;
+                    const pp1 = shapePortPoint(source, sp);
+                    const pp2 = shapePortPoint(target, tp);
+                    const bend = spH ? { x: pp2.x, y: pp1.y } : { x: pp1.x, y: pp2.y };
+                    const srcOK = (sp === 'right' && bend.x >= pp1.x) ||
+                                  (sp === 'left' && bend.x <= pp1.x) ||
+                                  (sp === 'bottom' && bend.y >= pp1.y) ||
+                                  (sp === 'top' && bend.y <= pp1.y);
+                    const tgtOK = (tp === 'right' && bend.x >= pp2.x) ||
+                                  (tp === 'left' && bend.x <= pp2.x) ||
+                                  (tp === 'bottom' && bend.y >= pp2.y) ||
+                                  (tp === 'top' && bend.y <= pp2.y);
+                    const dist = Math.abs(pp1.x - pp2.x) + Math.abs(pp1.y - pp2.y);
+                    const penalty = (srcOK ? 0 : 10000) + (tgtOK ? 0 : 10000);
+                    candidates.push({ sp, tp, score: dist + penalty });
+                }
+            }
+            candidates.sort((a, b) => a.score - b.score);
+            this.props.onUpdateConnectionWaypoints(conn.id, [], candidates[0].sp, candidates[0].tp);
+        }
     }
 
     onLaneClick(ev, lane) {
@@ -1478,7 +2890,22 @@ class ProcessMapperCanvas extends Component {
     onWheel(ev) {
         ev.preventDefault();
         const delta = ev.deltaY > 0 ? -0.1 : 0.1;
-        this.props.onZoom(delta);
+        // Zoom toward cursor position
+        const svg = this.svgRef.el;
+        if (svg) {
+            const rect = svg.getBoundingClientRect();
+            const mouseX = ev.clientX - rect.left;
+            const mouseY = ev.clientY - rect.top;
+            const oldZoom = this.props.zoom;
+            const newZoom = Math.min(3.0, Math.max(0.25, oldZoom + delta));
+            const scale = newZoom / oldZoom;
+            const newPanX = mouseX - (mouseX - this.props.panX) * scale;
+            const newPanY = mouseY - (mouseY - this.props.panY) * scale;
+            this.props.onPan(newPanX, newPanY);
+            this.props.onZoom(delta);
+        } else {
+            this.props.onZoom(delta);
+        }
     }
 
     onDragOver(ev) {
@@ -1556,6 +2983,9 @@ class ProcessMapperClient extends Component {
         this._historyIndex = -1;
         this._clipboard = null;
         this._historyPaused = false;
+        // Pending field record updates (stepId -> fieldRecords array)
+        // Stored outside reactive state to avoid proxy issues
+        this._pendingFieldRecords = {};
 
         this.state = useState({
             mapId: null,
@@ -1584,6 +3014,7 @@ class ProcessMapperClient extends Component {
             snapIndicators: [],
             canvasWidth: 800,
             canvasHeight: 600,
+            lanePresets: [],
         });
 
         this._onKeydown = this._onKeydown.bind(this);
@@ -1670,7 +3101,7 @@ class ProcessMapperClient extends Component {
 
     // --- Data loading ---
 
-    async loadDiagram() {
+    /*async loadDiagram() {
         try {
             const data = await this.orm.call("process.map", "get_diagram_data", [this.state.mapId]);
             this.state.mapName = data.name;
@@ -1686,7 +3117,51 @@ class ProcessMapperClient extends Component {
         } catch (e) {
             this.notification.add("Failed to load diagram: " + (e.message || e), { type: "danger" });
         }
+    }*/
+    async loadDiagram() {
+    try {
+        const data = await this.orm.call("process.map", "get_diagram_data", [this.state.mapId]);
+
+        // STAP 1: Maak de huidige lijnen eerst leeg (helpt tegen ghosting)
+        this.state.connections = [];
+        this.state.steps = [];
+
+        // STAP 2: Vul de state met een schone kopie
+        this.state.mapName = data.name;
+        this.state.mapState = data.state;
+        this.state.steps = data.steps.map(s => ({ ...s }));
+        this.state.lanes = data.lanes.map(l => ({ ...l }));
+        this.state.lanePresets = data.lane_presets || [];
+
+        // Zorg dat waypoints van een string naar een object gaan als dat nodig is
+        this.state.connections = data.connections.map(c => {
+            let waypoints = c.waypoints;
+            if (typeof waypoints === 'string') {
+                try { waypoints = JSON.parse(waypoints); } catch(e) { waypoints = []; }
+            }
+            let label_offset = c.label_offset;
+            if (typeof label_offset === 'string') {
+                try { label_offset = JSON.parse(label_offset); } catch(e) { label_offset = {}; }
+            }
+            return { ...c, waypoints: waypoints || [], label_offset: label_offset || {} };
+        });
+
+        this.state.dirty = false;
+
+        // Forceer een herberekening van de canvas als je een externe library gebruikt
+        if (this.canvasEngine) {
+            this.canvasEngine.render();
+        }
+
+        // Initialize history and clear pending
+        this._history = [];
+        this._historyIndex = -1;
+        this._pendingFieldRecords = {};
+        this._pushHistory();
+    } catch (e) {
+        this.notification.add("Failed to load diagram: " + (e.message || e), { type: "danger" });
     }
+}
 
     async loadMapList() {
         try {
@@ -1713,20 +3188,58 @@ class ProcessMapperClient extends Component {
     // --- Save ---
 
     async saveDiagram() {
-        if (!this.state.mapId) return;
-        try {
-            const data = {
-                lanes: this.state.lanes.map(l => ({ ...l })),
-                steps: this.state.steps.map(s => ({ ...s })),
-                connections: this.state.connections.map(c => ({ ...c })),
-            };
-            await this.orm.call("process.map", "save_diagram_data", [this.state.mapId], { data });
-            await this.loadDiagram();
-            this.notification.add("Diagram saved successfully", { type: "success" });
-        } catch (e) {
-            this.notification.add("Failed to save: " + (e.message || e), { type: "danger" });
-        }
+    if (!this.state.mapId) return;
+    try {
+        // Zorg dat alle coördinaten Integers zijn, Odoo kan struikelen over Floats uit de browser
+        const pending = this._pendingFieldRecords;
+        const data = {
+            lanes: this.state.lanes.map(l => ({ ...l, y_position: Math.round(l.y_position) })),
+            steps: this.state.steps.map(s => {
+                const validTypes = ['start', 'end', 'task', 'subprocess', 'condition', 'gateway_exclusive', 'gateway_parallel'];
+                const stepType = validTypes.includes(s.step_type) ? s.step_type : 'task';
+                const step = { ...s, step_type: stepType, x_position: Math.round(s.x_position), y_position: Math.round(s.y_position), form_layout: s.form_layout || '' };
+                // Use pending field_records if available (plain JS, no proxy)
+                if (s.id in pending) {
+                    step.field_records = pending[s.id];
+                } else if (step.field_records) {
+                    // Deep copy to strip any reactive proxy
+                    step.field_records = JSON.parse(JSON.stringify(step.field_records));
+                }
+                return step;
+            }),
+            connections: this.state.connections.map(c => {
+                // Extract label_offset.t explicitly to avoid reactive proxy issues
+                const lo = c.label_offset;
+                const labelT = (lo && typeof lo.t === 'number') ? lo.t : null;
+                return {
+                    id: c.id,
+                    source_step_id: c.source_step_id,
+                    target_step_id: c.target_step_id,
+                    label: c.label || '',
+                    connection_type: c.connection_type || 'sequence',
+                    waypoints: c.waypoints ? JSON.parse(JSON.stringify(c.waypoints)) : [],
+                    source_port: c.source_port || "",
+                    target_port: c.target_port || "",
+                    label_offset: labelT !== null ? { t: labelT } : {},
+                };
+            }),
+        };
+
+        // Let op: data is nu het tweede argument in de array []
+        await this.orm.call("process.map", "save_diagram_data", [this.state.mapId, data]);
+
+        // Clear pending field records after successful save
+        this._pendingFieldRecords = {};
+
+        // Optioneel: Maak de connecties even leeg voor een 'schone' hertekening
+        this.state.connections = [];
+
+        await this.loadDiagram();
+        this.notification.add("Opgeslagen!", { type: "success" });
+    } catch (e) {
+        this.notification.add("Fout bij opslaan: " + e.message, { type: "danger" });
     }
+}
 
     // --- Map selection ---
 
@@ -1775,6 +3288,8 @@ class ProcessMapperClient extends Component {
                 y >= l.y_position && y < l.y_position + l.height
             );
             step.lane_id = lane ? lane.id : false;
+            // Clear waypoints on connected lines so they auto-route cleanly
+            this._clearWaypointsForStep(stepId);
             this.state.dirty = true;
         }
     }
@@ -1789,9 +3304,21 @@ class ProcessMapperClient extends Component {
                     step.y_position >= l.y_position && step.y_position < l.y_position + l.height
                 );
                 step.lane_id = lane ? lane.id : false;
+                // Clear waypoints on connected lines so they auto-route cleanly
+                this._clearWaypointsForStep(id);
             }
         }
         this.state.dirty = true;
+    }
+
+    _clearWaypointsForStep(stepId) {
+        this.state.connections = this.state.connections.map(c => {
+            if (c.source_step_id === stepId || c.target_step_id === stepId) {
+                // Only clear waypoints, keep stored ports so L-routes persist
+                return { ...c, waypoints: [] };
+            }
+            return c;
+        });
     }
 
     // --- Snap alignment guides ---
@@ -1861,6 +3388,14 @@ class ProcessMapperClient extends Component {
         }
     }
 
+    onUpdateLabelOffset(connId, t) {
+        const conn = this.state.connections.find(c => c.id === connId);
+        if (conn) {
+            conn.label_offset = { t };
+            this.state.dirty = true;
+        }
+    }
+
     _showSnapIndicators(steps) {
         const gridSize = 20;
         const indicators = [];
@@ -1924,9 +3459,64 @@ class ProcessMapperClient extends Component {
             waypoints: [],
             source_port: sourcePort || false,
             target_port: targetPort || false,
+            label_offset: { t: 0.5 },
         });
         this.state.dirty = true;
         this._pushHistory();
+    }
+
+    // --- Move lane (snap between other lanes) ---
+
+    onMoveLane(laneId, newY) {
+        const lanes = this.state.lanes;
+        const draggedLane = lanes.find(l => l.id === laneId);
+        if (!draggedLane) return;
+
+        // Sort other lanes by current y_position
+        const otherLanes = lanes.filter(l => l.id !== laneId).sort((a, b) => a.y_position - b.y_position);
+
+        // Find insertion index based on where the dragged lane's center would be
+        const dragCenter = newY + draggedLane.height / 2;
+        let insertIdx = otherLanes.length; // default: at the end
+        for (let i = 0; i < otherLanes.length; i++) {
+            const otherCenter = otherLanes[i].y_position + otherLanes[i].height / 2;
+            if (dragCenter < otherCenter) {
+                insertIdx = i;
+                break;
+            }
+        }
+
+        // Build the new lane order
+        const orderedLanes = [...otherLanes];
+        orderedLanes.splice(insertIdx, 0, draggedLane);
+
+        // Determine the starting Y (use the topmost lane's current position, or 0)
+        const firstLaneY = lanes.length > 0
+            ? Math.min(...lanes.map(l => l.y_position))
+            : 0;
+        let currentY = firstLaneY;
+
+        // Reposition all lanes and their steps
+        for (let i = 0; i < orderedLanes.length; i++) {
+            const lane = orderedLanes[i];
+            const oldY = lane.y_position;
+            const dy = currentY - oldY;
+
+            if (Math.abs(dy) > 0.5) {
+                // Move steps inside this lane
+                for (const step of this.state.steps) {
+                    if (step.lane_id === lane.id) {
+                        step.y_position += dy;
+                    }
+                }
+                lane.y_position = currentY;
+            }
+
+            lane.sequence = (i + 1) * 10;
+            currentY += lane.height;
+        }
+
+        this.state.dirty = true;
     }
 
     // --- Resize lane ---
@@ -1973,14 +3563,26 @@ class ProcessMapperClient extends Component {
 
     // --- Update connection waypoints ---
 
-    onUpdateConnectionWaypoints(connId, waypoints) {
+    /*onUpdateConnectionWaypoints(connId, waypoints) {
         const conn = this.state.connections.find(c => c.id === connId);
         if (conn) {
             conn.waypoints = waypoints;
             this.state.dirty = true;
         }
     }
-
+*/
+    onUpdateConnectionWaypoints(connId, waypoints, sourcePort, targetPort) {
+        this.state.connections = this.state.connections.map(c => {
+            if (c.id === connId) {
+                const updated = { ...c, waypoints: [...waypoints] };
+                if (sourcePort !== undefined) updated.source_port = sourcePort;
+                if (targetPort !== undefined) updated.target_port = targetPort;
+                return updated;
+            }
+            return c;
+        });
+        this.state.dirty = true;
+    }
     // --- Drop from palette ---
 
     onCanvasDrop(elementType, x, y) {
@@ -2053,7 +3655,64 @@ class ProcessMapperClient extends Component {
     onPropertyChange(field, value) {
         const el = this.getSelectedElement();
         if (!el) return;
-        el[field] = value;
+        if (field === 'preset') {
+            // Look up the preset and auto-fill name + color
+            const preset = this.state.lanePresets.find(p => p.id === parseInt(value));
+            if (preset) {
+                el.name = preset.name;
+                el.color = preset.color;
+            }
+        } else {
+            el[field] = value;
+        }
+        this.state.dirty = true;
+        this._pushHistory();
+    }
+
+    async onCreatePreset(name, color) {
+        try {
+            const id = await this.orm.create("process.map.lane.preset", [{ name, color }]);
+            const newPreset = { id: id[0] || id, name, color };
+            this.state.lanePresets.push(newPreset);
+            // Auto-apply the new preset to the selected lane
+            const el = this.getSelectedElement();
+            if (el) {
+                el.name = name;
+                el.color = color;
+            }
+            this.state.dirty = true;
+            this._pushHistory();
+        } catch (e) {
+            this.notification.add("Failed to create preset: " + (e.message || e), { type: "danger" });
+        }
+    }
+
+    async onUpdatePresetColor(presetId, newColor) {
+        try {
+            await this.orm.write("process.map.lane.preset", [presetId], { color: newColor });
+            const preset = this.state.lanePresets.find(p => p.id === presetId);
+            if (preset) {
+                preset.color = newColor;
+            }
+            this.notification.add("Preset color updated", { type: "success" });
+        } catch (e) {
+            this.notification.add("Failed to update preset: " + (e.message || e), { type: "danger" });
+        }
+    }
+
+    onFieldRecordsSave(stepId, result) {
+        // Directly find step by ID and store field records as plain data
+        // This bypasses OWL reactive proxy issues entirely
+        if (stepId) {
+            this._pendingFieldRecords[stepId] = JSON.parse(JSON.stringify(result.fieldRecords));
+        }
+        // Also update the step in state for display
+        const el = this.getSelectedElement();
+        if (el) {
+            el.data_fields = result.text;
+            el.field_records = result.fieldRecords;
+            el.form_layout = result.formLayout;
+        }
         this.state.dirty = true;
         this._pushHistory();
     }
@@ -2107,6 +3766,10 @@ class ProcessMapperClient extends Component {
                 x_position: original.x_position + 20,
                 y_position: original.y_position + 20,
             };
+            // Clear field record IDs so backend creates new records
+            if (newStep.field_records) {
+                newStep.field_records = newStep.field_records.map(fr => ({ ...fr, id: false }));
+            }
             this.state.steps.push(newStep);
             newIds.push(newStep.id);
         }
@@ -2154,37 +3817,121 @@ class ProcessMapperClient extends Component {
             }
         }
 
-        // Assign positions: unvisited steps get depth 0
+        // Assign depth 0 to unvisited steps
         for (const s of this.state.steps) {
             if (depth[s.id] === undefined) depth[s.id] = 0;
         }
 
-        // Group by depth
-        const byDepth = {};
-        for (const s of this.state.steps) {
-            const d = depth[s.id];
-            if (!byDepth[d]) byDepth[d] = [];
-            byDepth[d].push(s);
-        }
-
         const xSpacing = 200;
-        const ySpacing = 100;
+        const yPadding = 20;
+        const yStepSpacing = 80;
         const startX = 100;
-        const startY = 80;
+        const lanes = this.state.lanes;
+        const hasLanes = lanes.length > 0;
 
-        for (const [d, steps] of Object.entries(byDepth)) {
-            for (let i = 0; i < steps.length; i++) {
-                steps[i].x_position = startX + parseInt(d) * xSpacing;
-                steps[i].y_position = startY + i * ySpacing;
+        if (hasLanes) {
+            // Sort lanes by y_position
+            const sortedLanes = [...lanes].sort((a, b) => a.y_position - b.y_position);
+
+            // Build a map: laneId → steps grouped by depth
+            // Also collect unassigned steps (no lane or lane not found)
+            const laneSteps = {};  // laneId → { depth → [step, ...] }
+            const unassignedByDepth = {};
+            for (const lane of sortedLanes) {
+                laneSteps[lane.id] = {};
+            }
+            for (const s of this.state.steps) {
+                const d = depth[s.id];
+                if (s.lane_id && laneSteps[s.lane_id]) {
+                    if (!laneSteps[s.lane_id][d]) laneSteps[s.lane_id][d] = [];
+                    laneSteps[s.lane_id][d].push(s);
+                } else {
+                    if (!unassignedByDepth[d]) unassignedByDepth[d] = [];
+                    unassignedByDepth[d].push(s);
+                }
+            }
+
+            // Calculate the required height for each lane based on how many steps
+            // it has at the most populated depth level
+            const laneMinHeight = 100;
+            for (const lane of sortedLanes) {
+                const depthGroups = laneSteps[lane.id];
+                let maxCount = 0;
+                for (const d of Object.keys(depthGroups)) {
+                    maxCount = Math.max(maxCount, depthGroups[d].length);
+                }
+                const needed = maxCount > 0
+                    ? yPadding * 2 + maxCount * yStepSpacing
+                    : laneMinHeight;
+                lane.height = Math.max(lane.height, needed);
+            }
+
+            // Reflow lane y positions so they stack without gaps
+            let currentY = sortedLanes[0].y_position;
+            for (const lane of sortedLanes) {
+                lane.y_position = currentY;
+                currentY += lane.height;
+            }
+
+            // Position steps within their lane
+            for (const lane of sortedLanes) {
+                const depthGroups = laneSteps[lane.id];
+                for (const [d, steps] of Object.entries(depthGroups)) {
+                    const totalHeight = steps.length * yStepSpacing;
+                    // Center the group vertically within the lane
+                    const startY = lane.y_position + (lane.height - totalHeight) / 2 + yStepSpacing / 2 - 30;
+                    for (let i = 0; i < steps.length; i++) {
+                        steps[i].x_position = startX + parseInt(d) * xSpacing;
+                        steps[i].y_position = startY + i * yStepSpacing;
+                    }
+                }
+            }
+
+            // Position unassigned steps below all lanes
+            if (Object.keys(unassignedByDepth).length > 0) {
+                const belowY = currentY + 40;
+                for (const [d, steps] of Object.entries(unassignedByDepth)) {
+                    for (let i = 0; i < steps.length; i++) {
+                        steps[i].x_position = startX + parseInt(d) * xSpacing;
+                        steps[i].y_position = belowY + i * yStepSpacing;
+                    }
+                }
+            }
+        } else {
+            // No lanes: simple layout like before
+            const byDepth = {};
+            for (const s of this.state.steps) {
+                const d = depth[s.id];
+                if (!byDepth[d]) byDepth[d] = [];
+                byDepth[d].push(s);
+            }
+            const startY = 80;
+            for (const [d, steps] of Object.entries(byDepth)) {
+                for (let i = 0; i < steps.length; i++) {
+                    steps[i].x_position = startX + parseInt(d) * xSpacing;
+                    steps[i].y_position = startY + i * yStepSpacing;
+                }
             }
         }
 
-        // Reset all connection waypoints and ports for clean auto-routing
+        // Reset waypoints and compute correct ports based on new step positions
+        const stepsById = {};
+        for (const s of this.state.steps) stepsById[s.id] = s;
         for (const conn of this.state.connections) {
             conn.waypoints = [];
-            conn.source_port = false;
-            conn.target_port = false;
+            const source = stepsById[conn.source_step_id];
+            const target = stepsById[conn.target_step_id];
+            if (source && target) {
+                const auto = selectPorts(source, target);
+                conn.source_port = auto.sourceSide;
+                conn.target_port = auto.targetSide;
+            } else {
+                conn.source_port = false;
+                conn.target_port = false;
+            }
         }
+
+        routeAroundObstacles(this.state.steps, this.state.connections);
 
         this.state.dirty = true;
         this._pushHistory();
@@ -2317,8 +4064,14 @@ class ProcessMapperClient extends Component {
 
     onFitView() {
         this.state.zoom = 1.0;
-        this.state.panX = 0;
-        this.state.panY = 0;
+        const margin = 20;
+        this.state.panX = margin;
+        if (this.state.lanes.length > 0) {
+            const minY = Math.min(...this.state.lanes.map(l => l.y_position));
+            this.state.panY = -(minY - margin);
+        } else {
+            this.state.panY = margin;
+        }
     }
 
     onToggleGrid() {
@@ -2326,6 +4079,24 @@ class ProcessMapperClient extends Component {
     }
 
     onPan(x, y) {
+        const margin = 20;
+        const zoom = this.state.zoom;
+
+        // Don't pan past the left edge of lanes (x=0 in SVG)
+        // Screen left edge in SVG coords: -panX / zoom
+        // Constraint: -panX / zoom >= -margin  →  panX <= margin * zoom
+        x = Math.min(x, margin * zoom);
+
+        // Don't pan past the top of the first lane
+        // Screen top edge in SVG coords: -panY / zoom
+        // Constraint: -panY / zoom >= minLaneY - margin  →  panY <= -(minLaneY - margin) * zoom
+        if (this.state.lanes.length > 0) {
+            const minY = Math.min(...this.state.lanes.map(l => l.y_position));
+            y = Math.min(y, -(minY - margin) * zoom);
+        } else {
+            y = Math.min(y, margin * zoom);
+        }
+
         this.state.panX = x;
         this.state.panY = y;
     }

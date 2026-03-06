@@ -97,10 +97,8 @@ class RoleType(models.Model):
     # Constraints
     # =========================================================================
 
-    _sql_constraints = [
-        ('name_unique', 'UNIQUE(name)', 'Role type name must be unique!'),
-        ('shortname_unique', 'UNIQUE(shortname)', 'Role type short name must be unique!'),
-    ]
+    _name_unique = models.Constraint('UNIQUE(name)', 'Role type name must be unique!')
+    _shortname_unique = models.Constraint('UNIQUE(shortname)', 'Role type short name must be unique!')
 
     # =========================================================================
     # Service Methods (from RoleTypeServiceImpl.java)

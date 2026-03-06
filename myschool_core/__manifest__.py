@@ -1,7 +1,7 @@
 {
     'name': 'MySchool Core Module',
     'version': '0.1',
-    'category': 'Education',
+    'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, and periods',
     'description': """
         School Management System
@@ -61,7 +61,8 @@
         #Services
         #'services/data/ir_cron_data.xml',
 
-
+        # User form extension
+        'views/res_users_views.xml',
     ],
     'demo': [],
     'installable': True,

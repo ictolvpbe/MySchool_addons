@@ -138,13 +138,7 @@ class AssetAsset(models.Model):
         default=True,
     )
 
-    _sql_constraints = [
-        (
-            'asset_tag_unique',
-            "UNIQUE(asset_tag)",
-            'The asset tag must be unique!',
-        ),
-    ]
+    _asset_tag_unique = models.Constraint('UNIQUE(asset_tag)', 'The asset tag must be unique!')
 
     # ------------------------------------------------------------------
     # Computed fields

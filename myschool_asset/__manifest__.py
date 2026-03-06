@@ -1,7 +1,7 @@
 {
     'name': 'MySchool Asset Management',
     'version': '19.0.1.0.0',
-    'category': 'Education',
+    'category': 'MySchool',
     'summary': 'Asset management for school environments',
     'description': """
         MySchool Asset Management

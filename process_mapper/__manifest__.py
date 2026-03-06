@@ -1,7 +1,7 @@
 {
     'name': 'Process Mapper',
-    'version': '0.1',
-    'category': 'Productivity',
+    'version': '0.156',
+    'category': 'MySchool',
     'summary': 'BPMN-like business process mapping with prompt generation',
     'description': """
         Process Mapper

@@ -1,11 +1,8 @@
 import json
 import re
-import logging
 
-from odoo import models, fields, api
+from odoo import models, fields, api, Command
 from odoo.exceptions import UserError
-
-_logger = logging.getLogger(__name__)
 
 # Mapping from Field Builder notation to Odoo Python field definitions
 _FB_TYPE_MAP = {
@@ -38,7 +35,7 @@ class ProcessMap(models.Model):
         ('draft', 'Draft'),
         ('review', 'Review'),
         ('approved', 'Approved'),
-    ], string='State', default='draft', required=True, tracking=True)
+    ], string='State', default='draft', required=True)
     version = fields.Integer(string='Version', default=1)
     org_id = fields.Many2one('myschool.org', string='Organization')
 
@@ -108,12 +105,44 @@ class ProcessMap(models.Model):
                 continue
             mapped_type = TYPE_MAP.get(f.ttype, 'Char')
             relation = f.relation or ''
+            # Build groups string from group XML IDs
+            group_names = ''
+            if f.groups:
+                try:
+                    group_names = ','.join(
+                        g.get_external_id().get(g.id, '') for g in f.groups
+                    )
+                except Exception:
+                    group_names = ''
+            # Build selection values
+            sel_vals = ''
+            if f.ttype == 'selection' and hasattr(f, 'selection_ids') and f.selection_ids:
+                try:
+                    sel_vals = json.dumps(
+                        [[s.value, s.name] for s in f.selection_ids]
+                    )
+                except Exception:
+                    sel_vals = ''
             result.append({
                 'name': f.name,
                 'type': mapped_type,
                 'label': f.field_description,
                 'required': f.required,
                 'relation': relation,
+                'readonly': f.readonly,
+                'store': f.store,
+                'index': getattr(f, 'index_type', '') or '',
+                'copy': f.copied if hasattr(f, 'copied') else True,
+                'translate': f.translate,
+                'relation_field': f.relation_field or '',
+                'relation_table': f.relation_table or '',
+                'domain': f.domain or '[]',
+                'on_delete': getattr(f, 'on_delete', 'set null') or 'set null',
+                'help': f.help or '',
+                'groups': group_names,
+                'size': getattr(f, 'size', 0) or 0,
+                'selection_values': sel_vals,
+                'source_model': model_name,
             })
         return result
 
@@ -140,6 +169,33 @@ class ProcessMap(models.Model):
 
         steps = []
         for step in self.step_ids:
+            field_records = []
+            for f in step.field_ids.sorted('sequence'):
+                field_records.append({
+                    'id': f.id,
+                    'sequence': f.sequence,
+                    'name': f.name,
+                    'field_description': f.field_description or '',
+                    'ttype': f.ttype,
+                    'required': f.required,
+                    'readonly': f.readonly,
+                    'store': f.store,
+                    'index': f.index or '',
+                    'copy': f.copy,
+                    'translate': f.translate,
+                    'relation': f.relation or '',
+                    'relation_field': f.relation_field or '',
+                    'relation_table': f.relation_table or '',
+                    'domain': f.domain or '[]',
+                    'on_delete': f.on_delete or 'set null',
+                    'help_text': f.help_text or '',
+                    'groups': f.groups or '',
+                    'size': f.size or 0,
+                    'digits': f.digits or '',
+                    'selection_values': f.selection_values or '',
+                    'default_value': f.default_value or '',
+                    'source_model': f.source_model or '',
+                })
             steps.append({
                 'id': step.id,
                 'name': step.name,
@@ -155,11 +211,13 @@ class ProcessMap(models.Model):
                 'responsible': step.responsible or '',
                 'system_action': step.system_action or '',
                 'data_fields': step.data_fields or '',
+                'field_records': field_records,
                 'color': step.color or '',
                 'icon': step.icon or '',
                 'annotation': step.annotation or '',
                 'sub_process_id': step.sub_process_id.id if step.sub_process_id else False,
                 'sub_process_name': step.sub_process_id.name if step.sub_process_id else '',
+                'form_layout': step.form_layout or '',
             })
 
         connections = []
@@ -173,6 +231,16 @@ class ProcessMap(models.Model):
                 'waypoints': json.loads(conn.waypoints or '[]'),
                 'source_port': conn.source_port or False,
                 'target_port': conn.target_port or False,
+                'label_offset': json.loads(conn.label_offset or '{}'),
+            })
+
+        # Lane presets (global)
+        lane_presets = []
+        for preset in self.env['process.map.lane.preset'].search([]):
+            lane_presets.append({
+                'id': preset.id,
+                'name': preset.name,
+                'color': preset.color or '#E3F2FD',
             })
 
         return {
@@ -183,6 +251,7 @@ class ProcessMap(models.Model):
             'lanes': lanes,
             'steps': steps,
             'connections': connections,
+            'lane_presets': lane_presets,
         }
 
     def save_diagram_data(self, data):
@@ -229,6 +298,7 @@ class ProcessMap(models.Model):
         # --- Process steps ---
         existing_step_ids = set(self.step_ids.ids)
         incoming_step_ids = set()
+        Field = self.env['process.map.field']
 
         for step_data in data.get('steps', []):
             sid = step_data.get('id')
@@ -238,10 +308,19 @@ class ProcessMap(models.Model):
 
             sub_process_id = step_data.get('sub_process_id') or False
 
+            # If field_records present, don't write data_fields directly
+            # (let the computed field handle it)
+            has_field_records = 'field_records' in step_data
+
+            valid_step_types = {'start', 'end', 'task', 'subprocess',
+                                'condition', 'gateway_exclusive', 'gateway_parallel'}
+            raw_type = step_data.get('step_type', 'task')
+            step_type = raw_type if raw_type in valid_step_types else 'task'
+
             vals = {
                 'name': step_data.get('name', 'Step'),
                 'description': step_data.get('description', ''),
-                'step_type': step_data.get('step_type', 'task'),
+                'step_type': step_type,
                 'x_position': step_data.get('x_position', 100),
                 'y_position': step_data.get('y_position', 100),
                 'width': step_data.get('width', 140),
@@ -250,21 +329,29 @@ class ProcessMap(models.Model):
                 'role_id': step_data.get('role_id') or False,
                 'responsible': step_data.get('responsible', ''),
                 'system_action': step_data.get('system_action', ''),
-                'data_fields': step_data.get('data_fields', ''),
                 'color': step_data.get('color', ''),
                 'icon': step_data.get('icon', ''),
                 'annotation': step_data.get('annotation', ''),
                 'sub_process_id': sub_process_id,
+                'form_layout': step_data.get('form_layout', ''),
                 'map_id': self.id,
             }
+            if not has_field_records:
+                vals['data_fields'] = step_data.get('data_fields', '')
+
             if isinstance(sid, int) and sid > 0 and sid in existing_step_ids:
-                Step.browse(sid).write(vals)
+                step_rec = Step.browse(sid)
+                step_rec.write(vals)
                 incoming_step_ids.add(sid)
             else:
-                new_step = Step.create(vals)
+                step_rec = Step.create(vals)
                 if sid:
-                    id_map[sid] = new_step.id
-                incoming_step_ids.add(new_step.id)
+                    id_map[sid] = step_rec.id
+                incoming_step_ids.add(step_rec.id)
+
+            # Process field_records if present
+            if has_field_records:
+                self._save_field_records(step_rec, step_data.get('field_records', []), id_map)
 
         to_delete = existing_step_ids - incoming_step_ids
         if to_delete:
@@ -291,6 +378,7 @@ class ProcessMap(models.Model):
                 'waypoints': json.dumps(conn_data.get('waypoints', [])),
                 'source_port': conn_data.get('source_port') or False,
                 'target_port': conn_data.get('target_port') or False,
+                'label_offset': json.dumps(conn_data.get('label_offset', {})),
                 'map_id': self.id,
             }
             if isinstance(cid, int) and cid > 0 and cid in existing_conn_ids:
@@ -305,6 +393,60 @@ class ProcessMap(models.Model):
             Connection.browse(list(to_delete)).unlink()
 
         return True
+
+    # ------------------------------------------------------------------
+    # Field records helper
+    # ------------------------------------------------------------------
+
+    def _save_field_records(self, step_rec, field_records_data, id_map):
+        """Create/update/delete process.map.field records for a step.
+
+        Uses Odoo Command API for reliable One2many writes.
+        """
+        FIELD_ATTRS = [
+            'sequence', 'name', 'field_description', 'ttype', 'required',
+            'readonly', 'store', 'index', 'copy', 'translate',
+            'relation', 'relation_field', 'relation_table', 'domain', 'on_delete',
+            'help_text', 'groups', 'size', 'digits', 'selection_values',
+            'default_value', 'source_model',
+        ]
+
+        existing_field_ids = set(step_rec.field_ids.ids)
+        incoming_field_ids = set()
+        explicit_deletes = set()
+        commands = []
+
+        for seq, fdata in enumerate(field_records_data):
+            # Handle explicit delete markers from frontend
+            if fdata.get('_delete'):
+                fid = fdata.get('id')
+                if isinstance(fid, int) and fid > 0 and fid in existing_field_ids:
+                    explicit_deletes.add(fid)
+                continue
+
+            fid = fdata.get('id')
+            vals = {'sequence': fdata.get('sequence', (seq + 1) * 10)}
+            for attr in FIELD_ATTRS:
+                if attr in fdata and attr != 'sequence':
+                    vals[attr] = fdata[attr]
+            vals.setdefault('name', 'field')
+            vals.setdefault('ttype', 'char')
+
+            if isinstance(fid, int) and fid > 0 and fid in existing_field_ids:
+                # Update existing field
+                commands.append(Command.update(fid, vals))
+                incoming_field_ids.add(fid)
+            else:
+                # Create new field
+                commands.append(Command.create(vals))
+
+        # Delete: explicit deletes + any existing fields not in incoming set
+        to_delete = explicit_deletes | (existing_field_ids - incoming_field_ids)
+        for fid in to_delete:
+            commands.append(Command.delete(fid))
+
+        if commands:
+            step_rec.write({'field_ids': commands})
 
     # ------------------------------------------------------------------
     # Version history
