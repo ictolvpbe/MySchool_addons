@@ -36,7 +36,7 @@ class PhishingTarget(models.Model):
     )
     state = fields.Selection(
         TARGET_STATES, string='Status', default='pending',
-        required=True, tracking=True,
+        required=True,
     )
     reported = fields.Boolean(string='Gerapporteerd', default=False)
     date_sent = fields.Datetime(string='Verzenddatum', readonly=True)
@@ -52,18 +52,14 @@ class PhishingTarget(models.Model):
         string='Naam', compute='_compute_display_name',
     )
 
-    _sql_constraints = [
-        (
-            'unique_campaign_partner',
-            'UNIQUE(campaign_id, partner_id)',
-            'Een contactpersoon kan slechts één keer per campagne voorkomen.',
-        ),
-        (
-            'unique_token',
-            'UNIQUE(token)',
-            'Token moet uniek zijn.',
-        ),
-    ]
+    _unique_campaign_partner = models.Constraint(
+        'UNIQUE(campaign_id, partner_id)',
+        'Een contactpersoon kan slechts één keer per campagne voorkomen.',
+    )
+    _unique_token = models.Constraint(
+        'UNIQUE(token)',
+        'Token moet uniek zijn.',
+    )
 
     @api.depends('partner_id', 'campaign_id')
     def _compute_display_name(self):

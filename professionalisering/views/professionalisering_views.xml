@@ -56,11 +56,14 @@
                             <field name="name" readonly="1"/>
                         </h1>
                     </div>
+                    <field name="priority" widget="priority"
+                           groups="professionalisering.group_professionalisering_directie"/>
                     <group>
                         <group>
                             <field name="type" readonly="state != 'selection_of_form'"/>
                             <field name="titel" readonly="state != 'selection_of_form'"/>
                             <field name="employee_id" readonly="state != 'selection_of_form'"/>
+                            <field name="school_id" readonly="state != 'selection_of_form'"/>
                             <field name="verschillende_dagen" readonly="state != 'selection_of_form'"/>
                             <field name="start_date" readonly="state != 'selection_of_form'"/>
                             <field name="end_date" readonly="state != 'selection_of_form'" invisible="verschillende_dagen == True"/>
@@ -68,8 +71,15 @@
                             <field name="vak" readonly="state != 'selection_of_form'"/>
                         </group>
                         <group>
+                            <field name="assigned_to"
+                                   invisible="state == 'selection_of_form'"
+                                   readonly="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe', 'bevestiging')"
+                                   groups="professionalisering.group_professionalisering_directie"/>
                             <field name="directie_id" invisible="state not in ('bevestiging', 'weigering', 'done')"/>
                             <field name="payment_done" readonly="1" invisible="state not in ('bevestiging', 'done')"/>
+                            <field name="replacement_id"
+                                   invisible="state not in ('bevestiging', 'done')"
+                                   readonly="replacement_done == True"/>
                             <field name="replacement_done" readonly="1" invisible="state not in ('bevestiging', 'done')"/>
                         </group>
                     </group>
@@ -112,11 +122,17 @@
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
+                <field name="priority" widget="priority" optional="show"
+                       groups="professionalisering.group_professionalisering_directie"/>
                 <field name="type"/>
                 <field name="titel"/>
                 <field name="employee_id"/>
+                <field name="school_id"/>
                 <field name="dates_display" widget="html"/>
                 <field name="total_cost" string="Kost"/>
+                <field name="assigned_to" optional="show"
+                       groups="professionalisering.group_professionalisering_directie"/>
+                <field name="replacement_id" optional="hide"/>
                 <field name="state" widget="badge" decoration-info="state == 'selection_of_form'" decoration-warning="state in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')" decoration-success="state in ('bevestiging', 'done')" decoration-danger="state == 'weigering'"/>
             </list>
         </field>
@@ -131,8 +147,10 @@
                 <field name="titel"/>
                 <field name="employee_id"/>
                 <field name="name"/>
+                <field name="assigned_to"/>
                 <filter string="Mijn aanvragen" name="my_requests" domain="[('employee_id.user_id', '=', uid)]"/>
                 <separator/>
+                <filter string="Aan mij toegewezen" name="assigned_to_me" domain="[('assigned_to.user_id', '=', uid)]"/>
                 <filter string="Te beoordelen" name="to_approve" domain="[('state', 'in', ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe'))]"/>
                 <filter string="Betaling openstaand" name="payment_pending" domain="[('state', '=', 'bevestiging'), ('payment_done', '=', False)]"/>
                 <filter string="Vervanging openstaand" name="replacement_pending" domain="[('state', '=', 'bevestiging'), ('replacement_done', '=', False)]"/>
@@ -145,7 +163,10 @@
                 <group>
                     <filter string="Status" name="group_state" domain="[]" context="{'group_by': 'state'}"/>
                     <filter string="Medewerker" name="group_employee" domain="[]" context="{'group_by': 'employee_id'}"/>
+                    <filter string="School" name="group_school" domain="[]" context="{'group_by': 'school_id'}"/>
+                    <filter string="Prioriteit" name="group_priority" domain="[]" context="{'group_by': 'priority'}"/>
                     <filter string="Type" name="group_type" domain="[]" context="{'group_by': 'type'}"/>
+                    <filter string="Toegewezen aan" name="group_assigned" domain="[]" context="{'group_by': 'assigned_to'}"/>
                 </group>
             </search>
         </field>

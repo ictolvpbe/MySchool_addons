@@ -27,7 +27,7 @@ class ProcessMapConnection(models.Model):
                                help='JSON {x, y} offset for label position')
     map_id = fields.Many2one('process.map', string='Process Map', required=True, ondelete='cascade')
 
-    _sql_constraints = [
-        ('no_self_connection', 'CHECK(source_step_id != target_step_id)',
-         'A connection cannot link a step to itself.'),
-    ]
+    _no_self_connection = models.Constraint(
+        'CHECK(source_step_id != target_step_id)',
+        'A connection cannot link a step to itself.',
+    )

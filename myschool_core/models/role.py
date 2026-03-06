@@ -164,9 +164,7 @@ class Role(models.Model):
     # Constraints
     # =========================================================================
 
-    _sql_constraints = [
-        ('shortname_unique', 'UNIQUE(shortname)', 'Role short name must be unique!'),
-    ]
+    _shortname_unique = models.Constraint('UNIQUE(shortname)', 'Role short name must be unique!')
 
     @api.constrains('has_odoo_group', 'odoo_group_id')
     def _check_odoo_group_consistency(self):

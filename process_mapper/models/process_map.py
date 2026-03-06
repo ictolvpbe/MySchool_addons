@@ -35,7 +35,7 @@ class ProcessMap(models.Model):
         ('draft', 'Draft'),
         ('review', 'Review'),
         ('approved', 'Approved'),
-    ], string='State', default='draft', required=True, tracking=True)
+    ], string='State', default='draft', required=True)
     version = fields.Integer(string='Version', default=1)
     org_id = fields.Many2one('myschool.org', string='Organization')
 

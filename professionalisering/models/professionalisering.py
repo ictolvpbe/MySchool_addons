@@ -27,6 +27,12 @@ class ProfessionaliseringRecord(models.Model):
         required=True,
         default=lambda self: self.env.user.employee_ids[:1],
     )
+    school_id = fields.Many2one(
+        'myschool.org',
+        string='School',
+        required=True,
+        default=lambda self: self.env.user.school_ids[:1],
+    )
     is_owner = fields.Boolean(compute='_compute_is_owner')
     start_date = fields.Date(string='Startdatum', required=True)
     end_date = fields.Date(string='Einddatum')
@@ -58,13 +64,32 @@ class ProfessionaliseringRecord(models.Model):
         ('done', 'Afgerond'),
     ], string='Status', default='selection_of_form', tracking=True)
     rejection_reason = fields.Text(string='Reden voor afkeuring')
+    assigned_to = fields.Many2one(
+        'hr.employee',
+        string='Toegewezen aan',
+        tracking=True,
+        domain=lambda self: [('user_id', 'in',
+            self.env.ref('professionalisering.group_professionalisering_directie').all_user_ids.ids
+        )],
+    )
     directie_id = fields.Many2one(
         'hr.employee',
         string='Beoordeeld door',
         readonly=True,
     )
     payment_done = fields.Boolean(string='Betaling bevestigd', default=False)
+    replacement_id = fields.Many2one(
+        'hr.employee',
+        string='Vervanger',
+        tracking=True,
+    )
     replacement_done = fields.Boolean(string='Vervanging ingepland', default=False)
+    priority = fields.Selection([
+        ('0', 'Normaal'),
+        ('1', 'Laag'),
+        ('2', 'Hoog'),
+        ('3', 'Urgent'),
+    ], string='Prioriteit', default='0')
 
     @api.depends('employee_id')
     @api.depends_context('uid')
@@ -79,21 +104,21 @@ class ProfessionaliseringRecord(models.Model):
                 all_dates = []
                 if record.start_date:
                     all_dates.append('%s &nbsp;-&nbsp; €%.2f' % (
-                        record.start_date.strftime('%d/%m/%Y'), record.cost or 0,
+                        record.start_date.strftime('%d %b %Y'), record.cost or 0,
                     ))
                 for line in record.date_line_ids.sorted('date'):
                     if line.date:
                         all_dates.append('%s &nbsp;-&nbsp; €%.2f' % (
-                            line.date.strftime('%d/%m/%Y'), line.cost or 0,
+                            line.date.strftime('%d %b %Y'), line.cost or 0,
                         ))
                 record.dates_display = '<br/>'.join(all_dates)
-            elif record.start_date and record.end_date:
+            elif record.start_date and record.end_date and record.end_date != record.start_date:
                 record.dates_display = '%s → %s' % (
-                    record.start_date.strftime('%d/%m/%Y'),
-                    record.end_date.strftime('%d/%m/%Y'),
+                    record.start_date.strftime('%d %b %Y'),
+                    record.end_date.strftime('%d %b %Y'),
                 )
             elif record.start_date:
-                record.dates_display = record.start_date.strftime('%d/%m/%Y')
+                record.dates_display = record.start_date.strftime('%d %b %Y')
             else:
                 record.dates_display = ''
 
@@ -164,6 +189,8 @@ class ProfessionaliseringRecord(models.Model):
         for record in self:
             if record.state != 'bevestiging':
                 raise UserError("Vervanging kan alleen ingepland worden voor goedgekeurde aanvragen.")
+            if not record.replacement_id:
+                raise UserError("Selecteer eerst een vervanger voordat u de vervanging bevestigt.")
             record.replacement_done = True
             record._check_done()
 

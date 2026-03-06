@@ -1,7 +1,7 @@
 {
     'name': 'Knowledge Builder',
     'version': '0.2',
-    'category': 'Productivity',
+    'category': 'MySchool',
     'summary': 'Visual knowledge object builder with step editor',
     'author': 'MySchool OLVP',
     'website': 'https://www.olvp.be',

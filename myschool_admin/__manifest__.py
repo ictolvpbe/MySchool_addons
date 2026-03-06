@@ -1,7 +1,7 @@
 {
     'name': 'MySchool Admin Module',
     'version': '0.1',
-    'category': 'Education',
+    'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, periods ans services',
     'description': """
         School Management System

@@ -1,7 +1,7 @@
 {
     'name': 'Phishing Bewustwording',
     'version': '0.1',
-    'category': 'Security',
+    'category': 'MySchool',
     'summary': 'Interne phishing bewustwordingscampagnes',
     'description': """
         Phishing Bewustwording

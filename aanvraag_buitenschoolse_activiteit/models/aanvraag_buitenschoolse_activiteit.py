@@ -22,8 +22,15 @@ class AanvraagBuitenschoolseActiviteit(models.Model):
         required=True,
         default=lambda self: self.env.user.employee_ids[:1],
     )
+    school_id = fields.Many2one(
+        'myschool.org',
+        string='School',
+        required=True,
+        default=lambda self: self.env.user.school_ids[:1],
+    )
     is_owner = fields.Boolean(compute='_compute_is_owner')
     datum = fields.Date(string='Datum activiteit', required=True)
+    datum_display = fields.Char(string='Datum', compute='_compute_datum_display')
     bestemming = fields.Char(string='Bestemming', required=True)
     aantal_leerlingen = fields.Integer(string='Aantal leerlingen')
     cost = fields.Float(string='Geschatte kost (€)')
@@ -35,6 +42,14 @@ class AanvraagBuitenschoolseActiviteit(models.Model):
         ('done', 'Afgerond'),
     ], string='Status', default='draft', tracking=True)
     rejection_reason = fields.Text(string='Reden voor afkeuring')
+    assigned_to = fields.Many2one(
+        'hr.employee',
+        string='Toegewezen aan',
+        tracking=True,
+        domain=lambda self: [('user_id', 'in',
+            self.env.ref('aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie').all_user_ids.ids
+        )],
+    )
     directie_id = fields.Many2one(
         'hr.employee',
         string='Beoordeeld door',
@@ -42,6 +57,23 @@ class AanvraagBuitenschoolseActiviteit(models.Model):
     )
     reservatie_done = fields.Boolean(string='Reservatie bevestigd', default=False)
     payment_done = fields.Boolean(string='Betaling bevestigd', default=False)
+    replacement_id = fields.Many2one(
+        'hr.employee',
+        string='Vervanger',
+        tracking=True,
+    )
+    replacement_done = fields.Boolean(string='Vervanging ingepland', default=False)
+    priority = fields.Selection([
+        ('0', 'Normaal'),
+        ('1', 'Laag'),
+        ('2', 'Hoog'),
+        ('3', 'Urgent'),
+    ], string='Prioriteit', default='0')
+
+    @api.depends('datum')
+    def _compute_datum_display(self):
+        for record in self:
+            record.datum_display = record.datum.strftime('%d %b %Y') if record.datum else ''
 
     @api.depends('employee_id')
     @api.depends_context('uid')
@@ -112,9 +144,20 @@ class AanvraagBuitenschoolseActiviteit(models.Model):
             record.rejection_reason = False
             record.directie_id = False
 
+    def action_confirm_replacement(self):
+        for record in self:
+            if record.state != 'approved':
+                raise UserError(
+                    "Vervanging kan alleen ingepland worden voor goedgekeurde aanvragen.")
+            if not record.replacement_id:
+                raise UserError(
+                    "Selecteer eerst een vervanger voordat u de vervanging bevestigt.")
+            record.replacement_done = True
+            record._check_done()
+
     def _check_done(self):
         for record in self:
-            if record.reservatie_done and record.payment_done:
+            if record.reservatie_done and record.payment_done and record.replacement_done:
                 record.state = 'done'
 
     def action_delete(self):

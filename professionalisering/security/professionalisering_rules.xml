@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Medewerker: only see own records -->
+    <record id="rule_professionalisering_school_filter" model="ir.rule">
+        <field name="name">Professionalisering: medewerker ziet eigen aanvragen</field>
+        <field name="model_id" ref="model_professionalisering_record"/>
+        <field name="domain_force">[('employee_id.user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_professionalisering_user'))]"/>
+    </record>
+
+    <!-- Directie: see all records -->
+    <record id="rule_professionalisering_directie_all" model="ir.rule">
+        <field name="name">Professionalisering: directie ziet alles</field>
+        <field name="model_id" ref="model_professionalisering_record"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_professionalisering_directie'))]"/>
+    </record>
+
+    <!-- Boekhouding: see records from their school(s) -->
+    <record id="rule_professionalisering_boekhouding_school" model="ir.rule">
+        <field name="name">Professionalisering: boekhouding ziet eigen school</field>
+        <field name="model_id" ref="model_professionalisering_record"/>
+        <field name="domain_force">[('school_id', 'in', user.school_ids.ids)]</field>
+        <field name="groups" eval="[(4, ref('group_professionalisering_boekhouding'))]"/>
+    </record>
+
+    <!-- Vervangingen: see records from their school(s) -->
+    <record id="rule_professionalisering_vervangingen_school" model="ir.rule">
+        <field name="name">Professionalisering: vervangingen ziet eigen school</field>
+        <field name="model_id" ref="model_professionalisering_record"/>
+        <field name="domain_force">[('school_id', 'in', user.school_ids.ids)]</field>
+        <field name="groups" eval="[(4, ref('group_professionalisering_vervangingen'))]"/>
+    </record>
+
+    <!-- Beheerder: see all records -->
+    <record id="rule_professionalisering_admin_all" model="ir.rule">
+        <field name="name">Professionalisering: beheerder ziet alles</field>
+        <field name="model_id" ref="model_professionalisering_record"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_professionalisering_admin'))]"/>
+    </record>
+</odoo>

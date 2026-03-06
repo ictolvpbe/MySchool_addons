@@ -8,9 +8,7 @@ class ItsmKnowledgeTag(models.Model):
 
     name = fields.Char(string='Name', required=True)
 
-    _sql_constraints = [
-        ('name_unique', 'UNIQUE(name)', 'Tag name must be unique.'),
-    ]
+    _name_unique = models.Constraint('UNIQUE(name)', 'Tag name must be unique.')
 
 
 class ItsmKnowledgeArticle(models.Model):

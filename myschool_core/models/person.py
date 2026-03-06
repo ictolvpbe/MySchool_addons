@@ -93,10 +93,9 @@ class Person(models.Model):
     # =========================================================================
     
     person_type_id = fields.Many2one(
-        'myschool.person.type', 
-        string='Type Persoon', 
-        ondelete='set null', 
-        tracking=True,
+        'myschool.person.type',
+        string='Type Persoon',
+        ondelete='set null',
         index=True,
         help='Type persoon: EMPLOYEE, STUDENT, GUARDIAN, etc.'
     )
@@ -201,9 +200,8 @@ class Person(models.Model):
     # =========================================================================
     
     is_active = fields.Boolean(
-        string='Is Actief', 
-        default=True, 
-        tracking=True,
+        string='Is Actief',
+        default=True,
         index=True,
         help='Geeft aan of de persoon actief is in het systeem'
     )
@@ -245,10 +243,8 @@ class Person(models.Model):
     # SQL Constraints
     # =========================================================================
     
-    _sql_constraints = [
-        ('sap_ref_unique', 'unique(sap_ref)', 'De SAP Referentie moet uniek zijn!'),
-        ('sap_uuid_unique', 'unique(sap_person_uuid)', 'De SAP Persoon UUID moet uniek zijn!'),
-    ]
+    _sap_ref_unique = models.Constraint('unique(sap_ref)', 'De SAP Referentie moet uniek zijn!')
+    _sap_uuid_unique = models.Constraint('unique(sap_person_uuid)', 'De SAP Persoon UUID moet uniek zijn!')
 
     # =========================================================================
     # Computed Fields

@@ -21,7 +21,7 @@ class PhishingCampaign(models.Model):
     description = fields.Text(string='Omschrijving')
     state = fields.Selection(
         CAMPAIGN_STATES, string='Status', default='draft',
-        required=True, tracking=True,
+        required=True,
     )
     date_start = fields.Date(string='Startdatum')
     date_end = fields.Date(string='Einddatum')

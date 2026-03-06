@@ -5,7 +5,6 @@
         <field name="sequence">55</field>
     </record>
 
-    <!-- Privilege: hierarchical role selection (dropdown in user settings) -->
     <record id="privilege_professionalisering" model="res.groups.privilege">
         <field name="name">Rol</field>
         <field name="placeholder">Geen toegang</field>
@@ -13,7 +12,7 @@
         <field name="sequence">10</field>
     </record>
 
-    <!-- Hierarchical groups: Medewerker → Directie → Beheerder -->
+    <!-- Medewerker -->
     <record id="group_professionalisering_user" model="res.groups">
         <field name="name">Medewerker</field>
         <field name="privilege_id" ref="privilege_professionalisering"/>
@@ -21,28 +20,35 @@
         <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
     </record>
 
-    <record id="group_professionalisering_directie" model="res.groups">
-        <field name="name">Directie</field>
+    <!-- Boekhouding -->
+    <record id="group_professionalisering_boekhouding" model="res.groups">
+        <field name="name">Boekhouding</field>
         <field name="privilege_id" ref="privilege_professionalisering"/>
         <field name="sequence">20</field>
         <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
     </record>
 
+    <!-- Vervangingen -->
+    <record id="group_professionalisering_vervangingen" model="res.groups">
+        <field name="name">Vervangingen</field>
+        <field name="privilege_id" ref="privilege_professionalisering"/>
+        <field name="sequence">30</field>
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
+    </record>
+
+    <!-- Directie -->
+    <record id="group_professionalisering_directie" model="res.groups">
+        <field name="name">Directie</field>
+        <field name="privilege_id" ref="privilege_professionalisering"/>
+        <field name="sequence">40</field>
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
+    </record>
+
+    <!-- Beheerder -->
     <record id="group_professionalisering_admin" model="res.groups">
         <field name="name">Beheerder</field>
         <field name="privilege_id" ref="privilege_professionalisering"/>
-        <field name="sequence">30</field>
+        <field name="sequence">50</field>
         <field name="implied_ids" eval="[(4, ref('group_professionalisering_directie'))]"/>
-    </record>
-
-    <!-- Independent groups: checkboxes in user settings (no privilege_id) -->
-    <record id="group_professionalisering_boekhouding" model="res.groups">
-        <field name="name">Professionalisering - Boekhouding</field>
-        <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
-    </record>
-
-    <record id="group_professionalisering_vervangingen" model="res.groups">
-        <field name="name">Professionalisering - Vervangingen</field>
-        <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
     </record>
 </odoo>

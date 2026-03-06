@@ -9,11 +9,13 @@
         boekhouding bevestigt betaling en vervangingen plant vervanging in.
     """,
     'author': 'MySchool',
-    'category': 'Human Resources',
-    'depends': ['base', 'mail', 'hr'],
+    'license': 'LGPL-3',
+    'category': 'MySchool',
+    'depends': ['base', 'mail', 'hr', 'myschool_core'],
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
+        'security/professionalisering_rules.xml',
         'data/sequence.xml',
         'data/mail_template_data.xml',
         'views/professionalisering_views.xml',

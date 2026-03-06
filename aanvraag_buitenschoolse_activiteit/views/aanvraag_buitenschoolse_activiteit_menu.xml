@@ -25,6 +25,14 @@
         <field name="domain">[('state', '=', 'approved'), ('payment_done', '=', False)]</field>
     </record>
 
+    <!-- Action: Replacements (Vervangingen) -->
+    <record id="action_buitenschoolse_activiteit_replacements" model="ir.actions.act_window">
+        <field name="name">Vervangingen</field>
+        <field name="res_model">aanvraag_buitenschoolse_activiteit.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('state', '=', 'approved'), ('replacement_done', '=', False)]</field>
+    </record>
+
     <!-- Action: All Requests -->
     <record id="action_buitenschoolse_activiteit_all" model="ir.actions.act_window">
         <field name="name">Alle Aanvragen</field>
@@ -57,6 +65,13 @@
               action="action_buitenschoolse_activiteit_payments"
               groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_boekhouding"
               sequence="30"/>
+
+    <menuitem id="menu_buitenschoolse_activiteit_replacements"
+              name="Vervangingen"
+              parent="menu_buitenschoolse_activiteit_root"
+              action="action_buitenschoolse_activiteit_replacements"
+              groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_vervangingen"
+              sequence="35"/>
 
     <menuitem id="menu_buitenschoolse_activiteit_all"
               name="Alle Aanvragen"

@@ -22,10 +22,7 @@ class PhishingResult(models.Model):
     click_rate = fields.Float(string='Klikpercentage (%)')
     report_rate = fields.Float(string='Rapportagepercentage (%)')
 
-    _sql_constraints = [
-        (
-            'unique_campaign',
-            'UNIQUE(campaign_id)',
-            'Er kan slechts één resultaat per campagne bestaan.',
-        ),
-    ]
+    _unique_campaign = models.Constraint(
+        'UNIQUE(campaign_id)',
+        'Er kan slechts één resultaat per campagne bestaan.',
+    )

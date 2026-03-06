@@ -42,6 +42,12 @@
                             class="btn-primary"
                             groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_boekhouding"
                             invisible="state != 'approved' or payment_done == True"/>
+                    <button name="action_confirm_replacement"
+                            string="Vervanging ingepland"
+                            type="object"
+                            class="btn-primary"
+                            groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_vervangingen"
+                            invisible="state != 'approved' or replacement_done == True"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,submitted,approved,done"/>
                 </header>
                 <sheet>
@@ -50,19 +56,30 @@
                             <field name="name" readonly="1"/>
                         </h1>
                     </div>
+                    <field name="priority" widget="priority"
+                           groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie"/>
                     <group>
                         <group>
                             <field name="titel" readonly="state != 'draft'"/>
                             <field name="employee_id" readonly="state != 'draft'"/>
+                            <field name="school_id" readonly="state != 'draft'"/>
                             <field name="bestemming" readonly="state != 'draft'"/>
                             <field name="datum" readonly="state != 'draft'"/>
                             <field name="aantal_leerlingen" readonly="state != 'draft'"/>
                             <field name="cost" readonly="state != 'draft'"/>
                         </group>
                         <group>
+                            <field name="assigned_to"
+                                   invisible="state == 'draft'"
+                                   readonly="state not in ('submitted', 'approved')"
+                                   groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie"/>
                             <field name="directie_id" invisible="state not in ('approved', 'rejected', 'done')"/>
                             <field name="reservatie_done" readonly="1" invisible="state not in ('approved', 'done')"/>
                             <field name="payment_done" readonly="1" invisible="state not in ('approved', 'done')"/>
+                            <field name="replacement_id"
+                                   invisible="state not in ('approved', 'done')"
+                                   readonly="replacement_done == True"/>
+                            <field name="replacement_done" readonly="1" invisible="state not in ('approved', 'done')"/>
                         </group>
                     </group>
                     <notebook>
@@ -89,12 +106,18 @@
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
+                <field name="priority" widget="priority" optional="show"
+                       groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie"/>
                 <field name="titel"/>
                 <field name="employee_id"/>
+                <field name="school_id"/>
                 <field name="bestemming"/>
-                <field name="datum"/>
+                <field name="datum_display"/>
                 <field name="aantal_leerlingen"/>
                 <field name="cost"/>
+                <field name="assigned_to" optional="show"
+                       groups="aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie"/>
+                <field name="replacement_id" optional="hide"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
                        decoration-warning="state == 'submitted'"
@@ -114,10 +137,13 @@
                 <field name="employee_id"/>
                 <field name="name"/>
                 <field name="bestemming"/>
+                <field name="assigned_to"/>
                 <filter string="Mijn aanvragen" name="my_requests" domain="[('employee_id.user_id', '=', uid)]"/>
                 <separator/>
+                <filter string="Aan mij toegewezen" name="assigned_to_me" domain="[('assigned_to.user_id', '=', uid)]"/>
                 <filter string="Te beoordelen" name="to_approve" domain="[('state', '=', 'submitted')]"/>
                 <filter string="Betaling openstaand" name="payment_pending" domain="[('state', '=', 'approved'), ('payment_done', '=', False)]"/>
+                <filter string="Vervanging openstaand" name="replacement_pending" domain="[('state', '=', 'approved'), ('replacement_done', '=', False)]"/>
                 <separator/>
                 <filter string="Concept" name="state_draft" domain="[('state', '=', 'draft')]"/>
                 <filter string="Ingediend" name="state_submitted" domain="[('state', '=', 'submitted')]"/>
@@ -127,6 +153,9 @@
                 <group>
                     <filter string="Status" name="group_state" domain="[]" context="{'group_by': 'state'}"/>
                     <filter string="Medewerker" name="group_employee" domain="[]" context="{'group_by': 'employee_id'}"/>
+                    <filter string="School" name="group_school" domain="[]" context="{'group_by': 'school_id'}"/>
+                    <filter string="Prioriteit" name="group_priority" domain="[]" context="{'group_by': 'priority'}"/>
+                    <filter string="Toegewezen aan" name="group_assigned" domain="[]" context="{'group_by': 'assigned_to'}"/>
                 </group>
             </search>
         </field>
