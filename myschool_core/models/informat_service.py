@@ -1763,7 +1763,49 @@ class InformatService(models.AbstractModel):
             org_type_group = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
 
             Org = self.env['myschool.org']
+            PropRelation = self.env['myschool.proprelation']
+            PropRelationType = self.env['myschool.proprelation.type']
+            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
             checked_classes: List[str] = []
+
+            # Cache: inst_nr -> non-admin parent school name_short
+            school_shortname_cache = {}
+
+            OrgType2 = self.env['myschool.org.type']
+            school_type = OrgType2.search([('name', '=', 'SCHOOL')], limit=1)
+
+            def _resolve_school_shortname(inst_nr_val):
+                if inst_nr_val in school_shortname_cache:
+                    return school_shortname_cache[inst_nr_val]
+                school_org = Org.search([
+                    ('inst_nr', '=', inst_nr_val),
+                    ('org_type_id', '!=', org_type_group.id),
+                    ('is_active', '=', True),
+                ], limit=1)
+                if not school_org:
+                    school_shortname_cache[inst_nr_val] = None
+                    return None
+                ci_lookup_org = school_org
+                if school_org.is_administrative and org_tree_type:
+                    # Traverse ORG-TREE upward to find first non-admin SCHOOL
+                    current = school_org
+                    for _depth in range(10):
+                        parent_rel = PropRelation.search([
+                            ('proprelation_type_id', '=', org_tree_type.id),
+                            ('id_org', '=', current.id),
+                            ('id_org_parent', '!=', False),
+                            ('is_active', '=', True),
+                        ], limit=1)
+                        if not parent_rel or not parent_rel.id_org_parent:
+                            break
+                        candidate = parent_rel.id_org_parent
+                        if not candidate.is_administrative and school_type and candidate.org_type_id.id == school_type.id:
+                            ci_lookup_org = candidate
+                            break
+                        current = candidate
+                school_shortname_cache[inst_nr_val] = ci_lookup_org.name_short
+                return ci_lookup_org.name_short
 
             for persoon_id, registration_json in all_registrations.items():
                 registration = json.loads(registration_json)
@@ -1774,9 +1816,11 @@ class InformatService(models.AbstractModel):
                 inschr_klassen = registration.get('inschrklassen', []) or registration.get('inschrKlassen', [])
                 inst_nr = registration.get('instelnr', '')
 
+                school_short = _resolve_school_shortname(inst_nr)
+
                 for klas in inschr_klassen:
                     klas_code = klas.get('klasCode', '')
-                    classgroup_fullname = f"{klas_code}-{inst_nr}"
+                    classgroup_fullname = f"{klas_code}-{school_short}" if school_short else f"{klas_code}-{inst_nr}"
                     task_action = ''
 
                     # Skip if already checked
@@ -1789,6 +1833,18 @@ class InformatService(models.AbstractModel):
                         ('org_type_id', '=', org_type_group.id),
                         ('is_active', '=', True)
                     ], limit=1)
+
+                    if not existing_class:
+                        # Check old format (name_short-inst_nr) for migration
+                        old_format_name = f"{klas_code}-{inst_nr}"
+                        existing_class = Org.search([
+                            ('name', '=', old_format_name),
+                            ('org_type_id', '=', org_type_group.id),
+                            ('is_active', '=', True)
+                        ], limit=1)
+                        if existing_class:
+                            # Rename to new format
+                            existing_class.write({'name': classgroup_fullname})
 
                     if not existing_class:
                         task_action = 'ADD'
@@ -1815,7 +1871,8 @@ class InformatService(models.AbstractModel):
             ])
 
             for org in all_active_classes:
-                class_key = f"{org.name_short}-{org.inst_nr}"
+                school_short = _resolve_school_shortname(org.inst_nr)
+                class_key = f"{org.name_short}-{school_short}" if school_short else f"{org.name_short}-{org.inst_nr}"
                 if class_key not in checked_classes:
                     task_data = {
                         'orgId': org.id,

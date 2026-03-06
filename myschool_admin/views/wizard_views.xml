@@ -672,4 +672,35 @@
         <field name="target">new</field>
     </record>
 
+    <!-- ========================================= -->
+    <!-- UPDATE STUDENT RELATIONS WIZARD -->
+    <!-- ========================================= -->
+
+    <record id="view_update_student_relations_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.update.student.relations.wizard.form</field>
+        <field name="model">myschool.update.student.relations.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Update Student Relations">
+                <group>
+                    <div class="alert alert-info" role="alert">
+                        <strong>Update Student Relations</strong> fixes existing student
+                        PPSBRs so that id_org points to the classgroup (instead of the school).
+                        Uses PERSON-TREE placement to determine the correct classgroup per student.
+                    </div>
+                </group>
+                <footer>
+                    <button name="action_update" type="object" string="Update" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_update_student_relations_wizard" model="ir.actions.act_window">
+        <field name="name">Update Student Relations</field>
+        <field name="res_model">myschool.update.student.relations.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
 </odoo>

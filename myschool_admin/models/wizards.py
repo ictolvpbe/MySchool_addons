@@ -3058,3 +3058,102 @@ class InitSchoolyearWizard(models.TransientModel):
                 'sticky': True,
             },
         }
+
+
+class UpdateStudentRelationsWizard(models.TransientModel):
+    _name = 'myschool.update.student.relations.wizard'
+    _description = 'Fix Student PPSBRs (set id_org to classgroup)'
+
+    def action_update(self):
+        """Fix existing student PPSBRs: set id_org to classgroup org (from PERSON-TREE)."""
+        self.ensure_one()
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+        OrgType = self.env['myschool.org.type']
+        Role = self.env['myschool.role']
+        Period = self.env['myschool.period']
+        PeriodType = self.env['myschool.period.type']
+
+        # 1. Get current schoolyear period
+        school_year_type = PeriodType.search([('name', '=', 'SCHOOLJAAR')], limit=1)
+        if not school_year_type:
+            return self._notify('danger', 'PeriodType SCHOOLJAAR not found.')
+
+        current_period = Period.search([
+            ('is_active', '=', True),
+            ('period_type_id', '=', school_year_type.id),
+        ], limit=1)
+        if not current_period:
+            return self._notify('danger', 'No active SCHOOLJAAR period found.')
+
+        # 2. Find STUDENT role and proprelation types
+        student_role = Role.search([('name', '=', 'STUDENT')], limit=1)
+        if not student_role:
+            return self._notify('danger', 'Backend role STUDENT not found.')
+
+        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if not person_tree_type or not ppsbr_type:
+            return self._notify('danger', 'PropRelation type PERSON-TREE or PPSBR not found.')
+
+        # 3. Find all active classgroup orgs
+        classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
+        if not classgroup_type:
+            return self._notify('danger', 'OrgType CLASSGROUP not found.')
+
+        classgroups = Org.search([
+            ('org_type_id', '=', classgroup_type.id),
+            ('is_active', '=', True),
+        ])
+        if not classgroups:
+            return self._notify('warning', 'No active classgroups found.')
+
+        # 4. Per classgroup: find students via PERSON-TREE, fix their PPSBR id_org
+        updated_count = 0
+
+        for cg in classgroups:
+            person_trees = PropRelation.search([
+                ('proprelation_type_id', '=', person_tree_type.id),
+                ('id_org', '=', cg.id),
+                ('is_active', '=', True),
+            ])
+
+            for pt in person_trees:
+                person = pt.id_person
+                if not person:
+                    continue
+
+                # Find the student's PPSBR with STUDENT role
+                ppsbr = PropRelation.search([
+                    ('proprelation_type_id', '=', ppsbr_type.id),
+                    ('id_person', '=', person.id),
+                    ('id_role', '=', student_role.id),
+                    ('is_active', '=', True),
+                ], limit=1)
+
+                if ppsbr and ppsbr.id_org.id != cg.id:
+                    # PPSBR points to school instead of classgroup — fix it
+                    ppsbr.write({
+                        'id_org_parent': ppsbr.id_org.id,
+                        'id_org': cg.id,
+                    })
+                    updated_count += 1
+
+        return self._notify('success',
+            f'Updated {updated_count} student PPSBRs across '
+            f'{len(classgroups)} classgroups (period: {current_period.name}).')
+
+    def _notify(self, ntype, message):
+        """Return a notification action."""
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Update Student Relations',
+                'message': message,
+                'type': ntype,
+                'sticky': True,
+            },
+        }

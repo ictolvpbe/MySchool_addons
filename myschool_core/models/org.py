@@ -308,22 +308,34 @@ class Org(models.Model):
                 _logger.info(f'[ORG-TREE-RECALC] inst_nr={inst_nr}: school_org={school_org.name} '
                     f'(name_short={school_org.name_short}, is_administrative={school_org.is_administrative})')
 
-                # Step 2: Determine which org to use for OuForClasses CI lookup
-                # If administrative, get its parent from ORG-TREE
+                # Step 2: Find first non-administrative parent of type SCHOOL
+                school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
                 ci_lookup_org = school_org
                 if school_org.is_administrative:
-                    parent_rel = PropRelation.search([
-                        ('proprelation_type_id', '=', org_tree_type.id),
-                        ('id_org', '=', school_org.id),
-                        ('id_org_parent', '!=', False),
-                        ('is_active', '=', True),
-                    ], limit=1)
-                    if parent_rel and parent_rel.id_org_parent:
-                        ci_lookup_org = parent_rel.id_org_parent
-                        _logger.info(f'[ORG-TREE-RECALC]   administrative -> ORG-TREE parent: {ci_lookup_org.name} '
-                            f'(name_short={ci_lookup_org.name_short})')
-                    else:
-                        _logger.warning(f'[ORG-TREE-RECALC]   administrative but no ORG-TREE parent found for {school_org.name_short}')
+                    # Traverse ORG-TREE upward to find first non-admin SCHOOL
+                    current = school_org
+                    found = False
+                    for _depth in range(10):
+                        parent_rel = PropRelation.search([
+                            ('proprelation_type_id', '=', org_tree_type.id),
+                            ('id_org', '=', current.id),
+                            ('id_org_parent', '!=', False),
+                            ('is_active', '=', True),
+                        ], limit=1)
+                        if not parent_rel or not parent_rel.id_org_parent:
+                            break
+                        candidate = parent_rel.id_org_parent
+                        if not candidate.is_administrative and school_type and candidate.org_type_id.id == school_type.id:
+                            ci_lookup_org = candidate
+                            found = True
+                            _logger.info(f'[ORG-TREE-RECALC]   administrative -> non-admin SCHOOL parent: {ci_lookup_org.name} '
+                                f'(name_short={ci_lookup_org.name_short})')
+                            break
+                        current = candidate
+                    if not found:
+                        _logger.warning(f'[ORG-TREE-RECALC]   no non-admin SCHOOL parent found for {school_org.name_short}')
+                elif school_type and school_org.org_type_id.id != school_type.id:
+                    _logger.warning(f'[ORG-TREE-RECALC]   school_org {school_org.name_short} is not of type SCHOOL')
 
                 # Step 3: Look up OuForClasses CI
                 ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')

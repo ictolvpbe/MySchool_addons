@@ -300,6 +300,13 @@
               sequence="120"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_update_student_relations"
+              name="Update Student Relations"
+              parent="menu_configuration"
+              action="action_update_student_relations_wizard"
+              sequence="125"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <menuitem id="menu_init_schoolyear"
               name="Init Schooljaar"
               parent="menu_configuration"
