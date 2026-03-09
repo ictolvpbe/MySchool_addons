@@ -115,9 +115,15 @@
 
                         <page string="Accounts" name="accounts">
                             <group>
-                                <field name="email_cloud"/>
-                                <field name="password" password="True"/>
-                                <field name="email_private"/>
+                                <group>
+                                    <field name="email_cloud"/>
+                                    <field name="email_private"/>
+                                    <field name="password" password="True"/>
+                                </group>
+                                <group>
+                                    <field name="person_fqdn_internal"/>
+                                    <field name="person_fqdn_external"/>
+                                </group>
                             </group>
                         </page>
 
@@ -215,6 +221,54 @@ action = {
     'params': {
         'title': 'PERSON-TREE Recalculation Complete',
         'message': f'Removed {removed} old relations. {success} created, {skipped} skipped (no active PPSBR) out of {len(persons)} active persons.',
+        'type': 'success',
+        'sticky': True,
+    }
+}
+        </field>
+    </record>
+
+    <!-- Server Action for Update Person Properties (email_cloud + FQDN) -->
+    <record id="action_update_person_properties" model="ir.actions.server">
+        <field name="name">Update Person Properties</field>
+        <field name="model_id" ref="myschool_core.model_myschool_person"/>
+        <field name="state">code</field>
+        <field name="code">
+processor = env['myschool.betask.processor']
+PropRelation = env['myschool.proprelation']
+PropRelationType = env['myschool.proprelation.type']
+PersonType = env['myschool.person.type']
+
+person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+if not person_tree_type:
+    raise UserError('PERSON-TREE type not found')
+
+person_types = PersonType.search([('name', 'in', ('EMPLOYEE', 'STUDENT'))])
+persons = env['myschool.person'].search([
+    ('is_active', '=', True),
+    ('person_type_id', 'in', person_types.ids),
+])
+
+updated = 0
+skipped = 0
+for person in persons:
+    tree_rel = PropRelation.search([
+        ('id_person', '=', person.id),
+        ('proprelation_type_id', '=', person_tree_type.id),
+        ('is_active', '=', True),
+    ], limit=1)
+    if tree_rel and tree_rel.id_org:
+        processor._populate_person_account_fields(person, tree_rel.id_org)
+        updated += 1
+    else:
+        skipped += 1
+
+action = {
+    'type': 'ir.actions.client',
+    'tag': 'display_notification',
+    'params': {
+        'title': 'Update Person Properties Complete',
+        'message': f'Updated {updated} persons, skipped {skipped} (no PERSON-TREE) out of {len(persons)} active employees/students.',
         'type': 'success',
         'sticky': True,
     }

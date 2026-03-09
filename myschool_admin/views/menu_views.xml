@@ -287,7 +287,7 @@
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_recalculate_org_trees"
-              name="Recalculate ORG-TREE Classgroups"
+              name="Update classgroup properties"
               parent="menu_configuration"
               action="action_recalculate_all_org_trees"
               sequence="115"
@@ -298,6 +298,13 @@
               parent="menu_configuration"
               action="action_recalculate_all_person_trees"
               sequence="120"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_update_person_properties"
+              name="Update person properties"
+              parent="menu_configuration"
+              action="action_update_person_properties"
+              sequence="122"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_update_student_relations"

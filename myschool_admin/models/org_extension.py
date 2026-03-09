@@ -58,23 +58,54 @@ class OrgProprelations(models.Model):
         return None
     
     def action_update_name_tree(self):
-        """Update name_tree for this organization."""
+        """Update name_tree for this organization.
+
+        If ou_fqdn_internal is not set, builds it from the ORG-TREE parent first.
+        """
         self.ensure_one()
-        
+
+        self._ensure_ou_fqdn_from_parent()
+
         name_tree = self._compute_name_tree_from_fqdn()
         if name_tree:
             self.write({'name_tree': name_tree})
             _logger.info(f"Updated name_tree for {self.name_short}: {name_tree}")
-        
+
         return True
     
+    def _ensure_ou_fqdn_from_parent(self):
+        """Build ou_fqdn_internal from ORG-TREE parent if not set."""
+        if self.ou_fqdn_internal:
+            return
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        if not org_tree_type:
+            return
+        parent_rel = PropRelation.search([
+            ('proprelation_type_id', '=', org_tree_type.id),
+            ('id_org', '=', self.id),
+            ('id_org_parent', '!=', False),
+            ('is_active', '=', True),
+        ], limit=1)
+        if parent_rel and parent_rel.id_org_parent and parent_rel.id_org_parent.ou_fqdn_internal and self.name_short:
+            parent_fqdn = parent_rel.id_org_parent.ou_fqdn_internal.lower()
+            new_fqdn = f"ou={self.name_short.lower()},{parent_fqdn}"
+            self.write({'ou_fqdn_internal': new_fqdn})
+            _logger.info(f"Built ou_fqdn_internal for {self.name_short}: {new_fqdn}")
+
     def action_update_all_name_trees(self):
         """Update name_tree for ALL organizations in the system."""
         Org = self.env['myschool.org']
-        
-        # Get all orgs with ou_fqdn_internal
+
+        # First pass: build missing ou_fqdn_internal from ORG-TREE parents
+        orgs_without_fqdn = Org.search([('ou_fqdn_internal', '=', False), ('name_short', '!=', False)])
+        for org in orgs_without_fqdn:
+            org._ensure_ou_fqdn_from_parent()
+
+        # Second pass: update name_tree for all orgs with ou_fqdn_internal
         all_orgs = Org.search([('ou_fqdn_internal', '!=', False)])
-        
+
         updated_count = 0
         for org in all_orgs:
             name_tree = org._compute_name_tree_from_fqdn()
@@ -82,9 +113,9 @@ class OrgProprelations(models.Model):
                 org.write({'name_tree': name_tree})
                 updated_count += 1
                 _logger.info(f"Updated name_tree for {org.name_short}: {name_tree}")
-        
+
         _logger.info(f"Updated name_tree for {updated_count} organizations")
-        
+
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
@@ -95,11 +126,18 @@ class OrgProprelations(models.Model):
                 'sticky': False,
             }
         }
-    
+
     @api.model
     def update_all_name_trees_cron(self):
         """Update all name_trees. Called from server action or cron job."""
         Org = self.env['myschool.org']
+
+        # First pass: build missing ou_fqdn_internal from ORG-TREE parents
+        orgs_without_fqdn = Org.search([('ou_fqdn_internal', '=', False), ('name_short', '!=', False)])
+        for org in orgs_without_fqdn:
+            org._ensure_ou_fqdn_from_parent()
+
+        # Second pass: update name_tree
         all_orgs = Org.search([('ou_fqdn_internal', '!=', False)])
 
         updated_count = 0

@@ -237,17 +237,18 @@ class Org(models.Model):
 
     @api.model
     def recalculate_classgroup_org_trees(self):
-        """Recalculate ORG-TREE relations for all active classgroups.
+        """Recalculate ORG-TREE relations and AD/OU properties for all active classgroups.
 
-        For each classgroup, the parent org is resolved via the OuForClasses
-        CI relation linked to the school org (found by inst_nr).
+        For each classgroup:
+        1. Resolve the parent org via the OuForClasses CI linked to the school org.
+        2. Create ORG-TREE relation.
+        3. Populate AD/OU fields (domains, FQDNs, group names, name_tree).
         """
         Org = self.env['myschool.org']
         OrgType = self.env['myschool.org.type']
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         ConfigItem = self.env['myschool.config.item']
-        CiRelation = self.env['myschool.ci.relation']
 
         # Get ORG-TREE type
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
@@ -257,14 +258,14 @@ class Org(models.Model):
         # Get CLASSGROUP org type
         classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
         if not classgroup_type:
-            _logger.warning('[ORG-TREE-RECALC] CLASSGROUP org type NOT FOUND')
-            return {'removed': 0, 'created': 0, 'skipped': 0, 'errors': ['CLASSGROUP org type not found']}
+            _logger.warning('[CG-UPDATE] CLASSGROUP org type NOT FOUND')
+            return {'removed': 0, 'created': 0, 'skipped': 0, 'ad_updated': 0, 'errors': ['CLASSGROUP org type not found']}
 
         classgroups = Org.search([
             ('org_type_id', '=', classgroup_type.id),
             ('is_active', '=', True)
         ])
-        _logger.info(f'[ORG-TREE-RECALC] Found {len(classgroups)} active classgroups')
+        _logger.info(f'[CG-UPDATE] Found {len(classgroups)} active classgroups')
 
         # Remove existing ORG-TREE relations for classgroups
         removed = 0
@@ -275,22 +276,26 @@ class Org(models.Model):
                 ('id_org_parent', '!=', False),
             ])
             removed = len(old_rels)
-            _logger.info(f'[ORG-TREE-RECALC] Removing {removed} old ORG-TREE relations')
+            _logger.info(f'[CG-UPDATE] Removing {removed} old ORG-TREE relations')
             old_rels.unlink()
 
-        # Cache: inst_nr -> parent org (resolved via OuForClasses CI)
+        # Cache: inst_nr -> (parent_org, ci_lookup_org) resolved via OuForClasses CI
         parent_cache = {}
         success = 0
+        ad_updated = 0
         skipped = 0
         errors = []
+
+        processor = self.env['myschool.betask.processor']
 
         for cg in classgroups:
             inst_nr = cg.inst_nr
             if inst_nr in parent_cache:
-                parent_org = parent_cache[inst_nr]
-                _logger.info(f'[ORG-TREE-RECALC] Cache hit for inst_nr={inst_nr} -> parent={parent_org.name if parent_org else "None"}')
+                parent_org, ci_lookup_org = parent_cache[inst_nr]
+                _logger.info(f'[CG-UPDATE] Cache hit for inst_nr={inst_nr} -> parent={parent_org.name if parent_org else "None"}')
             else:
                 parent_org = None
+                ci_lookup_org = None
                 # Step 1: Find school org for this inst_nr
                 school_org = Org.search([
                     ('inst_nr', '=', inst_nr),
@@ -299,13 +304,13 @@ class Org(models.Model):
                 ], limit=1)
 
                 if not school_org:
-                    _logger.warning(f'[ORG-TREE-RECALC] inst_nr={inst_nr}: NO school_org found')
-                    parent_cache[inst_nr] = None
+                    _logger.warning(f'[CG-UPDATE] inst_nr={inst_nr}: NO school_org found')
+                    parent_cache[inst_nr] = (None, None)
                     skipped += 1
                     errors.append(f"{cg.name}: no school_org for inst_nr {inst_nr}")
                     continue
 
-                _logger.info(f'[ORG-TREE-RECALC] inst_nr={inst_nr}: school_org={school_org.name} '
+                _logger.info(f'[CG-UPDATE] inst_nr={inst_nr}: school_org={school_org.name} '
                     f'(name_short={school_org.name_short}, is_administrative={school_org.is_administrative})')
 
                 # Step 2: Find first non-administrative parent of type SCHOOL
@@ -328,18 +333,18 @@ class Org(models.Model):
                         if not candidate.is_administrative and school_type and candidate.org_type_id.id == school_type.id:
                             ci_lookup_org = candidate
                             found = True
-                            _logger.info(f'[ORG-TREE-RECALC]   administrative -> non-admin SCHOOL parent: {ci_lookup_org.name} '
+                            _logger.info(f'[CG-UPDATE]   administrative -> non-admin SCHOOL parent: {ci_lookup_org.name} '
                                 f'(name_short={ci_lookup_org.name_short})')
                             break
                         current = candidate
                     if not found:
-                        _logger.warning(f'[ORG-TREE-RECALC]   no non-admin SCHOOL parent found for {school_org.name_short}')
+                        _logger.warning(f'[CG-UPDATE]   no non-admin SCHOOL parent found for {school_org.name_short}')
                 elif school_type and school_org.org_type_id.id != school_type.id:
-                    _logger.warning(f'[ORG-TREE-RECALC]   school_org {school_org.name_short} is not of type SCHOOL')
+                    _logger.warning(f'[CG-UPDATE]   school_org {school_org.name_short} is not of type SCHOOL')
 
                 # Step 3: Look up OuForClasses CI
                 ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')
-                _logger.info(f'[ORG-TREE-RECALC]   OuForClasses on {ci_lookup_org.name_short} -> {ou_value!r}')
+                _logger.info(f'[CG-UPDATE]   OuForClasses on {ci_lookup_org.name_short} -> {ou_value!r}')
 
                 # Step 4: Find the org with that name_short as a direct child of ci_lookup_org
                 if ou_value:
@@ -358,24 +363,24 @@ class Org(models.Model):
                         ], limit=1)
 
                     if parent_org:
-                        _logger.info(f'[ORG-TREE-RECALC]   parent org -> {parent_org.name} '
+                        _logger.info(f'[CG-UPDATE]   parent org -> {parent_org.name} '
                             f'(name_short={parent_org.name_short}, inst_nr={parent_org.inst_nr})')
                     else:
-                        _logger.warning(f'[ORG-TREE-RECALC]   parent org NOT FOUND as child of {ci_lookup_org.name_short} with name_short={ou_value}')
+                        _logger.warning(f'[CG-UPDATE]   parent org NOT FOUND as child of {ci_lookup_org.name_short} with name_short={ou_value}')
 
-                parent_cache[inst_nr] = parent_org
+                parent_cache[inst_nr] = (parent_org, ci_lookup_org)
 
             if not parent_org or parent_org.id == cg.id:
                 skipped += 1
                 errors.append(f"{cg.name}: no parent resolved for inst_nr {inst_nr}")
-                _logger.warning(f'[ORG-TREE-RECALC] SKIPPED {cg.name}: no parent org resolved for inst_nr={inst_nr}')
+                _logger.warning(f'[CG-UPDATE] SKIPPED {cg.name}: no parent org resolved for inst_nr={inst_nr}')
                 continue
 
             or_p = parent_org.name_tree or parent_org.name
             or_c = cg.name_tree or cg.name
             rel_name = f"ORG-TREE|OrP:{or_p}|Or:{or_c}"
 
-            _logger.info(f'[ORG-TREE-RECALC] LINK {cg.name} (inst_nr={inst_nr}) -> {parent_org.name} (name_short={parent_org.name_short}, inst_nr={parent_org.inst_nr})')
+            _logger.info(f'[CG-UPDATE] LINK {cg.name} (inst_nr={inst_nr}) -> {parent_org.name} (name_short={parent_org.name_short}, inst_nr={parent_org.inst_nr})')
 
             PropRelation.create({
                 'name': rel_name,
@@ -386,5 +391,13 @@ class Org(models.Model):
             })
             success += 1
 
-        _logger.info(f'[ORG-TREE-RECALC] DONE: removed={removed}, created={success}, skipped={skipped}')
-        return {'removed': removed, 'created': success, 'skipped': skipped, 'total': len(classgroups), 'errors': errors}
+            # Update AD/OU fields for this classgroup
+            changes = []
+            processor._populate_classgroup_ad_fields(
+                cg, parent_org, ci_lookup_org,
+                org_tree_type, ConfigItem, changes)
+            ad_updated += 1
+
+        _logger.info(f'[CG-UPDATE] DONE: removed={removed}, created={success}, ad_updated={ad_updated}, skipped={skipped}')
+        return {'removed': removed, 'created': success, 'skipped': skipped,
+                'ad_updated': ad_updated, 'total': len(classgroups), 'errors': errors}

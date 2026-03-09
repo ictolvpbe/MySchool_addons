@@ -854,11 +854,110 @@ class BeTaskProcessor(models.AbstractModel):
 
         _logger.info(f"Created student {new_person.name} (ID: {new_person.id})")
 
-        # Create PPSBR and PERSON-TREE relations for the student
+        # Assign the STUDENT backend role at school level
         effective_inst_nr = inst_nr or registration_json.get('instelnr', '')
+        self._assign_student_backend_role(new_person, effective_inst_nr)
+
+        # Create PPSBR and PERSON-TREE relations for the student
         self._create_student_relations(new_person, registration_json, effective_inst_nr)
 
         return new_person
+
+    def _assign_student_backend_role(self, person, inst_nr: str):
+        """
+        Assign the STUDENT Backend Role to a student via PPSBR at school level.
+
+        Creates a PPSBR linking person + STUDENT backend role + school org + period.
+        This parallels the employee pattern where EMPLOYEE role is assigned at school level.
+        """
+        Org = self.env['myschool.org']
+        Role = self.env['myschool.role']
+        RoleType = self.env['myschool.role.type']
+        Period = self.env['myschool.period']
+        PeriodType = self.env['myschool.period.type']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        if not inst_nr:
+            _logger.warning(f'[STUDENT-ROLE] No inst_nr for {person.name}, cannot assign STUDENT backend role')
+            return
+
+        # Find school org
+        school_org = Org.search([
+            ('inst_nr', '=', inst_nr),
+            ('is_active', '=', True),
+        ], limit=1)
+        if not school_org:
+            _logger.warning(f'[STUDENT-ROLE] No school org found for inst_nr={inst_nr}')
+            return
+
+        # Find STUDENT backend role
+        backend_type = RoleType.search([('name', '=', 'BACKEND')], limit=1)
+        if not backend_type:
+            _logger.warning(f'[STUDENT-ROLE] BACKEND role type not found')
+            return
+
+        student_role = Role.search([
+            ('name', '=', 'STUDENT'),
+            ('role_type_id', '=', backend_type.id),
+        ], limit=1)
+        if not student_role:
+            _logger.warning(f'[STUDENT-ROLE] STUDENT backend role not found')
+            return
+
+        # Find current schoolyear period
+        school_year_type = PeriodType.search([('name', '=', 'SCHOOLJAAR')], limit=1)
+        current_period = None
+        if school_year_type:
+            current_period = Period.search([
+                ('is_active', '=', True),
+                ('period_type_id', '=', school_year_type.id),
+            ], limit=1)
+        if not current_period:
+            current_period = Period.search([('is_active', '=', True)], limit=1)
+
+        # Get PPSBR type
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if not ppsbr_type:
+            _logger.warning(f'[STUDENT-ROLE] PPSBR proprelation type not found')
+            return
+
+        # Check if PPSBR already exists
+        existing = PropRelation.search([
+            ('id_person', '=', person.id),
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('id_org', '=', school_org.id),
+            ('id_role', '=', student_role.id),
+            ('is_active', '=', True),
+        ], limit=1)
+
+        if existing:
+            _logger.info(f'[STUDENT-ROLE] STUDENT backend role PPSBR already exists for {person.name}')
+            return
+
+        # Create PPSBR: person + STUDENT role + school org
+        ppsbr_name = build_proprelation_name(
+            'PPSBR', id_person=person, id_role=student_role,
+            id_org=school_org, id_period=current_period)
+        ppsbr_vals = {
+            'name': ppsbr_name,
+            'proprelation_type_id': ppsbr_type.id,
+            'id_person': person.id,
+            'id_role': student_role.id,
+            'id_org': school_org.id,
+            'id_org_parent': school_org.id,
+            'is_active': True,
+            'is_organisational': True,
+            'automatic_sync': True,
+            'start_date': fields.Datetime.now(),
+        }
+        if current_period:
+            ppsbr_vals['id_period'] = current_period.id
+        if hasattr(student_role, 'priority'):
+            ppsbr_vals['priority'] = student_role.priority
+
+        PropRelation.create(ppsbr_vals)
+        _logger.info(f'[STUDENT-ROLE] Assigned STUDENT backend role to {person.name} at {school_org.name}')
 
     def _create_student_relations(self, person, registration_json: dict, inst_nr: str):
         """
@@ -939,12 +1038,22 @@ class BeTaskProcessor(models.AbstractModel):
         school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
         ci_lookup_org = school_org
         if school_org.is_administrative:
-            non_admin = self._find_non_administrative_parent_org(school_org)
-            if non_admin and school_type and non_admin.org_type_id.id == school_type.id:
-                ci_lookup_org = non_admin
-                _logger.info(f'[STUDENT-REL] admin org {school_org.name_short} -> non-admin SCHOOL parent {ci_lookup_org.name_short}')
-            elif non_admin:
-                _logger.warning(f'[STUDENT-REL] non-admin parent {non_admin.name_short} is not of type SCHOOL')
+            current = school_org
+            for _depth in range(10):
+                parent_rel = PropRelation.search([
+                    ('proprelation_type_id', '=', org_tree_type.id),
+                    ('id_org', '=', current.id),
+                    ('id_org_parent', '!=', False),
+                    ('is_active', '=', True),
+                ], limit=1)
+                if not parent_rel or not parent_rel.id_org_parent:
+                    break
+                candidate = parent_rel.id_org_parent
+                if not candidate.is_administrative and school_type and candidate.org_type_id.id == school_type.id:
+                    ci_lookup_org = candidate
+                    _logger.info(f'[STUDENT-REL] admin org {school_org.name_short} -> non-admin SCHOOL parent {ci_lookup_org.name_short}')
+                    break
+                current = candidate
 
         # Get OuForClasses CI to find the parent org for classgroups
         ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')
@@ -997,46 +1106,11 @@ class BeTaskProcessor(models.AbstractModel):
 
         _logger.info(f'[STUDENT-REL] Class org resolved: {class_org.name} (id={class_org.id})')
 
-        # --- Create PPSBR: person + period + classgroup org + STUDENT role ---
+        # --- Get PPSBR type (needed for classgroup backend role below) ---
         ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
         if not ppsbr_type:
             _logger.warning(f'[STUDENT-REL] PPSBR proprelation type not found')
             return
-
-        # Check if PPSBR already exists for this person/role/classgroup
-        existing_ppsbr = PropRelation.search([
-            ('id_person', '=', person.id),
-            ('proprelation_type_id', '=', ppsbr_type.id),
-            ('id_org', '=', class_org.id),
-            ('id_role', '=', student_role.id),
-            ('is_active', '=', True),
-        ], limit=1)
-
-        if not existing_ppsbr:
-            ppsbr_name = build_proprelation_name(
-                'PPSBR', id_person=person, id_role=student_role,
-                id_org=class_org, id_period=current_period)
-            ppsbr_vals = {
-                'name': ppsbr_name,
-                'proprelation_type_id': ppsbr_type.id,
-                'id_person': person.id,
-                'id_role': student_role.id,
-                'id_org': class_org.id,
-                'id_org_parent': school_org.id,
-                'is_active': True,
-                'is_organisational': True,
-                'automatic_sync': True,
-                'start_date': fields.Datetime.now(),
-            }
-            if current_period:
-                ppsbr_vals['id_period'] = current_period.id
-            if hasattr(student_role, 'priority'):
-                ppsbr_vals['priority'] = student_role.priority
-
-            PropRelation.create(ppsbr_vals)
-            _logger.info(f'[STUDENT-REL] Created PPSBR for {person.name} at {class_org.name} (parent={school_org.name}) with STUDENT role')
-        else:
-            _logger.info(f'[STUDENT-REL] PPSBR already exists for {person.name} at {class_org.name}')
 
         # --- Create PERSON-TREE: person linked to class-org ---
         person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
@@ -1877,6 +1951,7 @@ class BeTaskProcessor(models.AbstractModel):
             changes.append(f"Updated org: {existing.name} (ID: {existing.id})")
             if result.get('field_changes'):
                 changes.extend(result['field_changes'])
+            self._ensure_classgroup_ad_fields(existing, changes)
             return {'success': True, 'changes': '\n'.join(changes)}
 
         try:
@@ -1914,14 +1989,24 @@ class BeTaskProcessor(models.AbstractModel):
                 ], limit=1)
 
                 # Find first non-admin parent of type SCHOOL
-                parent_school = None
-                if school_org:
-                    if not school_org.is_administrative and school_type and school_org.org_type_id.id == school_type.id:
-                        parent_school = school_org
-                    elif school_org.is_administrative:
-                        non_admin = self._find_non_administrative_parent_org(school_org)
-                        if non_admin and school_type and non_admin.org_type_id.id == school_type.id:
-                            parent_school = non_admin
+                parent_school = school_org  # default: use school_org as-is
+                if school_org and school_org.is_administrative and org_tree_type:
+                    # Traverse ORG-TREE upward to find first non-admin SCHOOL
+                    current = school_org
+                    for _depth in range(10):
+                        parent_rel = PropRelation.search([
+                            ('proprelation_type_id', '=', org_tree_type.id),
+                            ('id_org', '=', current.id),
+                            ('id_org_parent', '!=', False),
+                            ('is_active', '=', True),
+                        ], limit=1)
+                        if not parent_rel or not parent_rel.id_org_parent:
+                            break
+                        candidate = parent_rel.id_org_parent
+                        if not candidate.is_administrative and school_type and candidate.org_type_id.id == school_type.id:
+                            parent_school = candidate
+                            break
+                        current = candidate
 
                 # Create BRSO: link role to classgroup org with parent school
                 if new_role:
@@ -1970,6 +2055,11 @@ class BeTaskProcessor(models.AbstractModel):
                                 'is_active': True,
                             })
                             changes.append(f"Created ORG-TREE: {new_org.name} -> {ou_for_classes_org.name}")
+
+                            # Set AD/OU fields inherited from parent
+                            self._populate_classgroup_ad_fields(
+                                new_org, ou_for_classes_org, parent_school,
+                                org_tree_type, ConfigItem, changes)
                         else:
                             _logger.warning(f'[ORG-ADD] OuForClasses org "{ou_value}" not found under {parent_school.name_short}')
                     else:
@@ -1980,6 +2070,194 @@ class BeTaskProcessor(models.AbstractModel):
             self._log_error('BETASK-571', f'Error creating org: {str(e)}')
             raise
     
+    def _populate_classgroup_ad_fields(self, new_org, ou_for_classes_org, parent_school,
+                                       org_tree_type, ConfigItem, changes):
+        """Populate AD/OU fields for a newly created classgroup org.
+
+        Sets: domain_internal, domain_external, has_ou, has_role, has_comgroup,
+        has_secgroup, ou_fqdn_internal, ou_fqdn_external, com_group_name,
+        sec_group_name, com/sec_group_fqdn_internal/external, name_tree.
+        """
+        org_update = {
+            'has_ou': True,
+            'has_role': True,
+            'has_comgroup': True,
+            'has_secgroup': True,
+        }
+
+        # Inherit domain fields from OuForClasses parent org
+        if ou_for_classes_org.domain_internal:
+            org_update['domain_internal'] = ou_for_classes_org.domain_internal
+        if ou_for_classes_org.domain_external:
+            org_update['domain_external'] = ou_for_classes_org.domain_external
+
+        org_short = new_org.name_short.lower() if new_org.name_short else ''
+        if not org_short:
+            new_org.write(org_update)
+            return
+
+        # --- OU FQDN fields ---
+        parent_fqdn_int = (ou_for_classes_org.ou_fqdn_internal or '').lower()
+        parent_fqdn_ext = (ou_for_classes_org.ou_fqdn_external or '').lower()
+
+        if parent_fqdn_int:
+            org_update['ou_fqdn_internal'] = f"ou={org_short},{parent_fqdn_int}"
+        if parent_fqdn_ext:
+            org_update['ou_fqdn_external'] = f"ou={org_short},{parent_fqdn_ext}"
+
+        # --- name_tree from ou_fqdn_internal ---
+        new_fqdn = org_update.get('ou_fqdn_internal', '')
+        if new_fqdn:
+            components = [c.strip() for c in new_fqdn.split(',') if c.strip()]
+            dc_parts = []
+            ou_parts = []
+            for comp in components:
+                if comp.startswith('dc='):
+                    dc_parts.append(comp[3:])
+                elif comp.startswith('ou=') or comp.startswith('cn='):
+                    ou_parts.append(comp[3:])
+            dc_parts.reverse()
+            ou_parts.reverse()
+            parts = dc_parts + ou_parts
+            if parts:
+                org_update['name_tree'] = '.'.join(parts)
+
+        # --- Build group names by walking up the ORG-TREE ---
+        # Format: {prefix}{org_short}-{parent1_short}-{parent2_short}-...
+        # Excluding administrative orgs and SCHOOLBOARD type orgs
+        PropRelation = self.env['myschool.proprelation']
+        name_parts = [org_short]
+        current = ou_for_classes_org
+        visited = set()
+
+        while current and current.id not in visited:
+            visited.add(current.id)
+            should_exclude = current.is_administrative
+            if not should_exclude and current.org_type_id and current.org_type_id.name == 'SCHOOLBOARD':
+                should_exclude = True
+
+            if not should_exclude:
+                short = (current.name_short or current.name or '').lower()
+                if short:
+                    name_parts.append(short)
+
+            parent_rel = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org', '=', current.id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ], limit=1)
+            current = parent_rel.id_org_parent if parent_rel else None
+
+        com_group_name = 'grp-' + '-'.join(name_parts)
+        sec_group_name = 'bgrp-' + '-'.join(name_parts)
+        org_update['com_group_name'] = com_group_name
+        org_update['sec_group_name'] = sec_group_name
+
+        # --- Group FQDN fields ---
+        # Format: cn={group_name},ou={OuForGroups},{parent_ou_fqdn}
+        # Groups are placed under the PARENT org's (OuForClasses) OU FQDN
+        ou_for_groups = ConfigItem.get_ci_value_by_org_and_name(
+            parent_school.name_short, 'OuForGroups') if parent_school else None
+
+        for grp_name, prefix in [(com_group_name, 'com_group'), (sec_group_name, 'sec_group')]:
+            grp_lower = grp_name.lower()
+            for direction, parent_fqdn in [('internal', parent_fqdn_int), ('external', parent_fqdn_ext)]:
+                field = f"{prefix}_fqdn_{direction}"
+                if parent_fqdn:
+                    if ou_for_groups:
+                        org_update[field] = f"cn={grp_lower},ou={ou_for_groups.lower()},{parent_fqdn}"
+                    else:
+                        org_update[field] = f"cn={grp_lower},{parent_fqdn}"
+
+        new_org.write(org_update)
+        _logger.info(f"[ORG-ADD] Populated AD fields for {new_org.name}: "
+                     f"ou_fqdn_internal={org_update.get('ou_fqdn_internal')}, "
+                     f"name_tree={org_update.get('name_tree')}, "
+                     f"com_group={com_group_name}, sec_group={sec_group_name}")
+
+    def _ensure_classgroup_ad_fields(self, org, changes):
+        """Resolve parent school / OuForClasses and populate AD/OU fields.
+
+        No-op when the org is not a CLASSGROUP or the context cannot be resolved.
+        """
+        if not org.org_type_id or org.org_type_id.name != 'CLASSGROUP':
+            return
+
+        Org = self.env['myschool.org']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        OrgType = self.env['myschool.org.type']
+        ConfigItem = self.env['myschool.config.item']
+
+        classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        if not org_tree_type:
+            return
+
+        inst_nr = org.inst_nr
+        if not inst_nr:
+            return
+
+        school_org = Org.search([
+            ('inst_nr', '=', inst_nr),
+            ('org_type_id', '!=', classgroup_type.id),
+            ('is_active', '=', True),
+        ], limit=1)
+        if not school_org:
+            return
+
+        # Find first non-admin parent of type SCHOOL
+        parent_school = school_org
+        if school_org.is_administrative:
+            current = school_org
+            for _depth in range(10):
+                parent_rel = PropRelation.search([
+                    ('proprelation_type_id', '=', org_tree_type.id),
+                    ('id_org', '=', current.id),
+                    ('id_org_parent', '!=', False),
+                    ('is_active', '=', True),
+                ], limit=1)
+                if not parent_rel or not parent_rel.id_org_parent:
+                    break
+                candidate = parent_rel.id_org_parent
+                if not candidate.is_administrative and school_type and candidate.org_type_id.id == school_type.id:
+                    parent_school = candidate
+                    break
+                current = candidate
+
+        if not parent_school:
+            return
+
+        # Find OuForClasses org under parent school
+        ou_value = ConfigItem.get_ci_value_by_org_and_name(parent_school.name_short, 'OuForClasses')
+        if not ou_value:
+            _logger.warning(f'[ORG-UPD] No OuForClasses CI found for {parent_school.name_short}')
+            return
+
+        child_rels = PropRelation.search([
+            ('proprelation_type_id', '=', org_tree_type.id),
+            ('id_org_parent', '=', parent_school.id),
+            ('is_active', '=', True),
+        ])
+        child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+        ou_for_classes_org = None
+        if child_org_ids:
+            ou_for_classes_org = Org.search([
+                ('id', 'in', child_org_ids),
+                ('name_short', '=', ou_value),
+                ('is_active', '=', True),
+            ], limit=1)
+
+        if not ou_for_classes_org:
+            _logger.warning(f'[ORG-UPD] OuForClasses org "{ou_value}" not found under {parent_school.name_short}')
+            return
+
+        self._populate_classgroup_ad_fields(
+            org, ou_for_classes_org, parent_school,
+            org_tree_type, ConfigItem, changes)
+
     @api.model
     def process_db_org_upd(self, task):
         """Process DB ORG UPD task - Update existing organization."""
@@ -2018,11 +2296,12 @@ class BeTaskProcessor(models.AbstractModel):
             changes.append(f"Updated org: {org.name} (ID: {org.id})")
             if result.get('field_changes'):
                 changes.extend(result['field_changes'])
+            self._ensure_classgroup_ad_fields(org, changes)
             return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-581', f'Error updating org: {str(e)}')
             raise
-    
+
     @api.model
     def process_db_org_deact(self, task):
         """Process DB ORG DEACT task - Deactivate organization."""
@@ -2580,6 +2859,79 @@ class BeTaskProcessor(models.AbstractModel):
         non_admin = self._find_non_administrative_parent_org(org)
         return non_admin or org
 
+    @staticmethod
+    def _remove_diacritics(text):
+        """Remove diacritic characters and replace with normal variants."""
+        import unicodedata
+        if not text:
+            return ''
+        normalized = unicodedata.normalize('NFD', text)
+        return ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
+
+    def _find_domain_external(self, org):
+        """Walk up the org hierarchy to find domain_external value."""
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        visited = set()
+        current = org
+        while current and current.id not in visited:
+            visited.add(current.id)
+            if current.domain_external:
+                return current.domain_external
+            if not org_tree_type:
+                break
+            parent_rel = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org', '=', current.id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ], limit=1)
+            current = parent_rel.id_org_parent if parent_rel else None
+        return None
+
+    def _populate_person_account_fields(self, person, target_org):
+        """Auto-complete email_cloud, person_fqdn_internal, person_fqdn_external.
+
+        - email_cloud: firstname.lastname@domain_external (if not already set)
+        - person_fqdn_internal: cn={email_account},{target_org.ou_fqdn_internal}
+        - person_fqdn_external: cn={email_account},{target_org.ou_fqdn_external}
+        """
+        vals = {}
+
+        # --- Generate email_cloud if not set ---
+        if not person.email_cloud:
+            domain_external = self._find_domain_external(target_org)
+            first_name = person.first_name or ''
+            # Extract last_name from "Achternaam, Voornaam" format
+            last_name = ''
+            if person.name and ',' in person.name:
+                last_name = person.name.split(',')[0].strip()
+            elif person.name:
+                last_name = person.name.strip()
+
+            if domain_external and first_name and last_name:
+                clean_first = self._remove_diacritics(first_name).replace(' ', '').lower()
+                clean_last = self._remove_diacritics(last_name).replace(' ', '').lower()
+                vals['email_cloud'] = f"{clean_first}.{clean_last}@{domain_external}"
+
+        # --- Compute FQDN fields ---
+        email_cloud = vals.get('email_cloud') or person.email_cloud
+        if email_cloud and '@' in email_cloud:
+            email_account = email_cloud.split('@')[0]
+            if target_org.ou_fqdn_internal:
+                vals['person_fqdn_internal'] = f"cn={email_account},{target_org.ou_fqdn_internal}"
+            if target_org.ou_fqdn_external:
+                vals['person_fqdn_external'] = f"cn={email_account},{target_org.ou_fqdn_external}"
+
+        if vals:
+            person.write(vals)
+            _logger.info(f"[PERSON-ACCOUNT] Updated {person.name}: "
+                         f"email_cloud={vals.get('email_cloud', '(unchanged)')}, "
+                         f"fqdn_int={vals.get('person_fqdn_internal', '(unchanged)')}, "
+                         f"fqdn_ext={vals.get('person_fqdn_external', '(unchanged)')}")
+
     def _update_person_tree_position(self, person) -> bool:
         """
         Determine and update the Person's position in the Org tree.
@@ -2762,6 +3114,11 @@ class BeTaskProcessor(models.AbstractModel):
             else:
                 new_tree = PropRelation.create(tree_vals)
                 _logger.info(f'[TREE-POS] CREATED PERSON-TREE: ID={new_tree.id}, role={role_name} -> {target_org.name}')
+
+            # -----------------------------------------------------------------
+            # Step 6: Auto-complete email_cloud and FQDN fields
+            # -----------------------------------------------------------------
+            self._populate_person_account_fields(person, target_org)
 
             _logger.info(f'========== END: Successfully updated Org tree position for {person.name} ==========')
             return True

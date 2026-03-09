@@ -164,9 +164,9 @@ if result and isinstance(result, dict):
         </field>
     </record>
 
-    <!-- Server Action for Recalculate ORG-TREE for Classgroups (used by menu item) -->
+    <!-- Server Action for Update Classgroup Properties (used by menu item) -->
     <record id="action_recalculate_all_org_trees" model="ir.actions.server">
-        <field name="name">Recalculate ORG-TREE for Classgroups</field>
+        <field name="name">Update classgroup properties</field>
         <field name="model_id" ref="myschool_core.model_myschool_org"/>
         <field name="state">code</field>
         <field name="code">
@@ -176,8 +176,8 @@ action = {
     'type': 'ir.actions.client',
     'tag': 'display_notification',
     'params': {
-        'title': 'ORG-TREE Classgroup Recalculation Complete',
-        'message': f"Removed {result['removed']} old relations. {result['created']} created, {result['skipped']} skipped out of {result['total']} classgroups.{err_detail}",
+        'title': 'Update Classgroup Properties Complete',
+        'message': f"ORG-TREE: {result['removed']} removed, {result['created']} created. AD/OU fields updated: {result.get('ad_updated', 0)}. Skipped: {result['skipped']} of {result['total']} classgroups.{err_detail}",
         'type': 'success' if not result.get('errors') else 'warning',
         'sticky': True,
     }

@@ -155,9 +155,17 @@ class Person(models.Model):
         string='E-mail privé',
         help='Privé e-mailadres'
     )
+    person_fqdn_internal = fields.Char(
+        string='FQDN Intern',
+        help='LDAP distinguished name (intern domein)'
+    )
+    person_fqdn_external = fields.Char(
+        string='FQDN Extern',
+        help='LDAP distinguished name (extern domein)'
+    )
     password = fields.Char(
-        string='Wachtwoord', 
-        help='Enkel voor kinderen lagere school', 
+        string='Wachtwoord',
+        help='Enkel voor kinderen lagere school',
         groups='base.group_system'
     )
 
