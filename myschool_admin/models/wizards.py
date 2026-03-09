@@ -1430,6 +1430,15 @@ class AssignRoleWizard(models.TransientModel):
     role_id = fields.Many2one('myschool.role', string='Role', required=True)
     org_id = fields.Many2one('myschool.org', string='Organization (optional)',
                              help='Assign role in context of this organization')
+    is_master = fields.Boolean(string='Is Master', default=False,
+                               help='Master relation overrides priority for PERSON-TREE calculation')
+    automatic_sync = fields.Boolean(string='Auto Sync', default=True,
+                                     help='Allow automated sync to modify this relation')
+
+    @api.onchange('is_master')
+    def _onchange_is_master(self):
+        if self.is_master:
+            self.automatic_sync = False
 
     def action_assign(self):
         """Assign the role via betask."""
@@ -1439,6 +1448,8 @@ class AssignRoleWizard(models.TransientModel):
             'type': 'PPSBR',
             'person_id': self.person_id.id,
             'role_id': self.role_id.id,
+            'is_master': self.is_master,
+            'automatic_sync': self.automatic_sync,
         }
         if self.org_id:
             data['org_id'] = self.org_id.id
@@ -1458,6 +1469,10 @@ class BulkAssignRoleWizard(models.TransientModel):
     person_count = fields.Integer(string='Number of Persons', readonly=True)
     role_id = fields.Many2one('myschool.role', string='Role', required=True)
     org_id = fields.Many2one('myschool.org', string='Organization (optional)')
+    is_master = fields.Boolean(string='Is Master', default=False,
+                               help='Master relation overrides priority for PERSON-TREE calculation')
+    automatic_sync = fields.Boolean(string='Auto Sync', default=True,
+                                     help='Allow automated sync to modify this relation')
 
     def action_assign(self):
         """Assign role to all selected persons."""
@@ -2330,6 +2345,8 @@ class ManageOrgRolesWizard(models.TransientModel):
                     'proprelation_id': rel.id,
                     'role_name': rel.id_role.name if rel.id_role else '',
                     'is_active': rel.is_active,
+                    'is_master': rel.is_master,
+                    'automatic_sync': rel.automatic_sync,
                 }))
 
         wizard_vals = {
@@ -2414,6 +2431,8 @@ class ManagePersonRolesWizard(models.TransientModel):
                     'proprelation_id': rel.id,
                     'role_name': rel.id_role.name if rel.id_role else '',
                     'is_active': rel.is_active,
+                    'is_master': rel.is_master,
+                    'automatic_sync': rel.automatic_sync,
                 }))
 
         wizard = self.create({
@@ -2447,9 +2466,223 @@ class ManagePersonRolesWizard(models.TransientModel):
         # Reopen wizard with saved records
         return self.action_open(self.person_id.id, self.person_name)
 
+    def action_recalc_roles(self):
+        """Recalculate roles for this person based on their hoofd_ambt assignment."""
+        self.ensure_one()
+        person = self.person_id
+        if not person:
+            raise UserError("No person selected.")
+
+        updated, msg = self._recalc_employee_roles_for_person(person)
+
+        # Reopen wizard to show updated roles
+        action = self.action_open(person.id, self.person_name)
+        action['context'] = {
+            **self.env.context,
+            'show_notification': True,
+            'notification_message': msg,
+        }
+        return action
+
+    @api.model
+    def _recalc_employee_roles_for_person(self, person):
+        """Recalculate PPSBR roles for a person based on hoofd_ambt from PersonDetails.
+
+        Looks up the hoofd_ambt code, finds the SAP role by shortname, resolves
+        the backend role via SRBR, and ensures a PPSBR exists for that backend role.
+
+        Returns:
+            tuple: (bool updated, str message)
+        """
+        _logger.info(f'[RECALC-ROLES] === Processing {person.name} (ID: {person.id}) ===')
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        Role = self.env['myschool.role']
+
+        # Get the latest active person_details for hoofd_ambt
+        details = self.env['myschool.person.details'].search([
+            ('person_id', '=', person.id),
+            ('is_active', '=', True),
+        ], limit=1, order='create_date desc')
+
+        _logger.info(f'[RECALC-ROLES] PersonDetails found: {bool(details)}, hoofd_ambt: {details.hoofd_ambt if details else "N/A"}')
+
+        if not details or not details.hoofd_ambt:
+            return False, f'{person.name}: no active assignment (hoofd_ambt) found.'
+
+        ambt_code = details.hoofd_ambt
+
+        # Find SAP role by shortname
+        sap_role = Role.search([('shortname', '=', ambt_code)], limit=1)
+        _logger.info(f'[RECALC-ROLES] SAP role lookup for shortname "{ambt_code}": {"found " + sap_role.name + " (ID: " + str(sap_role.id) + ")" if sap_role else "NOT FOUND"}')
+        if not sap_role:
+            return False, f'{person.name}: SAP role not found for code "{ambt_code}".'
+
+        # Find backend role via SRBR
+        srbr_type = PropRelationType.search([('name', '=', 'SRBR')], limit=1)
+        if not srbr_type:
+            _logger.warning(f'[RECALC-ROLES] SR-BR proprelation type not found!')
+            return False, f'{person.name}: SR-BR proprelation type not found.'
+
+        srbr_rel = PropRelation.search([
+            ('proprelation_type_id', '=', srbr_type.id),
+            ('is_active', '=', True),
+            ('id_role_parent', '!=', False),
+            '|',
+            ('id_role', '=', sap_role.id),
+            ('id_role_child', '=', sap_role.id),
+        ], limit=1)
+
+        _logger.info(f'[RECALC-ROLES] SRBR lookup: {"found -> backend role: " + srbr_rel.id_role_parent.name + " (ID: " + str(srbr_rel.id_role_parent.id) + ")" if srbr_rel and srbr_rel.id_role_parent else "NOT FOUND"}')
+
+        if not srbr_rel or not srbr_rel.id_role_parent:
+            return False, f'{person.name}: no SRBR mapping for SAP role "{sap_role.name}".'
+
+        backend_role = srbr_rel.id_role_parent
+
+        # Check if PPSBR already exists for this backend role
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if not ppsbr_type:
+            _logger.warning(f'[RECALC-ROLES] PPSBR proprelation type not found!')
+            return False, f'{person.name}: PPSBR proprelation type not found.'
+
+        existing_ppsbr = PropRelation.search([
+            ('id_person', '=', person.id),
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('id_role', '=', backend_role.id),
+            ('is_active', '=', True),
+        ], limit=1)
+
+        if existing_ppsbr:
+            _logger.info(f'[RECALC-ROLES] PPSBR already exists: {existing_ppsbr.name} (ID: {existing_ppsbr.id})')
+            return False, f'{person.name}: PPSBR already exists for role "{backend_role.name}".'
+
+        # Find the person's school org from existing PPSBR
+        any_ppsbr = PropRelation.search([
+            ('id_person', '=', person.id),
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('is_active', '=', True),
+            ('id_org', '!=', False),
+        ], limit=1)
+
+        org = any_ppsbr.id_org if any_ppsbr else False
+        org_parent = any_ppsbr.id_org_parent if any_ppsbr else False
+        _logger.info(f'[RECALC-ROLES] Existing PPSBR org context: org={org.name if org else "None"}, org_parent={org_parent.name if org_parent else "None"}')
+
+        # Find active period
+        Period = self.env['myschool.period']
+        period = Period.search([('is_active', '=', True)], limit=1)
+        _logger.info(f'[RECALC-ROLES] Active period: {period.name if period else "None"}')
+
+        # Build name
+        name_kwargs = {'id_person': person, 'id_role': backend_role}
+        if org:
+            name_kwargs['id_org'] = org
+        if period:
+            name_kwargs['id_period'] = period
+
+        relation_name = build_proprelation_name('PPSBR', **name_kwargs)
+
+        ppsbr_vals = {
+            'name': relation_name,
+            'proprelation_type_id': ppsbr_type.id,
+            'id_person': person.id,
+            'id_role': backend_role.id,
+            'is_active': True,
+            'is_organisational': True,
+            'automatic_sync': True,
+            'start_date': fields.Datetime.now(),
+        }
+        if org:
+            ppsbr_vals['id_org'] = org.id
+        if org_parent:
+            ppsbr_vals['id_org_parent'] = org_parent.id
+        if period:
+            ppsbr_vals['id_period'] = period.id
+        if backend_role.priority:
+            ppsbr_vals['priority'] = backend_role.priority
+
+        new_ppsbr = PropRelation.create(ppsbr_vals)
+        _logger.info(f'[RECALC-ROLES] Created PPSBR: {relation_name} (ID: {new_ppsbr.id})')
+
+        # Recalculate PERSON-TREE
+        processor = self.env['myschool.betask.processor']
+        processor._update_person_tree_position(person)
+        _logger.info(f'[RECALC-ROLES] PERSON-TREE recalculated for {person.name}')
+
+        return True, f'{person.name}: created PPSBR for role "{backend_role.name}" (from ambt "{ambt_code}").'
+
     def action_close(self):
         """Close the wizard."""
         return {'type': 'ir.actions.act_window_close'}
+
+
+class RecalcEmployeeRolesWizard(models.TransientModel):
+    """Wizard to recalculate roles for all employees based on their hoofd_ambt."""
+    _name = 'myschool.recalc.employee.roles.wizard'
+    _description = 'Recalculate Employee Roles'
+
+    result_text = fields.Text(string='Results', readonly=True)
+    state = fields.Selection([
+        ('confirm', 'Confirm'),
+        ('done', 'Done'),
+    ], default='confirm')
+
+    def action_recalc(self):
+        """Recalculate roles for all active employees."""
+        self.ensure_one()
+
+        Person = self.env['myschool.person']
+        PersonType = self.env['myschool.person.type']
+
+        employee_type = PersonType.search([('name', '=', 'EMPLOYEE')], limit=1)
+        if not employee_type:
+            raise UserError("EMPLOYEE person type not found.")
+
+        employees = Person.search([
+            ('is_active', '=', True),
+            ('person_type_id', '=', employee_type.id),
+        ])
+
+        helper = self.env['myschool.manage.person.roles.wizard']
+        created = 0
+        skipped = 0
+        errors = []
+
+        for emp in employees:
+            try:
+                updated, msg = helper._recalc_employee_roles_for_person(emp)
+                if updated:
+                    created += 1
+                else:
+                    skipped += 1
+                _logger.info(msg)
+            except Exception as e:
+                errors.append(f'{emp.name}: {str(e)}')
+                _logger.error(f'Error recalculating roles for {emp.name}: {e}')
+
+        result_lines = [
+            f'Processed {len(employees)} employees.',
+            f'Created: {created} new PPSBR relations.',
+            f'Skipped: {skipped} (already correct or no assignment).',
+        ]
+        if errors:
+            result_lines.append(f'Errors: {len(errors)}')
+            result_lines.extend(errors[:20])  # show first 20 errors
+
+        self.write({
+            'result_text': '\n'.join(result_lines),
+            'state': 'done',
+        })
+
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': self.id,
+            'views': [(False, 'form')],
+            'target': 'new',
+        }
 
 
 class PasswordWizard(models.TransientModel):
@@ -3157,3 +3390,377 @@ class UpdateStudentRelationsWizard(models.TransientModel):
                 'sticky': True,
             },
         }
+
+
+# ==========================================================================
+# CREATE PERSONGROUP WIZARD
+# ==========================================================================
+
+class CreatePersongroupWizard(models.TransientModel):
+    """Wizard to create a persongroup org under a school's OuForGroups org."""
+    _name = 'myschool.create.persongroup.wizard'
+    _description = 'Create Persongroup'
+
+    parent_org_id = fields.Many2one('myschool.org', string='Parent Organization', required=True)
+    parent_org_name = fields.Char(string='Parent Organization', readonly=True)
+    group_name = fields.Char(string='Group Name', required=True,
+        help='Human-readable name for the persongroup')
+    group_name_short = fields.Char(string='Short Name (auto)', readonly=True,
+        help='Lowercase, spaces replaced with hyphens')
+    member_ids = fields.Many2many('myschool.person', string='Members',
+        help='Select persons to add as members of this persongroup')
+
+    # Preview fields (readonly, auto-computed)
+    preview_com_group_name = fields.Char(string='Com Group Name', readonly=True)
+    preview_com_group_email = fields.Char(string='Com Group Email', readonly=True)
+    preview_ou_fqdn_internal = fields.Char(string='OU FQDN Internal', readonly=True)
+    preview_ou_fqdn_external = fields.Char(string='OU FQDN External', readonly=True)
+    preview_com_group_fqdn_internal = fields.Char(string='Com Group FQDN Internal', readonly=True)
+    preview_com_group_fqdn_external = fields.Char(string='Com Group FQDN External', readonly=True)
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        if 'parent_org_id' in res and res['parent_org_id']:
+            parent = self.env['myschool.org'].browse(res['parent_org_id'])
+            if parent.exists():
+                res['parent_org_name'] = parent.name_tree or parent.name
+        return res
+
+    def _resolve_parent_school(self):
+        """Walk up ORG-TREE from parent_org_id to find the first non-admin SCHOOL org."""
+        self.ensure_one()
+        if not self.parent_org_id:
+            return None
+
+        Org = self.env['myschool.org']
+        OrgType = self.env['myschool.org.type']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
+
+        current = self.parent_org_id
+        visited = set()
+
+        # Check if current org is already a non-admin SCHOOL
+        if (school_type and current.org_type_id.id == school_type.id
+                and not current.is_administrative):
+            return current
+
+        # Walk up the tree
+        while current and current.id not in visited:
+            visited.add(current.id)
+            search_domain = [
+                ('id_org', '=', current.id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+
+            parent_rel = PropRelation.search(search_domain, limit=1)
+            if not parent_rel or not parent_rel.id_org_parent:
+                break
+
+            candidate = parent_rel.id_org_parent
+            if (school_type and candidate.org_type_id.id == school_type.id
+                    and not candidate.is_administrative):
+                return candidate
+            current = candidate
+
+        return None
+
+    def _resolve_ou_for_groups_org(self, school_org):
+        """Find the OuForGroups CI value on the school, then locate the child org with that name_short."""
+        if not school_org:
+            return None, None
+
+        ConfigItem = self.env['myschool.config.item']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+
+        ou_value = ConfigItem.get_ci_value_by_org_and_name(school_org.name_short, 'OuForGroups')
+        if not ou_value:
+            return None, None
+
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        # Find child of school with name_short == ou_value
+        child_rels = PropRelation.search([
+            ('proprelation_type_id', '=', org_tree_type.id),
+            ('id_org_parent', '=', school_org.id),
+            ('is_active', '=', True),
+        ])
+        child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+
+        ou_org = None
+        if child_org_ids:
+            ou_org = Org.search([
+                ('id', 'in', child_org_ids),
+                ('name_short', '=', ou_value),
+                ('is_active', '=', True),
+            ], limit=1)
+
+        return ou_value, ou_org
+
+    def _build_persongroup_group_name(self, group_name_short, school_org):
+        """Build com_group_name: grp-{group_name_short}-{school_short}."""
+        if not group_name_short or not school_org:
+            return False
+        school_short = (school_org.name_short or school_org.name or '').lower()
+        return f"grp-{group_name_short}-{school_short}"
+
+    @api.onchange('group_name')
+    def _onchange_group_name(self):
+        """Compute all preview fields when group_name changes."""
+        if not self.group_name or not self.parent_org_id:
+            self.group_name_short = False
+            self.preview_com_group_name = False
+            self.preview_com_group_email = False
+            self.preview_ou_fqdn_internal = False
+            self.preview_ou_fqdn_external = False
+            self.preview_com_group_fqdn_internal = False
+            self.preview_com_group_fqdn_external = False
+            return
+
+        # Compute short name
+        self.group_name_short = self.group_name.strip().lower().replace(' ', '-')
+
+        # Resolve school and OuForGroups
+        school_org = self._resolve_parent_school()
+        if not school_org:
+            return
+
+        ou_value, ou_org = self._resolve_ou_for_groups_org(school_org)
+
+        # Com group name
+        self.preview_com_group_name = self._build_persongroup_group_name(
+            self.group_name_short, school_org)
+
+        # Com group email
+        domain_ext = school_org.domain_external if school_org.domain_external else ''
+        if self.preview_com_group_name and domain_ext:
+            self.preview_com_group_email = f"{self.preview_com_group_name}@{domain_ext}"
+        else:
+            self.preview_com_group_email = False
+
+        # OU FQDNs (persongroup placed under the OuForGroups org)
+        if ou_org:
+            if ou_org.ou_fqdn_internal:
+                self.preview_ou_fqdn_internal = f"ou={self.group_name_short},{ou_org.ou_fqdn_internal.lower()}"
+            else:
+                self.preview_ou_fqdn_internal = False
+            if ou_org.ou_fqdn_external:
+                self.preview_ou_fqdn_external = f"ou={self.group_name_short},{ou_org.ou_fqdn_external.lower()}"
+            else:
+                self.preview_ou_fqdn_external = False
+        else:
+            self.preview_ou_fqdn_internal = False
+            self.preview_ou_fqdn_external = False
+
+        # Com group FQDNs: cn={com_group_name},ou={OuForGroups},{school_ou_fqdn}
+        if self.preview_com_group_name:
+            cn = self.preview_com_group_name.lower()
+            if ou_value and school_org.ou_fqdn_internal:
+                self.preview_com_group_fqdn_internal = f"cn={cn},ou={ou_value.lower()},{school_org.ou_fqdn_internal.lower()}"
+            else:
+                self.preview_com_group_fqdn_internal = False
+            if ou_value and school_org.ou_fqdn_external:
+                self.preview_com_group_fqdn_external = f"cn={cn},ou={ou_value.lower()},{school_org.ou_fqdn_external.lower()}"
+            else:
+                self.preview_com_group_fqdn_external = False
+        else:
+            self.preview_com_group_fqdn_internal = False
+            self.preview_com_group_fqdn_external = False
+
+    def _build_persongroup_task_data(self):
+        """Build the data dict for a MANUAL/ORG/ADD betask for a persongroup."""
+        self.ensure_one()
+
+        if not self.group_name:
+            raise UserError("Please enter a group name")
+
+        school_org = self._resolve_parent_school()
+        if not school_org:
+            raise UserError("Could not resolve parent school organization")
+
+        ou_value, ou_org = self._resolve_ou_for_groups_org(school_org)
+        if not ou_org:
+            raise UserError(
+                f"Could not find OuForGroups org under school {school_org.name}. "
+                f"Make sure the OuForGroups CI is configured.")
+
+        # Get PERSONGROUP org type
+        OrgType = self.env['myschool.org.type']
+        pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+        if not pg_type:
+            pg_type = OrgType.create({'name': 'PERSONGROUP', 'is_active': True})
+
+        group_name_short = self.group_name.strip().lower().replace(' ', '-')
+        com_group_name = self._build_persongroup_group_name(group_name_short, school_org)
+
+        data = {
+            'parent_org_id': ou_org.id,  # Place under OuForGroups org
+            'org_type_name': 'PERSONGROUP',
+            'org_type_id': pg_type.id,
+            'name': self.group_name.strip(),
+            'name_short': group_name_short,
+            'inst_nr': school_org.inst_nr or '',
+            'has_ou': True,
+            'has_comgroup': True,
+            'has_secgroup': False,
+            'has_role': False,
+            'com_group_name': com_group_name,
+            'domain_internal': school_org.domain_internal or '',
+            'domain_external': school_org.domain_external or '',
+        }
+
+        # Com group email
+        if com_group_name and school_org.domain_external:
+            data['com_group_email'] = f"{com_group_name}@{school_org.domain_external}"
+
+        # OU FQDNs
+        if ou_org.ou_fqdn_internal:
+            data['ou_fqdn_internal'] = f"ou={group_name_short},{ou_org.ou_fqdn_internal.lower()}"
+        if ou_org.ou_fqdn_external:
+            data['ou_fqdn_external'] = f"ou={group_name_short},{ou_org.ou_fqdn_external.lower()}"
+
+        # Com group FQDNs
+        if com_group_name and ou_value:
+            if school_org.ou_fqdn_internal:
+                data['com_group_fqdn_internal'] = f"cn={com_group_name.lower()},ou={ou_value.lower()},{school_org.ou_fqdn_internal.lower()}"
+            if school_org.ou_fqdn_external:
+                data['com_group_fqdn_external'] = f"cn={com_group_name.lower()},ou={ou_value.lower()},{school_org.ou_fqdn_external.lower()}"
+
+        # name_tree
+        if data.get('ou_fqdn_internal'):
+            name_tree = compute_name_tree(
+                self.env,
+                {'name_short': group_name_short, 'ou_fqdn_internal': data['ou_fqdn_internal']},
+                None,
+            )
+            if name_tree:
+                data['name_tree'] = name_tree
+
+        # Member IDs
+        if self.member_ids:
+            data['member_ids'] = self.member_ids.ids
+
+        return data
+
+    def action_create(self):
+        """Create persongroup via betask and open it for editing."""
+        self.ensure_one()
+
+        service = self.env['myschool.manual.task.service']
+        task = service.create_manual_task('ORG', 'ADD', self._build_persongroup_task_data())
+
+        # Try to open the created org
+        org_id = self._extract_org_id_from_task(task)
+        if org_id:
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'myschool.org',
+                'res_id': org_id,
+                'views': [[False, 'form']],
+                'target': 'new',
+                'context': {'form_view_initial_mode': 'edit'},
+            }
+        return {'type': 'ir.actions.act_window_close'}
+
+    def action_create_and_close(self):
+        """Create persongroup via betask and return to browser."""
+        self.ensure_one()
+
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('ORG', 'ADD', self._build_persongroup_task_data())
+
+        return {'type': 'ir.actions.act_window_close'}
+
+    def _extract_org_id_from_task(self, task):
+        """Try to extract the created org ID from the task's changes field."""
+        import re
+        if task.changes:
+            match = re.search(r'Created org:.*\(ID:\s*(\d+)\)', task.changes)
+            if match:
+                return int(match.group(1))
+        return None
+
+
+# ==========================================================================
+# MANAGE PERSONGROUP MEMBERS WIZARD
+# ==========================================================================
+
+class ManagePersongroupMembersWizard(models.TransientModel):
+    """Wizard to manage members (persons) of a persongroup."""
+    _name = 'myschool.manage.persongroup.members.wizard'
+    _description = 'Manage Persongroup Members'
+
+    persongroup_id = fields.Many2one('myschool.org', string='Persongroup', required=True)
+    persongroup_name = fields.Char(string='Persongroup', readonly=True)
+    current_member_ids = fields.Many2many(
+        'myschool.person', 'persongroup_wizard_current_members_rel',
+        string='Current Members', readonly=True)
+    add_member_ids = fields.Many2many(
+        'myschool.person', 'persongroup_wizard_add_members_rel',
+        string='Add Members')
+    remove_member_ids = fields.Many2many(
+        'myschool.person', 'persongroup_wizard_remove_members_rel',
+        string='Remove Members')
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        pg_id = res.get('persongroup_id')
+        if pg_id:
+            pg = self.env['myschool.org'].browse(pg_id)
+            if pg.exists():
+                res['persongroup_name'] = pg.name_tree or pg.name
+
+                # Load current members from active PG-P proprelations
+                PropRelation = self.env['myschool.proprelation']
+                PropRelationType = self.env['myschool.proprelation.type']
+                pg_p_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
+                if pg_p_type:
+                    rels = PropRelation.search([
+                        ('proprelation_type_id', '=', pg_p_type.id),
+                        ('id_org', '=', pg_id),
+                        ('is_active', '=', True),
+                    ])
+                    member_ids = [r.id_person.id for r in rels if r.id_person]
+                    res['current_member_ids'] = [(6, 0, member_ids)]
+        return res
+
+    def action_apply(self):
+        """Create betasks for adding/removing members."""
+        self.ensure_one()
+
+        service = self.env['myschool.manual.task.service']
+        pg_id = self.persongroup_id.id
+        changes = []
+
+        # Add new members
+        for person in self.add_member_ids:
+            service.create_manual_task('PROPRELATION', 'ADD', {
+                'type': 'PG-P',
+                'org_id': pg_id,
+                'person_id': person.id,
+            })
+            changes.append(f"Adding {person.name}")
+
+        # Remove members
+        for person in self.remove_member_ids:
+            service.create_manual_task('PROPRELATION', 'DEACT', {
+                'type': 'PG-P',
+                'org_id': pg_id,
+                'person_id': person.id,
+            })
+            changes.append(f"Removing {person.name}")
+
+        return {'type': 'ir.actions.act_window_close'}
+
+    def action_close(self):
+        return {'type': 'ir.actions.act_window_close'}

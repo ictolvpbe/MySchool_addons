@@ -11,8 +11,10 @@
         <field name="model">myschool.role</field>
         <field name="arch" type="xml">
             <form string="Role">
+                <header/>
                 <sheet>
-                    <widget name="web_ribbon" title="Inactive" bg_color="danger"
+                    <div class="oe_button_box" name="button_box"/>
+                    <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger"
                             invisible="is_active"/>
                     <div class="oe_title">
                         <h1>
@@ -30,8 +32,8 @@
                             <field name="priority"/>
                         </group>
                         <group string="Status">
-                            <field name="is_active"/>
-                            <field name="automatic_sync"/>
+                            <field name="is_active" widget="boolean_toggle"/>
+                            <field name="automatic_sync" widget="boolean_toggle"/>
                         </group>
                     </group>
                     
@@ -65,14 +67,17 @@
                   decoration-muted="not is_active"
                   default_order="priority desc, name">
                 <field name="name"/>
-                <field name="shortname"/>
-                <field name="role_type_id" optional="show"/>
+                <field name="shortname" widget="badge"/>
+                <field name="role_type_id" widget="badge" optional="show"
+                       decoration-info="role_type_id.name == 'EMPLOYEE'"
+                       decoration-success="role_type_id.name == 'STUDENT'"
+                       decoration-warning="role_type_id.name == 'GUARDIAN'"/>
                 <field name="priority" optional="show"/>
-                <field name="has_ui_access" optional="show"/>
-                <field name="has_group" optional="hide"/>
-                <field name="has_accounts" optional="hide"/>
-                <field name="automatic_sync" optional="hide"/>
-                <field name="is_active"/>
+                <field name="has_ui_access" widget="boolean" optional="show"/>
+                <field name="has_group" widget="boolean" optional="hide"/>
+                <field name="has_accounts" widget="boolean" optional="hide"/>
+                <field name="automatic_sync" widget="boolean_toggle" optional="hide"/>
+                <field name="is_active" widget="boolean"/>
             </list>
         </field>
     </record>

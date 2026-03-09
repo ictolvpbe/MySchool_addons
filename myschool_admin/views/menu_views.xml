@@ -7,8 +7,19 @@
     <menuitem id="menu_myschool_root"
               name="MySchool Admin"
               sequence="10"
-              action="action_object_browser_client"
+              action="action_dashboard_client"
               web_icon="school,static/description/icon.png"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- ========================================= -->
+    <!-- DASHBOARD (sequence: 5) -->
+    <!-- ========================================= -->
+
+    <menuitem id="menu_dashboard"
+              name="Dashboard"
+              parent="menu_myschool_root"
+              action="action_dashboard_client"
+              sequence="5"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- ========================================= -->
@@ -312,6 +323,13 @@
               parent="menu_configuration"
               action="action_update_student_relations_wizard"
               sequence="125"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_recalc_employee_roles"
+              name="Recalculate Employee Roles"
+              parent="menu_configuration"
+              action="action_recalc_employee_roles_wizard"
+              sequence="126"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_init_schoolyear"

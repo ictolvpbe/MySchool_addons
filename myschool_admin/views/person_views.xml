@@ -1,22 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Person list View -->
+    <!-- ===================================================================== -->
+    <!-- Person List View                                                      -->
+    <!-- Mockup: 03-person-list — type badges, email, org tree, status dots    -->
+    <!-- ===================================================================== -->
+
     <record id="view_myschool_person_list" model="ir.ui.view">
         <field name="name">myschool.person.list</field>
         <field name="model">myschool.person</field>
         <field name="arch" type="xml">
-            <list>
-                <field name="name"/>
-                <field name="first_name"/>
-                <field name="short_name"/>
-                <field name="person_type_id"/>
-                <field name="sap_ref"/>
-                <field name="is_active"/>
+            <list decoration-muted="not is_active"
+                  default_order="name">
+                <field name="name" string="Person"/>
+                <field name="first_name" optional="hide"/>
+                <field name="short_name" optional="hide"/>
+                <field name="person_type_id" widget="badge"
+                       decoration-info="person_type_id.name == 'EMPLOYEE'"
+                       decoration-success="person_type_id.name == 'STUDENT'"/>
+                <field name="sap_ref" string="SAP Ref" optional="show"/>
+                <field name="tree_org_id" string="Organization" optional="show"/>
+                <field name="email_cloud" string="E-mail Cloud" optional="show"/>
+                <field name="is_active" widget="boolean"/>
             </list>
         </field>
     </record>
 
-    <!-- Person Form View -->
+    <!-- ===================================================================== -->
+    <!-- Person Form View                                                      -->
+    <!-- Mockup: 02-person-form — header actions, stat buttons, status bar,    -->
+    <!-- tabs: Overview, Accounts & FQDN, Registration, Relations, Details     -->
+    <!-- ===================================================================== -->
+
     <record id="view_myschool_person_form" model="ir.ui.view">
         <field name="name">myschool.person.form</field>
         <field name="model">myschool.person</field>
@@ -38,14 +52,23 @@
                             string="Create Odoo User"
                             type="object"
                             class="btn-secondary"
+                            icon="fa-user-plus"
                             invisible="odoo_user_id"/>
                     <button name="action_recalculate_person_tree"
-                            string="Recalculate Tree Position"
+                            string="Recalculate Tree"
                             type="object"
                             class="btn-secondary"
+                            icon="fa-refresh"
                             title="Recalculate PERSON-TREE position based on PPSBR relations"/>
+                    <button name="action_recalc_roles"
+                            string="Recalculate Roles"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-id-badge"
+                            title="Read hoofd_ambt from person details, resolve via SRBR and create missing PPSBR"/>
                 </header>
                 <sheet>
+                    <!-- Stat Buttons -->
                     <div class="oe_button_box" name="button_box">
                         <button name="action_view_odoo_user"
                                 type="object"
@@ -68,65 +91,110 @@
                             <field name="proprelation_count" widget="statinfo" string="Relations"/>
                         </button>
                     </div>
+
+                    <!-- Inactive ribbon -->
                     <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="is_active"/>
+
+                    <!-- Identity Header -->
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                        <h3 class="text-muted">
+                            <field name="first_name" class="oe_inline"/> |
+                            <field name="person_type_id" class="oe_inline" options="{'no_create': True}"/>
+                        </h3>
+                    </div>
+
+                    <!-- Key fields above tabs -->
                     <group>
-                        <group string="Naamgegevens">
-                            <field name="name"/>
-                            <field name="first_name"/>
-                            <field name="short_name"/>
-                            <field name="abbreviation"/>
-                        </group>
                         <group string="Status &amp; Type">
                             <field name="person_type_id"/>
-                            <field name="is_active"/>
+                            <field name="is_active" widget="boolean_toggle"/>
+                        </group>
+                        <group string="Linked Accounts">
                             <field name="odoo_user_id" readonly="1"/>
                             <field name="odoo_employee_id" readonly="1"/>
                         </group>
                     </group>
 
                     <notebook>
-                        <page string="Basis Gegevens" name="basic_info">
+                        <!-- Tab 1: Overview (mockup: Identity + References + Tree Position) -->
+                        <page string="Overview" name="basic_info">
                             <group>
-                                <group>
+                                <group string="Identity">
+                                    <field name="name" string="Full Name"/>
+                                    <field name="first_name"/>
+                                    <field name="short_name"/>
+                                    <field name="abbreviation"/>
                                     <field name="gender"/>
                                     <field name="birth_date"/>
-                                    <field name="insz"/>
                                 </group>
-                                <group>
+                                <group string="References">
                                     <field name="sap_ref"/>
                                     <field name="sap_person_uuid"/>
                                     <field name="stam_boek_nr"/>
+                                    <field name="insz"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Tree Position">
+                                    <field name="tree_org_id" readonly="1"/>
+                                    <field name="tree_org_name_tree" readonly="1" class="ms-field-mono"/>
                                 </group>
                             </group>
                         </page>
 
-                        <page string="Registratie" name="registration">
+                        <!-- Tab 2: Accounts & FQDN (mockup: monospace FQDN fields) -->
+                        <page string="Accounts &amp; FQDN" name="accounts">
                             <group>
-                                <group>
+                                <group string="Cloud Account">
+                                    <field name="email_cloud"/>
+                                    <field name="email_private"/>
+                                    <field name="password" password="True"/>
+                                </group>
+                                <group string="LDAP Distinguished Names">
+                                    <field name="person_fqdn_internal" class="ms-field-mono"/>
+                                    <field name="person_fqdn_external" class="ms-field-mono"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <!-- Tab 3: Registration -->
+                        <page string="Registration" name="registration">
+                            <group>
+                                <group string="Registration Period">
                                     <field name="reg_start_date"/>
                                     <field name="reg_end_date"/>
                                 </group>
-                                <group>
+                                <group string="Registration Source">
                                     <field name="reg_inst_nr"/>
                                     <field name="reg_group_code"/>
                                 </group>
                             </group>
                         </page>
 
-                        <page string="Accounts" name="accounts">
-                            <group>
-                                <group>
-                                    <field name="email_cloud"/>
-                                    <field name="email_private"/>
-                                    <field name="password" password="True"/>
-                                </group>
-                                <group>
-                                    <field name="person_fqdn_internal"/>
-                                    <field name="person_fqdn_external"/>
-                                </group>
-                            </group>
+                        <!-- Tab 4: Relations (mockup: relation badges) -->
+                        <page string="Relations" name="relations">
+                            <field name="proprelation_all_ids" readonly="1">
+                                <list decoration-muted="not is_active">
+                                    <field name="name"/>
+                                    <field name="proprelation_type_id" widget="badge"
+                                           decoration-info="proprelation_type_id.name == 'PPSBR'"
+                                           decoration-success="proprelation_type_id.name == 'PERSON-TREE'"
+                                           decoration-warning="proprelation_type_id.name == 'BRSO'"/>
+                                    <field name="id_role" optional="show"/>
+                                    <field name="id_org" optional="show"/>
+                                    <field name="id_org_parent" optional="hide"/>
+                                    <field name="id_period" optional="hide"/>
+                                    <field name="is_active" widget="boolean"/>
+                                    <field name="is_master" widget="boolean" optional="show"/>
+                                    <field name="automatic_sync" widget="boolean" optional="show"/>
+                                    <field name="start_date" optional="hide"/>
+                                    <field name="end_date" optional="hide"/>
+                                </list>
+                            </field>
                         </page>
 
+                        <!-- Tab 5: Details -->
                         <page string="Details" name="details">
                             <field name="person_details_set">
                                 <list decoration-muted="not is_active">
@@ -137,43 +205,33 @@
                                 </list>
                             </field>
                         </page>
-
-                        <page string="Relations" name="relations">
-                            <field name="proprelation_all_ids" readonly="1">
-                                <list decoration-muted="not is_active" decoration-info="is_active">
-                                    <field name="name"/>
-                                    <field name="proprelation_type_id"/>
-                                    <field name="id_role" optional="show"/>
-                                    <field name="id_org" optional="show"/>
-                                    <field name="id_org_parent" optional="hide"/>
-                                    <field name="id_period" optional="hide"/>
-                                    <field name="is_active" widget="boolean"/>
-                                    <field name="start_date" optional="hide"/>
-                                    <field name="end_date" optional="hide"/>
-                                </list>
-                            </field>
-                        </page>
                     </notebook>
                 </sheet>
             </form>
         </field>
     </record>
 
-    <!-- Person Search View -->
+    <!-- ===================================================================== -->
+    <!-- Person Search View                                                    -->
+    <!-- Mockup: 03-person-list — search by name, SAP ref, email              -->
+    <!-- ===================================================================== -->
+
     <record id="view_myschool_person_search" model="ir.ui.view">
         <field name="name">myschool.person.search</field>
         <field name="model">myschool.person</field>
         <field name="arch" type="xml">
             <search string="Zoek Personen">
-                <field name="name"/>
+                <field name="name" string="Name / SAP / Email"
+                       filter_domain="['|','|',('name', 'ilike', self),('sap_ref', 'ilike', self),('email_cloud', 'ilike', self)]"/>
                 <field name="first_name"/>
                 <field name="sap_ref"/>
                 <field name="person_type_id"/>
-                <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
-                <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
-<!--                <group expand="0" string="Groepeer op">-->
-<!--                    <filter string="Type" name="group_type" context="{'group_by': 'person_type_id'}"/>-->
-<!--                </group>-->
+                <separator/>
+                <filter string="Active" name="active" domain="[('is_active', '=', True)]"/>
+                <filter string="Inactive" name="inactive" domain="[('is_active', '=', False)]"/>
+                <separator/>
+                <filter string="Employees" name="employees" domain="[('person_type_id.name', '=', 'EMPLOYEE')]"/>
+                <filter string="Students" name="students" domain="[('person_type_id.name', '=', 'STUDENT')]"/>
             </search>
         </field>
     </record>
@@ -191,7 +249,11 @@
         </field>
     </record>
 
-    <!-- Server Action for Recalculate All PERSON-TREE Relations -->
+    <!-- ===================================================================== -->
+    <!-- Server Actions                                                        -->
+    <!-- ===================================================================== -->
+
+    <!-- Recalculate All PERSON-TREE Relations -->
     <record id="action_recalculate_all_person_trees" model="ir.actions.server">
         <field name="name">Recalculate All PERSON-TREE Relations</field>
         <field name="model_id" ref="myschool_core.model_myschool_person"/>
@@ -228,7 +290,7 @@ action = {
         </field>
     </record>
 
-    <!-- Server Action for Update Person Properties (email_cloud + FQDN) -->
+    <!-- Update Person Properties (email_cloud + FQDN) -->
     <record id="action_update_person_properties" model="ir.actions.server">
         <field name="name">Update Person Properties</field>
         <field name="model_id" ref="myschool_core.model_myschool_person"/>

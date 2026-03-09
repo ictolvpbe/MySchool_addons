@@ -34,8 +34,8 @@
                     
                     <group>
                         <group string="General Settings">
-                            <field name="active"/>
-                            <field name="dev_mode"/>
+                            <field name="active" widget="boolean_toggle"/>
+                            <field name="dev_mode" widget="boolean_toggle"/>
                             <field name="default_org_short_name"/>
                         </group>
                         <group string="Sync Settings">
@@ -46,10 +46,10 @@
                     </group>
                     <group>
                         <group string="Sync Phases">
-                            <field name="sync_roles"/>
-                            <field name="sync_employees"/>
-                            <field name="sync_classes"/>
-                            <field name="sync_students"/>
+                            <field name="sync_roles" widget="boolean_toggle"/>
+                            <field name="sync_employees" widget="boolean_toggle"/>
+                            <field name="sync_classes" widget="boolean_toggle"/>
+                            <field name="sync_students" widget="boolean_toggle"/>
                         </group>
                     </group>
                     
@@ -108,10 +108,11 @@
         <field name="name">myschool.informat.service.config.list</field>
         <field name="model">myschool.informat.service.config</field>
         <field name="arch" type="xml">
-            <list string="Informat Service Configurations">
+            <list string="Informat Service Configurations"
+                  decoration-muted="not active">
                 <field name="name"/>
-                <field name="active"/>
-                <field name="dev_mode"/>
+                <field name="active" widget="boolean"/>
+                <field name="dev_mode" widget="boolean"/>
                 <field name="last_sync_timestamp"/>
                 <field name="last_sync_status" widget="badge"
                        decoration-success="last_sync_status == 'success'"

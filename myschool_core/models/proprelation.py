@@ -1,5 +1,6 @@
 # models/proprelation.py
-from odoo import models, fields
+from odoo import models, fields, api
+from odoo.exceptions import ValidationError
 
 
 # myschool.prop.relation (PropRelation.java)
@@ -45,3 +46,50 @@ class PropRelation(models.Model):
     start_date = fields.Datetime(string='Startdatum')
     end_date = fields.Datetime(string='Einddatum')
     automatic_sync = fields.Boolean(string='Auto Sync', default=True, required=True)
+
+    # -------------------------------------------------------------------------
+    # Constraints
+    # -------------------------------------------------------------------------
+
+    @api.constrains('is_master', 'id_person', 'is_active')
+    def _check_single_master(self):
+        """Only one active is_master=True proprelation per person."""
+        for rec in self:
+            if rec.is_master and rec.id_person and rec.is_active:
+                others = self.search([
+                    ('id_person', '=', rec.id_person.id),
+                    ('is_master', '=', True),
+                    ('is_active', '=', True),
+                    ('id', '!=', rec.id),
+                ])
+                if others:
+                    raise ValidationError(
+                        f'Person {rec.id_person.name} already has a master relation: {others[0].name}. '
+                        f'Only one active master relation per person is allowed.'
+                    )
+
+    # -------------------------------------------------------------------------
+    # Onchange
+    # -------------------------------------------------------------------------
+
+    @api.onchange('is_master')
+    def _onchange_is_master(self):
+        """When is_master is set, disable automatic_sync (master = manually maintained)."""
+        if self.is_master:
+            self.automatic_sync = False
+
+    # -------------------------------------------------------------------------
+    # CRUD overrides
+    # -------------------------------------------------------------------------
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            if vals.get('is_master'):
+                vals['automatic_sync'] = False
+        return super().create(vals_list)
+
+    def write(self, vals):
+        if vals.get('is_master'):
+            vals['automatic_sync'] = False
+        return super().write(vals)

@@ -1,58 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
-    
-    <!-- Organization list View -->
+
+    <!-- ===================================================================== -->
+    <!-- Organization List View                                                -->
+    <!-- Mockup-inspired: type badges, tree path, active decoration            -->
+    <!-- ===================================================================== -->
+
     <record id="view_myschool_org_list" model="ir.ui.view">
         <field name="name">myschool.org.list</field>
         <field name="model">myschool.org</field>
         <field name="arch" type="xml">
-            <list>
-                <field name="name_tree" string="Full Tree Name"/>
+            <list decoration-muted="not is_active"
+                  default_order="name">
                 <field name="name"/>
-                <field name="name_short"/>
-                <field name="inst_nr"/>
-                <field name="org_type_id"/>
-                <field name="is_active"/>
+                <field name="name_short" optional="show"/>
+                <field name="name_tree" string="Tree Path" optional="show"/>
+                <field name="inst_nr" optional="show"/>
+                <field name="org_type_id" widget="badge"
+                       decoration-info="org_type_id.name == 'SCHOOL'"
+                       decoration-success="org_type_id.name == 'CLASSGROUP'"
+                       decoration-warning="org_type_id.name == 'PERSONGROUP'"/>
+                <field name="is_administrative" widget="boolean" optional="show"/>
+                <field name="domain_external" optional="hide"/>
+                <field name="is_active" widget="boolean"/>
             </list>
         </field>
     </record>
 
-    <!-- Organization Form View -->
+    <!-- ===================================================================== -->
+    <!-- Organization Form View                                                -->
+    <!-- Mockup: 05-org-form — icon header, status bar, tabs with AD/OU       -->
+    <!-- ===================================================================== -->
+
     <record id="view_myschool_org_form" model="ir.ui.view">
         <field name="name">myschool.org.form</field>
         <field name="model">myschool.org</field>
         <field name="arch" type="xml">
             <form string="Organisatie">
                 <header>
-                    <button name="action_update_name_tree" type="object" string="Update Name Tree" class="btn-secondary" icon="fa-refresh"/>
+                    <button name="action_update_name_tree" type="object"
+                            string="Update Name Tree" class="btn-secondary" icon="fa-refresh"/>
                 </header>
                 <sheet>
-                    <div class="oe_button_box" name="button_box"/>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_proprelations"
+                                type="object" class="oe_stat_button" icon="fa-link">
+                            <field name="proprelation_count" widget="statinfo" string="Relations"/>
+                        </button>
+                    </div>
+
+                    <!-- Inactive ribbon -->
+                    <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="is_active"/>
+
+                    <!-- Title with type badge and tree path -->
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                        <h3 class="text-muted">
+                            <field name="org_type_id" class="oe_inline" options="{'no_create': True}"/> |
+                            <field name="name_tree" readonly="1" class="oe_inline"/> |
+                            Inst.nr: <field name="inst_nr" readonly="1" class="oe_inline"/>
+                        </h3>
+                    </div>
+
+                    <!-- Key fields above tabs -->
                     <group>
-                        <group>
-                            <field name="name"/>
-                            <field name="name_short"/>
-                            <field name="name_tree" readonly="1"/>
-                            <field name="inst_nr"/>
+                        <group string="Status &amp; Type">
                             <field name="org_type_id"/>
-                            <field name="is_active"/>
-                        </group>
-                        <group>
+                            <field name="is_active" widget="boolean_toggle"/>
                             <field name="is_administrative"/>
+                        </group>
+                        <group string="Classification">
                             <field name="orggroup_working_period"/>
                             <field name="richting"/>
                         </group>
                     </group>
 
                     <notebook>
-                        <page string="Adres" name="address">
+                        <!-- Tab 1: General -->
+                        <page string="General" name="general">
                             <group>
-                                <group>
+                                <group string="Identity">
+                                    <field name="name"/>
+                                    <field name="name_short"/>
+                                    <field name="inst_nr"/>
+                                </group>
+                                <group string="Tree Position">
+                                    <field name="name_tree" readonly="1" class="ms-field-mono"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <!-- Tab 2: Address -->
+                        <page string="Address" name="address">
+                            <group>
+                                <group string="Street">
                                     <field name="street"/>
                                     <field name="street_nr"/>
                                 </group>
-                                <group>
+                                <group string="Location">
                                     <field name="postal_code"/>
                                     <field name="community"/>
                                     <field name="country"/>
@@ -60,9 +106,45 @@
                             </group>
                         </page>
 
+                        <!-- Tab 2: AD/OU Configuration (mockup: 05-org-form) -->
+                        <page string="AD/OU Configuration" name="ad_ou">
+                            <group>
+                                <group string="Domains">
+                                    <field name="domain_internal"/>
+                                    <field name="domain_external"/>
+                                </group>
+                                <group string="Features">
+                                    <field name="has_ou" widget="boolean_toggle"/>
+                                    <field name="has_role" widget="boolean_toggle"/>
+                                    <field name="has_comgroup" widget="boolean_toggle"/>
+                                    <field name="has_secgroup" widget="boolean_toggle"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="OU FQDN">
+                                    <field name="ou_fqdn_internal" class="ms-field-mono"/>
+                                    <field name="ou_fqdn_external" class="ms-field-mono"/>
+                                </group>
+                                <group string="Communication Group">
+                                    <field name="com_group_name"/>
+                                    <field name="com_group_email"/>
+                                    <field name="com_group_fqdn_internal" class="ms-field-mono"/>
+                                    <field name="com_group_fqdn_external" class="ms-field-mono"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Security Group">
+                                    <field name="sec_group_name"/>
+                                    <field name="sec_group_fqdn_internal" class="ms-field-mono"/>
+                                    <field name="sec_group_fqdn_external" class="ms-field-mono"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <!-- Tab 3: SAP & Accounts -->
                         <page string="SAP &amp; Accounts" name="sap">
                             <group>
-                                <group>
+                                <group string="SAP Credentials">
                                     <field name="sap_provider"/>
                                     <field name="sap_login"/>
                                     <field name="sap_password" password="True"/>
@@ -70,37 +152,23 @@
                             </group>
                         </page>
 
-                        <page string="AD/OU Configuratie" name="ad_ou">
-                            <group>
-                                <group string="Domeinen">
-                                    <field name="domain_internal"/>
-                                    <field name="domain_external"/>
-                                </group>
-                                <group string="Opties">
-                                    <field name="has_ou"/>
-                                    <field name="has_role"/>
-                                    <field name="has_comgroup"/>
-                                    <field name="has_secgroup"/>
-                                </group>
-                            </group>
-                            <group>
-                                <group string="OU FQDN">
-                                    <field name="ou_fqdn_internal"/>
-                                    <field name="ou_fqdn_external"/>
-                                </group>
-                                <group string="Communicatiegroep">
-                                    <field name="com_group_name"/>
-                                    <field name="com_group_fqdn_internal"/>
-                                    <field name="com_group_fqdn_external"/>
-                                </group>
-                            </group>
-                            <group>
-                                <group string="Securitygroep">
-                                    <field name="sec_group_name"/>
-                                    <field name="sec_group_fqdn_internal"/>
-                                    <field name="sec_group_fqdn_external"/>
-                                </group>
-                            </group>
+                        <!-- Tab 4: Relations -->
+                        <page string="Relations" name="relations">
+                            <field name="proprelation_all_ids" readonly="1">
+                                <list decoration-muted="not is_active">
+                                    <field name="name"/>
+                                    <field name="proprelation_type_id" widget="badge"
+                                           decoration-info="proprelation_type_id.name == 'PPSBR'"
+                                           decoration-success="proprelation_type_id.name == 'PERSON-TREE'"
+                                           decoration-warning="proprelation_type_id.name == 'BRSO'"/>
+                                    <field name="id_person" optional="show"/>
+                                    <field name="id_role" optional="show"/>
+                                    <field name="id_org_parent" optional="show"/>
+                                    <field name="is_active" widget="boolean"/>
+                                    <field name="is_master" widget="boolean" optional="show"/>
+                                    <field name="automatic_sync" widget="boolean" optional="show"/>
+                                </list>
+                            </field>
                         </page>
                     </notebook>
                 </sheet>
@@ -108,19 +176,29 @@
         </field>
     </record>
 
-    <!-- Organization Search View -->
+    <!-- ===================================================================== -->
+    <!-- Organization Search View                                              -->
+    <!-- ===================================================================== -->
+
     <record id="view_myschool_org_search" model="ir.ui.view">
         <field name="name">myschool.org.search</field>
         <field name="model">myschool.org</field>
         <field name="arch" type="xml">
             <search string="Zoek Organisaties">
-                <field name="name"/>
+                <field name="name" string="Name / Tree / Inst.nr"
+                       filter_domain="['|','|',('name', 'ilike', self),('name_tree', 'ilike', self),('inst_nr', 'ilike', self)]"/>
                 <field name="name_short"/>
-                <field name="name_tree"/>
-                <field name="inst_nr"/>
                 <field name="org_type_id"/>
-                <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
-                <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
+                <separator/>
+                <filter string="Active" name="active" domain="[('is_active', '=', True)]"/>
+                <filter string="Inactive" name="inactive" domain="[('is_active', '=', False)]"/>
+                <separator/>
+                <filter string="Schools" name="schools" domain="[('org_type_id.name', '=', 'SCHOOL')]"/>
+                <filter string="Classgroups" name="classgroups" domain="[('org_type_id.name', '=', 'CLASSGROUP')]"/>
+                <filter string="Persongroups" name="persongroups" domain="[('org_type_id.name', '=', 'PERSONGROUP')]"/>
+                <separator/>
+                <filter string="Administrative" name="administrative" domain="[('is_administrative', '=', True)]"/>
+                <filter string="Non-administrative" name="non_administrative" domain="[('is_administrative', '=', False)]"/>
             </search>
         </field>
     </record>
@@ -137,8 +215,12 @@
             </p>
         </field>
     </record>
-    
-    <!-- Server Action for Update All Name Trees (appears in Action dropdown) -->
+
+    <!-- ===================================================================== -->
+    <!-- Server Actions                                                        -->
+    <!-- ===================================================================== -->
+
+    <!-- Update All Name Trees (Action dropdown binding) -->
     <record id="action_server_update_all_name_trees" model="ir.actions.server">
         <field name="name">Update All Org Name Trees</field>
         <field name="model_id" ref="myschool_core.model_myschool_org"/>
@@ -151,8 +233,8 @@ if result and isinstance(result, dict):
     action = result
         </field>
     </record>
-    
-    <!-- Server Action for Update All Name Trees (used by menu item) -->
+
+    <!-- Update All Name Trees (menu action) -->
     <record id="action_update_all_org_name_trees" model="ir.actions.server">
         <field name="name">Update All Organization Name Trees</field>
         <field name="model_id" ref="myschool_core.model_myschool_org"/>
@@ -164,7 +246,7 @@ if result and isinstance(result, dict):
         </field>
     </record>
 
-    <!-- Server Action for Update Classgroup Properties (used by menu item) -->
+    <!-- Update Classgroup Properties (menu action) -->
     <record id="action_recalculate_all_org_trees" model="ir.actions.server">
         <field name="name">Update classgroup properties</field>
         <field name="model_id" ref="myschool_core.model_myschool_org"/>
@@ -185,20 +267,24 @@ action = {
         </field>
     </record>
 
-    <!-- Org Role Line List View -->
+    <!-- ===================================================================== -->
+    <!-- Wizard Views (Org Roles, Person Roles)                                -->
+    <!-- ===================================================================== -->
+
     <record id="view_org_role_line_list" model="ir.ui.view">
         <field name="name">myschool.org.role.line.list</field>
         <field name="model">myschool.org.role.line</field>
         <field name="arch" type="xml">
-            <list create="0" delete="0">
-                <field name="role_name" string="Role"/>
-                <field name="is_active" string="Active"/>
+            <list create="0" delete="0" editable="bottom">
+                <field name="role_name" string="Role" readonly="1"/>
+                <field name="is_active" string="Active" readonly="1" widget="boolean"/>
+                <field name="is_master" string="Master" widget="boolean_toggle"/>
+                <field name="automatic_sync" string="Auto Sync" widget="boolean_toggle"/>
                 <button name="action_remove" type="object" string="Remove" icon="fa-trash"/>
             </list>
         </field>
     </record>
 
-    <!-- Manage Org Roles Wizard Form -->
     <record id="view_manage_org_roles_wizard_form" model="ir.ui.view">
         <field name="name">myschool.manage.org.roles.wizard.form</field>
         <field name="model">myschool.manage.org.roles.wizard</field>
@@ -223,20 +309,20 @@ action = {
         </field>
     </record>
 
-    <!-- Person Role Line List View -->
     <record id="view_person_role_line_list" model="ir.ui.view">
         <field name="name">myschool.person.role.line.list</field>
         <field name="model">myschool.person.role.line</field>
         <field name="arch" type="xml">
-            <list create="0" delete="0">
-                <field name="role_name" string="Role"/>
-                <field name="is_active" string="Active"/>
+            <list create="0" delete="0" editable="bottom">
+                <field name="role_name" string="Role" readonly="1"/>
+                <field name="is_active" string="Active" readonly="1" widget="boolean"/>
+                <field name="is_master" string="Master" widget="boolean_toggle"/>
+                <field name="automatic_sync" string="Auto Sync" widget="boolean_toggle"/>
                 <button name="action_remove" type="object" string="Remove" icon="fa-trash"/>
             </list>
         </field>
     </record>
 
-    <!-- Manage Person Roles Wizard Form -->
     <record id="view_manage_person_roles_wizard_form" model="ir.ui.view">
         <field name="name">myschool.manage.person.roles.wizard.form</field>
         <field name="model">myschool.manage.person.roles.wizard</field>
@@ -253,11 +339,19 @@ action = {
                     <field name="new_role_id" string="Role" options="{'no_create': True}"/>
                     <button name="action_add_role" type="object" string="Add Role" class="btn-primary" icon="fa-plus"/>
                 </group>
+                <separator/>
+                <group>
+                    <button name="action_recalc_roles" type="object"
+                            string="Recalculate Roles from Assignment"
+                            class="btn-secondary" icon="fa-refresh"
+                            title="Read hoofd_ambt from person details, resolve via SRBR and create missing PPSBR"/>
+                </group>
                 <footer>
                     <button name="action_close" type="object" string="Close" class="btn-secondary"/>
                 </footer>
             </form>
         </field>
     </record>
+
     </data>
 </odoo>

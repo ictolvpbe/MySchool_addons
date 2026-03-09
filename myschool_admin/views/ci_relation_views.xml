@@ -12,7 +12,7 @@
         <field name="arch" type="xml">
             <form string="Configuration Item Relation">
                 <sheet>
-                    <widget name="web_ribbon" title="Inactive" bg_color="danger"
+                    <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger"
                             invisible="isactive"/>
                     <div class="oe_title">
                         <h1>
@@ -29,8 +29,8 @@
                             <field name="ci_boolean_value" invisible="not id_ci"/>
                         </group>
                         <group string="Status">
-                            <field name="isactive"/>
-                            <field name="automatic_sync"/>
+                            <field name="isactive" widget="boolean_toggle"/>
+                            <field name="automatic_sync" widget="boolean_toggle"/>
                         </group>
                     </group>
                     
@@ -75,8 +75,8 @@
                 <field name="id_person" optional="hide"/>
                 <field name="id_role" optional="hide"/>
                 <field name="id_period" optional="hide"/>
-                <field name="isactive"/>
-                <field name="automatic_sync" optional="hide"/>
+                <field name="isactive" widget="boolean"/>
+                <field name="automatic_sync" widget="boolean_toggle" optional="hide"/>
             </list>
         </field>
     </record>
@@ -144,7 +144,7 @@
                 <field name="ci_string_value"/>
                 <field name="ci_integer_value"/>
                 <field name="ci_boolean_value"/>
-                <field name="isactive"/>
+                <field name="isactive" widget="boolean"/>
             </list>
         </field>
     </record>

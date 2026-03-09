@@ -1,0 +1,714 @@
+/* ============================================================
+   MySchool Admin — Global Brand Theme
+   Applies OLVP brand colors to Odoo 19 backend elements.
+   ============================================================ */
+
+/* --- CSS Custom Properties --- */
+:root {
+    /* Brand palette */
+    --ms-brand-1: #007d8c;
+    --ms-brand-2: #0094A4;
+    --ms-brand-3: #00ACBF;
+    --ms-brand-4: #00C4D9;
+
+    /* Neutrals */
+    --ms-black: #252525;
+    --ms-gray: #9B9B9B;
+    --ms-text: #003333;
+    --ms-text-muted: #5a7a7a;
+
+    /* Surfaces */
+    --ms-bg: #f0f5f5;
+    --ms-bg-card: #ffffff;
+    --ms-border: #d6e4e4;
+    --ms-border-light: #e8f0f0;
+
+    /* Semantic */
+    --ms-success: #0d9488;
+    --ms-success-bg: #ccfbf1;
+    --ms-error: #dc2626;
+    --ms-error-bg: #fee2e2;
+    --ms-warning: #d97706;
+    --ms-warning-bg: #fef3c7;
+    --ms-info: #0284c7;
+    --ms-info-bg: #e0f2fe;
+}
+
+
+/* ============================================================
+   1. NAVBAR — Top navigation bar
+   ============================================================ */
+
+.o_main_navbar {
+    background-color: var(--ms-brand-1) !important;
+}
+
+.o_main_navbar .o_menu_brand,
+.o_main_navbar .o_navbar_brand {
+    color: #fff !important;
+    font-weight: 700;
+}
+
+/* Top-level menu items — force transparent bg to match navbar */
+.o_main_navbar .o_menu_sections *,
+.o_main_navbar .o_menu_sections > *,
+.o_main_navbar .o_menu_sections button,
+.o_main_navbar .o_menu_sections a.dropdown-toggle,
+.o_main_navbar .o_menu_sections .o_nav_entry,
+.o_main_navbar .o_menu_sections .dropdown-toggle {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #fff !important;
+}
+
+.o_main_navbar .o_menu_sections > *:hover,
+.o_main_navbar .o_menu_sections button:hover,
+.o_main_navbar .o_menu_sections a.dropdown-toggle:hover,
+.o_main_navbar .o_menu_sections .o_nav_entry:hover,
+.o_main_navbar .o_menu_sections .dropdown-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+    color: #fff !important;
+}
+
+/* Dropdown menu items */
+.o_main_navbar .o_menu_sections .dropdown-item {
+    color: var(--ms-text) !important;
+}
+
+.o_main_navbar .o_menu_sections .dropdown-item:hover,
+.o_main_navbar .o_menu_sections .dropdown-item:focus {
+    background-color: rgba(0, 148, 164, 0.15) !important;
+    color: var(--ms-brand-1) !important;
+}
+
+/* Active menu entry */
+.o_main_navbar .o_menu_sections > .o-dropdown.show > .dropdown-toggle,
+.o_main_navbar .o_menu_sections > button.active {
+    border-bottom-color: var(--ms-brand-4) !important;
+}
+
+
+/* ============================================================
+   2. BUTTONS — Primary, secondary, and status buttons
+   ============================================================ */
+
+/* Primary buttons */
+.o_form_view .btn-primary,
+.o_list_view .btn-primary,
+.o_kanban_view .btn-primary,
+.o_control_panel .btn-primary,
+.modal-content .btn-primary {
+    background-color: var(--ms-brand-1) !important;
+    border-color: var(--ms-brand-1) !important;
+}
+
+.o_form_view .btn-primary:hover,
+.o_list_view .btn-primary:hover,
+.o_kanban_view .btn-primary:hover,
+.o_control_panel .btn-primary:hover,
+.modal-content .btn-primary:hover {
+    background-color: #006b78 !important;
+    border-color: #006b78 !important;
+}
+
+.o_form_view .btn-primary:focus,
+.o_list_view .btn-primary:focus,
+.o_kanban_view .btn-primary:focus,
+.o_control_panel .btn-primary:focus,
+.modal-content .btn-primary:focus {
+    box-shadow: 0 0 0 3px rgba(0, 125, 140, 0.25) !important;
+}
+
+/* Secondary / outline buttons — brand tint */
+.o_form_view .btn-secondary,
+.o_control_panel .btn-secondary {
+    color: var(--ms-text) !important;
+    border-color: var(--ms-border) !important;
+}
+
+.o_form_view .btn-secondary:hover,
+.o_control_panel .btn-secondary:hover {
+    background-color: #e6f7f8 !important;
+    border-color: var(--ms-brand-2) !important;
+    color: var(--ms-brand-1) !important;
+}
+
+/* Status buttons (stat boxes in form view) */
+.oe_stat_button {
+    border-color: var(--ms-border-light) !important;
+}
+
+.oe_stat_button:hover {
+    background-color: #e6f7f8 !important;
+}
+
+.oe_stat_button .o_stat_value {
+    color: var(--ms-brand-1) !important;
+    font-weight: 700 !important;
+    font-size: 22px !important;
+}
+
+.oe_stat_button .o_stat_text {
+    color: var(--ms-gray) !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+
+/* ============================================================
+   3. FORM VIEW — Sheet, statusbar, labels, fields
+   ============================================================ */
+
+/* Overall content area background */
+.o_action_manager {
+    background-color: var(--ms-bg) !important;
+}
+
+/* Ensure main content area scrolls (Odoo's scroll container) */
+.o_content {
+    overflow: auto !important;
+    min-height: 0 !important;
+}
+
+/* Form sheet background */
+.o_form_view .o_form_sheet_bg {
+    background-color: var(--ms-bg) !important;
+}
+
+/* Form sheet card styling */
+.o_form_view .o_form_sheet {
+    border-radius: 12px !important;
+    box-shadow: 0 1px 4px rgba(0, 60, 60, 0.07) !important;
+    border: 1px solid var(--ms-border-light) !important;
+}
+
+/* Group title styling — mockup: 11px uppercase, gray, bottom border underline */
+.o_form_view .o_inner_group .o_group_header,
+.o_form_view .o_group .o_group_col_6 > .o_inner_group > div:first-child,
+.o_form_view .o_group > tbody > tr > td.o_group_header,
+.o_form_view .o_inner_group > .o_group_header,
+.o_form_view .o_wrap_label + .o_group_header,
+.o_form_view td.o_td_label[colspan] {
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.8px !important;
+    color: var(--ms-gray) !important;
+    font-weight: 600 !important;
+    padding-bottom: 6px !important;
+    border-bottom: 1px solid var(--ms-border-light) !important;
+    margin-bottom: 12px !important;
+}
+
+/* Group column separator styling */
+.o_form_view .o_group .o_group_col_6 {
+    border-color: var(--ms-border-light) !important;
+}
+
+/* Inner group spacing — more air between field groups */
+.o_form_view .o_inner_group {
+    margin-bottom: 16px !important;
+}
+
+/* Statusbar */
+.o_form_view .o_form_statusbar {
+    border-bottom-color: var(--ms-border) !important;
+    background-color: #f5fafa !important;
+}
+
+/* Active statusbar button */
+.o_form_view .o_form_statusbar .o_arrow_button.o_arrow_button_current {
+    background-color: var(--ms-brand-1) !important;
+    color: #fff !important;
+}
+
+/* Field focus */
+.o_form_view .o_field_widget input:focus,
+.o_form_view .o_field_widget textarea:focus,
+.o_form_view .o_field_widget select:focus {
+    border-color: var(--ms-brand-2) !important;
+    box-shadow: 0 0 0 3px rgba(0, 125, 140, 0.1) !important;
+}
+
+/* Required field highlight */
+.o_form_view .o_field_widget.o_required_modifier input {
+    border-left: 3px solid var(--ms-brand-1) !important;
+}
+
+/* Form field labels — mockup: 13px, text-muted */
+.o_form_view .o_inner_group .o_td_label .o_form_label,
+.o_form_view .o_form_label {
+    color: var(--ms-text-muted) !important;
+    font-size: 13px !important;
+}
+
+/* Form field inputs — mockup: bordered, 6px radius, proper padding */
+.o_form_view .o_field_widget input.o_input,
+.o_form_view .o_field_widget textarea.o_input,
+.o_form_view .o_field_widget select.o_input,
+.o_form_view .o_field_widget .o_input {
+    border: 1px solid var(--ms-border) !important;
+    border-radius: 6px !important;
+    padding: 7px 10px !important;
+    font-size: 13px !important;
+    color: var(--ms-text) !important;
+}
+
+/* Readonly fields — mockup: teal-tinted background, lighter border */
+.o_form_view .o_field_widget.o_readonly_modifier .o_input,
+.o_form_view .o_field_widget.o_readonly_modifier input,
+.o_form_view .o_field_widget.o_readonly_modifier textarea,
+.o_form_view .o_field_widget.o_readonly_modifier .o_field_char_content,
+.o_form_view .o_field_widget[readonly] .o_input {
+    background-color: #f5fafa !important;
+    border-color: var(--ms-border-light) !important;
+    color: var(--ms-text-muted) !important;
+}
+
+/* Title h1 — mockup: 20px, bold, dark */
+.o_form_view .oe_title h1,
+.o_form_view .oe_title h1 .o_field_widget {
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    color: var(--ms-black) !important;
+}
+
+/* Title h3 subtitle — mockup: 13px, muted */
+.o_form_view .oe_title h3 {
+    font-size: 13px !important;
+    color: var(--ms-text-muted) !important;
+    margin-top: 2px !important;
+}
+
+/* Inactive ribbon — stronger visibility */
+.o_form_view .badge.text-bg-danger {
+    background-color: var(--ms-error) !important;
+}
+
+/* Header actions bar — mockup: buttons with icons, clean layout */
+.o_form_view .o_form_statusbar .o_statusbar_buttons {
+    gap: 8px !important;
+}
+
+.o_form_view .o_form_statusbar .o_statusbar_buttons .btn {
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    padding: 8px 16px !important;
+}
+
+
+/* ============================================================
+   4. NOTEBOOK / TABS — Form view tabs
+   ============================================================ */
+
+.o_form_view .o_notebook .nav-link {
+    color: var(--ms-text-muted) !important;
+    font-weight: 500 !important;
+    padding: 10px 20px !important;
+    font-size: 13px !important;
+}
+
+.o_form_view .o_notebook .nav-link:hover {
+    color: var(--ms-text) !important;
+    background-color: #f5fafa !important;
+    border-color: transparent !important;
+}
+
+.o_form_view .o_notebook .nav-link.active {
+    color: var(--ms-brand-1) !important;
+    border-bottom: 2px solid var(--ms-brand-1) !important;
+    font-weight: 600 !important;
+    background-color: transparent !important;
+}
+
+
+/* ============================================================
+   5. LIST VIEW — Table, card wrapper, header, rows
+   ============================================================ */
+
+/* List view content area */
+.o_list_view {
+    background-color: var(--ms-bg) !important;
+}
+
+/* Table card container */
+.o_list_view .o_list_renderer {
+    background: var(--ms-bg-card) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06) !important;
+    overflow: auto !important;
+    border: 1px solid var(--ms-border-light) !important;
+}
+
+/* Table itself */
+.o_list_view .o_list_table {
+    border-radius: 10px !important;
+    font-size: 13px !important;
+}
+
+/* Table header — uppercase, small, gray on teal-tinted bg */
+.o_list_view .o_list_table thead {
+    background-color: #f5fafa !important;
+}
+
+.o_list_view .o_list_table thead th {
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.6px !important;
+    color: var(--ms-gray) !important;
+    font-weight: 600 !important;
+    padding: 12px 14px !important;
+    border-bottom: 1px solid var(--ms-border) !important;
+    white-space: nowrap !important;
+}
+
+.o_list_view .o_list_table thead th:hover {
+    color: var(--ms-text) !important;
+}
+
+/* Table body cells */
+.o_list_view .o_list_table tbody td {
+    padding: 11px 14px !important;
+    border-bottom: 1px solid var(--ms-border-light) !important;
+    color: var(--ms-text) !important;
+}
+
+/* Last row — no bottom border */
+.o_list_view .o_list_table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* Row hover — teal tint */
+.o_list_view .o_list_table .o_data_row:hover > td {
+    background-color: #f0f8f8 !important;
+}
+
+/* Selected row — stronger teal */
+.o_list_view .o_list_table .o_data_row.o_data_row_selected > td {
+    background-color: #d9f2f4 !important;
+}
+
+/* Checkbox accent */
+.o_list_view input[type="checkbox"]:checked,
+.o_list_view .o_list_record_selector input[type="checkbox"]:checked {
+    accent-color: var(--ms-brand-1) !important;
+}
+
+/* Muted (inactive) rows — ensure they look properly faded */
+.o_list_view .o_list_table .o_data_row.text-muted td {
+    opacity: 0.5 !important;
+}
+
+/* List pager */
+.o_list_view .o_pager .o_pager_value {
+    color: var(--ms-text) !important;
+    font-weight: 600 !important;
+}
+
+
+/* ============================================================
+   6. KANBAN VIEW — Cards
+   ============================================================ */
+
+.o_kanban_view {
+    background-color: var(--ms-bg) !important;
+}
+
+.o_kanban_view .o_kanban_record {
+    border-radius: 10px !important;
+    border-color: var(--ms-border-light) !important;
+}
+
+.o_kanban_view .o_kanban_record:hover {
+    box-shadow: 0 2px 8px rgba(0, 125, 140, 0.08) !important;
+    border-color: var(--ms-brand-3) !important;
+}
+
+.o_kanban_view .o_kanban_record .o_record_selected {
+    border-color: var(--ms-brand-1) !important;
+}
+
+
+/* ============================================================
+   7. CONTROL PANEL — Breadcrumbs, pager, search
+   ============================================================ */
+
+/* Control panel background */
+.o_control_panel {
+    background-color: var(--ms-bg) !important;
+    border-bottom: 1px solid var(--ms-border-light) !important;
+}
+
+/* Breadcrumb links */
+.o_control_panel .breadcrumb-item a {
+    color: var(--ms-brand-2) !important;
+}
+
+.o_control_panel .breadcrumb-item a:hover {
+    color: var(--ms-brand-1) !important;
+}
+
+/* Active breadcrumb */
+.o_control_panel .breadcrumb-item.active {
+    color: var(--ms-text) !important;
+    font-weight: 600 !important;
+}
+
+/* Search input */
+.o_control_panel .o_searchview {
+    border-color: var(--ms-border) !important;
+    border-radius: 8px !important;
+    background-color: var(--ms-bg-card) !important;
+}
+
+.o_control_panel .o_searchview:focus-within {
+    border-color: var(--ms-brand-2) !important;
+    box-shadow: 0 0 0 3px rgba(0, 125, 140, 0.1) !important;
+}
+
+/* Search facets (active filter chips) */
+.o_control_panel .o_searchview_facet {
+    background-color: #d9f2f4 !important;
+    border-color: var(--ms-brand-2) !important;
+    border-radius: 16px !important;
+}
+
+.o_control_panel .o_searchview_facet .o_facet_value {
+    color: var(--ms-brand-1) !important;
+    font-weight: 500 !important;
+}
+
+/* Pager buttons */
+.o_control_panel .o_cp_pager .btn:hover {
+    color: var(--ms-brand-1) !important;
+}
+
+/* View type switch buttons */
+.o_control_panel .o_cp_switch_buttons .btn.active {
+    color: var(--ms-brand-1) !important;
+}
+
+/* Filter menu buttons */
+.o_control_panel .o_filter_menu .dropdown-item.selected {
+    color: var(--ms-brand-1) !important;
+    font-weight: 600 !important;
+}
+
+
+/* ============================================================
+   8. BADGES & TAGS — Brand-colored
+   ============================================================ */
+
+/* All badges — slightly larger, better padding */
+.o_list_view .badge,
+.o_form_view .badge,
+.o_kanban_view .badge {
+    padding: 3px 10px !important;
+    border-radius: 12px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+}
+
+/* Badge primary */
+.badge.text-bg-primary {
+    background-color: var(--ms-brand-1) !important;
+}
+
+/* Badge success */
+.badge.text-bg-success {
+    background-color: var(--ms-success) !important;
+}
+
+/* Badge info */
+.badge.text-bg-info {
+    background-color: var(--ms-info) !important;
+}
+
+/* Badge warning */
+.badge.text-bg-warning {
+    background-color: var(--ms-warning) !important;
+    color: #fff !important;
+}
+
+/* Badge danger */
+.badge.text-bg-danger {
+    background-color: var(--ms-error) !important;
+}
+
+/* Decoration badges in list view (Odoo generates these for widget="badge") */
+.o_list_view .o_field_badge .badge.text-bg-info {
+    background-color: var(--ms-info-bg) !important;
+    color: var(--ms-info) !important;
+}
+
+.o_list_view .o_field_badge .badge.text-bg-success {
+    background-color: var(--ms-success-bg) !important;
+    color: var(--ms-success) !important;
+}
+
+.o_list_view .o_field_badge .badge.text-bg-warning {
+    background-color: var(--ms-warning-bg) !important;
+    color: var(--ms-warning) !important;
+}
+
+.o_list_view .o_field_badge .badge.text-bg-danger {
+    background-color: var(--ms-error-bg) !important;
+    color: var(--ms-error) !important;
+}
+
+
+/* ============================================================
+   9. LINKS & MISC
+   ============================================================ */
+
+/* Links in form fields */
+.o_form_view a:not(.btn):not(.nav-link) {
+    color: var(--ms-brand-2) !important;
+}
+
+.o_form_view a:not(.btn):not(.nav-link):hover {
+    color: var(--ms-brand-1) !important;
+}
+
+/* Checkbox accent (global) */
+.o_form_view input[type="checkbox"]:checked,
+.o_list_view input[type="checkbox"]:checked {
+    accent-color: var(--ms-brand-1) !important;
+}
+
+/* Selection highlight */
+::selection {
+    background-color: #d9f2f4;
+    color: var(--ms-text);
+}
+
+
+/* ============================================================
+   10. CHATTER — Messages thread
+   ============================================================ */
+
+.o_form_view .o-mail-Chatter .o-mail-Message-bubble {
+    border-color: var(--ms-border-light) !important;
+}
+
+.o_form_view .o-mail-Chatter .o-mail-Message-bubble:hover {
+    background-color: #f0f8f8 !important;
+}
+
+
+/* ============================================================
+   11. MODAL DIALOGS
+   ============================================================ */
+
+.modal-content {
+    border-radius: 12px !important;
+    border-color: var(--ms-border-light) !important;
+}
+
+.modal-content .modal-header {
+    border-bottom-color: var(--ms-border) !important;
+    background-color: #f5fafa !important;
+}
+
+.modal-content .modal-footer {
+    border-top-color: var(--ms-border) !important;
+}
+
+
+/* ============================================================
+   12. SCROLLBAR STYLING (webkit browsers)
+   ============================================================ */
+
+.o_form_view ::-webkit-scrollbar,
+.o_list_view ::-webkit-scrollbar,
+.ob-container ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.o_form_view ::-webkit-scrollbar-track,
+.o_list_view ::-webkit-scrollbar-track,
+.ob-container ::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.o_form_view ::-webkit-scrollbar-thumb,
+.o_list_view ::-webkit-scrollbar-thumb,
+.ob-container ::-webkit-scrollbar-thumb {
+    background: var(--ms-border);
+    border-radius: 3px;
+}
+
+.o_form_view ::-webkit-scrollbar-thumb:hover,
+.o_list_view ::-webkit-scrollbar-thumb:hover,
+.ob-container ::-webkit-scrollbar-thumb:hover {
+    background: var(--ms-brand-2);
+}
+
+
+/* ============================================================
+   13. UTILITY CLASSES — Reusable field-level styles
+   ============================================================ */
+
+/* Monospace font for FQDN / DN / technical fields */
+.ms-field-mono,
+.ms-field-mono input,
+.ms-field-mono textarea,
+.ms-field-mono .o_field_char_content,
+.ms-field-mono .o_readonly_modifier {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace !important;
+    font-size: 12px !important;
+    letter-spacing: -0.01em;
+}
+
+
+/* ============================================================
+   14. BOOLEAN TOGGLE — Mockup: teal toggles
+   ============================================================ */
+
+/* Boolean toggle — brand-colored when checked */
+.o_form_view .o_boolean_toggle .custom-control-input:checked ~ .custom-control-label::before,
+.o_form_view .o_field_boolean .form-check-input:checked,
+.o_form_view .form-check-input:checked,
+.o_list_view .form-check-input:checked,
+.o_form_view .o_field_boolean_toggle input:checked + label,
+.o_form_view input[type="checkbox"]:checked {
+    background-color: var(--ms-brand-2) !important;
+    border-color: var(--ms-brand-2) !important;
+    accent-color: var(--ms-brand-1) !important;
+}
+
+/* Toggle slider track — teal when on */
+.o_form_view .o_boolean_toggle .slider,
+.o_form_view .o_field_boolean_toggle .slider {
+    border-radius: 10px !important;
+}
+
+.o_form_view .o_boolean_toggle input:checked + .slider,
+.o_form_view .o_field_boolean_toggle input:checked + .slider {
+    background-color: var(--ms-brand-2) !important;
+}
+
+
+/* ============================================================
+   15. DROPDOWN MENUS — Filter/Group-by/Favorites
+   ============================================================ */
+
+.o_control_panel .dropdown-menu {
+    border-radius: 8px !important;
+    border-color: var(--ms-border) !important;
+    box-shadow: 0 4px 16px rgba(0, 60, 60, 0.1) !important;
+}
+
+.o_control_panel .dropdown-menu .dropdown-item:hover,
+.o_control_panel .dropdown-menu .dropdown-item:focus {
+    background-color: #e6f7f8 !important;
+    color: var(--ms-brand-1) !important;
+}
+
+.o_control_panel .dropdown-menu .dropdown-item.selected,
+.o_control_panel .dropdown-menu .dropdown-item.active {
+    background-color: #d9f2f4 !important;
+    color: var(--ms-brand-1) !important;
+    font-weight: 600 !important;
+}

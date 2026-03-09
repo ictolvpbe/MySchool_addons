@@ -54,6 +54,7 @@ class Org(models.Model):
     sec_group_fqdn_internal = fields.Char(string='Sec Groep FQDN Intern')
     sec_group_fqdn_external = fields.Char(string='Sec Groep FQDN Extern')
     com_group_name = fields.Char(string='Com Groep Naam')
+    com_group_email = fields.Char(string='Com Groep Email', size=200)
     sec_group_name = fields.Char(string='Sec Groep Naam')
 
     # Redundant

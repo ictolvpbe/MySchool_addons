@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_admin.Dashboard" owl="1">
+        <div class="db-container">
+            <!-- Loading -->
+            <t t-if="state.loading">
+                <div class="db-loading">
+                    <i class="fa fa-spinner fa-spin fa-2x"/>
+                    <p>Loading dashboard...</p>
+                </div>
+            </t>
+            <t t-else="">
+                <div class="db-page">
+                    <div class="db-page-title">Dashboard</div>
+
+                    <!-- ============================================ -->
+                    <!-- Hero: Organisation Manager CTA               -->
+                    <!-- ============================================ -->
+                    <div class="db-hero">
+                        <div class="db-hero-icon">
+                            <i class="fa fa-sitemap"/>
+                        </div>
+                        <div class="db-hero-text">
+                            <h2>Organisation Manager</h2>
+                            <p>Browse the full organizational hierarchy, manage persons, roles, and relations in one place.</p>
+                            <div class="db-hero-stats">
+                                <div class="db-hero-stat">
+                                    <strong><t t-esc="formatNumber(state.heroStats.organizations)"/></strong> organizations
+                                </div>
+                                <div class="db-hero-stat">
+                                    <strong><t t-esc="formatNumber(state.heroStats.persons)"/></strong> persons
+                                </div>
+                                <div class="db-hero-stat">
+                                    <strong><t t-esc="formatNumber(state.heroStats.roles)"/></strong> roles
+                                </div>
+                            </div>
+                        </div>
+                        <button class="db-hero-btn" t-on-click="openObjectBrowser">
+                            <i class="fa fa-sitemap"/> Open Organisation Manager
+                        </button>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- KPI Row                                      -->
+                    <!-- ============================================ -->
+                    <div class="db-kpi-row">
+                        <div class="db-kpi-card db-kpi-c1">
+                            <div class="db-kpi-label">Active Students</div>
+                            <div class="db-kpi-value"><t t-esc="formatNumber(state.kpis.active_students)"/></div>
+                            <div class="db-kpi-sub">enrolled this schoolyear</div>
+                        </div>
+                        <div class="db-kpi-card db-kpi-c2">
+                            <div class="db-kpi-label">Active Employees</div>
+                            <div class="db-kpi-value"><t t-esc="formatNumber(state.kpis.active_employees)"/></div>
+                            <div class="db-kpi-sub">active in system</div>
+                        </div>
+                        <div class="db-kpi-card db-kpi-c3">
+                            <div class="db-kpi-label">Organizations</div>
+                            <div class="db-kpi-value"><t t-esc="formatNumber(state.kpis.organizations)"/></div>
+                            <div class="db-kpi-sub"><t t-esc="state.kpis.classgroups || 0"/> classgroups</div>
+                        </div>
+                        <div class="db-kpi-card db-kpi-c4">
+                            <div class="db-kpi-label">Pending Tasks</div>
+                            <div class="db-kpi-value"><t t-esc="formatNumber(state.kpis.pending_tasks)"/></div>
+                            <div class="db-kpi-sub">
+                                <t t-if="state.kpis.error_tasks > 0">
+                                    <span class="db-kpi-down"><t t-esc="state.kpis.error_tasks"/> errors</span>
+                                </t>
+                                <t t-else="">all clear</t>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ============================================ -->
+                    <!-- Main grid: 2fr | 1fr                         -->
+                    <!-- ============================================ -->
+                    <div class="db-grid">
+                        <!-- LEFT column -->
+                        <div class="db-grid-left">
+                            <!-- Recent Backend Tasks -->
+                            <div class="db-card">
+                                <div class="db-card-header">
+                                    <span>Recent Backend Tasks</span>
+                                    <a class="db-card-link" t-on-click="openTasks">View all &#x2192;</a>
+                                </div>
+                                <table class="db-mini-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Task</th>
+                                            <th>Type</th>
+                                            <th>Status</th>
+                                            <th>Created</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-foreach="state.recentTasks" t-as="task" t-key="task.id">
+                                            <tr>
+                                                <td><t t-esc="task.name"/></td>
+                                                <td><span class="db-badge-status db-badge-neutral"><t t-esc="task.type"/></span></td>
+                                                <td><span t-att-class="statusBadgeClass(task.status)"><t t-esc="statusLabel(task.status)"/></span></td>
+                                                <td><t t-esc="task.created"/></td>
+                                            </tr>
+                                        </t>
+                                        <t t-if="!state.recentTasks.length">
+                                            <tr><td colspan="4" class="db-empty-cell">No recent tasks</td></tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- System Events -->
+                            <div class="db-card">
+                                <div class="db-card-header">
+                                    <span>System Events</span>
+                                    <a class="db-card-link" t-on-click="openEvents">View all &#x2192;</a>
+                                </div>
+                                <table class="db-mini-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Event</th>
+                                            <th>Severity</th>
+                                            <th>Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-foreach="state.systemEvents" t-as="ev" t-key="ev.id">
+                                            <tr>
+                                                <td><t t-esc="ev.name"/></td>
+                                                <td><span t-att-class="severityBadgeClass(ev.severity)"><t t-esc="severityLabel(ev.severity)"/></span></td>
+                                                <td><t t-esc="ev.time"/></td>
+                                            </tr>
+                                        </t>
+                                        <t t-if="!state.systemEvents.length">
+                                            <tr><td colspan="3" class="db-empty-cell">No recent events</td></tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT column -->
+                        <div class="db-grid-right">
+                            <!-- Quick Actions -->
+                            <div class="db-card">
+                                <div class="db-card-header">Quick Actions</div>
+                                <div class="db-card-body">
+                                    <div class="db-quick-actions">
+                                        <a class="db-qa-btn" t-on-click="openObjectBrowser">
+                                            <div class="db-qa-icon db-qa-c1"><i class="fa fa-sitemap"/></div>
+                                            <div class="db-qa-text">
+                                                <strong>Org Manager</strong>
+                                                <span>Browse hierarchy</span>
+                                            </div>
+                                        </a>
+                                        <a class="db-qa-btn" t-on-click="openPersons">
+                                            <div class="db-qa-icon db-qa-c2"><i class="fa fa-user-plus"/></div>
+                                            <div class="db-qa-text">
+                                                <strong>Persons</strong>
+                                                <span>Employees &amp; students</span>
+                                            </div>
+                                        </a>
+                                        <a class="db-qa-btn" t-on-click="openPendingTasks">
+                                            <div class="db-qa-icon db-qa-c3"><i class="fa fa-tasks"/></div>
+                                            <div class="db-qa-text">
+                                                <strong>Pending Tasks</strong>
+                                                <span><t t-esc="state.kpis.pending_tasks || 0"/> pending</span>
+                                            </div>
+                                        </a>
+                                        <a class="db-qa-btn" t-on-click="openEvents">
+                                            <div class="db-qa-icon db-qa-c4"><i class="fa fa-bell"/></div>
+                                            <div class="db-qa-text">
+                                                <strong>System Events</strong>
+                                                <span>View all events</span>
+                                            </div>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Recent Activity -->
+                            <div class="db-card">
+                                <div class="db-card-header">Recent Activity</div>
+                                <div class="db-card-body">
+                                    <ul class="db-timeline">
+                                        <t t-foreach="state.recentActivity" t-as="item" t-key="item_index">
+                                            <li t-att-class="activityClass(item.status)">
+                                                <t t-esc="item.text"/>
+                                                <br/>
+                                                <span class="db-tl-time"><t t-esc="item.time"/></span>
+                                            </li>
+                                        </t>
+                                        <t t-if="!state.recentActivity.length">
+                                            <li class="db-tl-item db-tl-info">No recent activity</li>
+                                        </t>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

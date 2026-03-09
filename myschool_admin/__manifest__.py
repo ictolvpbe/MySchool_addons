@@ -44,6 +44,7 @@
         'views/betask_type_views.xml',
         'views/informat_service_config_views.xml',
         # 'views/log_viewer_views.xml',
+        'views/dashboard_views.xml',
         'views/object_browser_views.xml',
         'views/ldap_server_config_views.xml',
         'views/sync_test_runner_views.xml',
@@ -63,7 +64,11 @@
     ],
     'assets': {
         'web.assets_backend': [
+            'myschool_admin/static/src/css/myschool_theme.css',
+            'myschool_admin/static/src/css/dashboard.css',
             'myschool_admin/static/src/css/object_browser.css',
+            'myschool_admin/static/src/js/dashboard.js',
+            'myschool_admin/static/src/xml/dashboard.xml',
             'myschool_admin/static/src/js/object_browser.js',
             'myschool_admin/static/src/xml/object_browser.xml',
             # 'myschool_admin/static/src/js/log_viewer.js',

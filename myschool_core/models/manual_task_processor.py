@@ -365,8 +365,10 @@ class ManualTaskProcessor(models.AbstractModel):
                 'is_active': True,
             }
             for key in ('inst_nr', 'ou_fqdn_internal', 'ou_fqdn_external',
-                        'com_group_name', 'com_group_fqdn_internal', 'com_group_fqdn_external',
+                        'com_group_name', 'com_group_email',
+                        'com_group_fqdn_internal', 'com_group_fqdn_external',
                         'sec_group_name', 'sec_group_fqdn_internal', 'sec_group_fqdn_external',
+                        'domain_internal', 'domain_external',
                         'name_tree', 'has_ou', 'has_role', 'has_comgroup', 'has_secgroup'):
                 if data.get(key) is not None:
                     org_vals[key] = data[key]
@@ -411,6 +413,35 @@ class ManualTaskProcessor(models.AbstractModel):
             'is_active': True,
         })
         changes.append(f"Created ORG-TREE relation: {child_org.name} under {parent_org.name}")
+
+        # If PERSONGROUP, create PG-P relations for members
+        org_type_name = data.get('org_type_name')
+        if org_type_name == 'PERSONGROUP' and data.get('member_ids'):
+            pg_p_type = self._get_or_create_proprelation_type('PG-P', 'Persongroup-Person membership')
+            for person_id in data['member_ids']:
+                person = self.env['myschool.person'].browse(person_id).exists()
+                if person:
+                    existing = PropRelation.search([
+                        ('proprelation_type_id', '=', pg_p_type.id),
+                        ('id_org', '=', child_org.id),
+                        ('id_person', '=', person_id),
+                        ('is_active', '=', True),
+                    ], limit=1)
+                    if not existing:
+                        rel_name = _build_proprelation_name('PG-P', id_org=child_org, id_person=person)
+                        PropRelation.create({
+                            'name': rel_name,
+                            'proprelation_type_id': pg_p_type.id,
+                            'id_org': child_org.id,
+                            'id_person': person_id,
+                            'is_active': True,
+                        })
+                        changes.append(f"Added member {person.name} to persongroup")
+
+        # Auto-sync persongroup if org has has_comgroup
+        if child_org.has_comgroup:
+            self._sync_org_persongroup(child_org)
+            changes.append(f"Synced persongroup for {child_org.name}")
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -613,20 +644,21 @@ class ManualTaskProcessor(models.AbstractModel):
                 rels.write({'is_active': False})
                 changes.append(f"Deactivated {len(rels)} proprelation(s) by ID")
 
-        # Mode 2: person + org (deactivate PERSON-TREE)
+        # Mode 2: person + org (deactivate by type or default PERSON-TREE)
         person_id = data.get('person_id')
         org_id = data.get('org_id')
+        rel_type_name = data.get('type', 'PERSON-TREE')
         if person_id and org_id:
-            pt_type = self._get_or_create_proprelation_type('PERSON-TREE')
+            rel_type = self._get_or_create_proprelation_type(rel_type_name)
             rels = PropRelation.search([
                 ('id_person', '=', person_id),
                 ('id_org', '=', org_id),
-                ('proprelation_type_id', '=', pt_type.id),
+                ('proprelation_type_id', '=', rel_type.id),
                 ('is_active', '=', True),
             ])
             if rels:
                 rels.write({'is_active': False})
-                changes.append(f"Deactivated {len(rels)} PERSON-TREE relation(s) for person {person_id} in org {org_id}")
+                changes.append(f"Deactivated {len(rels)} {rel_type_name} relation(s) for person {person_id} in org {org_id}")
 
         if not changes:
             return {'success': False, 'error': 'No proprelations found to deactivate'}

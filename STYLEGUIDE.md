@@ -1,91 +1,63 @@
 # MySchool Design System — Style Guide
 
-> Reference document for styling all MySchool Odoo modules.
-> Based on the OLVP brand identity and modern UI best practices.
+> Reference for styling all MySchool Odoo 19 modules.
+> Based on OLVP brand identity, HTML mockups (01–06), and `myschool_theme.css`.
 
 ---
 
 ## 1. Brand Color Palette
 
-| Name         | Variable     | Hex       | Usage                                              |
-|--------------|-------------|-----------|-----------------------------------------------------|
-| Hoofdblauw   | `--ms-brand-1` | `#007d8c` | Topbar, primary buttons, active tabs, main accents  |
-| 2e blauw     | `--ms-brand-2` | `#0094A4` | Hover accents, links, focus rings, secondary icons  |
-| 3e blauw     | `--ms-brand-3` | `#00ACBF` | Tertiary accents, gradient stops                    |
-| 4e blauw     | `--ms-brand-4` | `#00C4D9` | Highlights, annotation accents, active underlines   |
-| Zwart        | `--ms-black`   | `#252525` | Headings, card titles, dark backgrounds             |
-| Grijs        | `--ms-gray`    | `#9B9B9B` | Labels, captions, muted text, counts                |
-| Text kleur   | `--ms-text`    | `#003333` | Primary body text                                   |
+| Name         | Variable         | Hex       | Usage                                              |
+|--------------|-----------------|-----------|-----------------------------------------------------|
+| Hoofdblauw   | `--ms-brand-1`  | `#007d8c` | Topbar, primary buttons, active tabs, stat numbers  |
+| 2e blauw     | `--ms-brand-2`  | `#0094A4` | Hover accents, links, focus rings, toggle on-state  |
+| 3e blauw     | `--ms-brand-3`  | `#00ACBF` | Tertiary accents, gradient stops                    |
+| 4e blauw     | `--ms-brand-4`  | `#00C4D9` | Highlights, annotation accents, active underlines   |
+| Zwart        | `--ms-black`    | `#252525` | Headings, card titles                               |
+| Grijs        | `--ms-gray`     | `#9B9B9B` | Group titles, stat labels, muted text               |
+| Text         | `--ms-text`     | `#003333` | Primary body text, field values                     |
+| Text muted   | `--ms-text-muted` | `#5a7a7a` | Field labels, subtitles, secondary text           |
 
-### Derived Colors
+### Surface Colors
 
-| Name           | Variable           | Hex         | Usage                                    |
-|----------------|--------------------|------------|-------------------------------------------|
-| Text muted     | `--ms-text-muted`  | `#5a7a7a`  | Secondary text, field labels              |
-| Background     | `--ms-bg`          | `#f0f5f5`  | Page background                           |
-| Card bg        | `--ms-bg-card`     | `#ffffff`  | Card/panel surfaces                       |
-| Border         | `--ms-border`      | `#d6e4e4`  | Standard borders                          |
-| Border light   | `--ms-border-light`| `#e8f0f0`  | Subtle borders, dividers                  |
-| Tint 1         | —                  | `#d9f2f4`  | Icon backgrounds (c1), active tree nodes  |
-| Tint 2         | —                  | `#d1f0f3`  | Icon backgrounds (c2)                     |
-| Tint 3         | —                  | `#c9eef2`  | Icon backgrounds (c3)                     |
-| Tint 4         | —                  | `#c1ecf0`  | Icon backgrounds (c4)                     |
-| Hover bg       | —                  | `#e6f7f8`  | Button/card hover backgrounds             |
-| Row hover      | —                  | `#f0f8f8`  | Table row / tree node hover               |
-| Surface        | —                  | `#f5fafa`  | Readonly fields, panel headers, status bars|
+| Name           | Variable / Hex      | Usage                                              |
+|----------------|--------------------|----------------------------------------------------|
+| Page bg        | `--ms-bg` `#f0f5f5`      | Page background, content area                |
+| Card bg        | `--ms-bg-card` `#ffffff`  | Form sheets, table containers, cards         |
+| Border         | `--ms-border` `#d6e4e4`   | Standard borders, separators                 |
+| Border light   | `--ms-border-light` `#e8f0f0` | Subtle dividers, group title underlines  |
+| Surface        | `#f5fafa`                 | Readonly fields, status bars, table headers  |
+| Hover bg       | `#e6f7f8`                 | Button/card hover                            |
+| Row hover      | `#f0f8f8`                 | Table row hover                              |
+| Selection bg   | `#d9f2f4`                 | Selected rows, facet chips, icon tints       |
 
 ### Semantic Colors
 
-| Meaning  | Foreground  | Background  | Usage                                    |
-|----------|------------|------------|-------------------------------------------|
-| Success  | `#0d9488`  | `#ccfbf1`  | Active status, completed, students        |
-| Error    | `#dc2626`  | `#fee2e2`  | Failures, danger zones, delete actions    |
-| Warning  | `#d97706`  | `#fef3c7`  | Destructive ops, caution, tree badges     |
-| Info     | `#0284c7`  | `#e0f2fe`  | Employees, informational badges           |
-
-### Brand Gradient
-
-```css
-background: linear-gradient(135deg, var(--ms-brand-1) 0%, var(--ms-brand-2) 50%, var(--ms-brand-3) 100%);
-```
-
-Use for hero sections, promotional banners, and dashboard highlights.
+| Meaning  | Foreground (`--ms-*`) | Background (`--ms-*-bg`) | Odoo decoration | Usage                     |
+|----------|-----------------------|--------------------------|------------------|--------------------------|
+| Success  | `#0d9488`             | `#ccfbf1`                | `decoration-success` | Active, completed, STUDENT |
+| Error    | `#dc2626`             | `#fee2e2`                | `decoration-danger`  | Failures, inactive ribbon  |
+| Warning  | `#d97706`             | `#fef3c7`                | `decoration-warning` | Caution, BRSO, PERSONGROUP |
+| Info     | `#0284c7`             | `#e0f2fe`                | `decoration-info`    | EMPLOYEE, PPSBR, SCHOOL    |
 
 ---
 
-## 2. CSS Custom Properties Block
+## 2. CSS Custom Properties
 
-Copy this into any module's root CSS to get the full palette:
+Copy into any module's root CSS:
 
 ```css
 :root {
-  /* Brand */
-  --ms-brand-1: #007d8c;
-  --ms-brand-2: #0094A4;
-  --ms-brand-3: #00ACBF;
-  --ms-brand-4: #00C4D9;
-
-  /* Neutrals */
-  --ms-black: #252525;
-  --ms-gray: #9B9B9B;
-  --ms-text: #003333;
-  --ms-text-muted: #5a7a7a;
-
-  /* Surfaces */
-  --ms-bg: #f0f5f5;
-  --ms-bg-card: #ffffff;
-  --ms-border: #d6e4e4;
-  --ms-border-light: #e8f0f0;
-
-  /* Semantic */
-  --ms-success: #0d9488;
-  --ms-success-bg: #ccfbf1;
-  --ms-error: #dc2626;
-  --ms-error-bg: #fee2e2;
-  --ms-warning: #d97706;
-  --ms-warning-bg: #fef3c7;
-  --ms-info: #0284c7;
-  --ms-info-bg: #e0f2fe;
+  --ms-brand-1: #007d8c;  --ms-brand-2: #0094A4;
+  --ms-brand-3: #00ACBF;  --ms-brand-4: #00C4D9;
+  --ms-black: #252525;    --ms-gray: #9B9B9B;
+  --ms-text: #003333;     --ms-text-muted: #5a7a7a;
+  --ms-bg: #f0f5f5;       --ms-bg-card: #ffffff;
+  --ms-border: #d6e4e4;   --ms-border-light: #e8f0f0;
+  --ms-success: #0d9488;  --ms-success-bg: #ccfbf1;
+  --ms-error: #dc2626;    --ms-error-bg: #fee2e2;
+  --ms-warning: #d97706;  --ms-warning-bg: #fef3c7;
+  --ms-info: #0284c7;     --ms-info-bg: #e0f2fe;
 }
 ```
 
@@ -93,340 +65,425 @@ Copy this into any module's root CSS to get the full palette:
 
 ## 3. Typography
 
-### Font Stack
+| Level           | Size   | Weight | Color           | Usage                               |
+|-----------------|--------|--------|-----------------|-------------------------------------|
+| Form title (h1) | 20px   | 700    | `--ms-black`    | `oe_title h1` — record name        |
+| Subtitle (h3)   | 13px   | 400    | `--ms-text-muted` | `oe_title h3` — type, ref, tree  |
+| Group title     | 11px   | 600    | `--ms-gray`     | Uppercase, letter-spacing 0.8px     |
+| Stat number     | 22px   | 700    | `--ms-brand-1`  | `oe_stat_button .o_stat_value`      |
+| Stat label      | 11px   | 600    | `--ms-gray`     | Uppercase, letter-spacing 0.5px     |
+| Field label     | 13px   | 400    | `--ms-text-muted` | Form field labels                 |
+| Field value     | 13px   | 400    | `--ms-text`     | Form field inputs                   |
+| Table header    | 11px   | 600    | `--ms-gray`     | Uppercase, letter-spacing 0.6px     |
+| Table body      | 13px   | 400    | `--ms-text`     | Table cells                         |
+| Badge           | 11px   | 600    | varies          | Type/status badges                  |
+| Monospace       | 12px   | 400    | `--ms-text`     | FQDNs, DNs — `ms-field-mono` class |
+
+### Monospace font stack
 
 ```css
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-```
-
-Monospace (for FQDNs, code, technical values):
-
-```css
-font-family: 'SF Mono', 'Fira Code', monospace;
-```
-
-### Scale
-
-| Level           | Size   | Weight | Color           | Usage                         |
-|-----------------|--------|--------|-----------------|-------------------------------|
-| Page title      | 22px   | 700    | `--ms-black`    | Top-level headings            |
-| Card/form title | 20px   | 700    | `--ms-black`    | Form headers, card titles     |
-| Section header  | 16px   | 600    | `--ms-black`    | Panel titles, section names   |
-| Body large      | 14px   | 400    | `--ms-text`     | Descriptions, main content    |
-| Body standard   | 13px   | 400    | `--ms-text`     | Default text, table cells     |
-| Body small      | 12px   | 400    | `--ms-text`     | Metadata, secondary info      |
-| Label           | 11px   | 600    | `--ms-gray`     | Uppercase labels, badge text  |
-| Mini            | 10px   | 600    | varies          | Tiny badges, tree badges      |
-
-### Labels (uppercase)
-
-```css
-font-size: 11px;
-text-transform: uppercase;
-letter-spacing: 0.8px;
-color: var(--ms-gray);
-font-weight: 600;
+font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
 ```
 
 ---
 
-## 4. Spacing
+## 4. Spacing & Borders
 
-Base unit: **4px**. Use multiples for consistency.
-
-| Token   | Value  | Usage                                    |
-|---------|--------|------------------------------------------|
-| xs      | 4px    | Tight internal gaps                      |
-| sm      | 8px    | Badge padding, small gaps                |
-| md      | 12px   | Card internal padding, field spacing     |
-| lg      | 16px   | Grid gaps, section margins               |
-| xl      | 20px   | Panel padding, major spacing             |
-| 2xl     | 24px   | Page padding, form body padding          |
-| 3xl     | 28px   | Form body horizontal padding             |
-| 4xl     | 32px   | Section bottom margins                   |
-
-### Common Patterns
-
-- **Page container**: `max-width: 1100px; margin: 0 auto; padding: 24px;`
-- **Card padding**: `padding: 20px 28px;` (header) or `padding: 24px 28px;` (body)
-- **Field row**: `margin-bottom: 10px;`
-- **Field group**: `margin-bottom: 24px;`
-- **Section gap**: `margin-bottom: 32px;`
-- **Grid column gap**: `40px` (form two-column layout)
+| Token | Value | Radius | Shadow |
+|-------|-------|--------|--------|
+| Form sheet | — | 12px | `0 1px 4px rgba(0,60,60,.07)` + `1px solid --ms-border-light` |
+| List table | — | 10px | `0 1px 3px rgba(0,60,60,.06)` + `1px solid --ms-border-light` |
+| Buttons | — | 6px | — |
+| Badges | — | 12px (pill) | — |
+| Search facets | — | 16px (pill) | — |
+| Modals | — | 12px | — |
+| Inputs | — | 6px | Focus: `0 0 0 3px rgba(0,125,140,.1)` |
 
 ---
 
-## 5. Borders & Shadows
+## 5. Form View — Odoo-to-Mockup Mapping
 
-### Border Radius
+This section maps each mockup element to the Odoo component and CSS selector that styles it.
 
-| Size     | Value  | Usage                            |
-|----------|--------|----------------------------------|
-| Small    | 6px    | Buttons, inputs, badges          |
-| Medium   | 8px    | Info cards, search boxes         |
-| Large    | 10px   | Cards, panels                    |
-| XL       | 12px   | Form cards, icon containers      |
-| Pill     | 16px   | Chips, filter pills              |
-| Circle   | 50%    | Avatars, status dots             |
+### 5.1 Form Card (`.o_form_sheet`)
 
-### Shadows
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `form-card` container | `<sheet>` | `.o_form_view .o_form_sheet` | radius 12px, shadow, border |
+| Page background | Sheet bg | `.o_form_view .o_form_sheet_bg` | `--ms-bg` (#f0f5f5) |
 
-| Name      | Value                                  | Usage                     |
-|-----------|----------------------------------------|---------------------------|
-| Subtle    | `0 1px 3px rgba(0,60,60,.06)`         | Standard cards            |
-| Card      | `0 1px 4px rgba(0,60,60,.07)`         | Form cards                |
-| Hover     | `0 2px 8px rgba(0,125,140,.08)`       | Card hover states         |
-| Elevated  | `0 4px 20px rgba(0,125,140,.2)`       | Hero sections, dropdowns  |
-| Button    | `0 4px 12px rgba(0,0,0,.15)`          | Prominent button hover    |
+### 5.2 Form Header & Title
 
-### Border Colors
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `form-header h1` | `oe_title h1` | `.o_form_view .oe_title h1` | 20px, bold, `--ms-black` |
+| `form-header .subtitle` | `oe_title h3` | `.o_form_view .oe_title h3` | 13px, `--ms-text-muted` |
+| `form-header-actions` | `<header>` buttons | `.o_form_view .o_form_statusbar .btn` | 6px radius, 13px |
+| `form-avatar` | Not available in standard Odoo | — | Requires custom OWL widget |
 
-- Default: `var(--ms-border)` — `#d6e4e4`
-- Light: `var(--ms-border-light)` — `#e8f0f0`
-- Hover: `var(--ms-brand-2)` — `#0094A4`
-- Danger: `#fca5a5`
-- Warning: `#fbbf24`
+**XML pattern:**
+```xml
+<div class="oe_title">
+    <h1><field name="name"/></h1>
+    <h3 class="text-muted">
+        <field name="type_id" class="oe_inline" options="{'no_create': True}"/> |
+        <field name="ref_field" class="oe_inline"/>
+    </h3>
+</div>
+```
+
+### 5.3 Status Bar
+
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `status-bar` | `<header>` | `.o_form_view .o_form_statusbar` | bg `#f5fafa`, border bottom |
+| `status-dot.active` | Not standard in Odoo | — | Use `widget="boolean_toggle"` for is_active |
+| `badge-type` | `widget="badge"` on type field | `.badge.text-bg-*` | Pill badges with semantic colors |
+
+### 5.4 Stat Buttons
+
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `stat-btn` | `oe_stat_button` | `.oe_stat_button` | border `--ms-border-light`, hover `#e6f7f8` |
+| `stat-number` | `widget="statinfo"` value | `.oe_stat_button .o_stat_value` | 22px, bold, `--ms-brand-1` |
+| `stat-label` | `widget="statinfo"` label | `.oe_stat_button .o_stat_text` | 11px, uppercase, `--ms-gray` |
+
+**XML pattern:**
+```xml
+<div class="oe_button_box" name="button_box">
+    <button name="action_view_relations" type="object"
+            class="oe_stat_button" icon="fa-link">
+        <field name="relation_count" widget="statinfo" string="Relations"/>
+    </button>
+</div>
+```
+
+### 5.5 Tabs
+
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `.tab` | `nav-link` | `.o_form_view .o_notebook .nav-link` | 13px, `--ms-text-muted` |
+| `.tab.active` | `nav-link.active` | `.o_form_view .o_notebook .nav-link.active` | `--ms-brand-1`, 2px bottom border |
+| `.tab:hover` | `nav-link:hover` | `.o_form_view .o_notebook .nav-link:hover` | bg `#f5fafa` |
+
+### 5.6 Field Groups
+
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `field-group-title` | `<group string="Title">` | `.o_form_view .o_inner_group .o_group_header` | 11px, uppercase, `--ms-gray`, bottom border `--ms-border-light` |
+| `field-grid` (2-col) | `<group><group>...<group>` | `.o_form_view .o_group` | Built-in two-column |
+| `field-label` | Form label | `.o_form_view .o_form_label` | 13px, `--ms-text-muted` |
+| `field-value` | Input field | `.o_form_view .o_field_widget .o_input` | 13px, border `--ms-border`, radius 6px |
+| `field-value.readonly` | Readonly field | `.o_form_view .o_field_widget.o_readonly_modifier` | bg `#f5fafa`, border `--ms-border-light`, color `--ms-text-muted` |
+| `field-value.mono` | `class="ms-field-mono"` | `.ms-field-mono` | Monospace 12px |
+
+### 5.7 Inactive Ribbon
+
+| Mockup element | Odoo element | CSS |
+|----------------|-------------|-----|
+| Danger ribbon  | `web_ribbon` | `bg_color="text-bg-danger"`, bg `--ms-error` |
+
+**XML pattern:**
+```xml
+<widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="is_active"/>
+```
+
+### 5.8 Boolean Toggles
+
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| Teal toggle (on) | `widget="boolean_toggle"` | `.form-check-input:checked` | bg/border `--ms-brand-2` |
 
 ---
 
-## 6. Component Patterns
+## 6. List View — Odoo-to-Mockup Mapping
 
-### Buttons
+### 6.1 Table Container
 
-**Default button:**
-```css
-padding: 8px 16px;
-border-radius: 6px;
-border: 1px solid var(--ms-border);
-background: #fff;
-font-size: 13px;
-font-weight: 500;
-cursor: pointer;
-transition: .15s;
-color: var(--ms-text);
-display: flex; align-items: center; gap: 6px;
-```
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `table-card` | List renderer | `.o_list_view .o_list_renderer` | bg white, radius 10px, shadow, border |
+| `table` | List table | `.o_list_view .o_list_table` | font-size 13px, radius 10px |
 
-**Hover:** `background: #e6f7f8; border-color: var(--ms-brand-2);`
+### 6.2 Table Header
 
-**Primary variant:** `background: var(--ms-brand-1); color: #fff; border-color: var(--ms-brand-1);`
-**Primary hover:** `background: #006b78;`
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `thead th` | Table header cells | `.o_list_view .o_list_table thead th` | 11px, uppercase, letter-spacing 0.6px, `--ms-gray`, bg `#f5fafa`, padding 12px 14px |
 
-**Danger variant:** `color: var(--ms-error); border-color: #fca5a5;`
-**Danger hover:** `background: #fff5f5;`
+### 6.3 Table Rows
 
-### Cards
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `tbody td` | Data cells | `.o_list_view .o_list_table tbody td` | padding 11px 14px, border `--ms-border-light` |
+| Row hover | Hover state | `.o_data_row:hover > td` | bg `#f0f8f8` |
+| Selected row | Selection | `.o_data_row_selected > td` | bg `#d9f2f4` |
+| Inactive row | `decoration-muted` | `.o_data_row.text-muted td` | opacity 0.5 |
 
-```css
-background: var(--ms-bg-card);
-border: 1px solid var(--ms-border-light);
-border-radius: 10px;
-box-shadow: 0 1px 3px rgba(0,60,60,.06);
-```
+### 6.4 Badges in Lists
 
-**Hover (interactive cards):** `border-color: var(--ms-brand-2); box-shadow: 0 2px 8px rgba(0,125,140,.08);`
+| Mockup badge | Odoo widget | CSS selector | Styling |
+|-------------|-------------|--------------|---------|
+| `badge-employee` (blue) | `decoration-info` | `.o_field_badge .badge.text-bg-info` | bg `--ms-info-bg`, color `--ms-info` |
+| `badge-student` (green) | `decoration-success` | `.o_field_badge .badge.text-bg-success` | bg `--ms-success-bg`, color `--ms-success` |
+| `badge-warning` (amber) | `decoration-warning` | `.o_field_badge .badge.text-bg-warning` | bg `--ms-warning-bg`, color `--ms-warning` |
 
-### Badges
+All badges: `padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;`
 
-```css
-padding: 2px 10px;
-border-radius: 12px;
-font-size: 11px;
-font-weight: 600;
-```
+### 6.5 Search & Filters
 
-Variant backgrounds: use semantic color pairs (e.g., `background: var(--ms-success-bg); color: var(--ms-success);`).
-
-### Chips (filter pills)
-
-```css
-padding: 5px 14px;
-border-radius: 16px;
-font-size: 12px;
-font-weight: 500;
-border: 1px solid var(--ms-border);
-background: #fff;
-color: var(--ms-text-muted);
-```
-
-**Active:** `background: var(--ms-brand-1); color: #fff; border-color: var(--ms-brand-1);`
-
-### Tabs
-
-```css
-/* Container */
-display: flex; gap: 0;
-padding: 0 28px;
-border-bottom: 1px solid var(--ms-border);
-
-/* Tab item */
-padding: 12px 20px;
-font-size: 13px;
-color: var(--ms-gray);
-border-bottom: 2px solid transparent;
-font-weight: 500;
-```
-
-**Active tab:** `color: var(--ms-brand-1); border-bottom-color: var(--ms-brand-1); font-weight: 600;`
-
-### Tables
-
-```css
-/* Header cells */
-padding: 12px 14px;
-font-size: 11px;
-text-transform: uppercase;
-letter-spacing: .6px;
-color: var(--ms-gray);
-background: #f5fafa;
-font-weight: 600;
-border-bottom: 1px solid var(--ms-border);
-
-/* Body cells */
-padding: 11px 14px;
-border-bottom: 1px solid var(--ms-border-light);
-
-/* Row hover */
-background: #f0f8f8;
-```
-
-### Search Inputs
-
-```css
-display: flex; align-items: center; gap: 8px;
-padding: 7px 14px;
-border: 1px solid var(--ms-border);
-border-radius: 8px;
-background: #fff;
-```
-
-**Focus:** `border-color: var(--ms-brand-2); box-shadow: 0 0 0 3px rgba(0,125,140,.1);`
-
-### Avatars
-
-| Size  | Dimensions | Font | Usage        |
-|-------|-----------|------|--------------|
-| Large | 56×56px   | 20px | Form headers |
-| Medium| 32×32px   | 11px | Member lists |
-| Small | 30×30px   | 11px | Table rows   |
-| Tiny  | 28×28px   | 12px | Topbar       |
-
-All: `border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600;`
-
-### Icon Containers
-
-```css
-/* Standard */
-width: 40px; height: 40px;
-border-radius: 10px;
-display: flex; align-items: center; justify-content: center;
-font-size: 18px;
-
-/* Background tints (c1–c4 gradient): */
-.c1 { background: #d9f2f4; color: var(--ms-brand-1); }
-.c2 { background: #d1f0f3; color: var(--ms-brand-2); }
-.c3 { background: #c9eef2; color: var(--ms-brand-3); }
-.c4 { background: #c1ecf0; color: var(--ms-brand-4); }
-```
-
-### Toggle Switches
-
-```css
-width: 36px; height: 20px;
-border-radius: 10px;
-background: var(--ms-brand-2);
-position: relative; cursor: pointer;
-```
-Thumb: `::after` pseudo-element, 16×16px white circle.
-
-### Status Dots
-
-```css
-width: 8px; height: 8px;
-border-radius: 50%;
-display: inline-block;
-```
-
-Active: `background: var(--ms-success);`
-Inactive: `background: var(--ms-border);`
+| Mockup element | Odoo element | CSS selector | Styling |
+|----------------|-------------|--------------|---------|
+| `search-box` | Search view | `.o_control_panel .o_searchview` | border `--ms-border`, radius 8px, focus ring teal |
+| `chip.active` | Facet chip | `.o_searchview_facet` | bg `#d9f2f4`, border `--ms-brand-2`, radius 16px |
 
 ---
 
-## 7. Interactive States
+## 7. Odoo XML View Patterns
 
-| State    | Pattern                                                      |
-|----------|--------------------------------------------------------------|
+### 7.1 List View
+
+```xml
+<list decoration-muted="not is_active"
+      default_order="name">
+    <field name="name" string="Person"/>
+    <!-- Type badges with color decorations -->
+    <field name="person_type_id" widget="badge"
+           decoration-info="person_type_id.name == 'EMPLOYEE'"
+           decoration-success="person_type_id.name == 'STUDENT'"/>
+    <field name="sap_ref" optional="show"/>
+    <field name="tree_org_id" string="Organization" optional="show"/>
+    <field name="email_cloud" optional="show"/>
+    <field name="is_active" widget="boolean"/>
+</list>
+```
+
+**Checklist:**
+- [ ] `decoration-muted="not is_active"` on `<list>`
+- [ ] `widget="badge"` with `decoration-*` on type/category fields
+- [ ] `widget="boolean"` on boolean columns
+- [ ] `optional="show"` / `optional="hide"` on secondary columns
+- [ ] `default_order` for logical sorting
+
+### 7.2 Form View
+
+```xml
+<form string="Title">
+    <header>
+        <button name="action_..." string="Action" type="object"
+                class="btn-secondary" icon="fa-refresh"/>
+    </header>
+    <sheet>
+        <div class="oe_button_box" name="button_box">
+            <button name="action_view_..." type="object"
+                    class="oe_stat_button" icon="fa-link">
+                <field name="count_field" widget="statinfo" string="Label"/>
+            </button>
+        </div>
+
+        <widget name="web_ribbon" title="Inactive"
+                bg_color="text-bg-danger" invisible="is_active"/>
+
+        <div class="oe_title">
+            <h1><field name="name"/></h1>
+            <h3 class="text-muted">
+                <field name="type_id" class="oe_inline"
+                       options="{'no_create': True}"/>
+            </h3>
+        </div>
+
+        <group>
+            <group string="Status &amp; Type">
+                <field name="type_id"/>
+                <field name="is_active" widget="boolean_toggle"/>
+            </group>
+            <group string="References">
+                <field name="ref_field"/>
+            </group>
+        </group>
+
+        <notebook>
+            <page string="Overview" name="overview">
+                <group>
+                    <group string="Identity">
+                        <field name="name"/>
+                    </group>
+                    <group string="References">
+                        <field name="sap_ref"/>
+                    </group>
+                </group>
+            </page>
+            <page string="FQDN" name="fqdn">
+                <field name="fqdn_field" class="ms-field-mono"/>
+            </page>
+            <page string="Relations" name="relations">
+                <field name="relation_ids" readonly="1">
+                    <list decoration-muted="not is_active">
+                        <field name="name"/>
+                        <field name="type_id" widget="badge"
+                               decoration-info="type_id.name == 'PPSBR'"
+                               decoration-success="type_id.name == 'PERSON-TREE'"
+                               decoration-warning="type_id.name == 'BRSO'"/>
+                        <field name="is_active" widget="boolean"/>
+                    </list>
+                </field>
+            </page>
+        </notebook>
+    </sheet>
+</form>
+```
+
+**Checklist:**
+- [ ] `<header>` with action buttons (icon + class)
+- [ ] `<div class="oe_button_box">` with stat buttons
+- [ ] `<widget name="web_ribbon" ... bg_color="text-bg-danger" invisible="is_active"/>`
+- [ ] `<div class="oe_title"><h1>` + optional `<h3 class="text-muted">`
+- [ ] `widget="boolean_toggle"` on `is_active`
+- [ ] `class="ms-field-mono"` on FQDN/DN fields
+- [ ] Group titles in English: `<group string="Identity">`
+- [ ] Icons on header buttons: `icon="fa-refresh"`
+- [ ] Relations tab with embedded `<list>` using badges and decoration-muted
+
+### 7.3 Search View
+
+```xml
+<search string="Search">
+    <field name="name" string="Name / SAP / Email"
+           filter_domain="['|','|',
+               ('name', 'ilike', self),
+               ('sap_ref', 'ilike', self),
+               ('email_cloud', 'ilike', self)]"/>
+    <field name="type_id"/>
+    <separator/>
+    <filter string="Active" name="active"
+            domain="[('is_active', '=', True)]"/>
+    <filter string="Inactive" name="inactive"
+            domain="[('is_active', '=', False)]"/>
+    <separator/>
+    <filter string="Type A" name="type_a"
+            domain="[('type_id.name', '=', 'TYPE_A')]"/>
+</search>
+```
+
+**Checklist:**
+- [ ] Combined `filter_domain` on primary search field
+- [ ] Active/Inactive filter pair
+- [ ] `<separator/>` between filter groups
+- [ ] No `<group>` elements (Odoo 19 bug)
+
+### 7.4 Actions
+
+```xml
+<record id="action_entity" model="ir.actions.act_window">
+    <field name="name">Entities</field>
+    <field name="res_model">myschool.entity</field>
+    <field name="view_mode">list,form</field>
+    <field name="context">{'search_default_active': 1}</field>
+</record>
+```
+
+- Always `list,form` (NOT `tree,form`)
+- Always `{'search_default_active': 1}` to auto-filter active records
+
+---
+
+## 8. Entity Color Coding
+
+| Entity / Type    | `decoration-*`    | Badge style (list)          |
+|-----------------|-------------------|-----------------------------|
+| EMPLOYEE        | `decoration-info` | bg `#e0f2fe`, text `#0284c7` |
+| STUDENT         | `decoration-success` | bg `#ccfbf1`, text `#0d9488` |
+| PPSBR           | `decoration-info` | bg `#d9f2f4`, text `#007d8c` |
+| PERSON-TREE     | `decoration-success` | bg `#ccfbf1`, text `#0d9488` |
+| BRSO            | `decoration-warning` | bg `#fef3c7`, text `#d97706` |
+| SCHOOL          | `decoration-info` | bg `#e0f2fe`, text `#0284c7` |
+| CLASSGROUP      | `decoration-success` | bg `#ccfbf1`, text `#0d9488` |
+| PERSONGROUP     | `decoration-warning` | bg `#fef3c7`, text `#d97706` |
+| SCHOOLJAAR      | `decoration-info` | bg `#e0f2fe`, text `#0284c7` |
+| Error status    | `decoration-danger` | bg `#fee2e2`, text `#dc2626` |
+| Completed       | `decoration-success` | bg `#ccfbf1`, text `#0d9488` |
+
+**Badge XML pattern:**
+```xml
+<field name="type_field" widget="badge"
+       decoration-info="type_field.name == 'TYPE_A'"
+       decoration-success="type_field.name == 'TYPE_B'"
+       decoration-warning="type_field.name == 'TYPE_C'"/>
+```
+
+---
+
+## 9. Utility CSS Classes
+
+Defined in `myschool_admin/static/src/css/myschool_theme.css`:
+
+| Class            | Effect                                        | Usage                    |
+|------------------|-----------------------------------------------|--------------------------|
+| `ms-field-mono`  | Monospace font, 12px, tight letter-spacing    | FQDN, DN, OU path fields |
+
+```xml
+<field name="person_fqdn_internal" class="ms-field-mono"/>
+<field name="ou_fqdn_internal" class="ms-field-mono"/>
+```
+
+---
+
+## 10. CSS File Reference
+
+All styles live in `myschool_admin/static/src/css/myschool_theme.css`.
+
+| Section | What it styles | Key selectors |
+|---------|---------------|---------------|
+| 1. Navbar | Topbar bg, brand, menu items | `.o_main_navbar` |
+| 2. Buttons | Primary/secondary/stat buttons | `.btn-primary`, `.oe_stat_button` |
+| 3. Form view | Sheet, statusbar, groups, labels, fields, title | `.o_form_view .o_form_sheet`, `.oe_title`, `.o_inner_group` |
+| 4. Tabs | Notebook nav links | `.o_notebook .nav-link` |
+| 5. List view | Table container, headers, cells, rows | `.o_list_view .o_list_table`, `thead th`, `tbody td` |
+| 6. Kanban | Card backgrounds, hover | `.o_kanban_view .o_kanban_record` |
+| 7. Control panel | Breadcrumbs, search, facets, pager | `.o_control_panel .o_searchview` |
+| 8. Badges | Color overrides for all badge types | `.badge.text-bg-*`, `.o_field_badge .badge` |
+| 9. Links & misc | Form links, checkbox accent, selection | `a:not(.btn)`, `input:checked` |
+| 10. Chatter | Message bubbles | `.o-mail-Chatter` |
+| 11. Modals | Header/footer borders, radius | `.modal-content` |
+| 12. Scrollbar | Thin teal scrollbars | `::-webkit-scrollbar` |
+| 13. Utility | `ms-field-mono` | `.ms-field-mono` |
+| 14. Toggles | Boolean toggle brand color | `.form-check-input:checked` |
+| 15. Dropdowns | Filter/group-by menus | `.dropdown-menu .dropdown-item` |
+
+---
+
+## 11. Interactive States
+
+| State    | CSS Pattern                                                              |
+|----------|-------------------------------------------------------------------------|
 | Hover    | `background: #e6f7f8;` or `#f0f8f8;`, `border-color: var(--ms-brand-2);` |
-| Active   | `background: var(--ms-brand-1); color: #fff;` or `background: #d9f2f4; color: var(--ms-brand-1);` |
+| Active   | `background: var(--ms-brand-1); color: #fff;` or `background: #d9f2f4;` |
 | Focus    | `border-color: var(--ms-brand-2); box-shadow: 0 0 0 3px rgba(0,125,140,.1);` |
 | Disabled | `opacity: .5;` or `background: #f5fafa; color: var(--ms-text-muted);` |
 | Readonly | `background: #f5fafa; border-color: var(--ms-border-light); color: var(--ms-text-muted);` |
 
 ---
 
-## 8. Layout Patterns
-
-### Grids
-
-| Name          | Template                     | Gap    | Usage                    |
-|---------------|------------------------------|--------|--------------------------|
-| KPI row       | `repeat(4, 1fr)`             | 16px   | Dashboard stat cards     |
-| 2-column      | `repeat(2, 1fr)` or `1fr 1fr`| 14px   | Action cards, form fields|
-| 3-column      | `repeat(3, 1fr)`             | 14px   | Entity type cards        |
-| Dashboard     | `2fr 1fr`                    | 20px   | Main + sidebar           |
-| Form fields   | `1fr 1fr`                    | `0 40px`| Two-column form layout  |
-
-### 3-Panel Layout (Object Browser)
-
-```
-┌──────────────────────────────────────────────────────┐
-│  Toolbar (search, actions)                           │
-├──────────┬──────────────┬────────────────────────────┤
-│  Tree    │  Members     │  Details                   │
-│  320px   │  400px       │  flex: 1                   │
-│  fixed   │  fixed       │  bg: #f5fafa              │
-└──────────┴──────────────┴────────────────────────────┘
-```
-
-### Page Container
-
-```css
-max-width: 1100px;  /* or 1280px for wide pages */
-margin: 0 auto;
-padding: 24px;
-```
-
----
-
-## 9. Entity Color Coding
-
-Consistent colors per entity type across all views:
-
-| Entity       | Icon bg   | Badge bg             | Badge text           |
-|-------------|-----------|----------------------|----------------------|
-| Organization | `#d9f2f4` | `#d9f2f4`            | `var(--ms-brand-1)`  |
-| Employee     | `#e0f2fe` | `var(--ms-info-bg)`  | `var(--ms-info)`     |
-| Student      | `#ccfbf1` | `var(--ms-success-bg)`| `var(--ms-success)` |
-| Role         | `#d9f2f4` | `#d9f2f4`            | `var(--ms-brand-1)`  |
-| Period       | `#c1ecf0` | `#c1ecf0`            | `var(--ms-brand-4)`  |
-
----
-
-## 10. Do's and Don'ts
+## 12. Do's and Don'ts
 
 **Do:**
 - Use CSS custom properties (`--ms-*`) for all colors
-- Use the brand gradient for hero/promotional sections
-- Use teal tint backgrounds (`#e6f7f8`, `#f0f8f8`, `#d9f2f4`) for hover/active states
-- Use monospace font for FQDNs, technical identifiers, code values
-- Use uppercase + letter-spacing for section labels
-- Use consistent border-radius (6px buttons, 10px cards, 12px form cards)
-- Keep shadows subtle — use `rgba(0,60,60,...)` for teal-tinted shadows
+- Use `!important` on CSS overrides (Odoo defaults are high-specificity)
+- Use `widget="badge"` with `decoration-*` for type fields in lists
+- Use `widget="boolean_toggle"` for editable booleans in forms
+- Use `widget="boolean"` for read-only boolean columns in lists
+- Use `class="ms-field-mono"` on FQDN/DN/technical text fields
+- Use `bg_color="text-bg-danger"` on `web_ribbon`
+- Use `<list>` tag, `list,form` view_mode (Odoo 19)
+- Use `<separator/>` between filter groups in search views
+- Use `{'search_default_active': 1}` on actions
 
 **Don't:**
-- Use Odoo's default purple (`#714B67`) — replace with `--ms-brand-1`
+- Use Odoo's default purple (`#714B67`) — replaced by `--ms-brand-1`
+- Use `bg_color="danger"` on web_ribbon — use `bg_color="text-bg-danger"`
+- Use `<tree>` tag — use `<list>` (Odoo 19)
+- Use `tree,form` in view_mode — use `list,form`
+- Use `<group>` inside `<search>` views (causes Odoo 19 error)
 - Use pure black (`#000`) — use `--ms-black` (`#252525`)
-- Use generic gray borders (`#ddd`, `#e0e0e0`) — use `--ms-border` / `--ms-border-light`
-- Use `#f8f9fa` for backgrounds — use `#f5fafa` (teal-tinted) or `var(--ms-bg)`
-- Mix blue hover states — use teal palette exclusively
-- Add heavy shadows — keep the UI light and clean
+- Use generic gray borders (`#ddd`) — use `--ms-border` / `--ms-border-light`
+- Use `widget="label_selection"` — deprecated, use `widget="badge"` instead

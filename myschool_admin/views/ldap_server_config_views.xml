@@ -10,15 +10,17 @@
         <field name="name">myschool.ldap.server.config.list</field>
         <field name="model">myschool.ldap.server.config</field>
         <field name="arch" type="xml">
-            <list string="LDAP Servers">
+            <list string="LDAP Servers" decoration-muted="not active">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="server_url"/>
                 <field name="port"/>
-                <field name="use_ssl"/>
-                <field name="is_active_directory"/>
+                <field name="use_ssl" widget="boolean"/>
+                <field name="is_active_directory" widget="boolean"/>
                 <field name="org_count"/>
-                <field name="last_test_result"/>
+                <field name="last_test_result" widget="badge"
+                       decoration-success="last_test_result == 'success'"
+                       decoration-danger="last_test_result == 'failed'"/>
                 <field name="last_test_date"/>
                 <field name="active" column_invisible="1"/>
             </list>
@@ -59,20 +61,20 @@
                         <group string="Connection Settings" name="connection">
                             <field name="server_url" placeholder="ldap.school.local"/>
                             <field name="port"/>
-                            <field name="use_ssl"/>
-                            <field name="use_tls" invisible="use_ssl"/>
+                            <field name="use_ssl" widget="boolean_toggle"/>
+                            <field name="use_tls" invisible="use_ssl" widget="boolean_toggle"/>
                             <field name="timeout"/>
                         </group>
                         <group string="Directory Settings" name="directory">
-                            <field name="base_dn" placeholder="DC=school,DC=local"/>
-                            <field name="user_base_dn" placeholder="Leave empty to use Base DN"/>
-                            <field name="group_base_dn" placeholder="Leave empty to use Base DN"/>
+                            <field name="base_dn" placeholder="DC=school,DC=local" class="ms-field-mono"/>
+                            <field name="user_base_dn" placeholder="Leave empty to use Base DN" class="ms-field-mono"/>
+                            <field name="group_base_dn" placeholder="Leave empty to use Base DN" class="ms-field-mono"/>
                         </group>
                     </group>
 
                     <group string="Certificate Settings" name="certificates" invisible="not use_ssl and not use_tls">
                         <group>
-                            <field name="validate_cert"/>
+                            <field name="validate_cert" widget="boolean_toggle"/>
                             <field name="ca_cert_file" placeholder="/etc/ssl/certs/ca-certificates.crt"/>
                         </group>
                         <group groups="base.group_system">
@@ -83,11 +85,11 @@
 
                     <group>
                         <group string="Bind Credentials" name="credentials" groups="base.group_system">
-                            <field name="bind_dn" placeholder="CN=ldap-service,OU=Service Accounts,DC=school,DC=local"/>
+                            <field name="bind_dn" placeholder="CN=ldap-service,OU=Service Accounts,DC=school,DC=local" class="ms-field-mono"/>
                             <field name="bind_password" password="True"/>
                         </group>
                         <group string="Active Directory Settings" name="ad_settings">
-                            <field name="is_active_directory"/>
+                            <field name="is_active_directory" widget="boolean_toggle"/>
                             <field name="ad_domain" placeholder="school.local" invisible="not is_active_directory"/>
                             <field name="upn_suffix" placeholder="@school.local" invisible="not is_active_directory"/>
                         </group>
@@ -95,11 +97,11 @@
 
                     <group string="Container Settings" name="containers" invisible="not is_active_directory">
                         <group>
-                            <field name="default_user_container" placeholder="OU=Users,OU=MySchool"/>
-                            <field name="default_group_container" placeholder="OU=Groups,OU=MySchool"/>
+                            <field name="default_user_container" placeholder="OU=Users,OU=MySchool" class="ms-field-mono"/>
+                            <field name="default_group_container" placeholder="OU=Groups,OU=MySchool" class="ms-field-mono"/>
                         </group>
                         <group>
-                            <field name="disabled_users_container" placeholder="OU=Disabled,OU=Users"/>
+                            <field name="disabled_users_container" placeholder="OU=Disabled,OU=Users" class="ms-field-mono"/>
                         </group>
                     </group>
 
@@ -114,7 +116,7 @@
                                     <field name="last_test_result"/>
                                 </group>
                                 <group>
-                                    <field name="active"/>
+                                    <field name="active" widget="boolean_toggle"/>
                                     <field name="sequence"/>
                                 </group>
                             </group>

@@ -16,10 +16,51 @@ class OrgProprelations(models.Model):
     # This is just a reverse link - no database change needed
     # It allows us to show proprelations in the org form
     proprelation_ids = fields.One2many(
-        'myschool.proprelation', 
-        'id_org', 
+        'myschool.proprelation',
+        'id_org',
         string='Relations'
     )
+
+    proprelation_all_ids = fields.One2many(
+        'myschool.proprelation',
+        compute='_compute_proprelation_all_ids',
+        string='All Relations',
+    )
+
+    proprelation_count = fields.Integer(
+        compute='_compute_proprelation_count',
+        string='Relations',
+    )
+
+    def _compute_proprelation_all_ids(self):
+        """All proprelations where this org appears (as id_org or id_org_parent)."""
+        PropRelation = self.env['myschool.proprelation']
+        for rec in self:
+            rec.proprelation_all_ids = PropRelation.search([
+                '|',
+                ('id_org', '=', rec.id),
+                ('id_org_parent', '=', rec.id),
+            ])
+
+    def _compute_proprelation_count(self):
+        PropRelation = self.env['myschool.proprelation']
+        for rec in self:
+            rec.proprelation_count = PropRelation.search_count([
+                '|',
+                ('id_org', '=', rec.id),
+                ('id_org_parent', '=', rec.id),
+            ])
+
+    def action_view_proprelations(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Relations — {self.name}',
+            'res_model': 'myschool.proprelation',
+            'view_mode': 'list,form',
+            'domain': ['|', ('id_org', '=', self.id), ('id_org_parent', '=', self.id)],
+            'context': {'default_id_org': self.id},
+        }
     
     def _compute_name_tree_from_fqdn(self):
         """

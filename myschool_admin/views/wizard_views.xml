@@ -175,10 +175,16 @@
         <field name="arch" type="xml">
             <form string="Assign Role">
                 <group>
-                    <field name="person_name" readonly="1"/>
-                    <field name="person_id" invisible="1"/>
-                    <field name="role_id" options="{'no_create': True}"/>
-                    <field name="org_id" options="{'no_create': True}"/>
+                    <group string="Assignment">
+                        <field name="person_name" readonly="1"/>
+                        <field name="person_id" invisible="1"/>
+                        <field name="role_id" options="{'no_create': True}"/>
+                        <field name="org_id" options="{'no_create': True}"/>
+                    </group>
+                    <group string="Sync Options">
+                        <field name="is_master" widget="boolean_toggle"/>
+                        <field name="automatic_sync" widget="boolean_toggle"/>
+                    </group>
                 </group>
                 <footer>
                     <button name="action_assign" type="object" string="Assign Role" class="btn-primary"/>
@@ -195,9 +201,15 @@
         <field name="arch" type="xml">
             <form string="Bulk Assign Role">
                 <group>
-                    <field name="person_count" readonly="1"/>
-                    <field name="role_id" options="{'no_create': True}"/>
-                    <field name="org_id" options="{'no_create': True}"/>
+                    <group string="Assignment">
+                        <field name="person_count" readonly="1"/>
+                        <field name="role_id" options="{'no_create': True}"/>
+                        <field name="org_id" options="{'no_create': True}"/>
+                    </group>
+                    <group string="Sync Options">
+                        <field name="is_master" widget="boolean_toggle"/>
+                        <field name="automatic_sync" widget="boolean_toggle"/>
+                    </group>
                 </group>
                 <footer>
                     <button name="action_assign" type="object" string="Assign to All" class="btn-primary"/>
@@ -699,6 +711,123 @@
     <record id="action_update_student_relations_wizard" model="ir.actions.act_window">
         <field name="name">Update Student Relations</field>
         <field name="res_model">myschool.update.student.relations.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- ========================================= -->
+    <!-- CREATE PERSONGROUP WIZARD -->
+    <!-- ========================================= -->
+
+    <record id="view_create_persongroup_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.create.persongroup.wizard.form</field>
+        <field name="model">myschool.create.persongroup.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Create Persongroup">
+                <group>
+                    <group string="Parent Organization">
+                        <field name="parent_org_id" invisible="1"/>
+                        <field name="parent_org_name" readonly="1" string="Parent"/>
+                    </group>
+                </group>
+                <group>
+                    <group string="Group Details">
+                        <field name="group_name"/>
+                        <field name="group_name_short"/>
+                    </group>
+                </group>
+                <group string="Members">
+                    <field name="member_ids" widget="many2many_tags"
+                           options="{'no_create': True}" nolabel="1"/>
+                </group>
+                <group string="LDAP Preview (auto-generated)" >
+                    <group>
+                        <field name="preview_com_group_name"/>
+                        <field name="preview_com_group_email"/>
+                    </group>
+                    <group>
+                        <field name="preview_ou_fqdn_internal" class="ms-field-mono"/>
+                        <field name="preview_ou_fqdn_external" class="ms-field-mono"/>
+                    </group>
+                    <group>
+                        <field name="preview_com_group_fqdn_internal" class="ms-field-mono"/>
+                        <field name="preview_com_group_fqdn_external" class="ms-field-mono"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_create" type="object" string="Create &amp; Edit Details" class="btn-primary"
+                            help="Create persongroup and open form to complete all details"/>
+                    <button name="action_create_and_close" type="object" string="Create &amp; Close" class="btn-secondary"
+                            help="Create persongroup and return to browser"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ========================================= -->
+    <!-- MANAGE PERSONGROUP MEMBERS WIZARD -->
+    <!-- ========================================= -->
+
+    <record id="view_manage_persongroup_members_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.manage.persongroup.members.wizard.form</field>
+        <field name="model">myschool.manage.persongroup.members.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Manage Persongroup Members">
+                <group>
+                    <field name="persongroup_id" invisible="1"/>
+                    <field name="persongroup_name" string="Persongroup" readonly="1"/>
+                </group>
+                <separator string="Current Members"/>
+                <field name="current_member_ids" widget="many2many_tags" nolabel="1" readonly="1"/>
+                <separator string="Add Members"/>
+                <field name="add_member_ids" widget="many2many_tags" nolabel="1"
+                       options="{'no_create': True}"/>
+                <separator string="Remove Members"/>
+                <field name="remove_member_ids" widget="many2many_tags" nolabel="1"
+                       domain="[('id', 'in', current_member_ids)]"
+                       options="{'no_create': True}"/>
+                <footer>
+                    <button name="action_apply" type="object" string="Apply" class="btn-primary"/>
+                    <button name="action_close" type="object" string="Close" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ========================================= -->
+    <!-- RECALCULATE EMPLOYEE ROLES WIZARD -->
+    <!-- ========================================= -->
+
+    <record id="view_recalc_employee_roles_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.recalc.employee.roles.wizard.form</field>
+        <field name="model">myschool.recalc.employee.roles.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Recalculate Employee Roles">
+                <group invisible="state != 'confirm'">
+                    <div class="alert alert-info" role="alert">
+                        <strong>Recalculate Employee Roles</strong> reads each employee's
+                        hoofd_ambt (primary assignment), resolves the backend role via SRBR mapping,
+                        and creates missing PPSBR relations. Existing roles are not removed.
+                    </div>
+                </group>
+                <group invisible="state != 'done'" string="Results">
+                    <field name="result_text" nolabel="1" widget="text"/>
+                </group>
+                <field name="state" invisible="1"/>
+                <footer>
+                    <button name="action_recalc" type="object" string="Recalculate" class="btn-primary"
+                            invisible="state != 'confirm'"
+                            confirm="This will recalculate roles for all active employees. Continue?"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_recalc_employee_roles_wizard" model="ir.actions.act_window">
+        <field name="name">Recalculate Employee Roles</field>
+        <field name="res_model">myschool.recalc.employee.roles.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
     </record>

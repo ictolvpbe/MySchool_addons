@@ -192,6 +192,18 @@ class Role(models.Model):
             self.has_odoo_group = True
 
     # =========================================================================
+    # CRUD Overrides
+    # =========================================================================
+
+    def write(self, vals):
+        result = super().write(vals)
+        if 'has_group' in vals and vals['has_group']:
+            processor = self.env['myschool.betask.processor']
+            for role in self:
+                processor._sync_role_persongroups(role)
+        return result
+
+    # =========================================================================
     # Service Methods (from RoleServiceImpl.java)
     # =========================================================================
 

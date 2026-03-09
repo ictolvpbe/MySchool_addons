@@ -5,6 +5,9 @@ Role Line Models - must be loaded before the wizards that use them
 
 from odoo import models, fields
 
+# Fields that are written through to the underlying proprelation
+_SYNC_FIELDS = {'is_master', 'automatic_sync'}
+
 
 class OrgRoleLine(models.TransientModel):
     """Line model for org role wizard."""
@@ -15,6 +18,17 @@ class OrgRoleLine(models.TransientModel):
     proprelation_id = fields.Many2one('myschool.proprelation', string='Relation')
     role_name = fields.Char(string='Role')
     is_active = fields.Boolean(string='Active', default=True)
+    is_master = fields.Boolean(string='Is Master', default=False)
+    automatic_sync = fields.Boolean(string='Auto Sync', default=True)
+
+    def write(self, vals):
+        res = super().write(vals)
+        proprel_vals = {k: vals[k] for k in _SYNC_FIELDS if k in vals}
+        if proprel_vals:
+            for line in self:
+                if line.proprelation_id:
+                    line.proprelation_id.write(proprel_vals)
+        return res
 
     def action_remove(self):
         """Remove (deactivate) this role relation."""
@@ -41,6 +55,17 @@ class PersonRoleLine(models.TransientModel):
     proprelation_id = fields.Many2one('myschool.proprelation', string='Relation')
     role_name = fields.Char(string='Role')
     is_active = fields.Boolean(string='Active', default=True)
+    is_master = fields.Boolean(string='Is Master', default=False)
+    automatic_sync = fields.Boolean(string='Auto Sync', default=True)
+
+    def write(self, vals):
+        res = super().write(vals)
+        proprel_vals = {k: vals[k] for k in _SYNC_FIELDS if k in vals}
+        if proprel_vals:
+            for line in self:
+                if line.proprelation_id:
+                    line.proprelation_id.write(proprel_vals)
+        return res
 
     def action_remove(self):
         """Remove (deactivate) this role relation."""

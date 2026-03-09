@@ -284,6 +284,13 @@ export class MembersPanel extends Component {
         });
     }
     
+    getInitials(name) {
+        if (!name) return '??';
+        const parts = name.replace(',', '').split(/\s+/).filter(p => p.length > 0);
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        return name.substring(0, 2).toUpperCase();
+    }
+
     get filteredPersons() {
         const persons = this.props.members?.persons || [];
         if (!this.state.filterText) return persons;
@@ -386,6 +393,7 @@ export class ContextMenu extends Component {
             items.push({ divider: true });
             items.push({ action: 'create_person', label: 'Create Person', iconClass: 'fa fa-user-plus' });
             items.push({ action: 'add_child_org', label: 'Add Sub-Organization', iconClass: 'fa fa-plus-circle' });
+            items.push({ action: 'create_persongroup', label: 'Create Persongroup', iconClass: 'fa fa-users' });
             items.push({ divider: true });
             items.push({ action: 'manage_org_roles', label: 'Roles', iconClass: 'fa fa-id-badge' });
             items.push({ action: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders' });
@@ -403,6 +411,10 @@ export class ContextMenu extends Component {
             items.push({ action: 'delete_person', label: 'Delete', iconClass: 'fa fa-trash', danger: true });
             items.push({ divider: true });
             items.push({ action: 'remove_from_org', label: 'Remove from Org', iconClass: 'fa fa-user-times', danger: true });
+        } else if (node.type === 'persongroup') {
+            items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
+            items.push({ divider: true });
+            items.push({ action: 'manage_members', label: 'Manage Members', iconClass: 'fa fa-users' });
         } else if (node.type === 'role') {
             items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
         }
@@ -819,6 +831,12 @@ export class ObjectBrowserClient extends Component {
             case 'add_child_org':
                 this.openAddChildOrgWizard(node);
                 break;
+            case 'create_persongroup':
+                this.openCreatePersongroupWizard(node);
+                break;
+            case 'manage_members':
+                this.openManagePersongroupMembersWizard(node);
+                break;
             case 'configuration':
                 this.openManageCiWizard(node);
                 break;
@@ -896,6 +914,47 @@ export class ObjectBrowserClient extends Component {
         });
     }
     
+    openCreatePersongroupWizard(orgNode) {
+        const orgId = orgNode.id;
+        this._pendingRefreshOrgId = orgId;
+        this.expandPathToOrg(orgId);
+        this.action.doAction({
+            type: 'ir.actions.act_window',
+            res_model: 'myschool.create.persongroup.wizard',
+            views: [[false, 'form']],
+            target: 'new',
+            context: {
+                default_parent_org_id: orgNode.id,
+            },
+        }, {
+            onClose: async () => {
+                const refreshOrgId = this._pendingRefreshOrgId;
+                this._pendingRefreshOrgId = null;
+                await this.loadData();
+                if (refreshOrgId) this.expandPathToOrg(refreshOrgId);
+            }
+        });
+    }
+
+    openManagePersongroupMembersWizard(node) {
+        const orgId = node.org_id || node.id;
+        if (orgId) this.expandPathToOrg(orgId);
+        this.action.doAction({
+            type: 'ir.actions.act_window',
+            res_model: 'myschool.manage.persongroup.members.wizard',
+            views: [[false, 'form']],
+            target: 'new',
+            context: {
+                default_persongroup_id: node.id,
+            },
+        }, {
+            onClose: async () => {
+                await this.loadData();
+                if (orgId) this.expandPathToOrg(orgId);
+            }
+        });
+    }
+
     openMoveOrgWizard(orgNode) {
         const orgId = orgNode.id;
         this.expandPathToOrg(orgId);

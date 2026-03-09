@@ -2065,6 +2065,11 @@ class BeTaskProcessor(models.AbstractModel):
                     else:
                         _logger.warning(f'[ORG-ADD] No OuForClasses CI found for {parent_school.name_short}')
 
+            # Auto-create persongroup for orgs with has_comgroup
+            if new_org.has_comgroup:
+                self._sync_org_persongroup(new_org)
+                changes.append(f"Synced persongroup for {new_org.name}")
+
             return {'success': True, 'changes': '\n'.join(changes)}
         except Exception as e:
             self._log_error('BETASK-571', f'Error creating org: {str(e)}')
@@ -2578,6 +2583,7 @@ class BeTaskProcessor(models.AbstractModel):
             if existing:
                 _logger.info(f'PPSBR PropRelation already exists for {person.name}')
                 self._update_person_tree_position(person)
+                self._sync_persongroup_memberships(person)
                 changes.append(f"PPSBR already exists for {person.name}")
                 changes.append(f"Updated PERSON-TREE position")
                 return {'success': True, 'changes': '\n'.join(changes)}
@@ -2633,6 +2639,7 @@ class BeTaskProcessor(models.AbstractModel):
             # Step 8: Update Person's position in Org tree
             # -----------------------------------------------------------------
             self._update_person_tree_position(person)
+            self._sync_persongroup_memberships(person)
             changes.append(f"Updated PERSON-TREE position")
 
             return {'success': True, 'changes': '\n'.join(changes)}
@@ -2685,7 +2692,13 @@ class BeTaskProcessor(models.AbstractModel):
             if not proprel or not proprel.exists():
                 self._log_error('BETASK-711', f'PropRelation not found for task {task.name}')
                 return False
-            
+
+            # Skip proprelations with automatic_sync=False (manually maintained)
+            if not proprel.automatic_sync:
+                _logger.info(f'Skipping update - automatic_sync=False: {proprel.name}')
+                changes.append(f"Skipped (manual): {proprel.name}")
+                return {'success': True, 'changes': '\n'.join(changes)}
+
             updates = data.get('updates', {})
             update_vals = {}
             
@@ -2714,6 +2727,7 @@ class BeTaskProcessor(models.AbstractModel):
             if proprel.id_person and ppsbr_type and proprel.proprelation_type_id.id == ppsbr_type.id:
                 _logger.info(f'[TREE-POS] PPSBR updated, recalculating tree position for {proprel.id_person.name}')
                 self._update_person_tree_position(proprel.id_person)
+                self._sync_persongroup_memberships(proprel.id_person)
                 changes.append(f"Recalculated PERSON-TREE for {proprel.id_person.name}")
 
             return {'success': True, 'changes': '\n'.join(changes)}
@@ -2784,6 +2798,12 @@ class BeTaskProcessor(models.AbstractModel):
                 changes.append(f"PropRelation already inactive: {proprel.name}")
                 return {'success': True, 'changes': '\n'.join(changes)}
 
+            # Skip proprelations with automatic_sync=False (manually maintained)
+            if not proprel.automatic_sync:
+                _logger.info(f'Skipping deactivation - automatic_sync=False: {proprel.name}')
+                changes.append(f"Skipped (manual): {proprel.name}")
+                return {'success': True, 'changes': '\n'.join(changes)}
+
             if not person and proprel.id_person:
                 person = proprel.id_person
 
@@ -2800,7 +2820,34 @@ class BeTaskProcessor(models.AbstractModel):
 
             if person and ppsbr_type and proprel.proprelation_type_id.id == ppsbr_type.id:
                 _logger.info(f'PPSBR deactivated, recalculating tree position for {person.name}')
+                # Capture old PERSON-TREE org before recalculation
+                pt_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PERSON_TREE)], limit=1)
+                old_org = None
+                if pt_type:
+                    old_pt = PropRelation.search([
+                        ('proprelation_type_id', '=', pt_type.id),
+                        ('id_person', '=', person.id),
+                        ('is_active', '=', True),
+                        ('id_org', '!=', False),
+                    ], limit=1)
+                    if old_pt:
+                        old_org = old_pt.id_org
+
                 self._update_person_tree_position(person)
+                self._sync_persongroup_memberships(person)
+
+                # If person moved to a different org, also sync old org's persongroup
+                if old_org and old_org.has_comgroup:
+                    new_pt = PropRelation.search([
+                        ('proprelation_type_id', '=', pt_type.id),
+                        ('id_person', '=', person.id),
+                        ('is_active', '=', True),
+                        ('id_org', '!=', False),
+                    ], limit=1)
+                    new_org = new_pt.id_org if new_pt else None
+                    if not new_org or new_org.id != old_org.id:
+                        self._sync_org_persongroup(old_org)
+
                 changes.append(f"Recalculated PERSON-TREE for {person.name}")
 
             # Check if person should be deactivated (no more active proprelations)
@@ -3003,32 +3050,46 @@ class BeTaskProcessor(models.AbstractModel):
                 return True
 
             # -----------------------------------------------------------------
-            # Step 3: Group by role, pick one PPSBR per role, then select
-            #         the role with the highest priority (lowest number wins)
+            # Step 3: Select PPSBR — master overrides priority
+            #   3a) If any PPSBR has is_master=True, use it directly
+            #   3b) Otherwise group by role, pick highest priority
             # -----------------------------------------------------------------
-            role_ppsbr_map = {}  # role_id -> (ppsbr, role, priority, role_name)
+            master_ppsbr = None
             for ppsbr in ppsbr_records:
-                role = ppsbr.id_role
-                if not role:
-                    continue
-                # Use the Role's priority (1=high, 5=low). 0 or unset = lowest priority.
-                priority = role.priority if role.priority else 9999
-                role_name = role.name or ''
+                if ppsbr.is_master:
+                    master_ppsbr = ppsbr
+                    break
 
-                if role.id not in role_ppsbr_map:
-                    role_ppsbr_map[role.id] = (ppsbr, role, priority, role_name)
+            if master_ppsbr:
+                selected_ppsbr = master_ppsbr
+                selected_role = master_ppsbr.id_role
+                priority = selected_role.priority if selected_role.priority else 9999
+                role_name = selected_role.name or ''
+                _logger.info(f'[TREE-POS] Using MASTER PPSBR: role={role_name} (priority={priority})')
+            else:
+                role_ppsbr_map = {}  # role_id -> (ppsbr, role, priority, role_name)
+                for ppsbr in ppsbr_records:
+                    role = ppsbr.id_role
+                    if not role:
+                        continue
+                    # Use the Role's priority (1=high, 5=low). 0 or unset = lowest priority.
+                    priority = role.priority if role.priority else 9999
+                    role_name = role.name or ''
 
-            if not role_ppsbr_map:
-                _logger.warning(f'[TREE-POS] No PPSBR records with valid roles for {person.name}')
-                return True
+                    if role.id not in role_ppsbr_map:
+                        role_ppsbr_map[role.id] = (ppsbr, role, priority, role_name)
 
-            _logger.info(f'[TREE-POS] Distinct roles: {[(v[3], v[2]) for v in role_ppsbr_map.values()]}')
+                if not role_ppsbr_map:
+                    _logger.warning(f'[TREE-POS] No PPSBR records with valid roles for {person.name}')
+                    return True
 
-            # Select the role with the highest priority (lowest number)
-            selected_ppsbr, selected_role, priority, role_name = min(
-                role_ppsbr_map.values(), key=lambda v: v[2]
-            )
-            _logger.info(f'[TREE-POS] Selected highest-priority role: {role_name} (priority={priority})')
+                _logger.info(f'[TREE-POS] Distinct roles: {[(v[3], v[2]) for v in role_ppsbr_map.values()]}')
+
+                # Select the role with the highest priority (lowest number)
+                selected_ppsbr, selected_role, priority, role_name = min(
+                    role_ppsbr_map.values(), key=lambda v: v[2]
+                )
+                _logger.info(f'[TREE-POS] Selected highest-priority role: {role_name} (priority={priority})')
 
             # -----------------------------------------------------------------
             # Step 4: Find target org
@@ -3098,7 +3159,7 @@ class BeTaskProcessor(models.AbstractModel):
                 'id_role': selected_role.id,
                 'is_active': True,
                 'is_organisational': True,
-                'automatic_sync': True,
+                'automatic_sync': not selected_ppsbr.is_master,
                 'priority': priority,
             }
             if selected_ppsbr.id_period:
@@ -3937,9 +3998,10 @@ class BeTaskProcessor(models.AbstractModel):
 
                 # Sync group memberships
                 self._sync_person_group_memberships(person)
+                self._sync_persongroup_memberships(person)
                 changes.append("Synced group memberships")
                 return {'success': True, 'changes': '\n'.join(changes)}
-            
+
             # Prepare user data
             email = data.get('email') or person.email_cloud or person.email_private
             login = data.get('login') or email or self._generate_login(person)
@@ -3983,9 +4045,10 @@ class BeTaskProcessor(models.AbstractModel):
 
                 # Sync group memberships
                 self._sync_person_group_memberships(person)
+                self._sync_persongroup_memberships(person)
                 changes.append("Synced group memberships")
                 return {'success': True, 'changes': '\n'.join(changes)}
-            
+
             # Create new Odoo user with person's password if available
             user_vals = {
                 'name': person.name or f"{data.get('first_name', '')} {data.get('name', '')}".strip(),
@@ -4048,6 +4111,7 @@ class BeTaskProcessor(models.AbstractModel):
 
             # Sync group memberships based on roles
             self._sync_person_group_memberships(person)
+            self._sync_persongroup_memberships(person)
             changes.append("Synced group memberships")
 
             return {'success': True, 'changes': '\n'.join(changes)}
@@ -4147,6 +4211,7 @@ class BeTaskProcessor(models.AbstractModel):
 
             # Sync group memberships (roles may have changed)
             self._sync_person_group_memberships(person)
+            self._sync_persongroup_memberships(person)
             changes.append("Synced group memberships")
 
             if not changes:
@@ -4853,6 +4918,390 @@ class BeTaskProcessor(models.AbstractModel):
                 return True
         
         return False
+
+    # =========================================================================
+    # PERSONGROUP AUTO-SYNC
+    # =========================================================================
+
+    def _resolve_parent_school_from_org(self, org):
+        """Walk up ORG-TREE from org to find the first non-admin SCHOOL org.
+
+        Returns org itself if it is already a non-admin SCHOOL.
+        """
+        OrgType = self.env['myschool.org.type']
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
+        if not school_type:
+            return None
+
+        # Check if org itself is a non-admin SCHOOL
+        if org.org_type_id.id == school_type.id and not org.is_administrative:
+            return org
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        if not org_tree_type:
+            return None
+
+        current = org
+        visited = set()
+        for _depth in range(10):
+            if current.id in visited:
+                break
+            visited.add(current.id)
+            parent_rel = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org', '=', current.id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ], limit=1)
+            if not parent_rel or not parent_rel.id_org_parent:
+                break
+            candidate = parent_rel.id_org_parent
+            if candidate.org_type_id.id == school_type.id and not candidate.is_administrative:
+                return candidate
+            current = candidate
+        return None
+
+    def _resolve_ou_for_groups_org(self, school_org):
+        """Find the OuForGroups child org under school_org.
+
+        Returns (ou_value, ou_org) or (None, None) when not configured.
+        """
+        if not school_org:
+            return None, None
+        ConfigItem = self.env['myschool.config.item']
+        ou_value = ConfigItem.get_ci_value_by_org_and_name(
+            school_org.name_short, 'OuForGroups')
+        if not ou_value:
+            _logger.warning(f'[PG-SYNC] No OuForGroups CI found for {school_org.name_short}')
+            return None, None
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        if not org_tree_type:
+            return ou_value, None
+
+        child_rels = PropRelation.search([
+            ('proprelation_type_id', '=', org_tree_type.id),
+            ('id_org_parent', '=', school_org.id),
+            ('is_active', '=', True),
+        ])
+        child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+        ou_org = None
+        if child_org_ids:
+            ou_org = Org.search([
+                ('id', 'in', child_org_ids),
+                ('name_short', '=', ou_value),
+                ('is_active', '=', True),
+            ], limit=1)
+        if not ou_org:
+            _logger.warning(f'[PG-SYNC] OuForGroups org "{ou_value}" not found under {school_org.name_short}')
+        return ou_value, ou_org
+
+    def _find_or_create_persongroup(self, name, name_short, school_org, source_label='auto'):
+        """Find existing or create new PERSONGROUP org under OuForGroups.
+
+        Returns (persongroup_org, created) or (None, False) on failure.
+        """
+        ou_value, ou_org = self._resolve_ou_for_groups_org(school_org)
+        if not ou_org:
+            _logger.warning(f'[PG-SYNC] Cannot create persongroup "{name_short}" - no OuForGroups org')
+            return None, False
+
+        Org = self.env['myschool.org']
+        OrgType = self.env['myschool.org.type']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+        if not pg_type:
+            pg_type = OrgType.create({'name': 'PERSONGROUP', 'is_active': True})
+
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        # Search for existing persongroup under ou_org
+        child_rels = PropRelation.search([
+            ('proprelation_type_id', '=', org_tree_type.id),
+            ('id_org_parent', '=', ou_org.id),
+            ('is_active', '=', True),
+        ])
+        child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+        name_short_lower = (name_short or '').lower()
+        if child_org_ids:
+            existing = Org.search([
+                ('id', 'in', child_org_ids),
+                ('name_short', '=ilike', name_short_lower),
+                ('org_type_id', '=', pg_type.id),
+                ('is_active', '=', True),
+            ], limit=1)
+            if existing:
+                _logger.info(f'[PG-SYNC] Found existing persongroup: {existing.name} (source={source_label})')
+                return existing, False
+
+        # Build AD/OU fields
+        school_short = (school_org.name_short or '').lower()
+        com_group_name = f"grp-{name_short_lower}-{school_short}"
+        com_group_email = ''
+        if school_org.domain_external:
+            com_group_email = f"{com_group_name}@{school_org.domain_external}"
+
+        parent_fqdn_int = (ou_org.ou_fqdn_internal or '').lower()
+        parent_fqdn_ext = (ou_org.ou_fqdn_external or '').lower()
+        ou_fqdn_internal = f"ou={name_short_lower},{parent_fqdn_int}" if parent_fqdn_int else ''
+        ou_fqdn_external = f"ou={name_short_lower},{parent_fqdn_ext}" if parent_fqdn_ext else ''
+
+        # com_group_fqdn: cn={com_group_name},ou={ou_value},{school.ou_fqdn}
+        school_fqdn_int = (school_org.ou_fqdn_internal or '').lower()
+        school_fqdn_ext = (school_org.ou_fqdn_external or '').lower()
+        ou_value_lower = (ou_value or '').lower()
+        com_group_fqdn_internal = ''
+        com_group_fqdn_external = ''
+        if school_fqdn_int:
+            com_group_fqdn_internal = f"cn={com_group_name},ou={ou_value_lower},{school_fqdn_int}"
+        if school_fqdn_ext:
+            com_group_fqdn_external = f"cn={com_group_name},ou={ou_value_lower},{school_fqdn_ext}"
+
+        # name_tree from ou_fqdn_internal
+        name_tree = ''
+        if ou_fqdn_internal:
+            components = [c.strip() for c in ou_fqdn_internal.split(',') if c.strip()]
+            dc_parts = []
+            ou_parts = []
+            for comp in components:
+                if comp.startswith('dc='):
+                    dc_parts.append(comp[3:])
+                elif comp.startswith('ou=') or comp.startswith('cn='):
+                    ou_parts.append(comp[3:])
+            dc_parts.reverse()
+            ou_parts.reverse()
+            parts = dc_parts + ou_parts
+            if parts:
+                name_tree = '.'.join(parts)
+
+        new_pg = Org.create({
+            'name': name,
+            'name_short': name_short_lower,
+            'org_type_id': pg_type.id,
+            'is_active': True,
+            'has_ou': True,
+            'has_comgroup': True,
+            'domain_internal': ou_org.domain_internal or school_org.domain_internal or '',
+            'domain_external': ou_org.domain_external or school_org.domain_external or '',
+            'ou_fqdn_internal': ou_fqdn_internal,
+            'ou_fqdn_external': ou_fqdn_external,
+            'com_group_name': com_group_name,
+            'com_group_email': com_group_email,
+            'com_group_fqdn_internal': com_group_fqdn_internal,
+            'com_group_fqdn_external': com_group_fqdn_external,
+            'name_tree': name_tree,
+        })
+
+        # Create ORG-TREE: persongroup -> ou_org
+        if org_tree_type:
+            tree_name = build_proprelation_name('ORG-TREE', id_org=new_pg, id_org_parent=ou_org)
+            PropRelation.create({
+                'name': tree_name,
+                'proprelation_type_id': org_tree_type.id,
+                'id_org': new_pg.id,
+                'id_org_parent': ou_org.id,
+                'is_active': True,
+            })
+
+        _logger.info(f'[PG-SYNC] Created persongroup: {new_pg.name} under {ou_org.name} (source={source_label})')
+        return new_pg, True
+
+    def _sync_pg_p_members(self, persongroup_org, desired_person_ids, source_label='auto'):
+        """Set-based diff to sync PG-P members of a persongroup.
+
+        Creates PG-P proprelations for persons to add,
+        deactivates PG-P proprelations for persons to remove.
+
+        Returns {'added': N, 'removed': M}.
+        """
+        if not persongroup_org:
+            return {'added': 0, 'removed': 0}
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        pg_p_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
+        if not pg_p_type:
+            pg_p_type = PropRelationType.create({
+                'name': 'PG-P',
+                'usage': 'Persongroup-Person membership',
+                'is_active': True,
+            })
+
+        # Current active PG-P members
+        current_rels = PropRelation.search([
+            ('proprelation_type_id', '=', pg_p_type.id),
+            ('id_org', '=', persongroup_org.id),
+            ('is_active', '=', True),
+        ])
+        current_person_ids = set(r.id_person.id for r in current_rels if r.id_person)
+        desired = set(desired_person_ids)
+
+        to_add = desired - current_person_ids
+        to_remove = current_person_ids - desired
+
+        Person = self.env['myschool.person']
+        for pid in to_add:
+            person = Person.browse(pid).exists()
+            if person:
+                rel_name = build_proprelation_name('PG-P', id_org=persongroup_org, id_person=person)
+                PropRelation.create({
+                    'name': rel_name,
+                    'proprelation_type_id': pg_p_type.id,
+                    'id_org': persongroup_org.id,
+                    'id_person': pid,
+                    'is_active': True,
+                })
+
+        if to_remove:
+            rels_to_deact = current_rels.filtered(
+                lambda r: r.id_person and r.id_person.id in to_remove)
+            if rels_to_deact:
+                rels_to_deact.write({'is_active': False})
+
+        if to_add or to_remove:
+            _logger.info(f'[PG-SYNC] {persongroup_org.name}: +{len(to_add)} -{len(to_remove)} members (source={source_label})')
+
+        return {'added': len(to_add), 'removed': len(to_remove)}
+
+    def _sync_org_persongroup(self, org):
+        """Sync persongroup for an org with has_comgroup=True.
+
+        Creates the persongroup if needed, then syncs its PG-P members
+        to match the org's PERSON-TREE members.
+        """
+        if not org or not org.has_comgroup:
+            return
+
+        school_org = self._resolve_parent_school_from_org(org)
+        if not school_org:
+            _logger.warning(f'[PG-SYNC] Cannot resolve school for org {org.name}')
+            return
+
+        persongroup, _created = self._find_or_create_persongroup(
+            org.name, org.name_short, school_org, source_label=f'org:{org.name}')
+        if not persongroup:
+            return
+
+        # Get PERSON-TREE members of the org
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        pt_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PERSON_TREE)], limit=1)
+        desired_person_ids = []
+        if pt_type:
+            pt_rels = PropRelation.search([
+                ('proprelation_type_id', '=', pt_type.id),
+                ('id_org', '=', org.id),
+                ('is_active', '=', True),
+                ('id_person', '!=', False),
+            ])
+            desired_person_ids = [r.id_person.id for r in pt_rels]
+
+        self._sync_pg_p_members(persongroup, desired_person_ids, source_label=f'org:{org.name}')
+
+    def _sync_role_persongroups(self, role):
+        """Sync persongroups for a role with has_group=True.
+
+        For each school where the role has an active BRSO, creates/finds a
+        persongroup and syncs its PG-P members to match PPSBR holders at that
+        school.
+        """
+        if not role or not role.has_group:
+            return
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        brso_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_BRSO)], limit=1)
+        ppsbr_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PPSBR)], limit=1)
+        if not brso_type or not ppsbr_type:
+            return
+
+        # Get all active BRSO for this role
+        brso_rels = PropRelation.search([
+            ('proprelation_type_id', '=', brso_type.id),
+            ('id_role', '=', role.id),
+            ('is_active', '=', True),
+            ('id_org_parent', '!=', False),
+        ])
+
+        # Group by school (id_org_parent)
+        schools = {}
+        for brso in brso_rels:
+            school_id = brso.id_org_parent.id
+            if school_id not in schools:
+                schools[school_id] = brso.id_org_parent
+
+        for school_id, school_admin_org in schools.items():
+            school_org = self._resolve_school_org(school_admin_org)
+            if not school_org:
+                continue
+
+            role_short = (role.shortname or role.name or '').lower()
+            persongroup, _created = self._find_or_create_persongroup(
+                role.name, role_short, school_org, source_label=f'role:{role.name}')
+            if not persongroup:
+                continue
+
+            # Get persons with this role at this school
+            ppsbr_rels = PropRelation.search([
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('id_role', '=', role.id),
+                ('id_org_parent', '=', school_id),
+                ('is_active', '=', True),
+                ('id_person', '!=', False),
+            ])
+            desired_person_ids = list(set(r.id_person.id for r in ppsbr_rels))
+
+            self._sync_pg_p_members(persongroup, desired_person_ids, source_label=f'role:{role.name}')
+
+    def _sync_persongroup_memberships(self, person):
+        """Sync persongroup memberships for a person.
+
+        Called after PPSBR changes or person tree position updates.
+        1. If person's PERSON-TREE org has has_comgroup → sync that org's persongroup.
+        2. For each active PPSBR with a role that has has_group → sync that role's persongroups.
+        """
+        if not person:
+            return
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        # 1. Org-based: sync persongroup of person's PERSON-TREE org
+        pt_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PERSON_TREE)], limit=1)
+        if pt_type:
+            pt_rel = PropRelation.search([
+                ('proprelation_type_id', '=', pt_type.id),
+                ('id_person', '=', person.id),
+                ('is_active', '=', True),
+                ('id_org', '!=', False),
+            ], limit=1)
+            if pt_rel and pt_rel.id_org and pt_rel.id_org.has_comgroup:
+                self._sync_org_persongroup(pt_rel.id_org)
+
+        # 2. Role-based: sync persongroups for each role with has_group
+        ppsbr_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PPSBR)], limit=1)
+        if ppsbr_type:
+            ppsbr_rels = PropRelation.search([
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('id_person', '=', person.id),
+                ('is_active', '=', True),
+                ('id_role', '!=', False),
+            ])
+            synced_roles = set()
+            for ppsbr in ppsbr_rels:
+                role = ppsbr.id_role
+                if role and role.has_group and role.id not in synced_roles:
+                    synced_roles.add(role.id)
+                    self._sync_role_persongroups(role)
 
     # =========================================================================
     # CRON JOB ENTRY POINT

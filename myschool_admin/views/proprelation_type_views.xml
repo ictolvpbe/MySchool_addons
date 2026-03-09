@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- PropRelation Type list View -->
+    <!-- PropRelation Type List View -->
     <record id="view_myschool_proprelation_type_list" model="ir.ui.view">
         <field name="name">myschool.proprelation.type.list</field>
         <field name="model">myschool.proprelation.type</field>
         <field name="arch" type="xml">
-            <list>
-                <field name="name"/>
+            <list decoration-muted="not is_active">
+                <field name="name" widget="badge"/>
                 <field name="usage"/>
-                <field name="is_active"/>
+                <field name="is_active" widget="boolean"/>
             </list>
         </field>
     </record>
@@ -20,10 +20,17 @@
         <field name="arch" type="xml">
             <form string="Relatie Type">
                 <sheet>
+                    <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="is_active"/>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
                     <group>
-                        <field name="name"/>
-                        <field name="usage"/>
-                        <field name="is_active"/>
+                        <group string="Details">
+                            <field name="usage"/>
+                        </group>
+                        <group string="Status">
+                            <field name="is_active" widget="boolean_toggle"/>
+                        </group>
                     </group>
                 </sheet>
             </form>

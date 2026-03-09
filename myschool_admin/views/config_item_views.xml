@@ -26,6 +26,10 @@
                         <h1>
                             <field name="name" placeholder="Configuration Name"/>
                         </h1>
+                        <h3 class="text-muted">
+                            <field name="scope" class="oe_inline"/> |
+                            <field name="type" class="oe_inline"/>
+                        </h3>
                     </div>
                     
                     <group>
@@ -70,15 +74,22 @@
         <field name="name">myschool.config.item.list</field>
         <field name="model">myschool.config.item</field>
         <field name="arch" type="xml">
-            <list string="Configuration Items" multi_edit="1">
+            <list string="Configuration Items" multi_edit="1"
+                  decoration-muted="not is_active">
                 <field name="name"/>
-                <field name="scope" optional="show"/>
-                <field name="type" optional="show"/>
+                <field name="scope" widget="badge" optional="show"
+                       decoration-info="scope == 'global'"
+                       decoration-success="scope == 'local'"
+                       decoration-warning="scope == 'org'"/>
+                <field name="type" widget="badge" optional="show"
+                       decoration-info="type == 'config'"
+                       decoration-warning="type == 'credential'"
+                       decoration-success="type == 'setting'"/>
                 <field name="string_value" optional="show"/>
                 <field name="integer_value" optional="hide"/>
                 <field name="boolean_value" optional="hide"/>
-                <field name="is_active"/>
-                <field name="is_encrypted" optional="hide"/>
+                <field name="is_active" widget="boolean"/>
+                <field name="is_encrypted" widget="boolean" optional="hide"/>
             </list>
         </field>
     </record>

@@ -5,14 +5,20 @@
         <field name="name">myschool.proprelation.list</field>
         <field name="model">myschool.proprelation</field>
         <field name="arch" type="xml">
-            <list>
+            <list decoration-muted="not is_active">
                 <field name="name"/>
-                <field name="proprelation_type_id"/>
-                <field name="id_person"/>
-                <field name="id_role"/>
-                <field name="id_org"/>
-                <field name="id_period"/>
-                <field name="is_active"/>
+                <field name="proprelation_type_id" widget="badge"
+                       decoration-info="proprelation_type_id.name == 'PPSBR'"
+                       decoration-success="proprelation_type_id.name == 'PERSON-TREE'"
+                       decoration-warning="proprelation_type_id.name == 'BRSO'"/>
+                <field name="id_person" optional="show"/>
+                <field name="id_role" optional="show"/>
+                <field name="id_org" optional="show"/>
+                <field name="id_org_parent" optional="hide"/>
+                <field name="id_period" optional="hide"/>
+                <field name="is_active" widget="boolean"/>
+                <field name="is_master" widget="boolean" optional="show"/>
+                <field name="automatic_sync" widget="boolean" optional="show"/>
             </list>
         </field>
     </record>
@@ -25,14 +31,24 @@
             <form string="Relatie">
                 <sheet>
                     <div class="oe_button_box" name="button_box"/>
+                    <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="is_active"/>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                        <h3 class="text-muted">
+                            <field name="proprelation_type_id" class="oe_inline" options="{'no_create': True}"/>
+                        </h3>
+                    </div>
                     <group>
-                        <group>
-                            <field name="name"/>
+                        <group string="Relation">
                             <field name="proprelation_type_id"/>
-                        </group>
-                        <group>
                             <field name="start_date"/>
-                            <field name="is_active"/>
+                            <field name="is_active" widget="boolean_toggle"/>
+                        </group>
+                        <group string="Flags">
+                            <field name="is_administrative"/>
+                            <field name="is_organisational"/>
+                            <field name="is_master"/>
+                            <field name="automatic_sync" widget="boolean_toggle"/>
                         </group>
                     </group>
 
@@ -72,24 +88,14 @@
                             </group>
                         </page>
 
-                        <page string="Status" name="status">
-                            <group>
-                                <group>
-                                    <field name="is_administrative"/>
-                                    <field name="is_organisational"/>
-                                </group>
-                                <group>
-                                    <field name="is_master"/>
-                                </group>
-                            </group>
-                        </page>
+                        <!-- Status flags moved to main group above -->
                     </notebook>
                 </sheet>
             </form>
         </field>
     </record>
 
-     PropRelation Search View
+    <!-- PropRelation Search View -->
     <record id="view_myschool_proprelation_search" model="ir.ui.view">
         <field name="name">myschool.proprelation.search</field>
         <field name="model">myschool.proprelation</field>
@@ -101,6 +107,7 @@
                 <field name="id_role"/>
                 <field name="id_org"/>
                 <field name="id_period"/>
+                <separator/>
                 <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
                 <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
                 <separator/>
@@ -113,6 +120,9 @@
                 <filter string="Administratief" name="administrative" domain="[('is_administrative', '=', True)]"/>
                 <filter string="Organisatorisch" name="organisational" domain="[('is_organisational', '=', True)]"/>
                 <filter string="Master" name="master" domain="[('is_master', '=', True)]"/>
+                <separator/>
+                <filter string="Auto Sync" name="auto_sync" domain="[('automatic_sync', '=', True)]"/>
+                <filter string="Manual" name="manual_sync" domain="[('automatic_sync', '=', False)]"/>
 <!--                <group expand="0" string="Groepeer op">-->
 <!--                    <filter string="Type" name="group_type" context="{'group_by': 'proprelation_type_id'}"/>-->
 <!--                    <filter string="Persoon" name="group_person" context="{'group_by': 'id_person'}"/>-->

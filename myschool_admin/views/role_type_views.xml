@@ -12,7 +12,7 @@
         <field name="arch" type="xml">
             <form string="Role Type">
                 <sheet>
-                    <widget name="web_ribbon" title="Inactive" bg_color="danger"
+                    <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger"
                             invisible="is_active"/>
                     <div class="oe_title">
                         <h1>
@@ -25,7 +25,7 @@
                     
                     <group>
                         <group string="Status">
-                            <field name="is_active"/>
+                            <field name="is_active" widget="boolean_toggle"/>
                             <field name="role_count"/>
                         </group>
                     </group>
@@ -63,7 +63,7 @@
                 <field name="name"/>
                 <field name="shortname"/>
                 <field name="role_count"/>
-                <field name="is_active"/>
+                <field name="is_active" widget="boolean"/>
             </list>
         </field>
     </record>

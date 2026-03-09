@@ -1,4 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_dashboard_user,myschool.dashboard.user,model_myschool_dashboard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_object_browser_user,myschool.object.browser.user,model_myschool_object_browser,myschool_core.group_myschool_core_admin,1,1,1,1
 access_create_person_wizard,myschool.create.person.wizard,model_myschool_create_person_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_add_child_org_wizard,myschool.add.child.org.wizard,model_myschool_add_child_org_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
@@ -28,3 +29,6 @@ access_betask_rollback_wizard,myschool.betask.rollback.wizard,model_myschool_bet
 access_sync_test_runner,myschool.sync.test.runner,model_myschool_sync_test_runner,myschool_core.group_myschool_core_admin,1,1,1,1
 access_init_schoolyear_wizard,myschool.init.schoolyear.wizard,model_myschool_init_schoolyear_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_update_student_relations_wizard,myschool.update.student.relations.wizard,model_myschool_update_student_relations_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_recalc_employee_roles_wizard,myschool.recalc.employee.roles.wizard,model_myschool_recalc_employee_roles_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_create_persongroup_wizard,myschool.create.persongroup.wizard,model_myschool_create_persongroup_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_manage_persongroup_members_wizard,myschool.manage.persongroup.members.wizard,model_myschool_manage_persongroup_members_wizard,myschool_core.group_myschool_core_admin,1,1,1,1

@@ -246,12 +246,18 @@ class ObjectBrowser(models.TransientModel):
         # Get name_tree for full tree path
         name_tree = org.name_tree if hasattr(org, 'name_tree') and org.name_tree else org.name
         
+        # Get org type name for icon differentiation
+        org_type_name = ''
+        if hasattr(org, 'org_type_id') and org.org_type_id:
+            org_type_name = org.org_type_id.name or ''
+
         node = {
             'id': org.id,
             'name': display_name,
             'full_name': org.name,  # Keep full name for tooltips/details
             'name_tree': name_tree,  # Full tree path for display in wizards
             'type': 'org',
+            'org_type_name': org_type_name,
             'model': 'myschool.org',
             'child_count': len(child_ids),
             'person_count': person_count,
@@ -816,17 +822,27 @@ class ObjectBrowser(models.TransientModel):
                 name = person.name or 'Unknown'
                 if hasattr(person, 'first_name') and person.first_name:
                     name = f"{person.first_name} {person.name}"
-                
+
                 email = ''
                 if hasattr(person, 'email_cloud') and person.email_cloud:
                     email = person.email_cloud
                 elif hasattr(person, 'email') and person.email:
                     email = person.email
-                
+
+                person_type = ''
+                if hasattr(person, 'person_type_id') and person.person_type_id:
+                    person_type = person.person_type_id.name or ''
+
+                sap_ref = ''
+                if hasattr(person, 'sap_ref') and person.sap_ref:
+                    sap_ref = person.sap_ref
+
                 person_dict[pid] = {
                     'id': pid,
                     'name': name,
                     'email': email,
+                    'person_type': person_type,
+                    'sap_ref': sap_ref,
                     'model': 'myschool.person',
                     'roles': [],
                 }

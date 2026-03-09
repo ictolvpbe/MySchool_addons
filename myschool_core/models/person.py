@@ -476,6 +476,26 @@ class Person(models.Model):
                 }
             }
 
+    def action_recalc_roles(self):
+        """Recalculate roles for this person based on hoofd_ambt assignment."""
+        self.ensure_one()
+        _logger.info(f'[RECALC-ROLES] Starting role recalculation for {self.name} (ID: {self.id})')
+        Wizard = self.env['myschool.manage.person.roles.wizard']
+        updated, msg = Wizard._recalc_employee_roles_for_person(self)
+        if updated:
+            _logger.info(f'[RECALC-ROLES] {msg}')
+        else:
+            _logger.warning(f'[RECALC-ROLES] {msg}')
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Recalculate Roles',
+                'message': msg,
+                'type': 'success' if updated else 'warning',
+            }
+        }
+
     # =========================================================================
     # Helper Methods
     # =========================================================================
