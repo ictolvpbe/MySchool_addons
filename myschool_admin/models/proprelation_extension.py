@@ -75,30 +75,38 @@ class ProprelationExtension(models.Model):
     def action_update_name(self):
         """Update the name of this proprelation to the standardized format."""
         self.ensure_one()
-        
+
         new_name = self._compute_standardized_name()
         if new_name and self.name != new_name:
-            self.write({'name': new_name})
+            service = self.env['myschool.manual.task.service']
+            service.create_manual_task('PROPRELATION', 'UPD', {
+                'proprelation_id': self.id,
+                'vals': {'name': new_name},
+            })
             _logger.info(f"Updated proprelation name: {new_name}")
-        
+
         return True
-    
+
     @api.model
     def update_all_proprelation_names(self):
         """Update names for ALL proprelations in the system."""
         PropRelation = self.env['myschool.proprelation']
-        
+        service = self.env['myschool.manual.task.service']
+
         # Get all proprelations with a type
         all_rels = PropRelation.search([('proprelation_type_id', '!=', False)])
-        
+
         updated_count = 0
         skipped_count = 0
-        
+
         for rel in all_rels:
             try:
                 new_name = rel._compute_standardized_name()
                 if new_name and rel.name != new_name:
-                    rel.write({'name': new_name})
+                    service.create_manual_task('PROPRELATION', 'UPD', {
+                        'proprelation_id': rel.id,
+                        'vals': {'name': new_name},
+                    })
                     updated_count += 1
                     _logger.debug(f"Updated proprelation {rel.id}: {new_name}")
                 else:
@@ -106,9 +114,9 @@ class ProprelationExtension(models.Model):
             except Exception as e:
                 _logger.warning(f"Error updating proprelation {rel.id}: {e}")
                 skipped_count += 1
-        
+
         _logger.info(f"Updated {updated_count} proprelation names, skipped {skipped_count}")
-        
+
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',

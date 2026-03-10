@@ -145,41 +145,12 @@ class SyncTestRunner(models.TransientModel):
         person = Person.search([('sap_person_uuid', '=', uuid)], limit=1)
 
         if person:
-            # Proprelations
-            PropRelation = self.env['myschool.proprelation'].with_context(active_test=False)
-            proprels = PropRelation.search([
-                '|', '|',
-                ('id_person', '=', person.id),
-                ('id_person_parent', '=', person.id),
-                ('id_person_child', '=', person.id),
-            ])
-            if proprels:
-                lines.append(f'Deleted {len(proprels)} proprelation(s)')
-                proprels.unlink()
-
-            # Person details
-            if person.person_details_set:
-                lines.append(f'Deleted {len(person.person_details_set)} person detail(s)')
-                person.person_details_set.unlink()
-
-            # HR employee
-            if person.odoo_employee_id:
-                emp = person.odoo_employee_id.with_context(active_test=False)
-                lines.append(f'Deleted HR employee: {emp.name}')
-                person.write({'odoo_employee_id': False})
-                emp.with_context(active_test=False).write({'active': True})
-                emp.unlink()
-
-            # Odoo user
-            if person.odoo_user_id:
-                user = person.odoo_user_id.with_context(active_test=False)
-                lines.append(f'Deleted Odoo user: {user.login}')
-                person.write({'odoo_user_id': False})
-                user.with_context(active_test=False).write({'active': True})
-                user.unlink()
-
-            lines.append(f'Deleted person: {person.name}')
-            person.unlink()
+            # Delete person and all related data via betask
+            service = self.env['myschool.manual.task.service']
+            service.create_manual_task('PERSON', 'DEL', {
+                'person_id': person.id,
+            })
+            lines.append(f'Created MANUAL/PERSON/DEL betask for: {person.name}')
 
         # Clean related betasks
         BeTask = self.env['myschool.betask']

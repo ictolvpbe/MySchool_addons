@@ -181,10 +181,14 @@ def update_name_tree_for_org_and_descendants(env, org_id):
     # Get ORG-TREE type
     org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
 
-    # Update this org's name_tree
+    # Update this org's name_tree via betask
     new_name_tree = compute_name_tree(env, org)
     if new_name_tree and org.name_tree != new_name_tree:
-        org.write({'name_tree': new_name_tree})
+        service = env['myschool.manual.task.service']
+        service.create_manual_task('ORG', 'UPD', {
+            'org_id': org.id,
+            'vals': {'name_tree': new_name_tree},
+        })
         _logger.info(f"Updated name_tree for org {org.name_short}: {new_name_tree}")
 
     # Find and update all child orgs recursively (only via ORG-TREE relations)
@@ -466,12 +470,12 @@ class CreatePersonWizard(models.TransientModel):
             return None
 
     def _get_or_create_proprelation_type(self, type_name):
-        """Get or create a proprelation type by name."""
+        """Get a proprelation type by name (raises if not found)."""
         try:
             PropRelationType = self.env['myschool.proprelation.type']
             rel_type = PropRelationType.search([('name', '=', type_name)], limit=1)
             if not rel_type:
-                rel_type = PropRelationType.create({'name': type_name, 'is_active': True})
+                raise UserError(f"PropRelation type '{type_name}' not found. Please create it first.")
             return rel_type
         except KeyError:
             return None
@@ -674,28 +678,16 @@ class CreatePersonWizard(models.TransientModel):
             ], limit=1)
             
             if not existing:
-                # Create with standardized name (include school if found)
-                rel_name = build_proprelation_name(
-                    'PPSBR',
-                    id_role=role,
-                    id_org_parent=school_org,
-                    id_person=person
-                )
-                
-                proprel_vals = {
-                    'name': rel_name,
-                    'proprelation_type_id': ppsbr_type.id,
-                    'id_person': person.id,
-                    'id_role': role.id,
-                    'is_active': True,
+                task_data = {
+                    'type': 'PPSBR',
+                    'person_id': person.id,
+                    'role_id': role.id,
                 }
-                
-                # Add school org as id_org_parent if found
                 if school_org:
-                    proprel_vals['id_org_parent'] = school_org.id
-                
-                PropRelation.create(proprel_vals)
-                _logger.info(f"Created PPSBR relation: {role.name} -> {person_name} (school: {school_org.name if school_org else 'None'})")
+                    task_data['org_parent_id'] = school_org.id
+                service = self.env['myschool.manual.task.service']
+                service.create_manual_task('PROPRELATION', 'ADD', task_data)
+                _logger.info(f"Created PPSBR betask: {role.name} -> {person_name} (school: {school_org.name if school_org else 'None'})")
 
     @api.onchange('person_type')
     def _onchange_person_type(self):
@@ -2744,16 +2736,24 @@ class PasswordWizard(models.TransientModel):
         if len(self.new_password) < 4:
             raise UserError("Password must be at least 4 characters long.")
         
-        # Save password to person record
-        self.person_id.write({'password': self.new_password})
-        
+        # Save password to person record via betask
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'UPD', {
+            'person_id': self.person_id.id,
+            'vals': {'password': self.new_password},
+        })
+
         return {'type': 'ir.actions.act_window_close'}
-    
+
     def action_clear_password(self):
         """Clear the password."""
         self.ensure_one()
 
-        self.person_id.write({'password': False})
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'UPD', {
+            'person_id': self.person_id.id,
+            'vals': {'password': False},
+        })
 
         return {'type': 'ir.actions.act_window_close'}
 
@@ -3367,10 +3367,14 @@ class UpdateStudentRelationsWizard(models.TransientModel):
                 ], limit=1)
 
                 if ppsbr and ppsbr.id_org.id != cg.id:
-                    # PPSBR points to school instead of classgroup — fix it
-                    ppsbr.write({
-                        'id_org_parent': ppsbr.id_org.id,
-                        'id_org': cg.id,
+                    # PPSBR points to school instead of classgroup — fix it via betask
+                    service = self.env['myschool.manual.task.service']
+                    service.create_manual_task('PROPRELATION', 'UPD', {
+                        'proprelation_id': ppsbr.id,
+                        'vals': {
+                            'id_org_parent': ppsbr.id_org.id,
+                            'id_org': cg.id,
+                        },
                     })
                     updated_count += 1
 
@@ -3597,7 +3601,7 @@ class CreatePersongroupWizard(models.TransientModel):
         OrgType = self.env['myschool.org.type']
         pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
         if not pg_type:
-            pg_type = OrgType.create({'name': 'PERSONGROUP', 'is_active': True})
+            raise UserError("PERSONGROUP org type not found. Please create it first.")
 
         group_name_short = self.group_name.strip().lower().replace(' ', '-')
         com_group_name = self._build_persongroup_group_name(group_name_short, school_org)

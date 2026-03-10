@@ -91,8 +91,9 @@
                             </group>
                         </page>
 
-                        <!-- Tab 2: Address -->
-                        <page string="Address" name="address">
+                        <!-- Tab 2: Address (only for SCHOOL / SCHOOLBOARD) -->
+                        <page string="Address" name="address"
+                              invisible="org_type_id.name not in ('SCHOOL', 'SCHOOLBOARD')">
                             <group>
                                 <group string="Street">
                                     <field name="street"/>
@@ -115,6 +116,7 @@
                                 </group>
                                 <group string="Features">
                                     <field name="has_ou" widget="boolean_toggle"/>
+                                    <field name="has_accounts" widget="boolean_toggle"/>
                                     <field name="has_role" widget="boolean_toggle"/>
                                     <field name="has_comgroup" widget="boolean_toggle"/>
                                     <field name="has_secgroup" widget="boolean_toggle"/>
@@ -141,18 +143,18 @@
                             </group>
                         </page>
 
-                        <!-- Tab 3: SAP & Accounts -->
-                        <page string="SAP &amp; Accounts" name="sap">
-                            <group>
-                                <group string="SAP Credentials">
-                                    <field name="sap_provider"/>
-                                    <field name="sap_login"/>
-                                    <field name="sap_password" password="True"/>
-                                </group>
-                            </group>
+                        <!-- Tab: Members (only for PERSONGROUP) -->
+                        <page string="Members" name="members"
+                              invisible="org_type_id.name != 'PERSONGROUP'">
+                            <field name="pgp_member_ids" readonly="1">
+                                <list decoration-muted="not is_active">
+                                    <field name="id_person" string="Person"/>
+                                    <field name="is_active" widget="boolean"/>
+                                </list>
+                            </field>
                         </page>
 
-                        <!-- Tab 4: Relations -->
+                        <!-- Tab: Relations -->
                         <page string="Relations" name="relations">
                             <field name="proprelation_all_ids" readonly="1">
                                 <list decoration-muted="not is_active">

@@ -5004,6 +5004,9 @@ class BeTaskProcessor(models.AbstractModel):
     def _find_or_create_persongroup(self, name, name_short, school_org, source_label='auto'):
         """Find existing or create new PERSONGROUP org under OuForGroups.
 
+        Creation goes through the MANUAL/ORG/ADD betask pipeline, same as
+        the CreatePersongroupWizard.
+
         Returns (persongroup_org, created) or (None, False) on failure.
         """
         ou_value, ou_org = self._resolve_ou_for_groups_org(school_org)
@@ -5023,49 +5026,69 @@ class BeTaskProcessor(models.AbstractModel):
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
 
         # Search for existing persongroup under ou_org
-        child_rels = PropRelation.search([
-            ('proprelation_type_id', '=', org_tree_type.id),
-            ('id_org_parent', '=', ou_org.id),
-            ('is_active', '=', True),
-        ])
-        child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
         name_short_lower = (name_short or '').lower()
-        if child_org_ids:
-            existing = Org.search([
-                ('id', 'in', child_org_ids),
-                ('name_short', '=ilike', name_short_lower),
-                ('org_type_id', '=', pg_type.id),
+        if org_tree_type:
+            child_rels = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org_parent', '=', ou_org.id),
                 ('is_active', '=', True),
-            ], limit=1)
-            if existing:
-                _logger.info(f'[PG-SYNC] Found existing persongroup: {existing.name} (source={source_label})')
-                return existing, False
+            ])
+            child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+            if child_org_ids:
+                existing = Org.search([
+                    ('id', 'in', child_org_ids),
+                    ('name_short', '=ilike', name_short_lower),
+                    ('org_type_id', '=', pg_type.id),
+                    ('is_active', '=', True),
+                ], limit=1)
+                if existing:
+                    _logger.info(f'[PG-SYNC] Found existing persongroup: {existing.name} (source={source_label})')
+                    return existing, False
 
-        # Build AD/OU fields
+        # Build task data (same structure as CreatePersongroupWizard._build_persongroup_task_data)
         school_short = (school_org.name_short or '').lower()
         com_group_name = f"grp-{name_short_lower}-{school_short}"
-        com_group_email = ''
-        if school_org.domain_external:
-            com_group_email = f"{com_group_name}@{school_org.domain_external}"
 
+        task_data = {
+            'parent_org_id': ou_org.id,
+            'org_type_name': 'PERSONGROUP',
+            'org_type_id': pg_type.id,
+            'name': name,
+            'name_short': name_short_lower,
+            'inst_nr': school_org.inst_nr or '',
+            'has_ou': True,
+            'has_comgroup': True,
+            'has_secgroup': False,
+            'has_role': False,
+            'com_group_name': com_group_name,
+            'domain_internal': ou_org.domain_internal or school_org.domain_internal or '',
+            'domain_external': ou_org.domain_external or school_org.domain_external or '',
+        }
+
+        # Com group email
+        if com_group_name and school_org.domain_external:
+            task_data['com_group_email'] = f"{com_group_name}@{school_org.domain_external}"
+
+        # OU FQDNs
         parent_fqdn_int = (ou_org.ou_fqdn_internal or '').lower()
         parent_fqdn_ext = (ou_org.ou_fqdn_external or '').lower()
-        ou_fqdn_internal = f"ou={name_short_lower},{parent_fqdn_int}" if parent_fqdn_int else ''
-        ou_fqdn_external = f"ou={name_short_lower},{parent_fqdn_ext}" if parent_fqdn_ext else ''
+        if parent_fqdn_int:
+            task_data['ou_fqdn_internal'] = f"ou={name_short_lower},{parent_fqdn_int}"
+        if parent_fqdn_ext:
+            task_data['ou_fqdn_external'] = f"ou={name_short_lower},{parent_fqdn_ext}"
 
-        # com_group_fqdn: cn={com_group_name},ou={ou_value},{school.ou_fqdn}
-        school_fqdn_int = (school_org.ou_fqdn_internal or '').lower()
-        school_fqdn_ext = (school_org.ou_fqdn_external or '').lower()
+        # Com group FQDNs
         ou_value_lower = (ou_value or '').lower()
-        com_group_fqdn_internal = ''
-        com_group_fqdn_external = ''
-        if school_fqdn_int:
-            com_group_fqdn_internal = f"cn={com_group_name},ou={ou_value_lower},{school_fqdn_int}"
-        if school_fqdn_ext:
-            com_group_fqdn_external = f"cn={com_group_name},ou={ou_value_lower},{school_fqdn_ext}"
+        if com_group_name and ou_value_lower:
+            school_fqdn_int = (school_org.ou_fqdn_internal or '').lower()
+            school_fqdn_ext = (school_org.ou_fqdn_external or '').lower()
+            if school_fqdn_int:
+                task_data['com_group_fqdn_internal'] = f"cn={com_group_name},ou={ou_value_lower},{school_fqdn_int}"
+            if school_fqdn_ext:
+                task_data['com_group_fqdn_external'] = f"cn={com_group_name},ou={ou_value_lower},{school_fqdn_ext}"
 
         # name_tree from ou_fqdn_internal
-        name_tree = ''
+        ou_fqdn_internal = task_data.get('ou_fqdn_internal', '')
         if ou_fqdn_internal:
             components = [c.strip() for c in ou_fqdn_internal.split(',') if c.strip()]
             dc_parts = []
@@ -5079,39 +5102,44 @@ class BeTaskProcessor(models.AbstractModel):
             ou_parts.reverse()
             parts = dc_parts + ou_parts
             if parts:
-                name_tree = '.'.join(parts)
+                task_data['name_tree'] = '.'.join(parts)
 
-        new_pg = Org.create({
-            'name': name,
-            'name_short': name_short_lower,
-            'org_type_id': pg_type.id,
-            'is_active': True,
-            'has_ou': True,
-            'has_comgroup': True,
-            'domain_internal': ou_org.domain_internal or school_org.domain_internal or '',
-            'domain_external': ou_org.domain_external or school_org.domain_external or '',
-            'ou_fqdn_internal': ou_fqdn_internal,
-            'ou_fqdn_external': ou_fqdn_external,
-            'com_group_name': com_group_name,
-            'com_group_email': com_group_email,
-            'com_group_fqdn_internal': com_group_fqdn_internal,
-            'com_group_fqdn_external': com_group_fqdn_external,
-            'name_tree': name_tree,
-        })
+        # Create via MANUAL/ORG/ADD betask
+        service = self.env['myschool.manual.task.service']
+        task = service.create_manual_task('ORG', 'ADD', task_data)
+        _logger.info(f'[PG-SYNC] Created MANUAL/ORG/ADD betask for persongroup "{name}" (source={source_label})')
 
-        # Create ORG-TREE: persongroup -> ou_org
-        if org_tree_type:
-            tree_name = build_proprelation_name('ORG-TREE', id_org=new_pg, id_org_parent=ou_org)
-            PropRelation.create({
-                'name': tree_name,
-                'proprelation_type_id': org_tree_type.id,
-                'id_org': new_pg.id,
-                'id_org_parent': ou_org.id,
-                'is_active': True,
-            })
+        # Find the created org from the task result
+        import re
+        new_pg = None
+        if task.changes:
+            match = re.search(r'Created org:.*\(ID:\s*(\d+)\)', task.changes)
+            if match:
+                new_pg = Org.browse(int(match.group(1))).exists()
 
-        _logger.info(f'[PG-SYNC] Created persongroup: {new_pg.name} under {ou_org.name} (source={source_label})')
-        return new_pg, True
+        if not new_pg:
+            # Fallback: search by name_short under ou_org
+            if org_tree_type:
+                child_rels = PropRelation.search([
+                    ('proprelation_type_id', '=', org_tree_type.id),
+                    ('id_org_parent', '=', ou_org.id),
+                    ('is_active', '=', True),
+                ])
+                child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+                if child_org_ids:
+                    new_pg = Org.search([
+                        ('id', 'in', child_org_ids),
+                        ('name_short', '=ilike', name_short_lower),
+                        ('org_type_id', '=', pg_type.id),
+                        ('is_active', '=', True),
+                    ], limit=1)
+
+        if new_pg:
+            _logger.info(f'[PG-SYNC] Persongroup created: {new_pg.name} (ID: {new_pg.id}) under {ou_org.name}')
+            return new_pg, True
+        else:
+            _logger.warning(f'[PG-SYNC] Betask created but persongroup not found for "{name}" (source={source_label})')
+            return None, False
 
     def _sync_pg_p_members(self, persongroup_org, desired_person_ids, source_label='auto'):
         """Set-based diff to sync PG-P members of a persongroup.
@@ -5218,10 +5246,13 @@ class BeTaskProcessor(models.AbstractModel):
 
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
 
         brso_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_BRSO)], limit=1)
         ppsbr_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PPSBR)], limit=1)
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
         if not brso_type or not ppsbr_type:
+            _logger.warning(f'[PG-SYNC] BRSO or PPSBR type not found for role {role.name}')
             return
 
         # Get all active BRSO for this role
@@ -5232,29 +5263,41 @@ class BeTaskProcessor(models.AbstractModel):
             ('id_org_parent', '!=', False),
         ])
 
-        # Group by school (id_org_parent)
+        if not brso_rels:
+            _logger.info(f'[PG-SYNC] No BRSO relations found for role {role.name}')
+            return
+
+        # Group by resolved non-admin school
         schools = {}
         for brso in brso_rels:
-            school_id = brso.id_org_parent.id
-            if school_id not in schools:
-                schools[school_id] = brso.id_org_parent
+            school_org = self._resolve_school_org(brso.id_org_parent)
+            if school_org and school_org.id not in schools:
+                schools[school_org.id] = school_org
 
-        for school_id, school_admin_org in schools.items():
-            school_org = self._resolve_school_org(school_admin_org)
-            if not school_org:
-                continue
-
+        for school_id, school_org in schools.items():
             role_short = (role.shortname or role.name or '').lower()
             persongroup, _created = self._find_or_create_persongroup(
                 role.name, role_short, school_org, source_label=f'role:{role.name}')
             if not persongroup:
                 continue
 
+            # Collect all org IDs belonging to this school (admin + non-admin)
+            # so we match PPSBRs regardless of which org variant they reference
+            school_org_ids = {school_org.id}
+            if org_tree_type:
+                # Find orgs that share the same inst_nr (admin counterparts)
+                if school_org.inst_nr:
+                    same_inst = Org.search([
+                        ('inst_nr', '=', school_org.inst_nr),
+                        ('is_active', '=', True),
+                    ])
+                    school_org_ids.update(same_inst.ids)
+
             # Get persons with this role at this school
             ppsbr_rels = PropRelation.search([
                 ('proprelation_type_id', '=', ppsbr_type.id),
                 ('id_role', '=', role.id),
-                ('id_org_parent', '=', school_id),
+                ('id_org_parent', 'in', list(school_org_ids)),
                 ('is_active', '=', True),
                 ('id_person', '!=', False),
             ])
