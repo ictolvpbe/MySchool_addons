@@ -339,7 +339,7 @@ class ManualTaskProcessor(models.AbstractModel):
             relations.unlink()
             changes.append(f"Deleted {count} proprelations")
 
-        person.unlink()
+        person.with_context(skip_manual_audit=True).unlink()
         changes.append(f"Deleted person: {person_name}")
 
         return {'success': True, 'changes': '\n'.join(changes)}

@@ -5,6 +5,8 @@ Object Browser Wizards
 Wizards for add, move, and bulk operations.
 """
 
+from datetime import timedelta
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 import logging
@@ -3768,3 +3770,192 @@ class ManagePersongroupMembersWizard(models.TransientModel):
 
     def action_close(self):
         return {'type': 'ir.actions.act_window_close'}
+
+
+class CleanupWizard(models.TransientModel):
+    """
+    Wizard to archive or permanently delete old backend tasks or system events.
+
+    Opened from two menu items (Backend Tasks > Cleanup and System Events > Cleanup)
+    with context setting the default cleanup_target. Retention days are stored as a
+    CI on the schoolboard org and persist across uses.
+    """
+    _name = 'myschool.cleanup.wizard'
+    _description = 'Cleanup Old Records'
+
+    cleanup_target = fields.Selection(
+        selection=[
+            ('betasks', 'Backend Tasks'),
+            ('events', 'System Events'),
+        ],
+        string='Cleanup Target',
+        required=True,
+        readonly=True,
+    )
+
+    cleanup_action = fields.Selection(
+        selection=[
+            ('archive', 'Archive'),
+            ('delete', 'Permanently Delete'),
+        ],
+        string='Action',
+        required=True,
+        default='archive',
+    )
+
+    clean_all = fields.Boolean(
+        string='Clean All',
+        default=False,
+        help='Ignore retention period and clean all matching records, including today.',
+    )
+
+    retention_days = fields.Integer(
+        string='Retention Days',
+        required=True,
+        default=90,
+        help='Records older than this many days will be cleaned up',
+    )
+
+    cutoff_date = fields.Date(
+        string='Cutoff Date',
+        compute='_compute_preview',
+        store=False,
+    )
+
+    preview_count = fields.Integer(
+        string='Matching Records',
+        compute='_compute_preview',
+        store=False,
+    )
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        ci = self._get_retention_ci()
+        if ci and ci.integer_value:
+            res['retention_days'] = ci.integer_value
+        return res
+
+    def _get_schoolboard_org(self):
+        sb_type = self.env['myschool.org.type'].search([('name', '=', 'SCHOOLBOARD')], limit=1)
+        if not sb_type:
+            return self.env['myschool.org']
+        return self.env['myschool.org'].search([('org_type_id', '=', sb_type.id), ('is_active', '=', True)], limit=1)
+
+    def _get_retention_ci(self):
+        return self.env['myschool.config.item'].search([('name', '=', 'CLEANUP_RETENTION_DAYS')], limit=1)
+
+    def _get_status_domain(self):
+        if self.cleanup_target == 'betasks':
+            return [('status', 'in', ('completed_ok', 'error'))]
+        elif self.cleanup_target == 'events':
+            return [('status', 'in', ('CLOSED', 'PRO_ERROR'))]
+        return []
+
+    def _get_model(self):
+        if self.cleanup_target == 'betasks':
+            return self.env['myschool.betask'].with_context(active_test=False)
+        elif self.cleanup_target == 'events':
+            return self.env['myschool.sys.event'].with_context(active_test=False)
+        return None
+
+    def _get_search_domain(self):
+        if self.clean_all:
+            return []
+        domain = self._get_status_domain()
+        cutoff = fields.Datetime.now() - timedelta(days=self.retention_days)
+        domain.append(('create_date', '<', cutoff))
+        return domain
+
+    @api.depends('retention_days', 'cleanup_target', 'clean_all')
+    def _compute_preview(self):
+        for wizard in self:
+            if not wizard.clean_all and (not wizard.retention_days or wizard.retention_days < 1):
+                wizard.cutoff_date = False
+                wizard.preview_count = 0
+                continue
+
+            if wizard.clean_all:
+                wizard.cutoff_date = False
+            else:
+                cutoff = fields.Datetime.now() - timedelta(days=wizard.retention_days)
+                wizard.cutoff_date = cutoff.date()
+
+            model = wizard._get_model()
+            if model is not None:
+                wizard.preview_count = model.search_count(wizard._get_search_domain())
+            else:
+                wizard.preview_count = 0
+
+    def _save_retention_ci(self):
+        ci = self._get_retention_ci()
+        if not ci:
+            ci = self.env['myschool.config.item'].create({
+                'name': 'CLEANUP_RETENTION_DAYS',
+                'scope': 'org',
+                'type': 'setting',
+                'integer_value': self.retention_days,
+                'description': 'Number of days to retain completed/error backend tasks and closed/error system events before cleanup.',
+            })
+            sb_org = self._get_schoolboard_org()
+            if sb_org:
+                self.env['myschool.ci.relation'].create({
+                    'id_ci': ci.id,
+                    'id_org': sb_org.id,
+                })
+        else:
+            ci.write({'integer_value': self.retention_days})
+
+    def action_cleanup(self):
+        self.ensure_one()
+        if not self.clean_all and self.retention_days < 1:
+            raise UserError("Retention days must be at least 1.")
+
+        self._save_retention_ci()
+
+        model = self._get_model()
+        if model is None:
+            raise UserError("Invalid cleanup target.")
+
+        domain = self._get_search_domain()
+        records = model.search(domain)
+        count = len(records)
+        label = 'backend tasks' if self.cleanup_target == 'betasks' else 'system events'
+
+        _logger.info(
+            "Cleanup wizard: target=%s, action=%s, clean_all=%s, domain=%s, found=%d records",
+            self.cleanup_target, self.cleanup_action, self.clean_all, domain, count,
+        )
+
+        if self.cleanup_action == 'archive':
+            records.write({'active': False})
+            action_label = 'Archived'
+        else:
+            records.unlink()
+            action_label = 'Permanently deleted'
+
+        if self.clean_all:
+            period = '(all matching records)'
+        else:
+            period = f'older than {self.retention_days} days'
+
+        msg = f'{action_label} {count} {label} {period}.'
+        _logger.info("Cleanup wizard result: %s", msg)
+
+        # Reopen the matching list view so the user sees the updated data
+        if self.cleanup_target == 'betasks':
+            action = self.env['ir.actions.act_window']._for_xml_id('myschool_admin.action_betask_all')
+        else:
+            action = self.env['ir.actions.act_window']._for_xml_id('myschool_admin.action_sys_event_all')
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Cleanup Complete',
+                'message': msg,
+                'type': 'success',
+                'sticky': False,
+                'next': action,
+            },
+        }

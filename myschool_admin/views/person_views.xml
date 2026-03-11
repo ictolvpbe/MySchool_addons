@@ -337,4 +337,108 @@ action = {
 }
         </field>
     </record>
+
+    <!-- Inactive Employees Report -->
+    <record id="action_inactive_employees_report" model="ir.actions.server">
+        <field name="name">Inactive Employees</field>
+        <field name="model_id" ref="myschool_core.model_myschool_person"/>
+        <field name="state">code</field>
+        <field name="code">
+PropRelation = env['myschool.proprelation']
+PropRelationType = env['myschool.proprelation.type']
+Role = env['myschool.role']
+
+ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+if not ppsbr_type:
+    raise UserError('PPSBR proprelation type not found')
+
+employee_role = Role.search([('name', '=', 'EMPLOYEE')], limit=1)
+if not employee_role:
+    raise UserError('EMPLOYEE role not found')
+
+# Find all active PPSBR relations with EMPLOYEE role
+emp_rels = PropRelation.search([
+    ('proprelation_type_id', '=', ppsbr_type.id),
+    ('id_role', '=', employee_role.id),
+    ('id_person', '!=', False),
+    ('is_active', '=', True),
+])
+
+# Collect person IDs that have EMPLOYEE PPSBR
+person_ids_with_employee = set()
+person_school_map = {}  # person_id -> school org
+for rel in emp_rels:
+    pid = rel.id_person.id
+    person_ids_with_employee.add(pid)
+    if rel.id_org:
+        person_school_map[pid] = rel.id_org
+
+# Find persons that also have PPSBR with OTHER roles → exclude them
+other_rels = PropRelation.search([
+    ('proprelation_type_id', '=', ppsbr_type.id),
+    ('id_role', '!=', employee_role.id),
+    ('id_role', '!=', False),
+    ('id_person', 'in', list(person_ids_with_employee)),
+    ('is_active', '=', True),
+])
+persons_with_other_roles = set(r.id_person.id for r in other_rels)
+
+# Persons with ONLY the generic EMPLOYEE role
+inactive_person_ids = person_ids_with_employee - persons_with_other_roles
+
+if not inactive_person_ids:
+    action = {
+        'type': 'ir.actions.client',
+        'tag': 'display_notification',
+        'params': {
+            'title': 'Inactive Employees',
+            'message': 'No employees found with only the generic EMPLOYEE role.',
+            'type': 'info',
+            'sticky': False,
+        }
+    }
+else:
+    # Group by school
+    Person = env['myschool.person'].with_context(active_test=False)
+    persons = Person.browse(list(inactive_person_ids))
+
+    by_school = {}
+    for p in persons:
+        school = person_school_map.get(p.id)
+        school_name = school.name if school else 'No school'
+        by_school.setdefault(school_name, []).append(p)
+
+    lines = []
+    lines.append('&lt;h3&gt;Inactive Employees&lt;/h3&gt;')
+    lines.append(f'&lt;p&gt;Employees with only the generic EMPLOYEE role (no specific function).&lt;br/&gt;')
+    lines.append(f'&lt;b&gt;Total: {len(inactive_person_ids)}&lt;/b&gt;&lt;/p&gt;')
+
+    for school_name in sorted(by_school.keys()):
+        school_persons = sorted(by_school[school_name], key=lambda p: (p.name or '', p.first_name or ''))
+        lines.append(f'&lt;h4&gt;{school_name} ({len(school_persons)})&lt;/h4&gt;')
+        lines.append('&lt;table style="width:100%;border-collapse:collapse;"&gt;')
+        lines.append('&lt;tr style="background:#f0f0f0;font-weight:bold;"&gt;')
+        lines.append('&lt;td style="padding:4px 8px;border:1px solid #ddd;"&gt;Name&lt;/td&gt;')
+        lines.append('&lt;td style="padding:4px 8px;border:1px solid #ddd;"&gt;First Name&lt;/td&gt;')
+        lines.append('&lt;td style="padding:4px 8px;border:1px solid #ddd;"&gt;SAP Ref&lt;/td&gt;')
+        lines.append('&lt;/tr&gt;')
+        for p in school_persons:
+            lines.append('&lt;tr&gt;')
+            lines.append(f'&lt;td style="padding:4px 8px;border:1px solid #ddd;"&gt;{p.name or ""}&lt;/td&gt;')
+            lines.append(f'&lt;td style="padding:4px 8px;border:1px solid #ddd;"&gt;{p.first_name or ""}&lt;/td&gt;')
+            lines.append(f'&lt;td style="padding:4px 8px;border:1px solid #ddd;"&gt;{p.sap_ref or ""}&lt;/td&gt;')
+            lines.append('&lt;/tr&gt;')
+        lines.append('&lt;/table&gt;')
+
+    action = {
+        'type': 'ir.actions.act_window',
+        'name': 'Inactive Employees',
+        'res_model': 'myschool.person',
+        'view_mode': 'list,form',
+        'domain': [('id', 'in', list(inactive_person_ids))],
+        'context': {'group_by': 'tree_org_id'},
+    }
+        </field>
+    </record>
+
 </odoo>

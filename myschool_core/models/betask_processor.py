@@ -1590,12 +1590,17 @@ class BeTaskProcessor(models.AbstractModel):
         _logger.info(f'Processing task {task.name}: {target}_{obj}_{action}')
         
         handler_map = {
-            # DB EMPLOYEE handlers
+            # DB PERSON handlers (unified dispatchers)
+            ('DB', 'PERSON', 'ADD'): self.process_db_person_add,
+            ('DB', 'PERSON', 'UPD'): self.process_db_person_upd,
+            ('DB', 'PERSON', 'DEACT'): self.process_db_person_deact,
+
+            # Legacy DB EMPLOYEE handlers (for old tasks still in queue)
             ('DB', 'EMPLOYEE', 'ADD'): self.process_db_employee_add,
             ('DB', 'EMPLOYEE', 'UPD'): self.process_db_employee_upd,
             ('DB', 'EMPLOYEE', 'DEACT'): self.process_db_employee_deact,
-            
-            # DB STUDENT handlers
+
+            # Legacy DB STUDENT handlers (for old tasks still in queue)
             ('DB', 'STUDENT', 'ADD'): self.process_db_student_add,
             ('DB', 'STUDENT', 'UPD'): self.process_db_student_upd,
             ('DB', 'STUDENT', 'DEACT'): self.process_db_student_deact,
@@ -1663,9 +1668,40 @@ class BeTaskProcessor(models.AbstractModel):
             return data_str
 
     # =========================================================================
+    # DB PERSON TASK PROCESSORS (unified dispatchers)
+    # =========================================================================
+
+    @api.model
+    def process_db_person_add(self, task):
+        """Unified person ADD — delegates based on person_type in task data."""
+        data = self._parse_task_data(task.data)
+        person_type = (data.get('person_type') or '').upper() if isinstance(data, dict) else ''
+        if person_type == 'STUDENT':
+            return self.process_db_student_add(task)
+        return self.process_db_employee_add(task)
+
+    @api.model
+    def process_db_person_upd(self, task):
+        """Unified person UPD — delegates based on person_type in task data."""
+        data = self._parse_task_data(task.data)
+        person_type = (data.get('person_type') or '').upper() if isinstance(data, dict) else ''
+        if person_type == 'STUDENT':
+            return self.process_db_student_upd(task)
+        return self.process_db_employee_upd(task)
+
+    @api.model
+    def process_db_person_deact(self, task):
+        """Unified person DEACT — delegates based on person_type in task data."""
+        data = self._parse_task_data(task.data)
+        person_type = (data.get('person_type') or '').upper() if isinstance(data, dict) else ''
+        if person_type == 'STUDENT':
+            return self.process_db_student_deact(task)
+        return self.process_db_employee_deact(task)
+
+    # =========================================================================
     # DB EMPLOYEE TASK PROCESSORS
     # =========================================================================
-    
+
     @api.model
     def process_db_employee_add(self, task):
         """Process DB EMPLOYEE ADD task - Create new employee."""
