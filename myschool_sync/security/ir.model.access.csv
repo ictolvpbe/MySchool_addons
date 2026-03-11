@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_sync_target_user,sync.target.user,model_sync_target,myschool_core.group_myschool_core_user,1,0,0,0
+access_sync_target_admin,sync.target.admin,model_sync_target,myschool_sync.group_myschool_sync_admin,1,1,1,1
+access_sync_log_user,sync.log.user,model_sync_log,myschool_core.group_myschool_core_user,1,0,0,0
+access_sync_log_admin,sync.log.admin,model_sync_log,myschool_sync.group_myschool_sync_admin,1,1,1,1

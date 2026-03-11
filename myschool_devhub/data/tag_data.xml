@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+    <record id="tag_frontend" model="devhub.tag">
+        <field name="name">frontend</field>
+        <field name="color">1</field>
+    </record>
+
+    <record id="tag_backend" model="devhub.tag">
+        <field name="name">backend</field>
+        <field name="color">2</field>
+    </record>
+
+    <record id="tag_api" model="devhub.tag">
+        <field name="name">api</field>
+        <field name="color">3</field>
+    </record>
+
+    <record id="tag_database" model="devhub.tag">
+        <field name="name">database</field>
+        <field name="color">4</field>
+    </record>
+
+    <record id="tag_security" model="devhub.tag">
+        <field name="name">security</field>
+        <field name="color">5</field>
+    </record>
+
+    <record id="tag_performance" model="devhub.tag">
+        <field name="name">performance</field>
+        <field name="color">6</field>
+    </record>
+
+    <record id="tag_ux" model="devhub.tag">
+        <field name="name">ux</field>
+        <field name="color">7</field>
+    </record>
+
+    <record id="tag_documentation" model="devhub.tag">
+        <field name="name">documentation</field>
+        <field name="color">8</field>
+    </record>
+
+    </data>
+</odoo>

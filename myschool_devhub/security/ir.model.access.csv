@@ -1,0 +1,13 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_devhub_project_user,devhub.project.user,model_devhub_project,myschool_devhub.group_devhub_user,1,0,0,0
+access_devhub_project_manager,devhub.project.manager,model_devhub_project,myschool_devhub.group_devhub_manager,1,1,1,1
+access_devhub_item_user,devhub.item.user,model_devhub_item,myschool_devhub.group_devhub_user,1,0,0,0
+access_devhub_item_manager,devhub.item.manager,model_devhub_item,myschool_devhub.group_devhub_manager,1,1,1,1
+access_devhub_item_stage_user,devhub.item.stage.user,model_devhub_item_stage,myschool_devhub.group_devhub_user,1,0,0,0
+access_devhub_item_stage_manager,devhub.item.stage.manager,model_devhub_item_stage,myschool_devhub.group_devhub_manager,1,1,1,1
+access_devhub_sprint_user,devhub.sprint.user,model_devhub_sprint,myschool_devhub.group_devhub_user,1,0,0,0
+access_devhub_sprint_manager,devhub.sprint.manager,model_devhub_sprint,myschool_devhub.group_devhub_manager,1,1,1,1
+access_devhub_release_user,devhub.release.user,model_devhub_release,myschool_devhub.group_devhub_user,1,0,0,0
+access_devhub_release_manager,devhub.release.manager,model_devhub_release,myschool_devhub.group_devhub_manager,1,1,1,1
+access_devhub_tag_user,devhub.tag.user,model_devhub_tag,myschool_devhub.group_devhub_user,1,0,0,0
+access_devhub_tag_manager,devhub.tag.manager,model_devhub_tag,myschool_devhub.group_devhub_manager,1,1,1,1

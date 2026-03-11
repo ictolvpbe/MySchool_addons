@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+    <!-- Sync Admin Group -->
+    <record id="group_myschool_sync_admin" model="res.groups">
+        <field name="name">MySchool Sync Admin</field>
+        <field name="implied_ids" eval="[(4, ref('myschool_core.group_myschool_core_admin'))]"/>
+        <field name="comment">Full access to MySchool Sync module (target management, logs, etc.).</field>
+    </record>
+
+    </data>
+</odoo>

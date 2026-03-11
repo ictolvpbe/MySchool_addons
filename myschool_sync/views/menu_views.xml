@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Top-level Sync menu under MySchool Admin -->
+    <menuitem id="menu_myschool_sync_root"
+              name="Sync"
+              parent="myschool_admin.menu_myschool_root"
+              sequence="90"
+              groups="myschool_sync.group_myschool_sync_admin"/>
+
+    <menuitem id="menu_sync_targets"
+              name="Targets"
+              parent="menu_myschool_sync_root"
+              action="action_sync_target"
+              sequence="10"/>
+
+    <menuitem id="menu_sync_logs"
+              name="Sync Logs"
+              parent="menu_myschool_sync_root"
+              action="action_sync_log"
+              sequence="20"/>
+
+</odoo>

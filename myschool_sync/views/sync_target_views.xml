@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ======================== -->
+    <!-- sync.target FORM VIEW    -->
+    <!-- ======================== -->
+    <record id="view_sync_target_form" model="ir.ui.view">
+        <field name="name">sync.target.form</field>
+        <field name="model">sync.target</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_test_connection" type="object"
+                            string="Test Connection" class="btn-primary"/>
+                    <button name="action_trigger_full_sync" type="object"
+                            string="Full Sync" class="btn-secondary"
+                            confirm="This will create sync tasks for ALL records. Continue?"/>
+                    <button name="action_view_sync_logs" type="object"
+                            string="View Logs" class="btn-link"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Server name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Connection">
+                            <field name="url" placeholder="https://slave.example.com"/>
+                            <field name="api_key" password="True"/>
+                            <field name="is_active"/>
+                        </group>
+                        <group string="Status">
+                            <field name="last_sync_date"/>
+                            <field name="consecutive_errors"/>
+                            <field name="last_error"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Model Filters">
+                            <group>
+                                <group>
+                                    <field name="sync_types"/>
+                                    <field name="sync_period"/>
+                                    <field name="sync_org"/>
+                                </group>
+                                <group>
+                                    <field name="sync_role"/>
+                                    <field name="sync_person"/>
+                                    <field name="sync_proprelation"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="School Filter">
+                            <field name="school_org_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="name_short"/>
+                                    <field name="inst_nr"/>
+                                </list>
+                            </field>
+                            <p class="text-muted">
+                                Leave empty to sync all schools.
+                                When set, only persons/orgs/proprelations related to these schools are synced.
+                            </p>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ======================== -->
+    <!-- sync.target LIST VIEW    -->
+    <!-- ======================== -->
+    <record id="view_sync_target_list" model="ir.ui.view">
+        <field name="name">sync.target.list</field>
+        <field name="model">sync.target</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="url"/>
+                <field name="is_active" widget="boolean_toggle"/>
+                <field name="last_sync_date"/>
+                <field name="consecutive_errors" widget="badge"
+                       decoration-danger="consecutive_errors > 0"
+                       decoration-success="consecutive_errors == 0"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ======================== -->
+    <!-- sync.target SEARCH VIEW  -->
+    <!-- ======================== -->
+    <record id="view_sync_target_search" model="ir.ui.view">
+        <field name="name">sync.target.search</field>
+        <field name="model">sync.target</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="url"/>
+                <filter name="active" string="Active" domain="[('is_active', '=', True)]"/>
+                <filter name="errors" string="Has Errors" domain="[('consecutive_errors', '>', 0)]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ======================== -->
+    <!-- sync.target ACTION       -->
+    <!-- ======================== -->
+    <record id="action_sync_target" model="ir.actions.act_window">
+        <field name="name">Sync Targets</field>
+        <field name="res_model">sync.target</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_sync_target_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+</odoo>

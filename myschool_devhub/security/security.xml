@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+    <record id="group_devhub_user" model="res.groups">
+        <field name="name">DevHub User</field>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">Read access to DevHub models.</field>
+    </record>
+
+    <record id="group_devhub_manager" model="res.groups">
+        <field name="name">DevHub Manager</field>
+        <field name="implied_ids" eval="[(4, ref('group_devhub_user'))]"/>
+        <field name="comment">Full access to all DevHub models.</field>
+    </record>
+
+    </data>
+</odoo>

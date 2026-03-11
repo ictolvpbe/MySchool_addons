@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Sequence for sync log -->
+        <record id="seq_sync_log" model="ir.sequence">
+            <field name="name">Sync Log Sequence</field>
+            <field name="code">sync.log</field>
+            <field name="prefix">SL</field>
+            <field name="padding">6</field>
+            <field name="company_id" eval="False"/>
+        </record>
+
+        <!-- ========================================= -->
+        <!-- API SYNC BETASK TYPES                     -->
+        <!-- Priority 60+ ensures sync runs AFTER all  -->
+        <!-- DB/LDAP/MANUAL tasks in a cron cycle.     -->
+        <!-- ========================================= -->
+
+        <record id="betask_type_api_config_sync" model="myschool.betask.type">
+            <field name="name">API_CONFIG_SYNC</field>
+            <field name="target">API</field>
+            <field name="object">CONFIG</field>
+            <field name="action">SYNC</field>
+            <field name="description">Sync type models (org type, person type, etc.) to slave instances</field>
+            <field name="priority">60</field>
+        </record>
+
+        <record id="betask_type_api_period_sync" model="myschool.betask.type">
+            <field name="name">API_PERIOD_SYNC</field>
+            <field name="target">API</field>
+            <field name="object">PERIOD</field>
+            <field name="action">SYNC</field>
+            <field name="description">Sync period records to slave instances</field>
+            <field name="priority">61</field>
+        </record>
+
+        <record id="betask_type_api_org_sync" model="myschool.betask.type">
+            <field name="name">API_ORG_SYNC</field>
+            <field name="target">API</field>
+            <field name="object">ORG</field>
+            <field name="action">SYNC</field>
+            <field name="description">Sync organization records to slave instances</field>
+            <field name="priority">62</field>
+        </record>
+
+        <record id="betask_type_api_role_sync" model="myschool.betask.type">
+            <field name="name">API_ROLE_SYNC</field>
+            <field name="target">API</field>
+            <field name="object">ROLE</field>
+            <field name="action">SYNC</field>
+            <field name="description">Sync role records to slave instances</field>
+            <field name="priority">63</field>
+        </record>
+
+        <record id="betask_type_api_person_sync" model="myschool.betask.type">
+            <field name="name">API_PERSON_SYNC</field>
+            <field name="target">API</field>
+            <field name="object">PERSON</field>
+            <field name="action">SYNC</field>
+            <field name="description">Sync person records to slave instances</field>
+            <field name="priority">64</field>
+        </record>
+
+        <record id="betask_type_api_proprelation_sync" model="myschool.betask.type">
+            <field name="name">API_PROPRELATION_SYNC</field>
+            <field name="target">API</field>
+            <field name="object">PROPRELATION</field>
+            <field name="action">SYNC</field>
+            <field name="description">Sync proprelation records to slave instances</field>
+            <field name="priority">65</field>
+        </record>
+
+    </data>
+</odoo>
