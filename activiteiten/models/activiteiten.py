@@ -491,7 +491,8 @@ class Activiteiten(models.Model):
                 'is_auto': True,
             })
             self.env['activiteiten.kosten.line'].create(auto_lines)
-            record.state = 'vervanging'
+            record.verzekering_done = True
+            record.state = 'done'
         self._schedule_vervangingen_activity()
 
     def action_verzekering_done(self):

@@ -440,7 +440,7 @@ class MySchoolDashboard(models.Model):
     _ROLE_STATES = {
         'directie': ['pending_approval'],
         'aankoop': ['bus_check'],
-        'boekhouding': ['approved', 's_code', 'vervanging', 'done', 'rejected'],
+        'boekhouding': ['approved', 's_code', 'vervanging', 'done'],
         'vervangingen': ['vervanging'],
         'medewerker': ['draft', 'form_invullen', 'bus_check', 'bus_refused', 'pending_approval', 'approved', 'rejected', 's_code', 'vervanging', 'done'],
     }
@@ -465,6 +465,15 @@ class MySchoolDashboard(models.Model):
                     visible_states.update(self._ROLE_STATES[role])
             if visible_states:
                 action['domain'] = [('state', 'in', list(visible_states))]
+            # Set role-specific default search filters
+            if user.has_group('activiteiten.group_activiteiten_boekhouding'):
+                action['context'] = {'search_default_s_code_pending': 1}
+            elif user.has_group('activiteiten.group_activiteiten_directie'):
+                action['context'] = {'search_default_to_approve': 1}
+            elif user.has_group('activiteiten.group_activiteiten_aankoop'):
+                action['context'] = {'search_default_bus_check': 1}
+            elif user.has_group('activiteiten.group_activiteiten_vervangingen'):
+                action['context'] = {'search_default_replacement_pending': 1}
         else:
             action['domain'] = [
                 ('create_uid', '=', self.env.uid),
