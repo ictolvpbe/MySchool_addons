@@ -36,9 +36,7 @@
         <field name="body_html"><![CDATA[
 <p>Beste,</p>
 <p>Uw aanvraag voor activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is helaas afgekeurd.</p>
-{% if object.rejection_reason %}
 <p>Reden: {{ object.rejection_reason }}</p>
-{% endif %}
 <p>U kunt de aanvraag aanpassen en opnieuw indienen.</p>
         ]]></field>
     </record>

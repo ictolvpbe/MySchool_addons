@@ -9,7 +9,7 @@
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
-    'depends': ['base', 'mail'],
+    'depends': ['base', 'mail', 'myschool_core', 'myschool_admin'],
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
@@ -18,7 +18,13 @@
         'data/mail_template_data.xml',
         'views/activiteiten_views.xml',
         'views/activiteiten_menu.xml',
+        'views/org_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'activiteiten/static/src/scss/activiteiten.scss',
+        ],
+    },
     'installable': True,
     'application': True,
     'auto_install': False,

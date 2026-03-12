@@ -173,7 +173,7 @@ export class TreeNode extends Component {
 export class DetailsPanel extends Component {
     static template = "myschool_admin.DetailsPanel";
     static props = {
-        node: { type: Object, optional: true },
+        node: { type: [Object, { value: null }], optional: true },
         onAction: { type: Function, optional: true },
         onOpenRecord: { type: Function, optional: true },
         onEditCi: { type: Function, optional: true },
@@ -267,7 +267,7 @@ export class DetailsPanel extends Component {
 export class MembersPanel extends Component {
     static template = "myschool_admin.MembersPanel";
     static props = {
-        node: { type: Object, optional: true },
+        node: { type: [Object, { value: null }], optional: true },
         members: { type: Object, optional: true },
         loading: { type: Boolean, optional: true },
         onOpenRecord: { type: Function, optional: true },
