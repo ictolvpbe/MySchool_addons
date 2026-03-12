@@ -28,6 +28,11 @@
         'views/release_views.xml',
         'views/menu_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'myschool_devhub/static/src/css/devhub.css',
+        ],
+    },
     'demo': [],
     'installable': True,
     'application': True,

@@ -1,0 +1,4 @@
+/* DevHub Project Form — responsive sheet (override 1400px max-width) */
+.o_devhub_project_form .o_form_sheet_bg {
+    max-width: 100%;
+}

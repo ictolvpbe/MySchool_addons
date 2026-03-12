@@ -12,6 +12,14 @@ class DevhubProject(models.Model):
     responsible_id = fields.Many2one('res.users', string='Project Lead')
     member_ids = fields.Many2many('res.users', string='Team Members')
     item_ids = fields.One2many('devhub.item', 'project_id', string='Items')
+    bug_ids = fields.One2many(
+        'devhub.item', 'project_id', string='Bugs',
+        domain=[('item_type', '=', 'bug')],
+    )
+    improvement_ids = fields.One2many(
+        'devhub.item', 'project_id', string='Improvements',
+        domain=[('item_type', '=', 'improvement')],
+    )
     sprint_ids = fields.One2many('devhub.sprint', 'project_id', string='Sprints')
     release_ids = fields.One2many('devhub.release', 'project_id', string='Releases')
     process_map_ids = fields.Many2many('process.map', string='Process Maps')

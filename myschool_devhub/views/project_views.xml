@@ -26,12 +26,30 @@
         <field name="domain">[('project_id', '=', active_id)]</field>
     </record>
 
+    <!-- Action to open bugs kanban for a project -->
+    <record id="devhub_project_open_bugs_action" model="ir.actions.act_window">
+        <field name="name">Bugs</field>
+        <field name="res_model">devhub.item</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'default_project_id': active_id, 'default_item_type': 'bug'}</field>
+        <field name="domain">[('project_id', '=', active_id), ('item_type', '=', 'bug')]</field>
+    </record>
+
+    <!-- Action to open improvements kanban for a project -->
+    <record id="devhub_project_open_improvements_action" model="ir.actions.act_window">
+        <field name="name">Improvements</field>
+        <field name="res_model">devhub.item</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'default_project_id': active_id, 'default_item_type': 'improvement'}</field>
+        <field name="domain">[('project_id', '=', active_id), ('item_type', '=', 'improvement')]</field>
+    </record>
+
     <!-- Project Form View (workspace) -->
     <record id="devhub_project_view_form" model="ir.ui.view">
         <field name="name">devhub.project.form</field>
         <field name="model">devhub.project</field>
         <field name="arch" type="xml">
-            <form>
+            <form class="o_devhub_project_form">
                 <sheet>
                     <div class="oe_title">
                         <h1>
@@ -46,7 +64,42 @@
                         </group>
                     </group>
                     <notebook>
-                        <page string="Items" name="items">
+                        <page string="Bugs" name="bugs">
+                            <button name="%(devhub_project_open_bugs_action)d" type="action"
+                                string="Open Kanban" class="btn btn-primary mb-3"
+                                icon="fa-th-large"/>
+                            <field name="bug_ids">
+                                <list>
+                                    <field name="display_name" string="Item"/>
+                                    <field name="stage_id"/>
+                                    <field name="priority" widget="priority"/>
+                                    <field name="assigned_id" widget="many2one_avatar_user"/>
+                                    <field name="sprint_id" optional="show"/>
+                                    <field name="story_points"/>
+                                    <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Improvements" name="improvements">
+                            <button name="%(devhub_project_open_improvements_action)d" type="action"
+                                string="Open Kanban" class="btn btn-primary mb-3"
+                                icon="fa-th-large"/>
+                            <field name="improvement_ids">
+                                <list>
+                                    <field name="display_name" string="Item"/>
+                                    <field name="item_type" widget="badge"
+                                        decoration-info="item_type == 'story'"
+                                        decoration-warning="item_type == 'improvement'"/>
+                                    <field name="stage_id"/>
+                                    <field name="priority" widget="priority"/>
+                                    <field name="assigned_id" widget="many2one_avatar_user"/>
+                                    <field name="sprint_id" optional="show"/>
+                                    <field name="story_points"/>
+                                    <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="All Items" name="items">
                             <button name="%(devhub_project_open_items_action)d" type="action"
                                 string="Open Kanban" class="btn btn-primary mb-3"
                                 icon="fa-th-large"/>
