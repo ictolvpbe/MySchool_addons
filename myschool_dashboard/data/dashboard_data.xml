@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo noupdate="1">
     <record id="dashboard_singleton" model="myschool.dashboard">
-        <field name="module_filter">all</field>
-        <field name="state_filter">all</field>
+        <field name="name">My Dashboard</field>
     </record>
 </odoo>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- List view of approved activiteiten showing absent classes -->
+    <record id="view_afwezige_klassen_list" model="ir.ui.view">
+        <field name="name">activiteiten.record.afwezige.klassen.list</field>
+        <field name="model">activiteiten.record</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <list default_order="datetime asc" create="false" edit="false" delete="false">
+                <field name="name"/>
+                <field name="titel"/>
+                <field name="school_id"/>
+                <field name="klas_ids" widget="many2many_tags"/>
+                <field name="datetime" string="Datum activiteit"/>
+                <field name="datetime_end" string="Einde activiteit" optional="show"/>
+                <field name="create_uid" string="Aanvrager"/>
+                <field name="state" widget="badge"
+                       decoration-success="state in ('approved', 's_code', 'vervanging', 'done')"/>
+                <button name="action_plan_inhaalmoment"
+                        string="Inhaalmoment plannen"
+                        type="object"
+                        class="btn-primary btn-sm"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_afwezige_klassen_search" model="ir.ui.view">
+        <field name="name">activiteiten.record.afwezige.klassen.search</field>
+        <field name="model">activiteiten.record</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="titel"/>
+                <field name="name"/>
+                <field name="school_id"/>
+                <group>
+                    <filter string="School" name="group_school"
+                            domain="[]" context="{'group_by': 'school_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_afwezige_klassen" model="ir.actions.act_window">
+        <field name="name">Afwezige klassen</field>
+        <field name="res_model">activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_ids" eval="[(5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_afwezige_klassen_list')})]"/>
+        <field name="search_view_id" ref="view_afwezige_klassen_search"/>
+        <field name="domain">[('state', 'in', ('approved', 's_code', 'vervanging', 'done')), ('klas_ids', '!=', False), ('planner_ingediend', '=', False)]</field>
+        <field name="context">{'create': False}</field>
+    </record>
+</odoo>

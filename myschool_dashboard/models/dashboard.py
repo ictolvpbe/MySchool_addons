@@ -1,3 +1,6 @@
+from markupsafe import Markup
+from odoo.tools import html_escape
+
 from odoo import models, fields, api
 
 
@@ -5,42 +8,16 @@ class MySchoolDashboard(models.Model):
     _name = 'myschool.dashboard'
     _description = 'Mijn Dashboard'
 
-    module_filter = fields.Selection([
-        ('all', 'Alle Aanvragen'),
-        ('buitenschoolse_activiteit', 'Buitenschoolse Activiteiten'),
-        ('professionalisering', 'Professionalisering'),
-        ('activiteiten', 'Activiteiten'),
-    ], string="Module", default='all')
+    name = fields.Char(default='My Dashboard')
 
-    state_filter = fields.Selection([
-        ('all', 'Alle'),
-        ('draft', 'Concept'),
-        ('submitted', 'Ingediend'),
-        ('approved', 'Goedgekeurd'),
-        ('rejected', 'Afgekeurd'),
-        ('done', 'Afgerond'),
-    ], string="Status", default='all')
-
-    priority_filter = fields.Selection([
-        ('all', 'Alle'),
-        ('0', 'Normaal'),
-        ('1', '\u2605'),
-        ('2', '\u2605\u2605'),
-        ('3', '\u2605\u2605\u2605'),
-    ], string="Prioriteit", default='all')
-
-    search_query = fields.Char(string="Zoeken")
+    def _compute_display_name(self):
+        for record in self:
+            record.display_name = 'My Dashboard'
 
     # Access booleans
-    has_activiteit_access = fields.Boolean(
-        compute='_compute_access_rights')
     has_professionalisering_access = fields.Boolean(
         compute='_compute_access_rights')
     has_activiteiten_access = fields.Boolean(
-        compute='_compute_access_rights')
-    is_directie = fields.Boolean(
-        compute='_compute_access_rights')
-    is_activiteit_manager = fields.Boolean(
         compute='_compute_access_rights')
     is_prof_manager = fields.Boolean(
         compute='_compute_access_rights')
@@ -54,19 +31,16 @@ class MySchoolDashboard(models.Model):
         compute='_compute_access_rights')
     is_act_directie = fields.Boolean(
         compute='_compute_access_rights')
-    # Counts buitenschoolse activiteit
-    activiteit_total = fields.Integer(
-        string="Activiteit Totaal", compute='_compute_activiteit_counts')
-    activiteit_draft = fields.Integer(
-        string="Activiteit Concept", compute='_compute_activiteit_counts')
-    activiteit_submitted = fields.Integer(
-        string="Activiteit Ingediend", compute='_compute_activiteit_counts')
-    activiteit_approved = fields.Integer(
-        string="Activiteit Goedgekeurd", compute='_compute_activiteit_counts')
-    activiteit_rejected = fields.Integer(
-        string="Activiteit Afgekeurd", compute='_compute_activiteit_counts')
-    activiteit_done = fields.Integer(
-        string="Activiteit Afgerond", compute='_compute_activiteit_counts')
+    is_only_aankoop = fields.Boolean(
+        compute='_compute_access_rights')
+    is_only_boekhouding = fields.Boolean(
+        compute='_compute_access_rights')
+    is_only_directie = fields.Boolean(
+        compute='_compute_access_rights')
+    is_only_medewerker = fields.Boolean(
+        compute='_compute_access_rights')
+    is_only_vervangingen = fields.Boolean(
+        compute='_compute_access_rights')
 
     # Counts activiteiten (per actual state)
     act_total = fields.Integer(
@@ -106,56 +80,29 @@ class MySchoolDashboard(models.Model):
     prof_done = fields.Integer(
         string="Prof. Afgerond", compute='_compute_professionalisering_counts')
 
-    activiteit_ids = fields.Many2many(
-        'aanvraag_buitenschoolse_activiteit.record',
-        string="Buitenschoolse Activiteiten",
-        compute='_compute_activiteit_ids')
-    professionalisering_ids = fields.Many2many(
-        'professionalisering.record', string="Professionalisering",
-        compute='_compute_professionalisering_ids')
-    activiteiten_ids = fields.Many2many(
-        'activiteiten.record', string="Activiteiten",
-        compute='_compute_activiteiten_ids')
+    # KPI: combined pending / action-needed / approved / rejected
+    kpi_pending = fields.Integer(compute='_compute_kpi')
+    kpi_action_needed = fields.Integer(compute='_compute_kpi')
+    kpi_approved = fields.Integer(compute='_compute_kpi')
+    kpi_rejected = fields.Integer(compute='_compute_kpi')
+
+    # Recent activity (own aanvragen)
+    recent_activity_html = fields.Html(
+        compute='_compute_recent_activity_html', sanitize=False)
 
     _DIRECTIE_GROUPS = {
-        'aanvraag_buitenschoolse_activiteit.record':
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie',
         'professionalisering.record':
             'professionalisering.group_professionalisering_directie',
         'activiteiten.record':
             'activiteiten.group_activiteiten_directie',
     }
     _ADMIN_GROUPS = {
-        'aanvraag_buitenschoolse_activiteit.record':
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_admin',
         'professionalisering.record':
             'professionalisering.group_professionalisering_admin',
         'activiteiten.record':
             'activiteiten.group_activiteiten_admin',
     }
-
-    # --- Bypass ACL on read so computed fields can access comodels ---
-
-    def read(self, fields=None, load='_classic_read'):
-        return super(
-            MySchoolDashboard, self.with_env(self.env(su=True))
-        ).read(fields, load)
-
-    def web_read(self, specification, **kwargs):
-        return super(
-            MySchoolDashboard, self.with_env(self.env(su=True))
-        ).web_read(specification, **kwargs)
-
-    # --- Access checks (always use real user, not su) ---
-
     _ALL_GROUPS = {
-        'aanvraag_buitenschoolse_activiteit.record': [
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_user',
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_boekhouding',
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_vervangingen',
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie',
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_admin',
-        ],
         'professionalisering.record': [
             'professionalisering.group_professionalisering_user',
             'professionalisering.group_professionalisering_boekhouding',
@@ -172,6 +119,35 @@ class MySchoolDashboard(models.Model):
             'activiteiten.group_activiteiten_admin',
         ],
     }
+    _MANAGER_GROUPS = {
+        'professionalisering.record': [
+            'professionalisering.group_professionalisering_directie',
+            'professionalisering.group_professionalisering_admin',
+            'professionalisering.group_professionalisering_boekhouding',
+            'professionalisering.group_professionalisering_vervangingen',
+        ],
+        'activiteiten.record': [
+            'activiteiten.group_activiteiten_directie',
+            'activiteiten.group_activiteiten_admin',
+            'activiteiten.group_activiteiten_aankoop',
+            'activiteiten.group_activiteiten_boekhouding',
+            'activiteiten.group_activiteiten_vervangingen',
+        ],
+    }
+
+    # --- Bypass ACL on read so computed fields can access comodels ---
+
+    def read(self, fields=None, load='_classic_read'):
+        return super(
+            MySchoolDashboard, self.with_env(self.env(su=True))
+        ).read(fields, load)
+
+    def web_read(self, specification, **kwargs):
+        return super(
+            MySchoolDashboard, self.with_env(self.env(su=True))
+        ).web_read(specification, **kwargs)
+
+    # --- Access checks (always use real user, not su) ---
 
     def _has_access(self, model_name):
         user = self.env(su=False).user
@@ -192,6 +168,13 @@ class MySchoolDashboard(models.Model):
             return False
         return self.env(su=False).user.has_group(group_xmlid)
 
+    def _is_manager(self, model_name):
+        user = self.env(su=False).user
+        for group_xmlid in self._MANAGER_GROUPS.get(model_name, []):
+            if user.has_group(group_xmlid):
+                return True
+        return False
+
     def _get_base_domain(self, model_name):
         """Admin sees all, directie sees unassigned + assigned-to-them, medewerker only their own."""
         if self._is_admin(model_name):
@@ -208,47 +191,10 @@ class MySchoolDashboard(models.Model):
             ]
         return [('employee_id.user_id', '=', self.env.uid)]
 
-    _MANAGER_GROUPS = {
-        'aanvraag_buitenschoolse_activiteit.record': [
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie',
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_admin',
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_boekhouding',
-            'aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_vervangingen',
-        ],
-        'professionalisering.record': [
-            'professionalisering.group_professionalisering_directie',
-            'professionalisering.group_professionalisering_admin',
-            'professionalisering.group_professionalisering_boekhouding',
-            'professionalisering.group_professionalisering_vervangingen',
-        ],
-        'activiteiten.record': [
-            'activiteiten.group_activiteiten_directie',
-            'activiteiten.group_activiteiten_admin',
-            'activiteiten.group_activiteiten_aankoop',
-            'activiteiten.group_activiteiten_boekhouding',
-            'activiteiten.group_activiteiten_vervangingen',
-        ],
-    }
-
-    def _is_manager(self, model_name):
-        user = self.env(su=False).user
-        for group_xmlid in self._MANAGER_GROUPS.get(model_name, []):
-            if user.has_group(group_xmlid):
-                return True
-        return False
-
     @api.depends_context('uid')
     def _compute_access_rights(self):
-        activiteit = self._has_access(
-            'aanvraag_buitenschoolse_activiteit.record')
         professionalisering = self._has_access('professionalisering.record')
         activiteiten = self._has_access('activiteiten.record')
-        directie = (
-            self._is_directie_or_admin('aanvraag_buitenschoolse_activiteit.record')
-            or self._is_directie_or_admin('professionalisering.record')
-            or self._is_directie_or_admin('activiteiten.record')
-        )
-        act_mgr = self._is_manager('aanvraag_buitenschoolse_activiteit.record')
         prof_mgr = self._is_manager('professionalisering.record')
         acti_mgr = self._is_manager('activiteiten.record')
         user = self.env(su=False).user
@@ -258,17 +204,58 @@ class MySchoolDashboard(models.Model):
         act_boek = is_admin or user.has_group('activiteiten.group_activiteiten_boekhouding')
         act_dir = is_admin or user.has_group('activiteiten.group_activiteiten_directie')
         for rec in self:
-            rec.has_activiteit_access = activiteit
             rec.has_professionalisering_access = professionalisering
             rec.has_activiteiten_access = activiteiten
-            rec.is_directie = directie
-            rec.is_activiteit_manager = act_mgr
             rec.is_prof_manager = prof_mgr
             rec.is_act_manager = acti_mgr
             rec.is_act_vervangingen = act_verv
             rec.is_act_aankoop = act_aank
             rec.is_act_boekhouding = act_boek
             rec.is_act_directie = act_dir
+            rec.is_only_aankoop = act_aank and not act_dir and not act_boek and not act_verv
+            rec.is_only_boekhouding = act_boek and not act_dir and not act_aank and not act_verv
+            rec.is_only_directie = act_dir and not act_aank and not act_boek and not act_verv
+            rec.is_only_medewerker = not act_dir and not act_aank and not act_boek and not act_verv
+            rec.is_only_vervangingen = act_verv and not act_dir and not act_aank and not act_boek
+
+    # --- KPI ---
+
+    @api.depends_context('uid')
+    def _compute_kpi(self):
+        act_raw = self._get_state_counts('activiteiten.record')
+        prof_raw = self._get_state_counts('professionalisering.record')
+        # Pending = draft + form_invullen + bus_check (act) + selection_of_form + fill_in_form_* (prof)
+        pending = (
+            act_raw.get('draft', 0) + act_raw.get('form_invullen', 0) +
+            act_raw.get('bus_check', 0) +
+            prof_raw.get('selection_of_form', 0) +
+            prof_raw.get('fill_in_form_binnenschoolse', 0) +
+            prof_raw.get('fill_in_form_buitenschoolse', 0) +
+            prof_raw.get('fill_in_form_externe', 0)
+        )
+        # Action needed = pending_approval + bus_refused (act) + wacht_op_goedkeuring (prof)
+        action_needed = (
+            act_raw.get('pending_approval', 0) +
+            act_raw.get('bus_refused', 0) +
+            act_raw.get('s_code', 0) +
+            act_raw.get('vervanging', 0) +
+            prof_raw.get('wacht_op_goedkeuring', 0)
+        )
+        # Approved (across both)
+        approved = (
+            act_raw.get('approved', 0) + act_raw.get('done', 0) +
+            prof_raw.get('bevestiging', 0) + prof_raw.get('done', 0)
+        )
+        # Rejected
+        rejected = (
+            act_raw.get('rejected', 0) +
+            prof_raw.get('weigering', 0)
+        )
+        for rec in self:
+            rec.kpi_pending = pending
+            rec.kpi_action_needed = action_needed
+            rec.kpi_approved = approved
+            rec.kpi_rejected = rejected
 
     # --- Counts ---
 
@@ -281,24 +268,10 @@ class MySchoolDashboard(models.Model):
         )
         return {state: count for state, count in state_counts}
 
-    def _set_counts(self, rec, prefix, counts):
-        setattr(rec, f'{prefix}_draft', counts.get('draft', 0))
-        setattr(rec, f'{prefix}_submitted', counts.get('submitted', 0))
-        setattr(rec, f'{prefix}_approved', counts.get('approved', 0))
-        setattr(rec, f'{prefix}_rejected', counts.get('rejected', 0))
-        setattr(rec, f'{prefix}_done', counts.get('done', 0))
-        setattr(rec, f'{prefix}_total', sum(counts.values()))
-
-    @api.depends_context('uid')
-    def _compute_activiteit_counts(self):
-        counts = self._get_state_counts(
-            'aanvraag_buitenschoolse_activiteit.record')
-        for rec in self:
-            rec._set_counts(rec, 'activiteit', counts)
-
     @api.depends_context('uid')
     def _compute_professionalisering_counts(self):
         raw = self._get_state_counts('professionalisering.record')
+        is_manager = self._is_manager('professionalisering.record')
         counts = {
             'draft': raw.get('selection_of_form', 0),
             'submitted': (
@@ -311,21 +284,41 @@ class MySchoolDashboard(models.Model):
             'done': raw.get('done', 0),
         }
         for rec in self:
-            rec._set_counts(rec, 'prof', counts)
-
-    # --- Activiteiten counts ---
-
-    _ACT_STATE_MAP = {
-        'draft': [('state', 'in', ('draft', 'form_invullen'))],
-        'submitted': [('state', 'in', ('bus_check', 'bus_refused', 'pending_approval'))],
-        'approved': [('state', 'in', ('approved', 's_code', 'vervanging'))],
-        'rejected': [('state', '=', 'rejected')],
-        'done': [('state', '=', 'done')],
-    }
+            rec.prof_draft = counts.get('draft', 0)
+            rec.prof_submitted = counts.get('submitted', 0)
+            rec.prof_approved = counts.get('approved', 0)
+            rec.prof_rejected = counts.get('rejected', 0)
+            rec.prof_done = counts.get('done', 0)
+            if is_manager:
+                rec.prof_total = sum(counts.values())
+            else:
+                rec.prof_total = sum(
+                    v for k, v in counts.items() if k != 'done'
+                )
 
     @api.depends_context('uid')
     def _compute_activiteiten_counts(self):
         raw = self._get_state_counts('activiteiten.record')
+        # Determine which states are visible for this user
+        user = self.env(su=False).user
+        is_admin = user.has_group('activiteiten.group_activiteiten_admin')
+        if is_admin:
+            visible_states = set(raw.keys())
+        else:
+            visible_states = set()
+            manager_role_checks = {
+                'directie': 'activiteiten.group_activiteiten_directie',
+                'aankoop': 'activiteiten.group_activiteiten_aankoop',
+                'boekhouding': 'activiteiten.group_activiteiten_boekhouding',
+                'vervangingen': 'activiteiten.group_activiteiten_vervangingen',
+            }
+            has_manager_role = False
+            for role, group in manager_role_checks.items():
+                if user.has_group(group):
+                    visible_states.update(self._ROLE_STATES[role])
+                    has_manager_role = True
+            if not has_manager_role:
+                visible_states.update(self._ROLE_STATES['medewerker'])
         for rec in self:
             rec.act_draft = raw.get('draft', 0)
             rec.act_form_invullen = raw.get('form_invullen', 0)
@@ -337,170 +330,94 @@ class MySchoolDashboard(models.Model):
             rec.act_s_code = raw.get('s_code', 0)
             rec.act_vervanging = raw.get('vervanging', 0)
             rec.act_done = raw.get('done', 0)
-            rec.act_total = sum(raw.values())
+            rec.act_total = sum(
+                count for state, count in raw.items()
+                if state in visible_states
+            )
 
-    # --- Record lists ---
+    # --- Recent activity (own aanvragen) ---
 
-    def _add_priority_domain(self, domain):
-        if self.priority_filter and self.priority_filter != 'all':
-            domain.append(('priority', '=', self.priority_filter))
+    def _relative_time(self, dt):
+        if not dt:
+            return ''
+        now = fields.Datetime.now()
+        diff = now - dt
+        seconds = int(diff.total_seconds())
+        if seconds < 60:
+            return 'Zojuist'
+        minutes = seconds // 60
+        if minutes < 60:
+            return f'{minutes} min geleden'
+        hours = minutes // 60
+        if hours < 24:
+            return f'{hours}u geleden'
+        days = hours // 24
+        if days == 1:
+            return 'Gisteren'
+        return f'{days} dagen geleden'
 
-    def _add_search_domain(self, domain, model_name):
-        if self.search_query:
-            query = self.search_query.strip()
-            if query:
-                if model_name == 'aanvraag_buitenschoolse_activiteit.record':
-                    domain += [
-                        '|', '|', '|',
-                        ('titel', 'ilike', query),
-                        ('name', 'ilike', query),
-                        ('bestemming', 'ilike', query),
-                        ('employee_id.name', 'ilike', query),
-                    ]
-                elif model_name == 'activiteiten.record':
-                    domain += [
-                        '|',
-                        ('titel', 'ilike', query),
-                        ('name', 'ilike', query),
-                    ]
-                else:
-                    domain += [
-                        '|', '|',
-                        ('titel', 'ilike', query),
-                        ('name', 'ilike', query),
-                        ('employee_id.name', 'ilike', query),
-                    ]
-
-    def _search_records(self, model_name):
-        if not self._has_access(model_name):
-            return False
-        domain = self._get_base_domain(model_name)
-        if self.state_filter and self.state_filter != 'all':
-            domain.append(('state', '=', self.state_filter))
-        self._add_priority_domain(domain)
-        self._add_search_domain(domain, model_name)
-        return self.env[model_name].search(domain)
-
-    @api.depends('state_filter', 'priority_filter', 'search_query')
-    @api.depends_context('uid')
-    def _compute_activiteit_ids(self):
-        for rec in self:
-            rec.activiteit_ids = rec._search_records(
-                'aanvraag_buitenschoolse_activiteit.record')
-
-    _PROF_STATE_MAP = {
-        'draft': [('state', '=', 'selection_of_form')],
-        'submitted': [('state', 'in', [
-            'fill_in_form_binnenschoolse',
-            'fill_in_form_buitenschoolse',
-            'fill_in_form_externe',
-        ])],
-        'approved': [('state', '=', 'bevestiging')],
-        'rejected': [('state', '=', 'weigering')],
-        'done': [('state', '=', 'done')],
+    _ACT_STATE_LABEL = {
+        'draft': ('Concept', 'ms-badge-neutral'),
+        'form_invullen': ('Formulier', 'ms-badge-info'),
+        'bus_check': ('Bus controle', 'ms-badge-warning'),
+        'bus_refused': ('Bus geweigerd', 'ms-badge-error'),
+        'pending_approval': ('Wacht op goedkeuring', 'ms-badge-warning'),
+        'approved': ('Goedgekeurd', 'ms-badge-success'),
+        'rejected': ('Afgekeurd', 'ms-badge-error'),
+        's_code': ('S-Code', 'ms-badge-info'),
+        'vervanging': ('Vervanging', 'ms-badge-info'),
+        'done': ('Afgerond', 'ms-badge-success'),
     }
 
-    @api.depends('state_filter', 'priority_filter', 'search_query')
     @api.depends_context('uid')
-    def _compute_professionalisering_ids(self):
-        for rec in self:
-            if not self._has_access('professionalisering.record'):
-                rec.professionalisering_ids = False
-                continue
-            domain = self._get_base_domain('professionalisering.record')
-            if rec.state_filter and rec.state_filter != 'all':
-                domain += self._PROF_STATE_MAP.get(
-                    rec.state_filter, [('state', '=', rec.state_filter)])
-            rec._add_priority_domain(domain)
-            rec._add_search_domain(domain, 'professionalisering.record')
-            rec.professionalisering_ids = self.env[
-                'professionalisering.record'].search(domain)
-
-    @api.depends('state_filter', 'priority_filter', 'search_query')
-    @api.depends_context('uid')
-    def _compute_activiteiten_ids(self):
-        for rec in self:
-            if not self._has_access('activiteiten.record'):
-                rec.activiteiten_ids = False
-                continue
+    def _compute_recent_activity_html(self):
+        items = []
+        # Recent activiteiten
+        if self._has_access('activiteiten.record'):
             domain = self._get_base_domain('activiteiten.record')
-            if rec.state_filter and rec.state_filter != 'all':
-                domain += self._ACT_STATE_MAP.get(
-                    rec.state_filter, [('state', '=', rec.state_filter)])
-            rec._add_search_domain(domain, 'activiteiten.record')
-            rec.activiteiten_ids = self.env[
-                'activiteiten.record'].search(domain)
+            acts = self.env['activiteiten.record'].search(
+                domain, limit=5, order='write_date desc')
+            for a in acts:
+                label, css = self._ACT_STATE_LABEL.get(a.state, ('', ''))
+                titel = html_escape(a.titel or a.name or '')
+                items.append((a.write_date, (
+                    f'<li class="{"success" if a.state in ("approved", "done") else "error" if a.state in ("rejected", "bus_refused") else "info"}">'
+                    f'<strong>{titel}</strong> '
+                    f'<span class="ms-badge-status {css}">{label}</span><br>'
+                    f'<span class="ms-time">{self._relative_time(a.write_date)}</span>'
+                    f'</li>'
+                )))
+        # Recent professionalisering
+        if self._has_access('professionalisering.record'):
+            domain = self._get_base_domain('professionalisering.record')
+            profs = self.env['professionalisering.record'].search(
+                domain, limit=5, order='write_date desc')
+            for p in profs:
+                titel = html_escape(getattr(p, 'titel', '') or p.name or '')
+                state = p.state or ''
+                if state in ('bevestiging', 'done'):
+                    dot = 'success'
+                elif state == 'weigering':
+                    dot = 'error'
+                else:
+                    dot = 'info'
+                items.append((p.write_date, (
+                    f'<li class="{dot}">'
+                    f'<strong>{titel}</strong> '
+                    f'<span class="ms-badge-status ms-badge-neutral">Prof.</span><br>'
+                    f'<span class="ms-time">{self._relative_time(p.write_date)}</span>'
+                    f'</li>'
+                )))
+        # Sort combined and take top 8
+        items.sort(key=lambda x: x[0] or fields.Datetime.now(), reverse=True)
+        items = items[:8]
+        html = (
+            '<ul class="ms-timeline">' + ''.join(i[1] for i in items) + '</ul>'
+        ) if items else '<div class="ms-empty">Geen recente activiteit</div>'
+        for rec in self:
+            rec.recent_activity_html = Markup(html)
 
     # --- Actions ---
-
-    # --- State filter actions ---
-
-    def action_filter_state_all(self):
-        self.state_filter = 'all'
-
-    def action_filter_state_draft(self):
-        self.state_filter = 'draft'
-
-    def action_filter_state_submitted(self):
-        self.state_filter = 'submitted'
-
-    def action_filter_state_approved(self):
-        self.state_filter = 'approved'
-
-    def action_filter_state_rejected(self):
-        self.state_filter = 'rejected'
-
-    def action_filter_state_done(self):
-        self.state_filter = 'done'
-
-    # --- Priority filter actions ---
-
-    def action_filter_priority_all(self):
-        self.priority_filter = 'all'
-
-    def action_filter_priority_0(self):
-        self.priority_filter = '0'
-
-    def action_filter_priority_1(self):
-        self.priority_filter = '1'
-
-    def action_filter_priority_2(self):
-        self.priority_filter = '2'
-
-    def action_filter_priority_3(self):
-        self.priority_filter = '3'
-
-    # --- Clear all filters ---
-
-    def action_clear_filters(self):
-        self.state_filter = 'all'
-        self.priority_filter = 'all'
-        self.search_query = False
-
-    # --- Module actions ---
-
-    def action_select_all(self):
-        self.module_filter = 'all'
-
-    def action_select_activiteit(self):
-        self.module_filter = 'buitenschoolse_activiteit'
-
-    def action_open_activiteiten(self):
-        action = self.env['ir.actions.act_window']._for_xml_id(
-            'myschool_dashboard.action_open_activiteiten')
-        model = 'aanvraag_buitenschoolse_activiteit.record'
-        if self._is_admin(model):
-            action['context'] = {'search_default_to_approve': 1}
-        elif self._is_directie_or_admin(model):
-            action['domain'] = [
-                '|',
-                ('assigned_to', '=', False),
-                ('assigned_to.user_id', '=', self.env.uid),
-            ]
-            action['context'] = {'search_default_to_approve': 1}
-        else:
-            action['domain'] = [('employee_id.user_id', '=', self.env.uid)]
-        return action
 
     def action_open_professionalisering(self):
         action = self.env['ir.actions.act_window']._for_xml_id(
@@ -519,55 +436,56 @@ class MySchoolDashboard(models.Model):
             action['domain'] = [('employee_id.user_id', '=', self.env.uid)]
         return action
 
-    def action_create_activiteit(self):
-        return {
-            'type': 'ir.actions.act_window',
-            'name': 'Nieuwe Buitenschoolse Activiteit',
-            'res_model': 'aanvraag_buitenschoolse_activiteit.record',
-            'view_mode': 'form',
-            'target': 'current',
-        }
-
-    def action_select_professionalisering(self):
-        self.module_filter = 'professionalisering'
-
-    def action_create_professionalisering(self):
-        return {
-            'type': 'ir.actions.act_window',
-            'name': 'Nieuwe Professionalisering',
-            'res_model': 'professionalisering.record',
-            'view_mode': 'form',
-            'target': 'current',
-        }
-
-    def action_select_activiteiten(self):
-        self.module_filter = 'activiteiten'
+    # States visible per role (matching dashboard counter visibility)
+    _ROLE_STATES = {
+        'directie': ['pending_approval'],
+        'aankoop': ['bus_check'],
+        'boekhouding': ['approved', 's_code', 'vervanging', 'done', 'rejected'],
+        'vervangingen': ['vervanging'],
+        'medewerker': ['draft', 'form_invullen', 'bus_check', 'bus_refused', 'pending_approval', 'approved', 'rejected', 's_code', 'vervanging', 'done'],
+    }
 
     def action_open_activiteiten_list(self):
         action = self.env['ir.actions.act_window']._for_xml_id(
             'myschool_dashboard.action_open_activiteiten_list')
         model = 'activiteiten.record'
+        user = self.env(su=False).user
         if self._is_admin(model):
             pass
-        elif self.env(su=False).user.has_group('activiteiten.group_activiteiten_directie'):
-            action['context'] = {'search_default_to_approve': 1}
-        elif self.env(su=False).user.has_group('activiteiten.group_activiteiten_aankoop'):
-            action['context'] = {'search_default_bus_check': 1}
-        elif self.env(su=False).user.has_group('activiteiten.group_activiteiten_boekhouding'):
-            action['context'] = {'search_default_s_code_pending': 1}
-        elif self.env(su=False).user.has_group('activiteiten.group_activiteiten_vervangingen'):
-            action['context'] = {'search_default_replacement_pending': 1}
         elif self._is_manager(model):
-            pass
+            visible_states = set()
+            role_checks = {
+                'directie': 'activiteiten.group_activiteiten_directie',
+                'aankoop': 'activiteiten.group_activiteiten_aankoop',
+                'boekhouding': 'activiteiten.group_activiteiten_boekhouding',
+                'vervangingen': 'activiteiten.group_activiteiten_vervangingen',
+            }
+            for role, group in role_checks.items():
+                if user.has_group(group):
+                    visible_states.update(self._ROLE_STATES[role])
+            if visible_states:
+                action['domain'] = [('state', 'in', list(visible_states))]
         else:
-            action['domain'] = [('create_uid', '=', self.env.uid)]
+            action['domain'] = [
+                ('create_uid', '=', self.env.uid),
+                ('state', 'in', self._ROLE_STATES['medewerker']),
+            ]
         return action
 
-    def action_create_activiteiten(self):
+    def action_new_activiteit(self):
         return {
             'type': 'ir.actions.act_window',
-            'name': 'Nieuwe Activiteit',
+            'name': 'Nieuwe activiteit',
             'res_model': 'activiteiten.record',
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def action_new_professionalisering(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Nieuwe professionalisering',
+            'res_model': 'professionalisering.record',
             'view_mode': 'form',
             'target': 'current',
         }

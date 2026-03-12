@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_myschool_org_form_students" model="ir.ui.view">
+        <field name="name">myschool.org.form.students</field>
+        <field name="model">myschool.org</field>
+        <field name="inherit_id" ref="myschool_admin.view_myschool_org_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Leerlingen" name="students">
+                    <field name="student_ids" nolabel="1" readonly="1">
+                        <list create="0" delete="0">
+                            <field name="name" string="Achternaam"/>
+                            <field name="first_name" string="Voornaam"/>
+                            <field name="reg_group_code" string="Klas"/>
+                            <field name="is_active" string="Actief"/>
+                        </list>
+                    </field>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

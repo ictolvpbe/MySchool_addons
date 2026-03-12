@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="action_planner" model="ir.actions.act_window">
+        <field name="name">Inhaalplannen</field>
+        <field name="res_model">planner.record</field>
+        <field name="view_mode">list,calendar,form</field>
+        <field name="context">{}</field>
+    </record>
+
+    <menuitem id="menu_planner_root"
+              name="Planner"
+              sequence="65"
+              groups="group_planner_user"/>
+
+    <menuitem id="menu_planner_afwezige_leerkrachten"
+              name="Afwezigen"
+              parent="menu_planner_root"
+              action="action_afwezige_leerkrachten"
+              sequence="5"/>
+
+    <menuitem id="menu_planner_plans"
+              name="Inhaalplannen"
+              parent="menu_planner_root"
+              action="action_planner"
+              sequence="10"/>
+
+    <menuitem id="menu_planner_vervangingen"
+              name="Vervangingen"
+              parent="menu_planner_root"
+              action="action_vervanging_lines"
+              sequence="15"/>
+</odoo>

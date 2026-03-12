@@ -5,21 +5,28 @@
         <field name="name">activiteiten.record.form</field>
         <field name="model">activiteiten.record</field>
         <field name="arch" type="xml">
-            <form>
+            <form class="o_activiteiten_record_form">
                 <header>
                     <!-- Personeelslid: submit form -->
                     <button name="action_submit_form"
                             string="Indienen"
                             type="object"
                             class="btn-primary"
-                            invisible="state not in ('form_invullen', 'bus_refused')"/>
+                            invisible="state not in ('draft', 'form_invullen', 'bus_refused')"/>
 
-                    <!-- Personeelslid: reset to form after rejection or bus refusal -->
+                    <!-- Personeelslid: reset to form after rejection or bus refusal (owner) -->
                     <button name="action_reset_to_form"
                             string="Opnieuw indienen"
                             type="object"
                             class="btn-secondary"
-                            invisible="state not in ('rejected', 'bus_refused')"/>
+                            invisible="state not in ('rejected', 'bus_refused') or not is_owner"/>
+                    <!-- Admin: reset to form after rejection or bus refusal (non-owner) -->
+                    <button name="action_reset_to_form"
+                            string="Opnieuw indienen"
+                            type="object"
+                            class="btn-secondary"
+                            groups="activiteiten.group_activiteiten_admin"
+                            invisible="state not in ('rejected', 'bus_refused') or is_owner"/>
 
                     <!-- Aankoop: bus check -->
                     <button name="action_bus_approved"
@@ -65,100 +72,173 @@
                             groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
                             invisible="state not in ('s_code', 'vervanging') or verzekering_done == True"/>
 
-                    <!-- Vervangingen: plan replacement -->
-                    <button name="action_plan_vervanging"
-                            string="Vervanging ingepland"
+                    <!-- Owner or Admin: delete unsubmitted only -->
+                    <field name="is_owner" invisible="1"/>
+                    <button name="action_delete"
+                            string="Verwijderen"
                             type="object"
-                            class="btn-primary"
-                            groups="activiteiten.group_activiteiten_vervangingen,activiteiten.group_activiteiten_admin"
-                            invisible="state != 'vervanging' or vervanging_done == True"/>
-
-                    <!-- Admin: delete -->
+                            class="btn-danger"
+                            invisible="(not is_owner) or state not in ('draft', 'form_invullen')"
+                            confirm="Weet u zeker dat u deze aanvraag wilt verwijderen?"/>
                     <button name="action_delete"
                             string="Verwijderen"
                             type="object"
                             class="btn-danger"
                             groups="activiteiten.group_activiteiten_admin"
+                            invisible="is_owner or state not in ('draft', 'form_invullen')"
                             confirm="Weet u zeker dat u deze aanvraag wilt verwijderen?"/>
 
                     <field name="state" widget="statusbar"
-                           statusbar_visible="draft,form_invullen,pending_approval,s_code,done"/>
+                           statusbar_visible="draft,form_invullen,pending_approval,s_code,done"
+                           groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin,activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_vervangingen,activiteiten.group_activiteiten_aankoop"/>
+                    <field name="display_state" widget="statusbar"
+                           statusbar_visible="draft,form_invullen,pending_approval,approved,done"
+                           groups="!activiteiten.group_activiteiten_directie,!activiteiten.group_activiteiten_admin,!activiteiten.group_activiteiten_boekhouding,!activiteiten.group_activiteiten_vervangingen,!activiteiten.group_activiteiten_aankoop"/>
                 </header>
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_students"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-users"
+                                invisible="not klas_ids">
+                            <field name="student_count" string="Leerlingen" widget="statinfo"/>
+                        </button>
+                        <button name="action_view_leerkrachten"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-user"
+                                invisible="not leerkracht_ids">
+                            <field name="leerkracht_count" string="Leerkrachten" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <!-- Form header: title + subtitle -->
                     <div class="oe_title">
                         <h1>
                             <field name="name" readonly="1"/>
                         </h1>
+                        <h3 class="mt-1">
+                            <span class="text-muted">
+                                Gemaakt door: <field name="create_uid" readonly="1" class="oe_inline" nolabel="1"/>
+                                <span invisible="not titel"> — </span>
+                                <field name="titel" readonly="1" class="oe_inline" invisible="not titel"/>
+                            </span>
+                        </h3>
                     </div>
 
-                    <!-- Step 1: Choose type (only visible in draft) -->
-                    <div invisible="state != 'draft'" class="text-center mt-4 mb-4">
-                        <h2>Kies het type activiteit</h2>
-                        <div class="d-flex justify-content-center gap-3 mt-3">
-                            <button name="action_select_binnenschools"
-                                    string="Binnenschoolse activiteit"
-                                    type="object"
-                                    class="btn btn-primary btn-lg"/>
-                            <button name="action_select_buitenschools"
-                                    string="Buitenschoolse activiteit"
-                                    type="object"
-                                    class="btn btn-primary btn-lg"/>
-                        </div>
-                    </div>
+                    <field name="currency_id" invisible="1"/>
+                    <field name="available_klas_ids" invisible="1"/>
+                    <field name="available_leerkracht_ids" invisible="1"/>
 
-                    <!-- Step 2+: Form fields (hidden in draft) -->
-                    <group invisible="state == 'draft'">
+                    <!-- Two-column field grid with group titles -->
+                    <group>
+                        <!-- LEFT COLUMN: Activiteit + Planning -->
                         <group>
-                            <field name="activity_type" readonly="1"/>
+                            <separator string="Activiteit"/>
+                            <field name="activity_type"
+                                   required="1"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="titel"
-                                   readonly="state not in ('form_invullen', 'bus_refused')"/>
-                            <field name="datetime"
-                                   readonly="state not in ('form_invullen', 'bus_refused')"/>
+                                   placeholder="bv. Schooluitstap naar Technopolis"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                            <field name="school_id"
+                                   options="{'no_open': True}"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                            <field name="klas_ids" widget="many2many_tags"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                            <field name="leerkracht_ids" widget="many2many_tags"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                            <field name="lokaal"
+                                   placeholder="bv. A101, Turnzaal, ..."
+                                   invisible="activity_type != 'binnenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                            <field name="locatie_adres"
+                                   placeholder="bv. Technologielaan 1, 2800 Mechelen"
+                                   invisible="activity_type != 'buitenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="price"
-                                   readonly="state not in ('form_invullen', 'bus_refused')"/>
-                            <field name="currency_id" invisible="1"/>
+                                   placeholder="bv. 15.00"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="bus_nodig"
                                    invisible="activity_type == 'binnenschools'"
-                                   readonly="state not in ('form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+
+                            <separator string="Planning"/>
+                            <field name="datetime"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                            <field name="datetime_end"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                         </group>
+
+                        <!-- RIGHT COLUMN: Bus + Financieel -->
                         <group>
+                            <!-- Bus section -->
+                            <separator string="Bus"
+                                       invisible="not bus_nodig or state in ('draft', 'form_invullen')"/>
                             <field name="bus_price"
+                                   placeholder="bv. 250.00"
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen')"
                                    readonly="state != 'bus_check'"
                                    groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
                             <field name="bus_available"
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen', 'bus_check')"
                                    readonly="1"/>
+
+                            <!-- Financieel section -->
+                            <separator string="Financieel"
+                                       invisible="state not in ('s_code', 'vervanging', 'done')"/>
                             <field name="s_code_name"
+                                   placeholder="bv. S-1234"
                                    invisible="state not in ('s_code', 'vervanging', 'done')"
                                    readonly="state != 's_code'"
                                    groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
                             <field name="s_code_price"
+                                   placeholder="bv. 500.00"
                                    invisible="state not in ('s_code', 'vervanging', 'done')"
                                    readonly="state != 's_code'"
+                                   groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+                            <field name="totale_kost"
+                                   invisible="state not in ('s_code', 'vervanging', 'done')"
                                    groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
                             <field name="verzekering_done"
                                    readonly="1"
                                    invisible="state not in ('s_code', 'vervanging', 'done')"/>
-                            <field name="vervanger_id"
-                                   invisible="state not in ('vervanging', 'done')"
-                                   readonly="state != 'vervanging'"
-                                   groups="activiteiten.group_activiteiten_vervangingen,activiteiten.group_activiteiten_admin"/>
-                            <field name="vervanging_done"
-                                   readonly="1"
-                                   invisible="state not in ('s_code', 'vervanging', 'done')"/>
                         </group>
                     </group>
-                    <notebook invisible="state == 'draft'">
+
+                    <!-- Tabs -->
+                    <notebook invisible="not activity_type">
                         <page string="Beschrijving">
                             <field name="description"
-                                   readonly="state not in ('form_invullen', 'bus_refused')"/>
+                                   placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                         </page>
+                        <page string="Kosten"
+                              invisible="state not in ('s_code', 'vervanging', 'done')"
+                              groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin">
+                            <field name="kosten_ids" readonly="state not in ('s_code', 'vervanging')">
+                                <list editable="bottom" create="1" delete="1">
+                                    <field name="is_auto" column_invisible="1"/>
+                                    <field name="omschrijving" readonly="is_auto"/>
+                                    <field name="bedrag" readonly="is_auto"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                </list>
+                            </field>
+                        </page>
+                        <!-- Afkeuring: for medewerker after rejection -->
                         <page string="Afkeuring"
-                              invisible="state not in ('pending_approval', 'rejected')">
+                              invisible="state != 'rejected'">
+                            <group>
+                                <field name="rejection_reason" readonly="1"/>
+                            </group>
+                        </page>
+                        <!-- Afkeuring: for directie to fill in -->
+                        <page string="Afkeuring"
+                              groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin"
+                              invisible="state != 'pending_approval'">
                             <group>
                                 <field name="rejection_reason"
-                                       readonly="state != 'pending_approval'"/>
+                                       placeholder="Geef de reden op waarom deze activiteit wordt afgekeurd..."/>
                             </group>
                         </page>
                     </notebook>
@@ -175,19 +255,32 @@
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
+                <field name="create_uid" string="Aangemaakt door" optional="show"/>
                 <field name="titel"/>
+                <field name="school_id" optional="show"/>
+                <field name="klas_ids" widget="many2many_tags" optional="show"/>
                 <field name="activity_type"/>
-                <field name="datetime"/>
-                <field name="price"/>
+                <field name="dates_display" widget="html"/>
+                <field name="price" optional="hide"/>
+                <field name="kosten_display" string="Kosten" widget="html"
+                       groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+                <field name="totale_kost" string="Totaal"
+                       groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
                 <field name="is_active" optional="hide"/>
                 <field name="bus_available" optional="hide"/>
                 <field name="verzekering_done" optional="hide"/>
-                <field name="vervanging_done" optional="hide"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
                        decoration-warning="state in ('form_invullen', 'bus_check', 'pending_approval')"
                        decoration-success="state in ('approved', 's_code', 'vervanging', 'done')"
-                       decoration-danger="state in ('rejected', 'bus_refused')"/>
+                       decoration-danger="state in ('rejected', 'bus_refused')"
+                       groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin,activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_vervangingen,activiteiten.group_activiteiten_aankoop"/>
+                <field name="display_state" widget="badge"
+                       decoration-info="display_state == 'draft'"
+                       decoration-warning="display_state in ('form_invullen', 'bus_check', 'pending_approval')"
+                       decoration-success="display_state in ('approved', 'done')"
+                       decoration-danger="display_state in ('rejected', 'bus_refused')"
+                       groups="!activiteiten.group_activiteiten_directie,!activiteiten.group_activiteiten_admin,!activiteiten.group_activiteiten_boekhouding,!activiteiten.group_activiteiten_vervangingen,!activiteiten.group_activiteiten_aankoop"/>
             </list>
         </field>
     </record>
@@ -216,7 +309,7 @@
                 <filter string="S-Code openstaand" name="s_code_pending"
                         domain="[('state', '=', 's_code')]"/>
                 <filter string="Vervanging openstaand" name="replacement_pending"
-                        domain="[('state', '=', 'vervanging'), ('vervanging_done', '=', False)]"/>
+                        domain="[('state', '=', 'vervanging')]"/>
                 <separator/>
                 <filter string="Concept" name="state_draft"
                         domain="[('state', '=', 'draft')]"/>
