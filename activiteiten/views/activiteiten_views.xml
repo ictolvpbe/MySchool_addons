@@ -147,6 +147,7 @@
                             <field name="klas_ids" widget="many2many_tags"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="leerkracht_ids" widget="many2many_tags"
+                                   options="{'no_quick_create': True, 'no_create': True}"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="lokaal"
                                    placeholder="bv. A101, Turnzaal, ..."
