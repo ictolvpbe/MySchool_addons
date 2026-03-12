@@ -2,7 +2,7 @@
 <odoo>
     <!-- Personeelslid: only see own records -->
     <record id="rule_activiteiten_personeelslid" model="ir.rule">
-        <field name="name">Activiteiten: personeelslid ziet eigen aanvragen</field>
+        <field name="name">Activiteiten: personeelslid ziet eigen aanvragen tot goedkeuring</field>
         <field name="model_id" ref="model_activiteiten_record"/>
         <field name="domain_force">[('create_uid', '=', user.id)]</field>
         <field name="groups" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>

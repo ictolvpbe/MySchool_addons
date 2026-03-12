@@ -7,7 +7,10 @@
             <list create="false" edit="false" default_order="datetime asc">
                 <field name="create_uid" string="Naam"/>
                 <field name="titel" string="Activiteit"/>
-                <field name="datetime" string="Datum en tijdstip"/>
+                <field name="school_id" string="School"/>
+                <field name="klas_ids" widget="many2many_tags" string="Klassen"/>
+                <field name="datetime" string="Startdatum"/>
+                <field name="datetime_end" string="Einddatum"/>
                 <field name="name" string="Referentie"/>
             </list>
         </field>

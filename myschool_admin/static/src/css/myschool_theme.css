@@ -3,25 +3,28 @@
    Applies OLVP brand colors to Odoo 19 backend elements.
    ============================================================ */
 
-/* --- CSS Custom Properties --- */
+/* --- CSS Custom Properties ---
+   These reference --myschool-* vars from myschool_theme (editable in Settings).
+   Semantic colors (success, error, etc.) are standalone.
+*/
 :root {
-    /* Brand palette */
-    --ms-brand-1: #007d8c;
-    --ms-brand-2: #0094A4;
-    --ms-brand-3: #00ACBF;
-    --ms-brand-4: #00C4D9;
+    /* Brand palette — linked to myschool_theme settings */
+    --ms-brand-1: var(--myschool-brand-1, #007d8c);
+    --ms-brand-2: var(--myschool-brand-2, #0094A4);
+    --ms-brand-3: var(--myschool-brand-3, #00ACBF);
+    --ms-brand-4: var(--myschool-brand-4, #00C4D9);
 
     /* Neutrals */
     --ms-black: #252525;
     --ms-gray: #9B9B9B;
-    --ms-text: #003333;
-    --ms-text-muted: #5a7a7a;
+    --ms-text: var(--myschool-text, #003333);
+    --ms-text-muted: var(--myschool-text-muted, #5a7a7a);
 
-    /* Surfaces */
-    --ms-bg: #f0f5f5;
-    --ms-bg-card: #ffffff;
-    --ms-border: #d6e4e4;
-    --ms-border-light: #e8f0f0;
+    /* Surfaces — linked to myschool_theme settings */
+    --ms-bg: var(--myschool-bg, #dce9e9);
+    --ms-bg-card: var(--myschool-bg-card, #ffffff);
+    --ms-border: var(--myschool-border, #d6e4e4);
+    --ms-border-light: var(--myschool-border-light, #e8f0f0);
 
     /* Semantic */
     --ms-success: #0d9488;
@@ -254,6 +257,35 @@
     color: var(--ms-text) !important;
 }
 
+/* Many2many tags — no double border on inner input */
+.o_form_view .o_field_many2many_tags .o_input_dropdown .o_input,
+.o_form_view .o_field_many2many_tags .o_input_dropdown input.o_input {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+/* Monetary field — no double border */
+.o_form_view .o_field_monetary span.o_input,
+.o_form_view .o_field_monetary input.o_input {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* All form fields same width */
+.o_form_view .o_inner_group .o_field_widget {
+    width: 100% !important;
+}
+.o_form_view .o_inner_group .o_field_widget .o_external_button {
+    display: none !important;
+}
+
+/* Monetary field — input full width */
+.o_form_view .o_field_monetary input {
+    width: 100% !important;
+}
+
 /* Readonly fields — mockup: teal-tinted background, lighter border */
 .o_form_view .o_field_widget.o_readonly_modifier .o_input,
 .o_form_view .o_field_widget.o_readonly_modifier input,
@@ -327,26 +359,38 @@
    ============================================================ */
 
 /* List view content area */
+/* List view background */
 .o_list_view {
     background-color: var(--ms-bg) !important;
+    padding: 0 16px !important;
 }
 
-/* Table card container */
+/* Table card container — mockup: white card, 10px radius, visible shadow */
 .o_list_view .o_list_renderer {
     background: var(--ms-bg-card) !important;
     border-radius: 10px !important;
-    box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06) !important;
-    overflow: auto !important;
-    border: 1px solid var(--ms-border-light) !important;
+    box-shadow: 0 1px 4px rgba(0, 60, 60, 0.08) !important;
+    overflow: hidden !important;
+    border: 1px solid var(--ms-border) !important;
+    margin-top: 4px !important;
 }
 
-/* Table itself */
+/* Table itself — no extra border-radius (container handles it) */
 .o_list_view .o_list_table {
-    border-radius: 10px !important;
     font-size: 13px !important;
+    border: none !important;
+    margin-bottom: 0 !important;
 }
 
-/* Table header — uppercase, small, gray on teal-tinted bg */
+/* Remove default table border-radius so card container shows through */
+.o_list_view .o_list_table,
+.o_list_view .o_list_table thead,
+.o_list_view .o_list_table thead tr:first-child th:first-child,
+.o_list_view .o_list_table thead tr:first-child th:last-child {
+    border-radius: 0 !important;
+}
+
+/* Table header — mockup: #f5fafa bg, uppercase 11px, 0.6 letter-spacing */
 .o_list_view .o_list_table thead {
     background-color: #f5fafa !important;
 }
@@ -359,18 +403,22 @@
     font-weight: 600 !important;
     padding: 12px 14px !important;
     border-bottom: 1px solid var(--ms-border) !important;
+    border-top: none !important;
     white-space: nowrap !important;
+    background-color: #f5fafa !important;
 }
 
 .o_list_view .o_list_table thead th:hover {
     color: var(--ms-text) !important;
 }
 
-/* Table body cells */
+/* Table body cells — mockup: 11px padding, light border */
 .o_list_view .o_list_table tbody td {
     padding: 11px 14px !important;
     border-bottom: 1px solid var(--ms-border-light) !important;
+    border-top: none !important;
     color: var(--ms-text) !important;
+    vertical-align: middle !important;
 }
 
 /* Last row — no bottom border */
@@ -378,7 +426,7 @@
     border-bottom: none !important;
 }
 
-/* Row hover — teal tint */
+/* Row hover — mockup: #f0f8f8 teal tint */
 .o_list_view .o_list_table .o_data_row:hover > td {
     background-color: #f0f8f8 !important;
 }
@@ -394,15 +442,22 @@
     accent-color: var(--ms-brand-1) !important;
 }
 
-/* Muted (inactive) rows — ensure they look properly faded */
+/* Muted (inactive) rows — faded like mockup */
 .o_list_view .o_list_table .o_data_row.text-muted td {
     opacity: 0.5 !important;
 }
 
-/* List pager */
+/* List pager — mockup style */
 .o_list_view .o_pager .o_pager_value {
     color: var(--ms-text) !important;
     font-weight: 600 !important;
+}
+
+/* Remove all inner table borders that Odoo adds by default */
+.o_list_view .o_list_table td,
+.o_list_view .o_list_table th {
+    border-left: none !important;
+    border-right: none !important;
 }
 
 
@@ -433,10 +488,34 @@
    7. CONTROL PANEL — Breadcrumbs, pager, search
    ============================================================ */
 
-/* Control panel background */
+/* Control panel background — mockup: clean bg, subtle bottom border */
 .o_control_panel {
     background-color: var(--ms-bg) !important;
-    border-bottom: 1px solid var(--ms-border-light) !important;
+    border-bottom: none !important;
+    padding: 12px 16px !important;
+}
+
+/* Page title — mockup: 20px bold */
+.o_control_panel .breadcrumb {
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    margin-bottom: 0 !important;
+}
+
+/* "Nieuw" button — mockup primary style */
+.o_control_panel .o_list_button_add {
+    background-color: var(--ms-brand-1) !important;
+    border-color: var(--ms-brand-1) !important;
+    color: #fff !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    padding: 8px 16px !important;
+}
+
+.o_control_panel .o_list_button_add:hover {
+    background-color: #006b78 !important;
+    border-color: #006b78 !important;
 }
 
 /* Breadcrumb links */
@@ -711,4 +790,74 @@
     background-color: #d9f2f4 !important;
     color: var(--ms-brand-1) !important;
     font-weight: 600 !important;
+}
+
+
+/* ============================================================
+   16. LIST VIEW — Mockup polish
+   ============================================================ */
+
+/* Pager — teal active state, rounded buttons */
+.o_control_panel .o_pager .o_pager_counter .o_pager_value {
+    color: var(--ms-text) !important;
+    font-weight: 600 !important;
+}
+
+.o_control_panel .o_cp_pager .btn {
+    border-radius: 6px !important;
+    border-color: var(--ms-border) !important;
+    color: var(--ms-text) !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+}
+
+.o_control_panel .o_cp_pager .btn:hover {
+    background-color: #e6f7f8 !important;
+    border-color: var(--ms-brand-2) !important;
+    color: var(--ms-brand-1) !important;
+}
+
+/* Group-by headers in list — teal accent */
+.o_list_view .o_group_header {
+    background-color: #f5fafa !important;
+    font-weight: 600 !important;
+    color: var(--ms-text) !important;
+}
+
+.o_list_view .o_group_header:hover {
+    background-color: #e6f7f8 !important;
+}
+
+/* "No records" message */
+.o_list_view .o_view_nocontent .o_nocontent_help p {
+    color: var(--ms-text-muted) !important;
+}
+
+/* Optional columns button */
+.o_list_view .o_optional_columns_dropdown .dropdown-toggle {
+    color: var(--ms-gray) !important;
+}
+
+.o_list_view .o_optional_columns_dropdown .dropdown-toggle:hover {
+    color: var(--ms-brand-1) !important;
+}
+
+/* Search facets as filter chips — mockup style */
+.o_control_panel .o_searchview_facet {
+    padding: 2px 12px !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+}
+
+/* Many2many tags in list view — softer look */
+.o_list_view .o_field_many2many_tags .badge {
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    border-radius: 12px !important;
+    padding: 2px 8px !important;
+}
+
+/* Monetary and numeric fields in list — right-aligned */
+.o_list_view .o_list_table td.o_list_number {
+    font-variant-numeric: tabular-nums !important;
 }

@@ -19,7 +19,6 @@
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
             <field name="group_ids" eval="[
-                (4, ref('aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_user')),
                 (4, ref('professionalisering.group_professionalisering_user')),
             ]"/>
         </record>
@@ -37,7 +36,6 @@
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
             <field name="group_ids" eval="[
-                (4, ref('aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_directie')),
                 (4, ref('professionalisering.group_professionalisering_directie')),
             ]"/>
         </record>
@@ -55,7 +53,6 @@
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
             <field name="group_ids" eval="[
-                (4, ref('aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_boekhouding')),
                 (4, ref('professionalisering.group_professionalisering_boekhouding')),
             ]"/>
         </record>
@@ -66,7 +63,6 @@
 
         <!-- ============================================================ -->
         <!-- 4. VERVANGINGEN — schedules replacements, sees own school    -->
-        <!--    (professionalisering only, medewerker in buitenschoolse)  -->
         <!-- ============================================================ -->
         <record id="test_user_vervangingen" model="res.users">
             <field name="name">Test Vervangingen</field>
@@ -74,7 +70,6 @@
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
             <field name="group_ids" eval="[
-                (4, ref('aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_vervangingen')),
                 (4, ref('professionalisering.group_professionalisering_vervangingen')),
             ]"/>
         </record>
@@ -92,7 +87,6 @@
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
             <field name="group_ids" eval="[
-                (4, ref('aanvraag_buitenschoolse_activiteit.group_buitenschoolse_activiteit_admin')),
                 (4, ref('professionalisering.group_professionalisering_admin')),
             ]"/>
         </record>
