@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- List view: flat overview of absent teachers -->
+    <record id="view_vervanging_line_list" model="ir.ui.view">
+        <field name="name">planner.vervanging.line.list</field>
+        <field name="model">planner.vervanging.line</field>
+        <field name="arch" type="xml">
+            <list default_order="inhaal_datum asc" create="false" edit="false" delete="true">
+                <field name="inhaal_datum"/>
+                <field name="inhaal_datum_end" optional="show"/>
+                <field name="leerkracht_id"/>
+                <field name="vervanger_id"/>
+                <field name="planner_id"/>
+                <field name="planner_state" widget="badge"
+                       decoration-info="planner_state == 'gepland'"
+                       decoration-success="planner_state == 'ingediend'"
+                       decoration-danger="planner_state == 'cancelled'"/>
+                <button name="unlink" type="object" string="Verwijderen"
+                        class="btn-link text-danger btn-sm"
+                        icon="fa-trash"
+                        groups="planner.group_planner_admin"
+                        confirm="Weet u zeker dat u deze vervanging wilt verwijderen?"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_vervanging_line_search" model="ir.ui.view">
+        <field name="name">planner.vervanging.line.search</field>
+        <field name="model">planner.vervanging.line</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="leerkracht_id" string="Leerkracht"/>
+                <field name="vervanger_id" string="Vervanger"/>
+                <filter string="Vandaag" name="today"
+                        domain="[('inhaal_datum', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00')),
+                                 ('inhaal_datum', '&lt;=', context_today().strftime('%Y-%m-%d 23:59:59'))]"/>
+                <filter string="Deze week" name="this_week"
+                        domain="[('inhaal_datum', '&gt;=', (context_today() - relativedelta(days=context_today().weekday())).strftime('%Y-%m-%d 00:00:00')),
+                                 ('inhaal_datum', '&lt;', (context_today() + relativedelta(weeks=1, days=-context_today().weekday())).strftime('%Y-%m-%d 00:00:00'))]"/>
+                <separator/>
+                <filter string="Gepland" name="gepland"
+                        domain="[('planner_state', '=', 'gepland')]"/>
+                <filter string="Ingediend" name="ingediend"
+                        domain="[('planner_state', '=', 'ingediend')]"/>
+                <group>
+                    <filter string="Datum" name="group_datum"
+                            domain="[]" context="{'group_by': 'inhaal_datum:day'}"/>
+                    <filter string="Leerkracht" name="group_leerkracht"
+                            domain="[]" context="{'group_by': 'leerkracht_id'}"/>
+                    <filter string="Vervanger" name="group_vervanger"
+                            domain="[]" context="{'group_by': 'vervanger_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_vervanging_lines" model="ir.actions.act_window">
+        <field name="name">Afwezige leerkrachten</field>
+        <field name="res_model">planner.vervanging.line</field>
+        <field name="view_mode">list</field>
+        <field name="domain">[('planner_state', '!=', 'cancelled')]</field>
+        <field name="context">{'search_default_group_datum': 1}</field>
+    </record>
+</odoo>

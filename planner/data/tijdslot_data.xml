@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="tijdslot_1" model="planner.tijdslot">
+            <field name="name">Lesuur 1 (08:30 - 09:20)</field>
+            <field name="sequence">1</field>
+            <field name="hour_start">8.5</field>
+            <field name="hour_end">9.333</field>
+        </record>
+        <record id="tijdslot_2" model="planner.tijdslot">
+            <field name="name">Lesuur 2 (09:20 - 10:10)</field>
+            <field name="sequence">2</field>
+            <field name="hour_start">9.333</field>
+            <field name="hour_end">10.167</field>
+        </record>
+        <record id="tijdslot_3" model="planner.tijdslot">
+            <field name="name">Lesuur 3 (10:25 - 11:15)</field>
+            <field name="sequence">3</field>
+            <field name="hour_start">10.417</field>
+            <field name="hour_end">11.25</field>
+        </record>
+        <record id="tijdslot_4" model="planner.tijdslot">
+            <field name="name">Lesuur 4 (11:15 - 12:05)</field>
+            <field name="sequence">4</field>
+            <field name="hour_start">11.25</field>
+            <field name="hour_end">12.083</field>
+        </record>
+        <record id="tijdslot_5" model="planner.tijdslot">
+            <field name="name">Lesuur 5 (13:10 - 14:00)</field>
+            <field name="sequence">5</field>
+            <field name="hour_start">13.167</field>
+            <field name="hour_end">14.0</field>
+        </record>
+        <record id="tijdslot_6" model="planner.tijdslot">
+            <field name="name">Lesuur 6 (14:00 - 14:50)</field>
+            <field name="sequence">6</field>
+            <field name="hour_start">14.0</field>
+            <field name="hour_end">14.833</field>
+        </record>
+        <record id="tijdslot_7" model="planner.tijdslot">
+            <field name="name">Lesuur 7 (14:50 - 15:40)</field>
+            <field name="sequence">7</field>
+            <field name="hour_start">14.833</field>
+            <field name="hour_end">15.667</field>
+        </record>
+    </data>
+</odoo>

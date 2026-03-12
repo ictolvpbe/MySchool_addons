@@ -1,0 +1,331 @@
+// ============================================================================
+// MySchool Theme – Component Styles
+// ============================================================================
+
+// -- Cards / Sheets ---------------------------------------------------------
+.o_form_sheet_bg {
+    background-color: var(--myschool-bg) !important;
+}
+
+.o_form_sheet {
+    background-color: var(--myschool-bg-card);
+    border: 1px solid var(--myschool-border);
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0, 60, 60, 0.07);
+}
+
+// -- Form header (avatar area) ----------------------------------------------
+.o_form_view .oe_avatar {
+    img {
+        border-radius: 50%;
+    }
+}
+
+// -- Status bar (teal-tinted) -----------------------------------------------
+.o_form_statusbar {
+    background: var(--myschool-surface) !important;
+    border-bottom: 1px solid var(--myschool-border-light) !important;
+}
+
+// -- Stat buttons -----------------------------------------------------------
+.oe_button_box {
+    border-bottom: 1px solid var(--myschool-border-light);
+
+    .oe_stat_button {
+        border-right: 1px solid var(--myschool-border-light);
+
+        .o_stat_value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--myschool-brand-1);
+        }
+
+        .o_stat_text {
+            font-size: 11px;
+            color: var(--myschool-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        &:hover {
+            background: var(--myschool-hover-row);
+        }
+    }
+}
+
+// -- Form inner group labels ------------------------------------------------
+.o_form_view .o_inner_group .o_form_label {
+    font-size: 13px;
+    color: var(--myschool-text-muted);
+}
+
+// -- Form title -------------------------------------------------------------
+.o_form_view .oe_title {
+    h1 .o_field_widget {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--myschool-text);
+    }
+}
+
+// -- Field group separators (uppercase titles) ------------------------------
+.o_form_view .o_horizontal_separator {
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--myschool-text-muted) !important;
+    font-weight: 600;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--myschool-border-light);
+    margin-bottom: 12px;
+}
+
+// -- Buttons ----------------------------------------------------------------
+.btn-primary {
+    background-color: var(--myschool-brand-1) !important;
+    border-color: var(--myschool-brand-1) !important;
+
+    &:hover,
+    &:focus {
+        background-color: #006b78 !important;
+        border-color: #006b78 !important;
+    }
+
+    &:active {
+        background-color: #005a65 !important;
+        border-color: #005a65 !important;
+    }
+}
+
+.btn-secondary {
+    border-color: var(--myschool-border);
+    color: var(--myschool-text);
+
+    &:hover {
+        background-color: var(--myschool-hover-btn);
+        border-color: var(--myschool-brand-2);
+        color: var(--myschool-brand-1);
+    }
+}
+
+.btn-link {
+    color: var(--myschool-brand-2);
+
+    &:hover {
+        color: var(--myschool-brand-1);
+    }
+}
+
+// -- Many2many tags — no double border ---------------------------------------
+.o_field_many2many_tags {
+    .o_input_dropdown,
+    .o_input_dropdown .o_input {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+}
+
+// -- Form fields ------------------------------------------------------------
+.o_field_widget {
+    font-size: 13px;
+
+    input.o_input,
+    textarea.o_input,
+    select.o_input {
+        border-color: var(--myschool-border);
+        border-radius: 6px;
+        padding: 7px 10px;
+        font-size: 13px;
+        color: var(--myschool-text);
+
+        &:focus {
+            border-color: var(--myschool-brand-2);
+            box-shadow: 0 0 0 3px rgba(0, 125, 140, 0.1);
+        }
+    }
+
+    &.o_readonly_modifier {
+        input.o_input,
+        textarea.o_input,
+        select.o_input,
+        .o_field_text,
+        span {
+            background-color: var(--myschool-surface);
+            border-color: var(--myschool-border-light);
+            color: var(--myschool-text-muted);
+        }
+    }
+}
+
+// -- Inner group label width ------------------------------------------------
+.o_form_view .o_inner_group {
+    grid-template-columns: fit-content(140px) minmax(0, 1fr) !important;
+}
+
+// -- Statusbar --------------------------------------------------------------
+.o_statusbar_status {
+    .o_arrow_button {
+        &.o_arrow_button_current {
+            background-color: var(--myschool-brand-1);
+            color: #fff;
+        }
+
+        &.btn-primary {
+            background-color: var(--myschool-brand-1) !important;
+        }
+    }
+}
+
+// -- List view / tables -----------------------------------------------------
+.o_list_view .o_list_table,
+.o_form_view .o_list_table {
+    font-size: 13px;
+
+    thead th {
+        background-color: var(--myschool-surface);
+        color: var(--myschool-text-muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+        padding: 10px 12px;
+    }
+
+    tbody {
+        tr:hover td {
+            background-color: var(--myschool-hover-row);
+        }
+
+        td {
+            padding: 10px 12px;
+        }
+    }
+
+    td, th {
+        border-color: var(--myschool-border-light);
+    }
+}
+
+// -- Badges -----------------------------------------------------------------
+.badge {
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.text-bg-success, .bg-success {
+    background-color: #0d9488 !important;
+}
+
+.text-bg-info, .bg-info {
+    background-color: #0284c7 !important;
+}
+
+.text-bg-warning, .bg-warning {
+    background-color: #d97706 !important;
+}
+
+.text-bg-danger, .bg-danger {
+    background-color: #dc2626 !important;
+}
+
+// -- Kanban -----------------------------------------------------------------
+.o_kanban_view {
+    background-color: var(--myschool-bg);
+
+    .o_kanban_record {
+        border-radius: 10px;
+        border-color: var(--myschool-border);
+        box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06);
+
+        &:hover {
+            border-color: var(--myschool-brand-2);
+            box-shadow: 0 2px 6px rgba(0, 125, 140, 0.12);
+        }
+    }
+
+    .o_kanban_group_header {
+        font-weight: 600;
+    }
+}
+
+// -- Notebook / Tabs --------------------------------------------------------
+.o_notebook {
+    .nav-tabs {
+        .nav-link {
+            color: var(--myschool-text-muted);
+            font-size: 13px;
+            font-weight: 500;
+
+            &.active {
+                color: var(--myschool-brand-1);
+                font-weight: 600;
+                border-bottom: 2px solid var(--myschool-brand-1);
+            }
+
+            &:hover:not(.active) {
+                color: var(--myschool-text);
+            }
+        }
+    }
+}
+
+// -- Chatter ----------------------------------------------------------------
+.o-mail-Chatter {
+    .o-mail-Chatter-sendBtn {
+        background-color: var(--myschool-brand-1);
+        border-color: var(--myschool-brand-1);
+    }
+}
+
+// -- Search bar focus -------------------------------------------------------
+.o_searchview {
+    &:focus-within {
+        border-color: var(--myschool-brand-2) !important;
+        box-shadow: 0 0 0 3px rgba(0, 125, 140, 0.1);
+    }
+}
+
+// -- Links ------------------------------------------------------------------
+a {
+    color: var(--myschool-brand-2);
+
+    &:hover {
+        color: var(--myschool-brand-1);
+    }
+}
+
+// -- Selection highlights ---------------------------------------------------
+::selection {
+    background-color: rgba(0, 125, 140, 0.2);
+}
+
+// -- Scrollbar tint ---------------------------------------------------------
+::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 125, 140, 0.25);
+    border-radius: 4px;
+
+    &:hover {
+        background-color: rgba(0, 125, 140, 0.4);
+    }
+}
+
+// -- Settings tabs ----------------------------------------------------------
+.o_base_settings_view .settings_tab a.tab {
+    color: var(--myschool-text) !important;
+
+    &.selected {
+        color: #fff !important;
+    }
+
+    &:hover:not(.selected) {
+        color: #003333 !important;
+    }
+}
+
+// -- Checkbox accent --------------------------------------------------------
+input[type="checkbox"] {
+    accent-color: var(--myschool-brand-1);
+}

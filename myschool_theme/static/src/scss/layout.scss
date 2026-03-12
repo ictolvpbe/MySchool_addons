@@ -1,0 +1,108 @@
+// ============================================================================
+// MySchool Theme – Layout & Structure
+// ============================================================================
+
+// -- CSS custom properties --------------------------------------------------
+:root {
+    --myschool-brand-1: #004b53;
+    --myschool-brand-2: #0094A4;
+    --myschool-brand-3: #00ACBF;
+    --myschool-brand-4: #00C4D9;
+    --myschool-text: #003333;
+    --myschool-text-muted: #5a7a7a;
+    --myschool-bg: #5e6868;
+    --myschool-bg-card: #fff;
+    --myschool-border: #d6e4e4;
+    --myschool-border-light: #e8f0f0;
+    --myschool-hover-row: #f0f8f8;
+    --myschool-hover-btn: #e6f7f8;
+    --myschool-surface: transparent;
+}
+
+// -- Page background --------------------------------------------------------
+.o_web_client {
+    background-color: var(--myschool-bg);
+}
+
+.o_action_manager {
+    background-color: var(--myschool-bg);
+}
+
+// -- Navbar -----------------------------------------------------------------
+.o_main_navbar {
+    background-color: var(--myschool-brand-1) !important;
+    min-height: 46px;
+
+    .o_menu_brand {
+        color: #fff !important;
+        font-weight: 700;
+        font-size: 16px;
+    }
+
+    .o_menu_sections > .o-dropdown > .dropdown-toggle,
+    .o_menu_sections > button {
+        color: rgba(255, 255, 255, 0.7) !important;
+        font-size: 13px;
+
+        &:hover,
+        &.show {
+            color: #fff !important;
+        }
+    }
+
+    .o_menu_sections .o_nav_entry {
+        color: #fff !important;
+
+        &:hover,
+        &:focus,
+        &:active {
+            color: #fff !important;
+        }
+    }
+
+    // Active menu indicator
+    .o_menu_sections > .o-dropdown.show > .dropdown-toggle,
+    .o_menu_sections > button.active {
+        color: #fff !important;
+        box-shadow: inset 0 -2px 0 var(--myschool-brand-4);
+    }
+}
+
+// -- Sidebar (MuK appsbar) -------------------------------------------------
+.mk_apps_sidebar_panel {
+    background-color: var(--myschool-brand-1) !important;
+
+    .mk_apps_sidebar_menu > li {
+        > a {
+            color: rgba(255, 255, 255, 0.7) !important;
+        }
+        &.active > a,
+        &:hover > a {
+            background-color: var(--myschool-brand-2) !important;
+            color: #fff !important;
+        }
+    }
+}
+
+// -- Content area -----------------------------------------------------------
+.o_content {
+    background-color: var(--myschool-bg);
+}
+
+// -- Control panel ----------------------------------------------------------
+.o_control_panel {
+    background-color: var(--myschool-bg-card);
+    border-bottom: 1px solid var(--myschool-border);
+
+    .o_control_panel_main {
+        .breadcrumb-item {
+            a {
+                color: var(--myschool-brand-2);
+            }
+            &.active {
+                color: var(--myschool-text);
+                font-weight: 600;
+            }
+        }
+    }
+}

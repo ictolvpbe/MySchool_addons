@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_res_config_settings_myschool_form" model="ir.ui.view">
+        <field name="name">res.config.settings.myschool.theme</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//block[@id='user_default_rights']" position="before">
+                <block title="MySchool Theme" id="myschool_theme_settings">
+                    <setting string="Brand Colors" help="Primary brand palette used across the interface">
+                        <div class="w-50 row">
+                            <label for="ms_color_brand_1" string="Brand Primary" class="d-block w-75 py-2"/>
+                            <field name="ms_color_brand_1" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_brand_2" string="Brand Secondary" class="d-block w-75 py-2"/>
+                            <field name="ms_color_brand_2" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_brand_3" string="Accent 1" class="d-block w-75 py-2"/>
+                            <field name="ms_color_brand_3" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_brand_4" string="Accent 2" class="d-block w-75 py-2"/>
+                            <field name="ms_color_brand_4" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                    </setting>
+                    <setting string="Text Colors" help="Text and muted text colors">
+                        <div class="w-50 row">
+                            <label for="ms_color_text" string="Text" class="d-block w-75 py-2"/>
+                            <field name="ms_color_text" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_text_muted" string="Muted" class="d-block w-75 py-2"/>
+                            <field name="ms_color_text_muted" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                    </setting>
+                    <setting string="Background Colors" help="Page, card and surface backgrounds">
+                        <div class="w-50 row">
+                            <label for="ms_color_bg" string="Background" class="d-block w-75 py-2"/>
+                            <field name="ms_color_bg" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_bg_card" string="Card" class="d-block w-75 py-2"/>
+                            <field name="ms_color_bg_card" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_surface" string="Surface" class="d-block w-75 py-2"/>
+                            <field name="ms_color_surface" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                    </setting>
+                    <setting string="Border &amp; Hover Colors" help="Borders and hover effects">
+                        <div class="w-50 row">
+                            <label for="ms_color_border" string="Border" class="d-block w-75 py-2"/>
+                            <field name="ms_color_border" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_border_light" string="Border Light" class="d-block w-75 py-2"/>
+                            <field name="ms_color_border_light" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_hover_row" string="Row Hover" class="d-block w-75 py-2"/>
+                            <field name="ms_color_hover_row" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_hover_btn" string="Button Hover" class="d-block w-75 py-2"/>
+                            <field name="ms_color_hover_btn" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                    </setting>
+                    <setting string="Reset">
+                        <button
+                            name="action_reset_myschool_colors"
+                            icon="fa-refresh"
+                            type="object"
+                            string="Reset MySchool Colors"
+                            class="btn-link"
+                        />
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

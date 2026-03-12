@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- List view -->
+    <record id="view_afwezige_leerkracht_list" model="ir.ui.view">
+        <field name="name">planner.afwezige.leerkracht.list</field>
+        <field name="model">planner.afwezige.leerkracht</field>
+        <field name="arch" type="xml">
+            <list default_order="datum asc" create="false" edit="false" delete="false">
+                <field name="datum"/>
+                <field name="datum_end" optional="show"/>
+                <field name="record_type" string="Type"/>
+                <field name="leerkracht_id" invisible="record_type != 'leerkracht'"/>
+                <field name="klas_id" invisible="record_type != 'klas'"/>
+                <field name="titel"/>
+                <field name="school_id"/>
+                <field name="state" widget="badge"
+                       decoration-success="state in ('approved', 's_code', 'vervanging', 'done')"/>
+                <button name="action_plan_vervanging"
+                        string="Vervanging plannen"
+                        type="object"
+                        class="btn-primary btn-sm"
+                        icon="fa-calendar-plus-o"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_afwezige_leerkracht_search" model="ir.ui.view">
+        <field name="name">planner.afwezige.leerkracht.search</field>
+        <field name="model">planner.afwezige.leerkracht</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="leerkracht_id" string="Leerkracht"/>
+                <field name="klas_id" string="Klas"/>
+                <field name="titel" string="Activiteit"/>
+                <field name="school_id" string="School"/>
+                <filter string="Leerkrachten" name="leerkrachten"
+                        domain="[('record_type', '=', 'leerkracht')]"/>
+                <filter string="Klassen" name="klassen"
+                        domain="[('record_type', '=', 'klas')]"/>
+                <separator/>
+                <filter string="Vandaag" name="today"
+                        domain="[('datum', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00')),
+                                 ('datum', '&lt;=', context_today().strftime('%Y-%m-%d 23:59:59'))]"/>
+                <filter string="Deze week" name="this_week"
+                        domain="[('datum', '&gt;=', (context_today() - relativedelta(days=context_today().weekday())).strftime('%Y-%m-%d 00:00:00')),
+                                 ('datum', '&lt;', (context_today() + relativedelta(weeks=1, days=-context_today().weekday())).strftime('%Y-%m-%d 00:00:00'))]"/>
+                <filter string="Toekomstig" name="future"
+                        domain="[('datum', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
+                <group>
+                    <filter string="Datum" name="group_datum"
+                            domain="[]" context="{'group_by': 'datum:day'}"/>
+                    <filter string="Type" name="group_type"
+                            domain="[]" context="{'group_by': 'record_type'}"/>
+                    <filter string="Leerkracht" name="group_leerkracht"
+                            domain="[]" context="{'group_by': 'leerkracht_id'}"/>
+                    <filter string="Klas" name="group_klas"
+                            domain="[]" context="{'group_by': 'klas_id'}"/>
+                    <filter string="School" name="group_school"
+                            domain="[]" context="{'group_by': 'school_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_afwezige_leerkrachten" model="ir.actions.act_window">
+        <field name="name">Afwezigen</field>
+        <field name="res_model">planner.afwezige.leerkracht</field>
+        <field name="view_mode">list</field>
+        <field name="context">{'search_default_future': 1, 'search_default_group_datum': 1}</field>
+    </record>
+</odoo>

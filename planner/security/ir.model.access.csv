@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_planner_user,planner.record.user,model_planner_record,group_planner_user,1,1,1,0
+access_planner_admin,planner.record.admin,model_planner_record,group_planner_admin,1,1,1,1
+access_planner_vervanging_user,planner.vervanging.line.user,model_planner_vervanging_line,group_planner_user,1,1,1,1
+access_planner_vervanging_admin,planner.vervanging.line.admin,model_planner_vervanging_line,group_planner_admin,1,1,1,1
+access_planner_tijdslot_user,planner.tijdslot.user,model_planner_tijdslot,group_planner_user,1,0,0,0
+access_planner_tijdslot_admin,planner.tijdslot.admin,model_planner_tijdslot,group_planner_admin,1,1,1,1
+access_planner_afwezige_user,planner.afwezige.leerkracht.user,model_planner_afwezige_leerkracht,group_planner_user,1,0,0,0
+access_planner_afwezige_admin,planner.afwezige.leerkracht.admin,model_planner_afwezige_leerkracht,group_planner_admin,1,0,0,0

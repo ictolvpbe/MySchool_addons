@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="sequence_planner_record" model="ir.sequence">
+        <field name="name">Planner</field>
+        <field name="code">planner.record</field>
+        <field name="prefix">PLN-</field>
+        <field name="padding">4</field>
+    </record>
+</odoo>
