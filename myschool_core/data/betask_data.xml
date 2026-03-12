@@ -164,6 +164,79 @@
     </data>
 
     <!-- ========================================= -->
+    <!-- UNIFIED PERSON TYPES + CLEANUP -->
+    <!-- ========================================= -->
+
+    <data noupdate="0">
+
+        <!-- Unified DB PERSON types (replace separate EMPLOYEE/STUDENT types) -->
+        <record id="betask_type_db_person_add" model="myschool.betask.type">
+            <field name="name">DB_PERSON_ADD</field>
+            <field name="target">DB</field>
+            <field name="object">PERSON</field>
+            <field name="action">ADD</field>
+            <field name="description">Add person to database (employee or student)</field>
+            <field name="processor_method">process_db_person_add</field>
+            <field name="priority">20</field>
+        </record>
+
+        <record id="betask_type_db_person_upd" model="myschool.betask.type">
+            <field name="name">DB_PERSON_UPD</field>
+            <field name="target">DB</field>
+            <field name="object">PERSON</field>
+            <field name="action">UPD</field>
+            <field name="description">Update person in database</field>
+            <field name="processor_method">process_db_person_upd</field>
+            <field name="priority">20</field>
+        </record>
+
+        <record id="betask_type_db_person_deact" model="myschool.betask.type">
+            <field name="name">DB_PERSON_DEACT</field>
+            <field name="target">DB</field>
+            <field name="object">PERSON</field>
+            <field name="action">DEACT</field>
+            <field name="description">Deactivate person in database</field>
+            <field name="processor_method">process_db_person_deact</field>
+            <field name="priority">20</field>
+        </record>
+
+        <!-- Deactivate old EMPLOYEE/STUDENT types (replaced by unified PERSON) -->
+        <record id="betask_type_db_employee_add" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+        <record id="betask_type_db_employee_upd" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+        <record id="betask_type_db_student_add" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+        <record id="betask_type_db_student_update" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+
+        <!-- Deactivate unused types -->
+        <record id="betask_type_ldap_org_add" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+        <record id="betask_type_ldap_student_add" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+        <record id="betask_type_ldap_employee_add" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+        <record id="betask_type_ldap_employee_upd" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+        <record id="betask_type_all_role_upd" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+        <record id="betask_type_manual_config" model="myschool.betask.type">
+            <field name="active" eval="False"/>
+        </record>
+
+    </data>
+
+    <!-- ========================================= -->
     <!-- SCHEDULED ACTIONS (CRON JOBS) -->
     <!-- ========================================= -->
     

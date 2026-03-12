@@ -32,6 +32,12 @@ class OrgProprelations(models.Model):
         string='Relations',
     )
 
+    pgp_member_ids = fields.One2many(
+        'myschool.proprelation',
+        compute='_compute_pgp_member_ids',
+        string='Members (PG-P)',
+    )
+
     def _compute_proprelation_all_ids(self):
         """All proprelations where this org appears (as id_org or id_org_parent)."""
         PropRelation = self.env['myschool.proprelation']
@@ -41,6 +47,20 @@ class OrgProprelations(models.Model):
                 ('id_org', '=', rec.id),
                 ('id_org_parent', '=', rec.id),
             ])
+
+    def _compute_pgp_member_ids(self):
+        """PG-P proprelations where this org is the persongroup."""
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        pg_p_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
+        for rec in self:
+            if pg_p_type:
+                rec.pgp_member_ids = PropRelation.search([
+                    ('proprelation_type_id', '=', pg_p_type.id),
+                    ('id_org', '=', rec.id),
+                ])
+            else:
+                rec.pgp_member_ids = PropRelation
 
     def _compute_proprelation_count(self):
         PropRelation = self.env['myschool.proprelation']
@@ -109,7 +129,11 @@ class OrgProprelations(models.Model):
 
         name_tree = self._compute_name_tree_from_fqdn()
         if name_tree:
-            self.write({'name_tree': name_tree})
+            service = self.env['myschool.manual.task.service']
+            service.create_manual_task('ORG', 'UPD', {
+                'org_id': self.id,
+                'vals': {'name_tree': name_tree},
+            })
             _logger.info(f"Updated name_tree for {self.name_short}: {name_tree}")
 
         return True
@@ -132,7 +156,11 @@ class OrgProprelations(models.Model):
         if parent_rel and parent_rel.id_org_parent and parent_rel.id_org_parent.ou_fqdn_internal and self.name_short:
             parent_fqdn = parent_rel.id_org_parent.ou_fqdn_internal.lower()
             new_fqdn = f"ou={self.name_short.lower()},{parent_fqdn}"
-            self.write({'ou_fqdn_internal': new_fqdn})
+            service = self.env['myschool.manual.task.service']
+            service.create_manual_task('ORG', 'UPD', {
+                'org_id': self.id,
+                'vals': {'ou_fqdn_internal': new_fqdn},
+            })
             _logger.info(f"Built ou_fqdn_internal for {self.name_short}: {new_fqdn}")
 
     def action_update_all_name_trees(self):
@@ -147,11 +175,15 @@ class OrgProprelations(models.Model):
         # Second pass: update name_tree for all orgs with ou_fqdn_internal
         all_orgs = Org.search([('ou_fqdn_internal', '!=', False)])
 
+        service = self.env['myschool.manual.task.service']
         updated_count = 0
         for org in all_orgs:
             name_tree = org._compute_name_tree_from_fqdn()
             if name_tree and org.name_tree != name_tree:
-                org.write({'name_tree': name_tree})
+                service.create_manual_task('ORG', 'UPD', {
+                    'org_id': org.id,
+                    'vals': {'name_tree': name_tree},
+                })
                 updated_count += 1
                 _logger.info(f"Updated name_tree for {org.name_short}: {name_tree}")
 
@@ -181,11 +213,15 @@ class OrgProprelations(models.Model):
         # Second pass: update name_tree
         all_orgs = Org.search([('ou_fqdn_internal', '!=', False)])
 
+        service = self.env['myschool.manual.task.service']
         updated_count = 0
         for org in all_orgs:
             name_tree = org._compute_name_tree_from_fqdn()
             if name_tree and org.name_tree != name_tree:
-                org.write({'name_tree': name_tree})
+                service.create_manual_task('ORG', 'UPD', {
+                    'org_id': org.id,
+                    'vals': {'name_tree': name_tree},
+                })
                 updated_count += 1
 
         _logger.info(f"Updated name_tree for {updated_count} organizations")
@@ -216,23 +252,24 @@ class OrgProprelations(models.Model):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
 
-        # Get or create ORG-TREE type
+        # Get ORG-TREE type
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
         if not org_tree_type:
-            org_tree_type = PropRelationType.create({
-                'name': 'ORG-TREE',
-                'usage': 'Organization hierarchy relationship',
-                'is_active': True,
-            })
+            _logger.error("ORG-TREE proprelation type not found")
+            return {'error': 'ORG-TREE type not found'}
 
-        # Step 1: Remove all existing ORG-TREE relations
+        service = self.env['myschool.manual.task.service']
+
+        # Step 1: Remove all existing ORG-TREE relations via betask
         existing_org_trees = PropRelation.search([
             ('proprelation_type_id', '=', org_tree_type.id),
         ])
         removed_count = len(existing_org_trees)
         if existing_org_trees:
-            existing_org_trees.unlink()
-            _logger.info(f"Removed {removed_count} existing ORG-TREE relations")
+            service.create_manual_task('PROPRELATION', 'DEACT', {
+                'proprelation_ids': existing_org_trees.ids,
+            })
+            _logger.info(f"Deactivated {removed_count} existing ORG-TREE relations")
 
         # Step 2: Build FQDN-to-org index for fast parent lookup
         all_orgs = Org.search([('ou_fqdn_internal', '!=', False)])
@@ -278,16 +315,10 @@ class OrgProprelations(models.Model):
                 skipped_count += 1
                 continue
 
-            relation_name = build_proprelation_name(
-                'ORG-TREE', id_org=org, id_org_parent=parent_org
-            )
-
-            PropRelation.create({
-                'name': relation_name,
-                'proprelation_type_id': org_tree_type.id,
-                'id_org': org.id,
-                'id_org_parent': parent_org.id,
-                'is_active': True,
+            service.create_manual_task('PROPRELATION', 'ADD', {
+                'type': 'ORG-TREE',
+                'org_id': org.id,
+                'org_parent_id': parent_org.id,
             })
             created_count += 1
 

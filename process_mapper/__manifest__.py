@@ -24,6 +24,7 @@
         'views/process_map_views.xml',
         'views/process_mapper_client_views.xml',
         'views/menu_views.xml',
+        'data/myschool_processes.xml',
     ],
     'assets': {
         'web.assets_backend': [

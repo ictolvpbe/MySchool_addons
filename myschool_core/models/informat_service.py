@@ -358,8 +358,8 @@ class InformatService(models.AbstractModel):
                 # Process Students (needs registrations too)
                 if all_imported_registrations is not None:
                     self._analyze_data_and_create_student_tasks(all_imported_registrations, all_imported_students)
-                    self._process_betasks('DB', 'STUDENT', 'ADD')
-                    self._process_betasks('DB', 'STUDENT', 'UPD')
+                    self._process_betasks('DB', 'PERSON', 'ADD')
+                    self._process_betasks('DB', 'PERSON', 'UPD')
 
 
 
@@ -894,10 +894,10 @@ class InformatService(models.AbstractModel):
                 self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 1 (Person sync)")
                 return False
 
-            # Process DB-EMPLOYEE tasks
-            self._process_betasks('DB', 'EMPLOYEE', 'ADD')
-            self._process_betasks('DB', 'EMPLOYEE', 'UPD')
-            self._process_betasks('DB', 'EMPLOYEE', 'DEACT')
+            # Process DB-PERSON tasks (employees)
+            self._process_betasks('DB', 'PERSON', 'ADD')
+            self._process_betasks('DB', 'PERSON', 'UPD')
+            self._process_betasks('DB', 'PERSON', 'DEACT')
 
             # =====================================================
             # PHASE 1b: Sync Odoo Users (NEW!)
@@ -1004,6 +1004,7 @@ class InformatService(models.AbstractModel):
                 # Parse employee JSON
                 employee_json = json.loads(employee_value)
                 employee_json['instNr'] = inst_nr
+                employee_json['person_type'] = 'EMPLOYEE'
 
                 # Include assignments for this person and instNr
                 if all_imported_employee_assignments:
@@ -1040,7 +1041,7 @@ class InformatService(models.AbstractModel):
                         if person_uuid not in added_persons:
                             # CREATE: New person
                             self._create_betask(
-                                'DB', 'EMPLOYEE', 'ADD',
+                                'DB', 'PERSON', 'ADD',
                                 json.dumps(employee_json),
                                 None
                             )
@@ -1053,7 +1054,7 @@ class InformatService(models.AbstractModel):
                             # This will be handled by the UPD task with ADD-DETAILS action
                             data2 = {'action': 'ADD-DETAILS', 'instNr': inst_nr}
                             self._create_betask(
-                                'DB', 'EMPLOYEE', 'UPD',
+                                'DB', 'PERSON', 'UPD',
                                 json.dumps(employee_json),
                                 json.dumps(data2)
                             )
@@ -1103,7 +1104,7 @@ class InformatService(models.AbstractModel):
                 if should_reactivate:
                     data2 = {'action': 'REACTIVATE'}
                     self._create_betask(
-                        'DB', 'EMPLOYEE', 'UPD',
+                        'DB', 'PERSON', 'UPD',
                         json.dumps(employee_json),
                         json.dumps(data2)
                     )
@@ -1116,7 +1117,7 @@ class InformatService(models.AbstractModel):
                 if not person_details:
                     data2 = {'action': 'ADD-DETAILS', 'instNr': inst_nr}
                     self._create_betask(
-                        'DB', 'EMPLOYEE', 'UPD',
+                        'DB', 'PERSON', 'UPD',
                         json.dumps(employee_json),
                         json.dumps(data2)
                     )
@@ -1132,14 +1133,14 @@ class InformatService(models.AbstractModel):
                         current_json = json.loads(person_details.full_json_string)
                         # Remove instNr from comparison (it's metadata, not employee data)
                         compare_current = {k: v for k, v in current_json.items()
-                                           if k not in ['instNr']}
+                                           if k not in ['instNr', 'person_type']}
                         compare_new = {k: v for k, v in employee_json.items()
-                                       if k not in ['instNr']}
+                                       if k not in ['instNr', 'person_type']}
 
                         if compare_current != compare_new:
                             data2 = {'action': 'UPDATE'}
                             self._create_betask(
-                                'DB', 'EMPLOYEE', 'UPD',
+                                'DB', 'PERSON', 'UPD',
                                 json.dumps(employee_json),
                                 json.dumps(data2)
                             )
@@ -1148,7 +1149,7 @@ class InformatService(models.AbstractModel):
                         # If we can't parse, update anyway
                         data2 = {'action': 'UPDATE'}
                         self._create_betask(
-                            'DB', 'EMPLOYEE', 'UPD',
+                            'DB', 'PERSON', 'UPD',
                             json.dumps(employee_json),
                             json.dumps(data2)
                         )
@@ -1170,8 +1171,9 @@ class InformatService(models.AbstractModel):
                         'personId': person.sap_person_uuid,
                         'reason': 'Not in import'
                     }
+                    deact_data['person_type'] = 'EMPLOYEE'
                     self._create_betask(
-                        'DB', 'EMPLOYEE', 'DEACT',
+                        'DB', 'PERSON', 'DEACT',
                         json.dumps(deact_data),
                         None
                     )
@@ -1291,13 +1293,14 @@ class InformatService(models.AbstractModel):
             ], limit=1)
             if not remaining and person.is_active:
                 # No active proprelations at all - deactivate person
+                deact_fallback = {'personId': person.sap_person_uuid, 'person_type': 'EMPLOYEE'}
                 self._create_betask(
-                    'DB', 'EMPLOYEE', 'DEACT',
-                    json.dumps(employee_json) if employee_json else json.dumps({'personId': person.sap_person_uuid}),
+                    'DB', 'PERSON', 'DEACT',
+                    json.dumps(employee_json) if employee_json else json.dumps(deact_fallback),
                     None
                 )
                 self._create_sys_event("BETASK-001",
-                    f"No active proprelations for {person.name} - created EMPLOYEE DEACT task")
+                    f"No active proprelations for {person.name} - created PERSON DEACT task")
             return
 
         # Create DEACT tasks for each proprelation
@@ -1926,22 +1929,24 @@ class InformatService(models.AbstractModel):
                     # Create ADD task
                     action = 'ADD'
                     person_data = self._merge_registration_and_student_data(registration, student_details)
-                    self._create_betask('DB', 'STUDENT', 'ADD', json.dumps(person_data), '')
-                    
+                    person_data['person_type'] = 'STUDENT'
+                    self._create_betask('DB', 'PERSON', 'ADD', json.dumps(person_data), '')
+
                 elif len(existing_persons) == 1:
                     # Check for updates
                     person_in_db = existing_persons[0]
-                    
+
                     # Check for deactivation (new end date)
                     reg_end_date = registration.get('regEndDate')
                     if reg_end_date and not person_in_db.reg_end_date:
                         task_data = {
                             'uuid': person_in_db.sap_person_uuid,
-                            'regEndDate': reg_end_date
+                            'regEndDate': reg_end_date,
+                            'person_type': 'STUDENT'
                         }
-                        self._create_betask('DB', 'STUDENT', 'DEACT', json.dumps(task_data), '')
+                        self._create_betask('DB', 'PERSON', 'DEACT', json.dumps(task_data), '')
                         continue
-                    
+
                     # Check for reactivation
                     if not reg_end_date and person_in_db.reg_end_date:
                         task_data = {
@@ -1949,21 +1954,23 @@ class InformatService(models.AbstractModel):
                             'regEndDate': None,
                             'regGroupCode': registration.get('regGroupCode'),
                             'regInstNr': registration.get('regInstNr'),
-                            'regStartDate': registration.get('regStartDate')
+                            'regStartDate': registration.get('regStartDate'),
+                            'person_type': 'STUDENT'
                         }
-                        self._create_betask('DB', 'STUDENT', 'UPD', json.dumps(task_data), '')
+                        self._create_betask('DB', 'PERSON', 'UPD', json.dumps(task_data), '')
                         continue
-                    
+
                     # Check for field updates
                     diff_new, diff_original = self._compare_person_fields(
-                        person_in_db, 
+                        person_in_db,
                         self._merge_registration_and_student_data(registration, student_details)
                     )
-                    
+
                     if diff_new:
                         diff_new['persoonId'] = person_in_db.sap_person_uuid
+                        diff_new['person_type'] = 'STUDENT'
                         diff_original['persoonId'] = person_in_db.sap_person_uuid
-                        self._create_betask('DB', 'STUDENT', 'UPD', json.dumps(diff_new), json.dumps(diff_original))
+                        self._create_betask('DB', 'PERSON', 'UPD', json.dumps(diff_new), json.dumps(diff_original))
                 
                 processed_students.append(persoon_id)
             
@@ -2314,10 +2321,9 @@ class InformatService(models.AbstractModel):
                 # Default taskname
                 taskname = f"{action} {obj}"
 
-                if task_type.object == "EMPLOYEE":
-                    taskname = action + " " + obj + ": " + json_data.get("sortName", json_data.get("personId", "unknown"))
-                elif task_type.object == "STUDENT":
-                    taskname = action + " " + obj + ": " + json_data.get("sortName", json_data.get("uuid", "unknown"))
+                pt = json_data.get('person_type', task_type.object).upper()
+                if pt in ('EMPLOYEE', 'STUDENT', 'PERSON'):
+                    taskname = action + " " + pt + ": " + json_data.get("sortName", json_data.get("personId", json_data.get("uuid", json_data.get("persoonId", "unknown"))))
                 elif task_type.object == "ROLE":
                     taskname = action + " " + obj + ": " + json_data.get("name", "unknown")
                 elif task_type.object == "ORG":
@@ -2440,37 +2446,39 @@ class InformatService(models.AbstractModel):
         diff_new = {}
         diff_original = {}
         
-        # Map of Python field names to JSON field names
+        # Map of Python field names to JSON field names (must match Informat keys)
+        # Note: 'name' is excluded because the DB stores a composite "Last, First"
+        # while the incoming 'naam' only contains the raw last name.
         field_mapping = {
-            'first_name': 'firstName',
-            'last_name': 'lastName',
-            'birth_date': 'birthDate',
-            'gender': 'gender',
-            'nationality': 'nationality',
-            # Add more field mappings as needed
+            'first_name': 'voornaam',
+            'birth_date': 'geboortedatum',
+            'gender': 'geslacht',
+            'insz': 'rijksregisternr',
         }
-        
+
         for py_field, json_field in field_mapping.items():
             if py_field in skip_fields:
                 continue
-            
+
             db_value = getattr(person_in_db, py_field, None)
             new_value = new_data.get(json_field)
-            
-            # Handle date comparisons
+
+            # Handle date comparisons — normalize both sides to YYYY-MM-DD
             if isinstance(db_value, (datetime,)):
                 db_value = db_value.strftime('%Y-%m-%d') if db_value else None
-            
+            if isinstance(new_value, str) and 'T' in new_value:
+                new_value = new_value.split('T')[0]
+
+            # Normalize empty/falsy values to None so that
+            # "" vs None or False vs None are not seen as changes
+            if not db_value:
+                db_value = None
+            if not new_value:
+                new_value = None
+
             if db_value != new_value:
-                if db_value is None and new_value is not None:
-                    diff_new[json_field] = new_value
-                    diff_original[json_field] = 'null'
-                elif db_value is not None and new_value is None:
-                    diff_new[json_field] = 'null'
-                    diff_original[json_field] = db_value
-                elif db_value != new_value:
-                    diff_new[json_field] = new_value
-                    diff_original[json_field] = db_value
+                diff_new[json_field] = new_value if new_value is not None else 'null'
+                diff_original[json_field] = db_value if db_value is not None else 'null'
         
         return diff_new, diff_original
 

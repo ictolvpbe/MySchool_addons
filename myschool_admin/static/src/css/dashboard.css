@@ -7,6 +7,8 @@
 .db-container {
     background: var(--ms-bg, #f0f5f5);
     min-height: 100%;
+    height: 100%;
+    overflow-y: auto;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
 }
 

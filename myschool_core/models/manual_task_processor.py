@@ -83,7 +83,9 @@ class ManualTaskProcessor(models.AbstractModel):
             ('MANUAL', 'PERSON', 'DEL'):         self.process_manual_person_del,
             ('MANUAL', 'ORG', 'ADD'):            self.process_manual_org_add,
             ('MANUAL', 'ORG', 'UPD'):            self.process_manual_org_upd,
+            ('MANUAL', 'ORG', 'DEL'):            self.process_manual_org_del,
             ('MANUAL', 'PROPRELATION', 'ADD'):   self.process_manual_proprelation_add,
+            ('MANUAL', 'PROPRELATION', 'UPD'):   self.process_manual_proprelation_upd,
             ('MANUAL', 'PROPRELATION', 'DEACT'): self.process_manual_proprelation_deact,
         }
 
@@ -206,15 +208,29 @@ class ManualTaskProcessor(models.AbstractModel):
 
     @api.model
     def process_manual_person_upd(self, task):
-        """Move person to a different org (update PERSON-TREE)."""
+        """Update person: move to different org (PERSON-TREE) or update fields."""
         data = self._get_manual_data(task)
         if not data:
             return {'success': False, 'error': 'No data in task'}
 
         person_id = data.get('person_id')
+        if not person_id:
+            return {'success': False, 'error': 'person_id required'}
+
+        # Generic field update mode
+        update_vals = data.get('vals')
+        if update_vals:
+            Person = self.env['myschool.person']
+            person = Person.browse(person_id).exists()
+            if not person:
+                return {'success': False, 'error': f'Person {person_id} not found'}
+            person.write(update_vals)
+            return {'success': True, 'changes': f"Updated person {person.name}: {update_vals}"}
+
+        # Move mode (legacy)
         new_org_id = data.get('new_org_id')
-        if not person_id or not new_org_id:
-            return {'success': False, 'error': 'person_id and new_org_id required'}
+        if not new_org_id:
+            return {'success': False, 'error': 'new_org_id or vals required'}
 
         Person = self.env['myschool.person']
         Org = self.env['myschool.org']
@@ -323,7 +339,7 @@ class ManualTaskProcessor(models.AbstractModel):
             relations.unlink()
             changes.append(f"Deleted {count} proprelations")
 
-        person.unlink()
+        person.with_context(skip_manual_audit=True).unlink()
         changes.append(f"Deleted person: {person_name}")
 
         return {'success': True, 'changes': '\n'.join(changes)}
@@ -447,17 +463,28 @@ class ManualTaskProcessor(models.AbstractModel):
 
     @api.model
     def process_manual_org_upd(self, task):
-        """Move an org to a new parent (re-parent)."""
+        """Update org: move to new parent (re-parent) or update fields."""
         data = self._get_manual_data(task)
         if not data:
             return {'success': False, 'error': 'No data in task'}
 
         org_id = data.get('org_id')
-        new_parent_id = data.get('new_parent_id')
-        move_to_root = data.get('move_to_root', False)
-
         if not org_id:
             return {'success': False, 'error': 'org_id required'}
+
+        # Generic field update mode
+        update_vals = data.get('vals')
+        if update_vals:
+            Org = self.env['myschool.org']
+            org = Org.browse(org_id).exists()
+            if not org:
+                return {'success': False, 'error': f'Org {org_id} not found'}
+            org.write(update_vals)
+            return {'success': True, 'changes': f"Updated org {org.name}: {update_vals}"}
+
+        # Move mode (legacy)
+        new_parent_id = data.get('new_parent_id')
+        move_to_root = data.get('move_to_root', False)
 
         Org = self.env['myschool.org']
         PropRelation = self.env['myschool.proprelation']
@@ -555,6 +582,52 @@ class ManualTaskProcessor(models.AbstractModel):
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
+    @api.model
+    def process_manual_org_del(self, task):
+        """Delete an org and all its proprelations."""
+        data = self._get_manual_data(task)
+        if not data:
+            return {'success': False, 'error': 'No data in task'}
+
+        org_id = data.get('org_id')
+        if not org_id:
+            return {'success': False, 'error': 'org_id required'}
+
+        Org = self.env['myschool.org']
+        PropRelation = self.env['myschool.proprelation']
+
+        org = Org.browse(org_id).exists()
+        if not org:
+            return {'success': False, 'error': f'Org {org_id} not found'}
+
+        changes = []
+        org_name = org.name
+
+        # Delete all proprelations referencing this org
+        all_rels = PropRelation.search([
+            '|', '|',
+            ('id_org', '=', org.id),
+            ('id_org_parent', '=', org.id),
+            ('id_org_child', '=', org.id),
+        ])
+        if all_rels:
+            count = len(all_rels)
+            all_rels.unlink()
+            changes.append(f"Deleted {count} proprelation(s)")
+
+        # Clear stored computed tree_org_id on persons referencing this org
+        Person = self.env['myschool.person'].with_context(active_test=False)
+        persons = Person.search([('tree_org_id', '=', org.id)])
+        if persons:
+            persons.write({'tree_org_id': False})
+            changes.append(f"Cleared tree_org_id on {len(persons)} person(s)")
+
+        # Delete the org itself
+        org.with_context(skip_pg_flag_handling=True).unlink()
+        changes.append(f"Deleted org: {org_name} (ID: {org_id})")
+
+        return {'success': True, 'changes': '\n'.join(changes)}
+
     # ==================================================================
     # PROPRELATION handlers
     # ==================================================================
@@ -627,6 +700,40 @@ class ManualTaskProcessor(models.AbstractModel):
         return {'success': True, 'changes': f"Created {rel_type_name} relation: {proprel_vals['name']}"}
 
     @api.model
+    @api.model
+    def process_manual_proprelation_upd(self, task):
+        """Update proprelation fields (is_master, automatic_sync, name, etc.)."""
+        data = self._get_manual_data(task)
+        if not data:
+            return {'success': False, 'error': 'No data in task'}
+
+        PropRelation = self.env['myschool.proprelation']
+        changes = []
+
+        proprelation_id = data.get('proprelation_id')
+        proprelation_ids = data.get('proprelation_ids')
+        update_vals = data.get('vals', {})
+
+        if not update_vals:
+            return {'success': False, 'error': 'No vals to update'}
+
+        if proprelation_id:
+            rel = PropRelation.browse(proprelation_id).exists()
+            if rel:
+                rel.write(update_vals)
+                changes.append(f"Updated proprelation {rel.name} (ID: {rel.id}): {update_vals}")
+
+        if proprelation_ids:
+            rels = PropRelation.browse(proprelation_ids).exists()
+            if rels:
+                rels.write(update_vals)
+                changes.append(f"Updated {len(rels)} proprelation(s): {update_vals}")
+
+        if not changes:
+            return {'success': False, 'error': 'No proprelations found to update'}
+
+        return {'success': True, 'changes': '\n'.join(changes)}
+
     def process_manual_proprelation_deact(self, task):
         """Deactivate proprelations (by IDs or by person+org)."""
         data = self._get_manual_data(task)

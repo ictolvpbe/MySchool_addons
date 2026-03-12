@@ -25,9 +25,13 @@ class OrgRoleLine(models.TransientModel):
         res = super().write(vals)
         proprel_vals = {k: vals[k] for k in _SYNC_FIELDS if k in vals}
         if proprel_vals:
+            service = self.env['myschool.manual.task.service']
             for line in self:
                 if line.proprelation_id:
-                    line.proprelation_id.write(proprel_vals)
+                    service.create_manual_task('PROPRELATION', 'UPD', {
+                        'proprelation_id': line.proprelation_id.id,
+                        'vals': proprel_vals,
+                    })
         return res
 
     def action_remove(self):
@@ -35,7 +39,10 @@ class OrgRoleLine(models.TransientModel):
         self.ensure_one()
         proprelation = self.proprelation_id
         if proprelation:
-            proprelation.write({'is_active': False})
+            service = self.env['myschool.manual.task.service']
+            service.create_manual_task('PROPRELATION', 'DEACT', {
+                'proprelation_ids': [proprelation.id],
+            })
 
         # Reopen wizard with saved records via action_open
         org = proprelation.id_org if proprelation else False
@@ -62,9 +69,13 @@ class PersonRoleLine(models.TransientModel):
         res = super().write(vals)
         proprel_vals = {k: vals[k] for k in _SYNC_FIELDS if k in vals}
         if proprel_vals:
+            service = self.env['myschool.manual.task.service']
             for line in self:
                 if line.proprelation_id:
-                    line.proprelation_id.write(proprel_vals)
+                    service.create_manual_task('PROPRELATION', 'UPD', {
+                        'proprelation_id': line.proprelation_id.id,
+                        'vals': proprel_vals,
+                    })
         return res
 
     def action_remove(self):
@@ -72,7 +83,10 @@ class PersonRoleLine(models.TransientModel):
         self.ensure_one()
         proprelation = self.proprelation_id
         if proprelation:
-            proprelation.write({'is_active': False})
+            service = self.env['myschool.manual.task.service']
+            service.create_manual_task('PROPRELATION', 'DEACT', {
+                'proprelation_ids': [proprelation.id],
+            })
 
         # Reopen wizard with saved records via action_open
         person = proprelation.id_person if proprelation else False

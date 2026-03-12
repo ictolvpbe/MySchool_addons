@@ -19,6 +19,7 @@ class PersonExtension(models.Model):
         compute='_compute_tree_org',
         store=True,
         compute_sudo=True,
+        ondelete='set null',
     )
 
     tree_org_name_tree = fields.Char(

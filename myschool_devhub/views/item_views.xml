@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Item Kanban View -->
+    <record id="devhub_item_view_kanban" model="ir.ui.view">
+        <field name="name">devhub.item.kanban</field>
+        <field name="model">devhub.item</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="stage_id" class="o_kanban_small_column"
+                    highlight_color="kanban_color">
+                <templates>
+                    <t t-name="card">
+                        <div class="o_kanban_record_top">
+                            <strong class="o_kanban_record_title">
+                                <field name="display_name"/>
+                            </strong>
+                        </div>
+                        <div class="o_kanban_record_body">
+                            <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                        </div>
+                        <div class="o_kanban_record_bottom">
+                            <div class="oe_kanban_bottom_left">
+                                <field name="priority" widget="priority"/>
+                                <span t-if="record.story_points.raw_value" class="badge rounded-pill text-bg-info ms-1">
+                                    <field name="story_points"/> SP
+                                </span>
+                            </div>
+                            <div class="oe_kanban_bottom_right">
+                                <field name="item_type" widget="badge"
+                                    decoration-danger="item_type == 'bug'"
+                                    decoration-info="item_type == 'story'"
+                                    decoration-success="item_type == 'task'"
+                                    decoration-warning="item_type == 'improvement'"/>
+                                <field name="assigned_id" widget="many2one_avatar_user"/>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Item List View -->
+    <record id="devhub_item_view_list" model="ir.ui.view">
+        <field name="name">devhub.item.list</field>
+        <field name="model">devhub.item</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="display_name" string="Item"/>
+                <field name="item_type" widget="badge"
+                    decoration-danger="item_type == 'bug'"
+                    decoration-info="item_type == 'story'"
+                    decoration-success="item_type == 'task'"
+                    decoration-warning="item_type == 'improvement'"/>
+                <field name="stage_id"/>
+                <field name="priority" widget="priority"/>
+                <field name="assigned_id" widget="many2one_avatar_user"/>
+                <field name="sprint_id" optional="show"/>
+                <field name="story_points"/>
+                <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                <field name="date_deadline" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Item Form View -->
+    <record id="devhub_item_view_form" model="ir.ui.view">
+        <field name="name">devhub.item.form</field>
+        <field name="model">devhub.item</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <field name="stage_id" widget="statusbar"
+                        options="{'clickable': '1'}"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="display_name" class="text-break"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="project_id"/>
+                            <field name="item_type"/>
+                            <field name="priority" widget="priority"/>
+                            <field name="story_points"/>
+                            <field name="parent_id"/>
+                        </group>
+                        <group>
+                            <field name="assigned_id" widget="many2one_avatar_user"/>
+                            <field name="reviewer_id" widget="many2one_avatar_user"/>
+                            <field name="sprint_id"/>
+                            <field name="release_id"/>
+                            <field name="date_deadline"/>
+                            <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="Sub-items" name="sub_items">
+                            <field name="child_ids">
+                                <list>
+                                    <field name="sequence" string="#"/>
+                                    <field name="name"/>
+                                    <field name="item_type" widget="badge"/>
+                                    <field name="stage_id"/>
+                                    <field name="assigned_id" widget="many2one_avatar_user"/>
+                                    <field name="story_points"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Dependencies" name="dependencies">
+                            <group>
+                                <group string="Depends On">
+                                    <field name="depends_on_ids" nolabel="1"/>
+                                </group>
+                                <group string="Blocked By">
+                                    <field name="blocked_by_ids" nolabel="1"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Process Maps" name="process_maps">
+                            <field name="process_map_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="description"/>
+                                    <field name="state" widget="badge"/>
+                                    <field name="version"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Item Search View -->
+    <record id="devhub_item_view_search" model="ir.ui.view">
+        <field name="name">devhub.item.search</field>
+        <field name="model">devhub.item</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="assigned_id"/>
+                <field name="sprint_id"/>
+                <filter string="My Items" name="my_items" domain="[('assigned_id', '=', uid)]"/>
+                <separator/>
+                <filter string="User Stories/Requirements" name="stories" domain="[('item_type', '=', 'story')]"/>
+                <filter string="Bugs" name="bugs" domain="[('item_type', '=', 'bug')]"/>
+                <filter string="Tasks" name="tasks" domain="[('item_type', '=', 'task')]"/>
+                <filter string="Improvements" name="improvements" domain="[('item_type', '=', 'improvement')]"/>
+                <separator/>
+                <filter string="Backlog" name="backlog" domain="[('sprint_id', '=', False)]"/>
+                <filter string="Has Deadline" name="has_deadline" domain="[('date_deadline', '!=', False)]"/>
+                <separator/>
+                <filter string="Stage" name="group_stage" context="{'group_by': 'stage_id'}"/>
+                <filter string="Sprint" name="group_sprint" context="{'group_by': 'sprint_id'}"/>
+                <filter string="Assigned To" name="group_assigned" context="{'group_by': 'assigned_id'}"/>
+                <filter string="Type" name="group_type" context="{'group_by': 'item_type'}"/>
+                <filter string="Project" name="group_project" context="{'group_by': 'project_id'}"/>
+            </search>
+        </field>
+    </record>
+
+
+</odoo>

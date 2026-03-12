@@ -5,6 +5,8 @@ Object Browser Wizards
 Wizards for add, move, and bulk operations.
 """
 
+from datetime import timedelta
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 import logging
@@ -181,10 +183,14 @@ def update_name_tree_for_org_and_descendants(env, org_id):
     # Get ORG-TREE type
     org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
 
-    # Update this org's name_tree
+    # Update this org's name_tree via betask
     new_name_tree = compute_name_tree(env, org)
     if new_name_tree and org.name_tree != new_name_tree:
-        org.write({'name_tree': new_name_tree})
+        service = env['myschool.manual.task.service']
+        service.create_manual_task('ORG', 'UPD', {
+            'org_id': org.id,
+            'vals': {'name_tree': new_name_tree},
+        })
         _logger.info(f"Updated name_tree for org {org.name_short}: {new_name_tree}")
 
     # Find and update all child orgs recursively (only via ORG-TREE relations)
@@ -466,12 +472,12 @@ class CreatePersonWizard(models.TransientModel):
             return None
 
     def _get_or_create_proprelation_type(self, type_name):
-        """Get or create a proprelation type by name."""
+        """Get a proprelation type by name (raises if not found)."""
         try:
             PropRelationType = self.env['myschool.proprelation.type']
             rel_type = PropRelationType.search([('name', '=', type_name)], limit=1)
             if not rel_type:
-                rel_type = PropRelationType.create({'name': type_name, 'is_active': True})
+                raise UserError(f"PropRelation type '{type_name}' not found. Please create it first.")
             return rel_type
         except KeyError:
             return None
@@ -674,28 +680,16 @@ class CreatePersonWizard(models.TransientModel):
             ], limit=1)
             
             if not existing:
-                # Create with standardized name (include school if found)
-                rel_name = build_proprelation_name(
-                    'PPSBR',
-                    id_role=role,
-                    id_org_parent=school_org,
-                    id_person=person
-                )
-                
-                proprel_vals = {
-                    'name': rel_name,
-                    'proprelation_type_id': ppsbr_type.id,
-                    'id_person': person.id,
-                    'id_role': role.id,
-                    'is_active': True,
+                task_data = {
+                    'type': 'PPSBR',
+                    'person_id': person.id,
+                    'role_id': role.id,
                 }
-                
-                # Add school org as id_org_parent if found
                 if school_org:
-                    proprel_vals['id_org_parent'] = school_org.id
-                
-                PropRelation.create(proprel_vals)
-                _logger.info(f"Created PPSBR relation: {role.name} -> {person_name} (school: {school_org.name if school_org else 'None'})")
+                    task_data['org_parent_id'] = school_org.id
+                service = self.env['myschool.manual.task.service']
+                service.create_manual_task('PROPRELATION', 'ADD', task_data)
+                _logger.info(f"Created PPSBR betask: {role.name} -> {person_name} (school: {school_org.name if school_org else 'None'})")
 
     @api.onchange('person_type')
     def _onchange_person_type(self):
@@ -2744,16 +2738,24 @@ class PasswordWizard(models.TransientModel):
         if len(self.new_password) < 4:
             raise UserError("Password must be at least 4 characters long.")
         
-        # Save password to person record
-        self.person_id.write({'password': self.new_password})
-        
+        # Save password to person record via betask
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'UPD', {
+            'person_id': self.person_id.id,
+            'vals': {'password': self.new_password},
+        })
+
         return {'type': 'ir.actions.act_window_close'}
-    
+
     def action_clear_password(self):
         """Clear the password."""
         self.ensure_one()
 
-        self.person_id.write({'password': False})
+        service = self.env['myschool.manual.task.service']
+        service.create_manual_task('PERSON', 'UPD', {
+            'person_id': self.person_id.id,
+            'vals': {'password': False},
+        })
 
         return {'type': 'ir.actions.act_window_close'}
 
@@ -3367,10 +3369,14 @@ class UpdateStudentRelationsWizard(models.TransientModel):
                 ], limit=1)
 
                 if ppsbr and ppsbr.id_org.id != cg.id:
-                    # PPSBR points to school instead of classgroup — fix it
-                    ppsbr.write({
-                        'id_org_parent': ppsbr.id_org.id,
-                        'id_org': cg.id,
+                    # PPSBR points to school instead of classgroup — fix it via betask
+                    service = self.env['myschool.manual.task.service']
+                    service.create_manual_task('PROPRELATION', 'UPD', {
+                        'proprelation_id': ppsbr.id,
+                        'vals': {
+                            'id_org_parent': ppsbr.id_org.id,
+                            'id_org': cg.id,
+                        },
                     })
                     updated_count += 1
 
@@ -3597,7 +3603,7 @@ class CreatePersongroupWizard(models.TransientModel):
         OrgType = self.env['myschool.org.type']
         pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
         if not pg_type:
-            pg_type = OrgType.create({'name': 'PERSONGROUP', 'is_active': True})
+            raise UserError("PERSONGROUP org type not found. Please create it first.")
 
         group_name_short = self.group_name.strip().lower().replace(' ', '-')
         com_group_name = self._build_persongroup_group_name(group_name_short, school_org)
@@ -3764,3 +3770,192 @@ class ManagePersongroupMembersWizard(models.TransientModel):
 
     def action_close(self):
         return {'type': 'ir.actions.act_window_close'}
+
+
+class CleanupWizard(models.TransientModel):
+    """
+    Wizard to archive or permanently delete old backend tasks or system events.
+
+    Opened from two menu items (Backend Tasks > Cleanup and System Events > Cleanup)
+    with context setting the default cleanup_target. Retention days are stored as a
+    CI on the schoolboard org and persist across uses.
+    """
+    _name = 'myschool.cleanup.wizard'
+    _description = 'Cleanup Old Records'
+
+    cleanup_target = fields.Selection(
+        selection=[
+            ('betasks', 'Backend Tasks'),
+            ('events', 'System Events'),
+        ],
+        string='Cleanup Target',
+        required=True,
+        readonly=True,
+    )
+
+    cleanup_action = fields.Selection(
+        selection=[
+            ('archive', 'Archive'),
+            ('delete', 'Permanently Delete'),
+        ],
+        string='Action',
+        required=True,
+        default='archive',
+    )
+
+    clean_all = fields.Boolean(
+        string='Clean All',
+        default=False,
+        help='Ignore retention period and clean all matching records, including today.',
+    )
+
+    retention_days = fields.Integer(
+        string='Retention Days',
+        required=True,
+        default=90,
+        help='Records older than this many days will be cleaned up',
+    )
+
+    cutoff_date = fields.Date(
+        string='Cutoff Date',
+        compute='_compute_preview',
+        store=False,
+    )
+
+    preview_count = fields.Integer(
+        string='Matching Records',
+        compute='_compute_preview',
+        store=False,
+    )
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        ci = self._get_retention_ci()
+        if ci and ci.integer_value:
+            res['retention_days'] = ci.integer_value
+        return res
+
+    def _get_schoolboard_org(self):
+        sb_type = self.env['myschool.org.type'].search([('name', '=', 'SCHOOLBOARD')], limit=1)
+        if not sb_type:
+            return self.env['myschool.org']
+        return self.env['myschool.org'].search([('org_type_id', '=', sb_type.id), ('is_active', '=', True)], limit=1)
+
+    def _get_retention_ci(self):
+        return self.env['myschool.config.item'].search([('name', '=', 'CLEANUP_RETENTION_DAYS')], limit=1)
+
+    def _get_status_domain(self):
+        if self.cleanup_target == 'betasks':
+            return [('status', 'in', ('completed_ok', 'error'))]
+        elif self.cleanup_target == 'events':
+            return [('status', 'in', ('CLOSED', 'PRO_ERROR'))]
+        return []
+
+    def _get_model(self):
+        if self.cleanup_target == 'betasks':
+            return self.env['myschool.betask'].with_context(active_test=False)
+        elif self.cleanup_target == 'events':
+            return self.env['myschool.sys.event'].with_context(active_test=False)
+        return None
+
+    def _get_search_domain(self):
+        if self.clean_all:
+            return []
+        domain = self._get_status_domain()
+        cutoff = fields.Datetime.now() - timedelta(days=self.retention_days)
+        domain.append(('create_date', '<', cutoff))
+        return domain
+
+    @api.depends('retention_days', 'cleanup_target', 'clean_all')
+    def _compute_preview(self):
+        for wizard in self:
+            if not wizard.clean_all and (not wizard.retention_days or wizard.retention_days < 1):
+                wizard.cutoff_date = False
+                wizard.preview_count = 0
+                continue
+
+            if wizard.clean_all:
+                wizard.cutoff_date = False
+            else:
+                cutoff = fields.Datetime.now() - timedelta(days=wizard.retention_days)
+                wizard.cutoff_date = cutoff.date()
+
+            model = wizard._get_model()
+            if model is not None:
+                wizard.preview_count = model.search_count(wizard._get_search_domain())
+            else:
+                wizard.preview_count = 0
+
+    def _save_retention_ci(self):
+        ci = self._get_retention_ci()
+        if not ci:
+            ci = self.env['myschool.config.item'].create({
+                'name': 'CLEANUP_RETENTION_DAYS',
+                'scope': 'org',
+                'type': 'setting',
+                'integer_value': self.retention_days,
+                'description': 'Number of days to retain completed/error backend tasks and closed/error system events before cleanup.',
+            })
+            sb_org = self._get_schoolboard_org()
+            if sb_org:
+                self.env['myschool.ci.relation'].create({
+                    'id_ci': ci.id,
+                    'id_org': sb_org.id,
+                })
+        else:
+            ci.write({'integer_value': self.retention_days})
+
+    def action_cleanup(self):
+        self.ensure_one()
+        if not self.clean_all and self.retention_days < 1:
+            raise UserError("Retention days must be at least 1.")
+
+        self._save_retention_ci()
+
+        model = self._get_model()
+        if model is None:
+            raise UserError("Invalid cleanup target.")
+
+        domain = self._get_search_domain()
+        records = model.search(domain)
+        count = len(records)
+        label = 'backend tasks' if self.cleanup_target == 'betasks' else 'system events'
+
+        _logger.info(
+            "Cleanup wizard: target=%s, action=%s, clean_all=%s, domain=%s, found=%d records",
+            self.cleanup_target, self.cleanup_action, self.clean_all, domain, count,
+        )
+
+        if self.cleanup_action == 'archive':
+            records.write({'active': False})
+            action_label = 'Archived'
+        else:
+            records.unlink()
+            action_label = 'Permanently deleted'
+
+        if self.clean_all:
+            period = '(all matching records)'
+        else:
+            period = f'older than {self.retention_days} days'
+
+        msg = f'{action_label} {count} {label} {period}.'
+        _logger.info("Cleanup wizard result: %s", msg)
+
+        # Reopen the matching list view so the user sees the updated data
+        if self.cleanup_target == 'betasks':
+            action = self.env['ir.actions.act_window']._for_xml_id('myschool_admin.action_betask_all')
+        else:
+            action = self.env['ir.actions.act_window']._for_xml_id('myschool_admin.action_sys_event_all')
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Cleanup Complete',
+                'message': msg,
+                'type': 'success',
+                'sticky': False,
+                'next': action,
+            },
+        }

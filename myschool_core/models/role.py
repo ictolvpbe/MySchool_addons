@@ -197,10 +197,13 @@ class Role(models.Model):
 
     def write(self, vals):
         result = super().write(vals)
-        if 'has_group' in vals and vals['has_group']:
+        if vals.get('has_group'):
             processor = self.env['myschool.betask.processor']
             for role in self:
-                processor._sync_role_persongroups(role)
+                try:
+                    processor._sync_role_persongroups(role)
+                except Exception as e:
+                    _logger.warning(f'[PG-SYNC] Failed to sync persongroups for role {role.name}: {e}')
         return result
 
     # =========================================================================
@@ -482,6 +485,54 @@ class Role(models.Model):
                 'message': f'{removed_count} gebruikers verwijderd uit groep {self.odoo_group_id.full_name}.',
                 'type': 'success',
             }
+        }
+
+    # =========================================================================
+    # Persongroup Integration Actions
+    # =========================================================================
+
+    def action_sync_persongroup_members(self):
+        """Manual action to sync persongroups for this role.
+
+        Creates persongroups (via MANUAL/ORG/ADD betask) for each school
+        where this role has a BRSO, and syncs PG-P memberships.
+        """
+        self.ensure_one()
+
+        if not self.has_group:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Info',
+                    'message': 'Has Group is not enabled for this role.',
+                    'type': 'info',
+                },
+            }
+
+        processor = self.env['myschool.betask.processor']
+        try:
+            processor._sync_role_persongroups(self)
+        except Exception as e:
+            _logger.warning(f'[PG-SYNC] Failed to sync persongroups for role {self.name}: {e}')
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Error',
+                    'message': f'Failed to sync persongroups: {e}',
+                    'type': 'danger',
+                },
+            }
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Success',
+                'message': f'Persongroups synced for role {self.name}.',
+                'type': 'success',
+            },
         }
 
     # =========================================================================

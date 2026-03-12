@@ -832,4 +832,44 @@
         <field name="target">new</field>
     </record>
 
+    <!-- Cleanup Wizard -->
+    <record id="view_cleanup_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.cleanup.wizard.form</field>
+        <field name="model">myschool.cleanup.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Cleanup Old Records">
+                <group>
+                    <field name="cleanup_target"/>
+                    <field name="cleanup_action" widget="radio" options="{'horizontal': true}"/>
+                    <field name="clean_all"/>
+                    <field name="retention_days" invisible="clean_all"/>
+                    <field name="cutoff_date" invisible="clean_all"/>
+                    <field name="preview_count"/>
+                </group>
+                <footer>
+                    <button name="action_cleanup" type="object" string="Confirm"
+                            class="btn-primary"
+                            confirm="This will apply the selected action to all matching records. Continue?"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_cleanup_betasks_wizard" model="ir.actions.act_window">
+        <field name="name">Cleanup Backend Tasks</field>
+        <field name="res_model">myschool.cleanup.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="context">{'default_cleanup_target': 'betasks'}</field>
+    </record>
+
+    <record id="action_cleanup_events_wizard" model="ir.actions.act_window">
+        <field name="name">Cleanup System Events</field>
+        <field name="res_model">myschool.cleanup.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="context">{'default_cleanup_target': 'events'}</field>
+    </record>
+
 </odoo>

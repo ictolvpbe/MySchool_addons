@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+    <record id="stage_backlog" model="devhub.item.stage">
+        <field name="name">Backlog</field>
+        <field name="sequence">10</field>
+        <field name="description">Items waiting to be planned</field>
+    </record>
+
+    <record id="stage_ready" model="devhub.item.stage">
+        <field name="name">Ready</field>
+        <field name="sequence">20</field>
+        <field name="description">Items ready to be worked on</field>
+    </record>
+
+    <record id="stage_in_progress" model="devhub.item.stage">
+        <field name="name">In Progress</field>
+        <field name="sequence">30</field>
+        <field name="description">Items currently being worked on</field>
+    </record>
+
+    <record id="stage_in_review" model="devhub.item.stage">
+        <field name="name">In Review</field>
+        <field name="sequence">40</field>
+        <field name="description">Items awaiting code review</field>
+    </record>
+
+    <record id="stage_testing" model="devhub.item.stage">
+        <field name="name">Testing</field>
+        <field name="sequence">50</field>
+        <field name="description">Items being tested</field>
+    </record>
+
+    <record id="stage_done" model="devhub.item.stage">
+        <field name="name">Done</field>
+        <field name="sequence">60</field>
+        <field name="fold" eval="True"/>
+        <field name="is_done" eval="True"/>
+        <field name="description">Completed items</field>
+    </record>
+
+    <record id="stage_cancelled" model="devhub.item.stage">
+        <field name="name">Cancelled</field>
+        <field name="sequence">70</field>
+        <field name="fold" eval="True"/>
+        <field name="is_cancelled" eval="True"/>
+        <field name="description">Cancelled items</field>
+    </record>
+
+    </data>
+</odoo>

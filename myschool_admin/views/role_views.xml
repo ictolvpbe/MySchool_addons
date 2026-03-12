@@ -41,6 +41,12 @@
                         <group string="Access Settings">
                             <field name="has_ui_access"/>
                             <field name="has_group"/>
+                            <button name="action_sync_persongroup_members"
+                                    type="object"
+                                    string="Sync Persongroups"
+                                    class="oe_link"
+                                    icon="fa-refresh"
+                                    invisible="not has_group"/>
                             <field name="has_accounts"/>
                         </group>
                         <group string="Legacy">

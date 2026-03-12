@@ -2,3 +2,10 @@
 /myschool_core/storage/
 __pycache__/
 *.pyc
+/muk_web_appsbar/
+/muk_web_chatter/
+/muk_web_colors/
+/muk_web_dialog/
+/muk_web_group/
+/muk_web_refresh/
+/muk_web_theme/

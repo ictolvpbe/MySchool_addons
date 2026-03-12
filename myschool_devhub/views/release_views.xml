@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Release List View -->
+    <record id="devhub_release_view_list" model="ir.ui.view">
+        <field name="name">devhub.release.list</field>
+        <field name="model">devhub.release</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="date_planned"/>
+                <field name="date_released"/>
+                <field name="state" widget="badge"
+                    decoration-info="state == 'draft'"
+                    decoration-warning="state == 'ready'"
+                    decoration-success="state == 'released'"/>
+                <field name="total_items"/>
+                <field name="done_items"/>
+                <field name="progress" widget="progressbar"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Release Form View -->
+    <record id="devhub_release_view_form" model="ir.ui.view">
+        <field name="name">devhub.release.form</field>
+        <field name="model">devhub.release</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_ready" string="Mark Ready" type="object"
+                        class="btn-primary"
+                        invisible="state != 'draft'"/>
+                    <button name="action_release" string="Release" type="object"
+                        class="btn-primary"
+                        invisible="state != 'ready'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="e.g. v2.1.0"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="project_id"/>
+                            <field name="date_planned"/>
+                            <field name="date_released"/>
+                        </group>
+                        <group>
+                            <field name="total_items"/>
+                            <field name="done_items"/>
+                            <field name="progress" widget="progressbar"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Items" name="items">
+                            <field name="item_ids">
+                                <list>
+                                    <field name="sequence" string="#"/>
+                                    <field name="name"/>
+                                    <field name="item_type" widget="badge"
+                                        decoration-danger="item_type == 'bug'"
+                                        decoration-info="item_type == 'story'"
+                                        decoration-success="item_type == 'task'"
+                                        decoration-warning="item_type == 'improvement'"/>
+                                    <field name="stage_id"/>
+                                    <field name="assigned_id" widget="many2one_avatar_user"/>
+                                    <field name="story_points"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Release Notes" name="notes">
+                            <field name="notes"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Release Search View -->
+    <record id="devhub_release_view_search" model="ir.ui.view">
+        <field name="name">devhub.release.search</field>
+        <field name="model">devhub.release</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="project_id"/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Ready" name="ready" domain="[('state', '=', 'ready')]"/>
+                <filter string="Released" name="released" domain="[('state', '=', 'released')]"/>
+                <separator/>
+                <filter string="Project" name="group_project" context="{'group_by': 'project_id'}"/>
+                <filter string="State" name="group_state" context="{'group_by': 'state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Release Action -->
+    <record id="devhub_release_action" model="ir.actions.act_window">
+        <field name="name">Releases</field>
+        <field name="res_model">devhub.release</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

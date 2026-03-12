@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+    <!-- Prevent non-admin users from modifying auto-synced records on slaves.
+         The rule restricts write/create/unlink on core models where
+         automatic_sync=True, unless the user is in the sync admin group.
+         Only meaningful when the instance runs as a slave. -->
+
+    <record id="rule_org_auto_sync_readonly" model="ir.rule">
+        <field name="name">Org: Auto-synced read-only for non-admin</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="domain_force">[('automatic_sync', '=', False)]</field>
+        <field name="groups" eval="[(4, ref('myschool_core.group_myschool_core_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <record id="rule_person_auto_sync_readonly" model="ir.rule">
+        <field name="name">Person: Auto-synced read-only for non-admin</field>
+        <field name="model_id" ref="myschool_core.model_myschool_person"/>
+        <field name="domain_force">[('automatic_sync', '=', False)]</field>
+        <field name="groups" eval="[(4, ref('myschool_core.group_myschool_core_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <record id="rule_proprelation_auto_sync_readonly" model="ir.rule">
+        <field name="name">Proprelation: Auto-synced read-only for non-admin</field>
+        <field name="model_id" ref="myschool_core.model_myschool_proprelation"/>
+        <field name="domain_force">[('automatic_sync', '=', False)]</field>
+        <field name="groups" eval="[(4, ref('myschool_core.group_myschool_core_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    </data>
+</odoo>

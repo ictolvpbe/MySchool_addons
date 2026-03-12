@@ -375,7 +375,11 @@ class ObjectBrowser(models.TransientModel):
             if parts:
                 name_tree = '.'.join(parts)
                 if org.name_tree != name_tree:
-                    org.write({'name_tree': name_tree})
+                    service = self.env['myschool.manual.task.service']
+                    service.create_manual_task('ORG', 'UPD', {
+                        'org_id': org.id,
+                        'vals': {'name_tree': name_tree},
+                    })
                     _logger.info(f"Updated name_tree for org {org.name_short}: {name_tree}")
 
         # Update all child orgs recursively (only via ORG-TREE relations)
@@ -395,13 +399,17 @@ class ObjectBrowser(models.TransientModel):
                 child = rel.id_org
                 child_short = child.name_short if hasattr(child, 'name_short') and child.name_short else child.name
                 
+                service = self.env['myschool.manual.task.service']
+                child_update = {}
                 if hasattr(org, 'ou_fqdn_internal') and org.ou_fqdn_internal:
-                    new_child_ou_internal = f"ou={child_short.lower()},{org.ou_fqdn_internal.lower()}"
-                    child.write({'ou_fqdn_internal': new_child_ou_internal})
-                
+                    child_update['ou_fqdn_internal'] = f"ou={child_short.lower()},{org.ou_fqdn_internal.lower()}"
                 if hasattr(org, 'ou_fqdn_external') and org.ou_fqdn_external:
-                    new_child_ou_external = f"ou={child_short.lower()},{org.ou_fqdn_external.lower()}"
-                    child.write({'ou_fqdn_external': new_child_ou_external})
+                    child_update['ou_fqdn_external'] = f"ou={child_short.lower()},{org.ou_fqdn_external.lower()}"
+                if child_update:
+                    service.create_manual_task('ORG', 'UPD', {
+                        'org_id': child.id,
+                        'vals': child_update,
+                    })
                 
                 # Then recursively update name_tree
                 self._update_name_tree_recursive(child.id)
@@ -429,7 +437,11 @@ class ObjectBrowser(models.TransientModel):
                     # Update proprelation name to reflect new org position
                     if rel.name and 'Or=' in rel.name:
                         new_name = f"Ro={role.shortname if hasattr(role, 'shortname') and role.shortname else role.name}.Or={org_short}"
-                        rel.write({'name': new_name})
+                        service = self.env['myschool.manual.task.service']
+                        service.create_manual_task('PROPRELATION', 'UPD', {
+                            'proprelation_id': rel.id,
+                            'vals': {'name': new_name},
+                        })
                         _logger.info(f"Updated proprelation name for role {role.name}: {new_name}")
 
     def _would_create_cycle(self, org_id, new_parent_id):
@@ -526,7 +538,14 @@ class ObjectBrowser(models.TransientModel):
             raise UserError("Record not found")
         
         # Check for child objects before deleting an organization
-        if node_type == 'org' and 'myschool.proprelation' in self.env:
+        # Skip pre-check for PERSONGROUP orgs — the ORG/DEL betask handles cleanup
+        is_persongroup = (
+            node_type == 'org'
+            and hasattr(record, 'org_type_id')
+            and record.org_type_id
+            and record.org_type_id.name == 'PERSONGROUP'
+        )
+        if node_type == 'org' and not is_persongroup and 'myschool.proprelation' in self.env:
             PropRelation = self.env['myschool.proprelation']
             PropRelationType = self.env['myschool.proprelation.type']
 
@@ -543,14 +562,14 @@ class ObjectBrowser(models.TransientModel):
                 child_org_domain.append(('proprelation_type_id', '=', org_tree_type.id))
 
             child_orgs = PropRelation.search(child_org_domain)
-            
+
             # Check for persons in this org
             persons_in_org = PropRelation.search([
                 ('id_org', '=', node_id),
                 ('id_person', '!=', False),
                 ('is_active', '=', True),
             ])
-            
+
             # Build error message if children exist
             errors = []
             if child_orgs:
@@ -561,7 +580,7 @@ class ObjectBrowser(models.TransientModel):
                         child_names.append(name)
                 more = f" and {len(child_orgs) - 5} more" if len(child_orgs) > 5 else ""
                 errors.append(f"{len(child_orgs)} sub-organization(s): {', '.join(child_names)}{more}")
-            
+
             if persons_in_org:
                 person_names = []
                 for rel in persons_in_org[:5]:  # Show max 5 names
@@ -572,7 +591,7 @@ class ObjectBrowser(models.TransientModel):
                         person_names.append(name)
                 more = f" and {len(persons_in_org) - 5} more" if len(persons_in_org) > 5 else ""
                 errors.append(f"{len(persons_in_org)} person(s): {', '.join(person_names)}{more}")
-            
+
             if errors:
                 org_name = record.name_short if hasattr(record, 'name_short') and record.name_short else record.name
                 raise UserError(
@@ -581,57 +600,26 @@ class ObjectBrowser(models.TransientModel):
                     f"Please move or delete these items first."
                 )
         
-        # Deactivate related proprelations
-        if 'myschool.proprelation' in self.env:
-            PropRelation = self.env['myschool.proprelation']
-            
-            if node_type == 'org':
-                # Deactivate all proprelations where this org is involved
-                relations = PropRelation.search([
-                    '|', '|',
-                    ('id_org', '=', node_id),
-                    ('id_org_parent', '=', node_id),
-                    ('id_org_child', '=', node_id),
-                    ('is_active', '=', True),
-                ])
-                if relations:
-                    relations.write({'is_active': False})
-                    _logger.info(f"Deactivated {len(relations)} proprelations for org {node_id}")
-            
-            elif node_type == 'person':
-                # Deactivate all proprelations where this person is involved
-                relations = PropRelation.search([
-                    '|', '|',
-                    ('id_person', '=', node_id),
-                    ('id_person_parent', '=', node_id),
-                    ('id_person_child', '=', node_id),
-                    ('is_active', '=', True),
-                ])
-                if relations:
-                    relations.write({'is_active': False})
-                    _logger.info(f"Deactivated {len(relations)} proprelations for person {node_id}")
-                
-                # Remove linked Odoo user and HR employee
-                if 'user_id' in record._fields and record.user_id:
-                    user = record.user_id
-                    _logger.info(f"Found linked Odoo user {user.login} (id={user.id}) for person {node_id}")
-                    
-                    # Remove HR employee linked to this user
-                    if 'hr.employee' in self.env:
-                        hr_employees = self.env['hr.employee'].search([('user_id', '=', user.id)])
-                        if hr_employees:
-                            _logger.info(f"Removing {len(hr_employees)} HR employee(s) linked to user {user.id}")
-                            hr_employees.unlink()
-                    
-                    # Archive/deactivate the Odoo user
-                    try:
-                        user.write({'active': False})
-                        _logger.info(f"Deactivated Odoo user {user.login} (id={user.id})")
-                    except Exception as e:
-                        _logger.warning(f"Could not deactivate user {user.id}: {e}")
-            
-            elif node_type == 'role':
-                # Deactivate all proprelations where this role is involved
+        # Route deletion through betask pipeline
+        service = self.env['myschool.manual.task.service']
+
+        if node_type == 'org':
+            service.create_manual_task('ORG', 'DEL', {
+                'org_id': node_id,
+                'org_name': record.name if hasattr(record, 'name') else str(node_id),
+            })
+            _logger.info(f"Created MANUAL/ORG/DEL betask for org {node_id}")
+
+        elif node_type == 'person':
+            service.create_manual_task('PERSON', 'DEACT', {
+                'person_id': node_id,
+            })
+            _logger.info(f"Created MANUAL/PERSON/DEACT betask for person {node_id}")
+
+        elif node_type == 'role':
+            # Deactivate all proprelations for this role via betask
+            if 'myschool.proprelation' in self.env:
+                PropRelation = self.env['myschool.proprelation']
                 relations = PropRelation.search([
                     '|', '|',
                     ('id_role', '=', node_id),
@@ -640,16 +628,11 @@ class ObjectBrowser(models.TransientModel):
                     ('is_active', '=', True),
                 ])
                 if relations:
-                    relations.write({'is_active': False})
-                    _logger.info(f"Deactivated {len(relations)} proprelations for role {node_id}")
-        
-        # Soft delete if is_active field exists, otherwise hard delete
-        if 'is_active' in record._fields:
+                    service.create_manual_task('PROPRELATION', 'DEACT', {
+                        'proprelation_ids': relations.ids,
+                    })
             record.write({'is_active': False})
-            _logger.info(f"Deactivated {node_type} {node_id}")
-        else:
-            record.unlink()
-            _logger.info(f"Deleted {node_type} {node_id}")
+            _logger.info(f"Deactivated role {node_id}")
         
         return True
 
@@ -676,14 +659,15 @@ class ObjectBrowser(models.TransientModel):
             ], limit=1)
             
             if not existing:
-                vals = {
-                    'id_person': person_id,
-                    'id_role': role_id,
-                    'is_active': True,
+                task_data = {
+                    'type': 'PPSBR',
+                    'person_id': person_id,
+                    'role_id': role_id,
                 }
                 if org_id:
-                    vals['id_org'] = org_id
-                PropRelation.create(vals)
+                    task_data['org_id'] = org_id
+                service = self.env['myschool.manual.task.service']
+                service.create_manual_task('PROPRELATION', 'ADD', task_data)
                 count += 1
         
         _logger.info(f"Assigned role {role.name} to {count} persons")
