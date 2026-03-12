@@ -473,7 +473,10 @@ class Activiteiten(models.Model):
             if not record.s_code_price:
                 raise UserError("Vul eerst het S-Code bedrag in.")
             # Remove any existing auto lines and recreate them
-            record.kosten_ids.filtered(lambda l: l.is_auto).unlink()
+            auto_lines_to_remove = record.kosten_ids.filtered(lambda l: l.is_auto)
+            if auto_lines_to_remove:
+                # Bypass the unlink protection for auto lines
+                auto_lines_to_remove.with_context(force_unlink_auto=True).unlink()
             auto_lines = []
             if record.bus_price:
                 auto_lines.append({
@@ -482,7 +485,10 @@ class Activiteiten(models.Model):
                     'bedrag': record.bus_price,
                     'is_auto': True,
                 })
-            basis_bedrag = record.s_code_price + (record.bus_price or 0)
+            # Include manual kosten lines in the basis
+            manual_total = sum(
+                l.bedrag for l in record.kosten_ids if not l.is_auto)
+            basis_bedrag = (record.s_code_price or 0) + (record.bus_price or 0) + manual_total
             verzekering_bedrag = basis_bedrag * 0.02
             auto_lines.append({
                 'activiteit_id': record.id,
@@ -491,15 +497,9 @@ class Activiteiten(models.Model):
                 'is_auto': True,
             })
             self.env['activiteiten.kosten.line'].create(auto_lines)
-            record.state = 'vervanging'
-        self._schedule_vervangingen_activity()
-
-    def action_verzekering_done(self):
-        for record in self:
-            if record.state not in ('s_code', 'vervanging'):
-                raise UserError("Verzekering kan alleen bij S-Code of vervanging afgehandeld worden.")
             record.verzekering_done = True
-            record._check_done()
+            record.state = 'done'
+        self._schedule_vervangingen_activity()
 
     # --- Shared actions ---
 
@@ -524,6 +524,7 @@ class Activiteiten(models.Model):
 
     def _recalculate_auto_lines(self):
         for record in self:
+            record.invalidate_recordset(['kosten_ids'])
             verzekering_line = record.kosten_ids.filtered(
                 lambda l: l.is_auto and 'Verzekering' in (l.omschrijving or ''))
             bus_line = record.kosten_ids.filtered(

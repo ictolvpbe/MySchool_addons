@@ -64,14 +64,6 @@
                             groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
                             invisible="state != 's_code'"/>
 
-                    <!-- Boekhouding: verzekering -->
-                    <button name="action_verzekering_done"
-                            string="Verzekering geregeld"
-                            type="object"
-                            class="btn-primary"
-                            groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
-                            invisible="state not in ('s_code', 'vervanging') or verzekering_done == True"/>
-
                     <!-- Owner or Admin: delete unsubmitted only -->
                     <field name="is_owner" invisible="1"/>
                     <button name="action_delete"
