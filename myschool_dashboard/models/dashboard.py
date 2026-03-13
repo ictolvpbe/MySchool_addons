@@ -229,9 +229,8 @@ class MySchoolDashboard(models.Model):
             act_raw.get('draft', 0) + act_raw.get('form_invullen', 0) +
             act_raw.get('bus_check', 0) +
             prof_raw.get('selection_of_form', 0) +
-            prof_raw.get('fill_in_form_binnenschoolse', 0) +
-            prof_raw.get('fill_in_form_buitenschoolse', 0) +
-            prof_raw.get('fill_in_form_externe', 0)
+            prof_raw.get('fill_in_form_individueel', 0) +
+            prof_raw.get('fill_in_form_teamleren', 0)
         )
         # Action needed = pending_approval + bus_refused (act) + wacht_op_goedkeuring (prof)
         action_needed = (
@@ -275,9 +274,8 @@ class MySchoolDashboard(models.Model):
         counts = {
             'draft': raw.get('selection_of_form', 0),
             'submitted': (
-                raw.get('fill_in_form_binnenschoolse', 0)
-                + raw.get('fill_in_form_buitenschoolse', 0)
-                + raw.get('fill_in_form_externe', 0)
+                raw.get('fill_in_form_individueel', 0)
+                + raw.get('fill_in_form_teamleren', 0)
             ),
             'approved': raw.get('bevestiging', 0),
             'rejected': raw.get('weigering', 0),

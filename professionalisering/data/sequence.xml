@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<odoo>
+<odoo noupdate="1">
     <record id="seq_professionalisering_record" model="ir.sequence">
         <field name="name">Professionalisering</field>
         <field name="code">professionalisering.record</field>

@@ -52,7 +52,7 @@ class PlannerRecord(models.Model):
     )
     tijdslot_display = fields.Char(
         string='Uren',
-        compute='_compute_inhaal_datum',
+        compute='_compute_tijdslot_display',
     )
     vervanging_line_ids = fields.One2many(
         'planner.vervanging.line', 'planner_id',
@@ -108,7 +108,14 @@ class PlannerRecord(models.Model):
                 ))
                 record.inhaal_datum = local_start.astimezone(timezone('UTC')).replace(tzinfo=None)
                 record.inhaal_datum_end = local_end.astimezone(timezone('UTC')).replace(tzinfo=None)
-                # Build display with consecutive blocks
+            else:
+                record.inhaal_datum = False
+                record.inhaal_datum_end = False
+
+    @api.depends('inhaal_date', 'tijdslot_ids')
+    def _compute_tijdslot_display(self):
+        for record in self:
+            if record.inhaal_date and record.tijdslot_ids:
                 blocks = self._group_consecutive_slots(record.tijdslot_ids)
                 parts = []
                 for block in blocks:
@@ -117,8 +124,6 @@ class PlannerRecord(models.Model):
                     parts.append(f'{self._float_to_time_str(block_start)} - {self._float_to_time_str(block_end)}')
                 record.tijdslot_display = ' | '.join(parts)
             else:
-                record.inhaal_datum = False
-                record.inhaal_datum_end = False
                 record.tijdslot_display = False
 
     @api.depends('leerkracht_id')
