@@ -181,7 +181,7 @@ class DataExchange(models.TransientModel):
         for r in records:
             result.append({
                 'name': r.name,
-                'shortname': r.shortname or '',
+                'shortname': r.shortname if r.shortname and r.shortname != '0' else '',
                 'role_type': r.role_type_id.name if r.role_type_id else '',
                 'has_ui_access': r.has_ui_access,
                 'has_group': r.has_group,
@@ -508,6 +508,8 @@ class DataExchange(models.TransientModel):
                 continue
             try:
                 shortname = item.get('shortname') or None
+                if shortname == '0':
+                    shortname = None
                 role_type = RoleType.search([('name', '=', item.get('role_type', ''))], limit=1)
                 vals = {
                     'name': name,
