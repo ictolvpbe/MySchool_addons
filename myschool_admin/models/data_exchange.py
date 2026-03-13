@@ -493,7 +493,10 @@ class DataExchange(models.TransientModel):
                 'description': item.get('description') or False,
                 'has_odoo_group': item.get('has_odoo_group', False),
             }
+            shortname = item.get('shortname')
             existing = Role.search([('name', '=', name)], limit=1)
+            if not existing and shortname:
+                existing = Role.search([('shortname', '=', shortname)], limit=1)
             if existing:
                 existing.write(vals)
                 updated += 1
