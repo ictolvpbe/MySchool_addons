@@ -80,6 +80,11 @@
                                 invisible="child_count == 0">
                             <field name="child_count" string="Sub-items" widget="statinfo"/>
                         </button>
+                        <button name="action_open_test_items" type="object"
+                                class="oe_stat_button" icon="fa-check-square-o"
+                                invisible="test_item_count == 0">
+                            <field name="test_item_count" string="Test Items" widget="statinfo"/>
+                        </button>
                     </div>
                     <div class="oe_title">
                         <h1>
@@ -93,7 +98,8 @@
                             <field name="item_type"/>
                             <field name="priority" widget="priority"/>
                             <field name="story_points"/>
-                            <field name="parent_id"/>
+                            <field name="parent_id" domain="[('project_id', '=', project_id)]"
+                                   invisible="item_type == 'story'"/>
                         </group>
                         <group>
                             <field name="assigned_id" widget="many2one_avatar_user"/>
@@ -140,6 +146,20 @@
                                 </list>
                             </field>
                         </page>
+                        <page string="Tests (3T)" name="tests">
+                            <div class="mb-3">
+                                <button name="action_open_test_items" type="object"
+                                    string="Open Tests" class="btn btn-primary"
+                                    icon="fa-external-link"
+                                    invisible="test_item_count == 0"/>
+                                <span class="text-muted ms-3" invisible="test_item_count == 0">
+                                    <field name="test_item_count"/> test items linked to this story
+                                </span>
+                                <span class="text-muted" invisible="test_item_count != 0">
+                                    No test items linked yet. Assign items from the project's 3T list.
+                                </span>
+                            </div>
+                        </page>
                     </notebook>
                 </sheet>
                 <chatter/>
@@ -162,7 +182,7 @@
                 <separator/>
                 <filter string="Top-level only" name="top_level" domain="[('parent_id', '=', False)]"/>
                 <separator/>
-                <filter string="User Stories/Requirements" name="stories" domain="[('item_type', '=', 'story')]"/>
+                <filter string="User Stories" name="stories" domain="[('item_type', '=', 'story')]"/>
                 <filter string="Bugs" name="bugs" domain="[('item_type', '=', 'bug')]"/>
                 <filter string="Tasks" name="tasks" domain="[('item_type', '=', 'task')]"/>
                 <filter string="Improvements" name="improvements" domain="[('item_type', '=', 'improvement')]"/>

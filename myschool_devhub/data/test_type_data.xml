@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+    <record id="test_type_button" model="devhub.test.type">
+        <field name="name">Button</field>
+        <field name="description">Interactive button element</field>
+        <field name="color">1</field>
+    </record>
+
+    <record id="test_type_menu_item" model="devhub.test.type">
+        <field name="name">Menu Item</field>
+        <field name="description">Navigation menu entry</field>
+        <field name="color">2</field>
+    </record>
+
+    <record id="test_type_field" model="devhub.test.type">
+        <field name="name">Field</field>
+        <field name="description">Form field with special widget or validation</field>
+        <field name="color">3</field>
+    </record>
+
+    <record id="test_type_filter" model="devhub.test.type">
+        <field name="name">Filter</field>
+        <field name="description">Search filter element</field>
+        <field name="color">4</field>
+    </record>
+
+    <record id="test_type_tab" model="devhub.test.type">
+        <field name="name">Tab</field>
+        <field name="description">Notebook page/tab</field>
+        <field name="color">5</field>
+    </record>
+
+    <record id="test_type_widget" model="devhub.test.type">
+        <field name="name">Widget</field>
+        <field name="description">Custom widget element</field>
+        <field name="color">6</field>
+    </record>
+
+    <record id="test_type_statusbar" model="devhub.test.type">
+        <field name="name">Statusbar</field>
+        <field name="description">Statusbar workflow widget</field>
+        <field name="color">7</field>
+    </record>
+
+    <record id="test_type_wizard" model="devhub.test.type">
+        <field name="name">Wizard</field>
+        <field name="description">Wizard / transient model dialog</field>
+        <field name="color">8</field>
+    </record>
+
+    <record id="test_type_server_action" model="devhub.test.type">
+        <field name="name">Server Action</field>
+        <field name="description">Server-side automated action</field>
+        <field name="color">9</field>
+    </record>
+
+    <record id="test_type_quick_action" model="devhub.test.type">
+        <field name="name">Quick Action</field>
+        <field name="description">Quick action or shortcut</field>
+        <field name="color">10</field>
+    </record>
+
+    <record id="test_type_menu" model="devhub.test.type">
+        <field name="name">Menu</field>
+        <field name="description">Top-level menu or submenu</field>
+        <field name="color">11</field>
+    </record>
+
+    <record id="test_type_form_view" model="devhub.test.type">
+        <field name="name">Form View</field>
+        <field name="description">Form view layout and rendering</field>
+        <field name="color">1</field>
+    </record>
+
+    <record id="test_type_list_view" model="devhub.test.type">
+        <field name="name">List View</field>
+        <field name="description">List/tree view layout and rendering</field>
+        <field name="color">2</field>
+    </record>
+
+    <record id="test_type_kanban_view" model="devhub.test.type">
+        <field name="name">Kanban View</field>
+        <field name="description">Kanban view layout and rendering</field>
+        <field name="color">3</field>
+    </record>
+
+    <record id="test_type_search_view" model="devhub.test.type">
+        <field name="name">Search View</field>
+        <field name="description">Search view filters and grouping</field>
+        <field name="color">4</field>
+    </record>
+
+    </data>
+</odoo>

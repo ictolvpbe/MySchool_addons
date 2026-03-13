@@ -11,7 +11,7 @@ class DevhubItem(models.Model):
     sequence = fields.Integer(string='Number', readonly=True, copy=False)
     project_id = fields.Many2one('devhub.project', required=True, ondelete='cascade', tracking=True)
     item_type = fields.Selection([
-        ('story', 'User Story/Requirement'),
+        ('story', 'User Story'),
         ('bug', 'Bug'),
         ('task', 'Task'),
         ('improvement', 'Improvement'),
@@ -47,6 +47,8 @@ class DevhubItem(models.Model):
         'depends_on_id', 'item_id', string='Blocked By',
     )
     process_map_ids = fields.Many2many('process.map', string='Process Maps')
+    test_item_ids = fields.One2many('devhub.test.item', 'item_id', string='Test Items')
+    test_item_count = fields.Integer(compute='_compute_test_item_count', string='Test Items')
     date_deadline = fields.Date(string='Deadline')
     kanban_color = fields.Integer(string='Color')
 
@@ -77,6 +79,11 @@ class DevhubItem(models.Model):
         for item in self:
             item.child_count = len(item.child_ids)
 
+    @api.depends('test_item_ids')
+    def _compute_test_item_count(self):
+        for item in self:
+            item.test_item_count = len(item.test_item_ids)
+
     def action_open_sub_items(self):
         self.ensure_one()
         return {
@@ -89,6 +96,21 @@ class DevhubItem(models.Model):
                 'default_parent_id': self.id,
                 'default_project_id': self.project_id.id,
                 'default_item_type': 'task',
+            },
+        }
+
+    def action_open_test_items(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'{self.display_name} - Things To Test',
+            'res_model': 'devhub.test.item',
+            'view_mode': 'list,form',
+            'domain': [('item_id', '=', self.id)],
+            'context': {
+                'default_item_id': self.id,
+                'default_project_id': self.project_id.id,
+                'search_default_group_view': 1,
             },
         }
 

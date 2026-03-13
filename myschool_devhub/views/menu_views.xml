@@ -14,6 +14,13 @@
         action="devhub_project_action"
         sequence="10"/>
 
+    <!-- Things To Test (3T) -->
+    <menuitem id="devhub_menu_test_items"
+        name="Things To Test (3T)"
+        parent="devhub_menu_root"
+        action="devhub_test_item_action"
+        sequence="20"/>
+
     <!-- Configuration -->
     <menuitem id="devhub_menu_config"
         name="Configuration"
@@ -46,5 +53,11 @@
         parent="devhub_menu_config"
         action="devhub_tag_action"
         sequence="20"/>
+
+    <menuitem id="devhub_menu_config_test_types"
+        name="Test Types"
+        parent="devhub_menu_config"
+        action="devhub_test_type_action"
+        sequence="30"/>
 
 </odoo>

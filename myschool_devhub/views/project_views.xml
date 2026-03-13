@@ -51,6 +51,13 @@
         <field name="arch" type="xml">
             <form class="o_devhub_project_form">
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_test_items" type="object"
+                                class="oe_stat_button" icon="fa-check-square-o"
+                                invisible="test_item_count == 0">
+                            <field name="test_item_count" string="Test Items" widget="statinfo"/>
+                        </button>
+                    </div>
                     <div class="oe_title">
                         <h1>
                             <field name="name" placeholder="Project Name"/>
@@ -60,10 +67,28 @@
                         <group>
                             <field name="code"/>
                             <field name="responsible_id" widget="many2one_avatar_user"/>
+                            <field name="module_ids" widget="many2many_tags"/>
                             <field name="is_active"/>
                         </group>
                     </group>
                     <notebook>
+                        <page string="User Stories" name="stories">
+                            <field name="story_ids">
+                                <list>
+                                    <field name="display_name" string="Story"/>
+                                    <button name="action_open_sub_items" type="object"
+                                        string="Open Items" icon="fa-th-large"
+                                        class="btn btn-link"/>
+                                    <field name="project_id" string="Parent Project"/>
+                                    <field name="stage_id"/>
+                                    <field name="priority" widget="priority"/>
+                                    <field name="assigned_id" widget="many2one_avatar_user"/>
+                                    <field name="child_count" string="Sub-items"/>
+                                    <field name="story_points"/>
+                                    <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Bugs" name="bugs">
                             <button name="%(devhub_project_open_bugs_action)d" type="action"
                                 string="Open Kanban" class="btn btn-primary mb-3"
@@ -151,6 +176,22 @@
                                     <field name="version"/>
                                 </list>
                             </field>
+                        </page>
+                        <page string="Tests (3T)" name="tests">
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <button name="action_generate_test_items" type="object"
+                                    string="Generate 3T from Modules" class="btn btn-primary"
+                                    icon="fa-magic"
+                                    confirm="This will scan linked modules and generate test items. Continue?"/>
+                                <button name="action_open_test_items" type="object"
+                                    string="Open Tests" class="btn btn-secondary"
+                                    icon="fa-external-link"
+                                    invisible="test_item_count == 0"/>
+                                <span class="text-muted" invisible="test_item_count == 0">
+                                    <field name="test_item_count"/> items |
+                                    Progress: <field name="test_progress" widget="progressbar" class="d-inline"/>
+                                </span>
+                            </div>
                         </page>
                         <page string="Team" name="team">
                             <field name="member_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
