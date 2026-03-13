@@ -17,6 +17,7 @@
         'data/sequence.xml',
         'data/mail_template_data.xml',
         'views/activiteiten_views.xml',
+        'views/activiteiten_invite_views.xml',
         'views/activiteiten_menu.xml',
         'views/org_views.xml',
     ],
