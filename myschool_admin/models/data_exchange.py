@@ -202,8 +202,8 @@ class DataExchange(models.TransientModel):
                 'name': r.name,
                 'name_in_sap': r.name_in_sap,
                 'period_type': r.period_type_id.name if r.period_type_id else '',
-                'start_date': r.start_date.isoformat() if r.start_date else '',
-                'end_date': r.end_date.isoformat() if r.end_date else '',
+                'start_date': fields.Datetime.to_string(r.start_date) if r.start_date else '',
+                'end_date': fields.Datetime.to_string(r.end_date) if r.end_date else '',
                 'is_active': r.is_active,
             })
         return result
@@ -243,8 +243,8 @@ class DataExchange(models.TransientModel):
                 'is_organisational': r.is_organisational,
                 'priority': r.priority,
                 'automatic_sync': r.automatic_sync,
-                'start_date': r.start_date.isoformat() if r.start_date else '',
-                'end_date': r.end_date.isoformat() if r.end_date else '',
+                'start_date': fields.Datetime.to_string(r.start_date) if r.start_date else '',
+                'end_date': fields.Datetime.to_string(r.end_date) if r.end_date else '',
             }
             # Org references by inst_nr
             if r.id_org:
