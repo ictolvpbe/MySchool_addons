@@ -1,6 +1,6 @@
 {
     'name': 'Kosten Dashboard',
-    'version': '1.1',
+    'version': '1.3',
     'summary': 'Overzicht van kosten per medewerker (activiteiten en professionalisering)',
     'author': 'MySchool',
     'license': 'LGPL-3',
@@ -21,6 +21,6 @@
         ],
     },
     'installable': True,
-    'application': False,
+    'application': True,
     'auto_install': False,
 }

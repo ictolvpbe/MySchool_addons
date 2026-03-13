@@ -15,6 +15,7 @@ class KostenDashboard(models.Model):
     kpi_kost_prof = fields.Float(string='Kost professionalisering', compute='_compute_kpis')
     kpi_aantal_activiteiten = fields.Integer(string='Aantal activiteiten', compute='_compute_kpis')
     kpi_aantal_prof = fields.Integer(string='Aantal prof.', compute='_compute_kpis')
+    kpi_aantal_totaal = fields.Integer(string='Totaal items', compute='_compute_kpis')
 
     # Top spenders HTML
     top_spenders_html = fields.Html(string='Top kosten', compute='_compute_top_spenders', sanitize=False)
@@ -35,6 +36,7 @@ class KostenDashboard(models.Model):
             rec.kpi_kost_prof = sum(d['kost_prof'] for d in data)
             rec.kpi_aantal_activiteiten = sum(d['aantal_activiteiten'] for d in data)
             rec.kpi_aantal_prof = sum(d['aantal_prof'] for d in data)
+            rec.kpi_aantal_totaal = rec.kpi_aantal_activiteiten + rec.kpi_aantal_prof
 
     @api.depends_context('uid')
     def _compute_top_spenders(self):
@@ -75,7 +77,7 @@ class KostenDashboard(models.Model):
             'type': 'ir.actions.act_window',
             'name': 'Kosten per medewerker',
             'res_model': 'kosten.per.medewerker',
-            'view_mode': 'list,pivot,graph',
+            'view_mode': 'list,form,pivot,graph',
             'target': 'current',
         }
 

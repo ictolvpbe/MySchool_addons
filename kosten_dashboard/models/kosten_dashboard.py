@@ -1,4 +1,4 @@
-from odoo import models, fields, tools
+from odoo import models, fields, tools, api
 
 
 class KostenPerMedewerker(models.Model):
@@ -15,6 +15,54 @@ class KostenPerMedewerker(models.Model):
     kost_activiteiten = fields.Float(string='Kost activiteiten', readonly=True)
     kost_prof = fields.Float(string='Kost professionalisering', readonly=True)
     totale_kost = fields.Float(string='Totale kost', readonly=True)
+    detail_html = fields.Html(string='Uitgaven', compute='_compute_detail_html', sanitize=False)
+
+    @api.depends('employee_id')
+    def _compute_detail_html(self):
+        for rec in self:
+            if not rec.employee_id:
+                rec.detail_html = '<div class="ms-empty">Geen uitgaven</div>'
+                continue
+            details = self.env['kosten.detail'].sudo().search_read(
+                [('employee_id', '=', rec.employee_id.id)],
+                ['datum', 'bron', 'titel', 'aantal_deelnemers', 'totale_kost', 'eigen_kost'],
+                order='datum desc',
+            )
+            if not details:
+                rec.detail_html = '<div class="ms-empty">Geen uitgaven</div>'
+                continue
+            rows = []
+            for d in details:
+                datum = d['datum'] or ''
+                bron = d['bron'] or ''
+                badge_cls = 'ms-badge-info' if bron == 'activiteit' else 'ms-badge-success'
+                badge_label = 'Activiteit' if bron == 'activiteit' else 'Prof.'
+                titel = d['titel'] or ''
+                rows.append(f'''
+                    <tr>
+                        <td>{datum}</td>
+                        <td><span class="ms-badge-status {badge_cls}">{badge_label}</span></td>
+                        <td>{titel}</td>
+                        <td style="text-align:center">{d['aantal_deelnemers']}</td>
+                        <td style="text-align:right">&euro; {d['totale_kost']:,.2f}</td>
+                        <td style="text-align:right; font-weight:600">&euro; {d['eigen_kost']:,.2f}</td>
+                    </tr>
+                ''')
+            rec.detail_html = f'''
+                <table class="ms-detail-table">
+                    <thead>
+                        <tr>
+                            <th>Datum</th>
+                            <th>Type</th>
+                            <th>Titel</th>
+                            <th style="text-align:center">Deelnemers</th>
+                            <th style="text-align:right">Totale kost</th>
+                            <th style="text-align:right">Eigen aandeel</th>
+                        </tr>
+                    </thead>
+                    <tbody>{"".join(rows)}</tbody>
+                </table>
+            '''
 
     def init(self):
         tools.drop_view_if_exists(self.env.cr, self._table)

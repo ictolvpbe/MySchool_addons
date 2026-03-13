@@ -109,3 +109,28 @@
 .ms-split-divider {
     border-left: 1px solid var(--ms-border-light, #e8f0f0);
 }
+
+/* --- Detail expenses table --- */
+.ms-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.ms-detail-table th {
+    padding: 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--ms-gray, #9B9B9B);
+    font-weight: 600;
+    border-bottom: 2px solid var(--ms-border, #d6e4e4);
+    text-align: left;
+}
+.ms-detail-table td {
+    padding: 10px 8px;
+    color: var(--ms-text, #003333);
+    border-bottom: 1px solid var(--ms-border-light, #e8f0f0);
+}
+.ms-detail-table tr:last-child td {
+    border-bottom: none;
+}

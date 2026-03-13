@@ -13,8 +13,7 @@
                         <div class="ms-kpi-card c1">
                             <div class="ms-kpi-label">Totale kost</div>
                             <div class="ms-kpi-value">
-                                <field name="kpi_totale_kost" widget="monetary"
-                                       options="{'currency_id': false}"/>
+                                <field name="kpi_totale_kost" widget="float" digits="[10,2]"/>
                             </div>
                             <div class="ms-kpi-sub">alle medewerkers</div>
                         </div>
@@ -28,17 +27,16 @@
                         <div class="ms-kpi-card c3">
                             <div class="ms-kpi-label">Gemiddelde kost</div>
                             <div class="ms-kpi-value">
-                                <field name="kpi_gemiddelde_kost" widget="monetary"
-                                       options="{'currency_id': false}"/>
+                                <field name="kpi_gemiddelde_kost" widget="float" digits="[10,2]"/>
                             </div>
                             <div class="ms-kpi-sub">per medewerker</div>
                         </div>
                         <div class="ms-kpi-card c4">
                             <div class="ms-kpi-label">Totaal items</div>
                             <div class="ms-kpi-value">
-                                <field name="kpi_aantal_activiteiten"/>
+                                <field name="kpi_aantal_totaal"/>
                             </div>
-                            <div class="ms-kpi-sub">activiteiten</div>
+                            <div class="ms-kpi-sub">activiteiten &amp; prof.</div>
                         </div>
                     </div>
 
