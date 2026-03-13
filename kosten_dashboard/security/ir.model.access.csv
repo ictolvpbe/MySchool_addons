@@ -1,0 +1,10 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_kosten_medewerker_directie,kosten.per.medewerker.directie,model_kosten_per_medewerker,activiteiten.group_activiteiten_directie,1,0,0,0
+access_kosten_medewerker_boekhouding,kosten.per.medewerker.boekhouding,model_kosten_per_medewerker,activiteiten.group_activiteiten_boekhouding,1,0,0,0
+access_kosten_medewerker_admin,kosten.per.medewerker.admin,model_kosten_per_medewerker,activiteiten.group_activiteiten_admin,1,0,0,0
+access_kosten_detail_directie,kosten.detail.directie,model_kosten_detail,activiteiten.group_activiteiten_directie,1,0,0,0
+access_kosten_detail_boekhouding,kosten.detail.boekhouding,model_kosten_detail,activiteiten.group_activiteiten_boekhouding,1,0,0,0
+access_kosten_detail_admin,kosten.detail.admin,model_kosten_detail,activiteiten.group_activiteiten_admin,1,0,0,0
+access_kosten_dashboard_directie,kosten.dashboard.directie,model_kosten_dashboard,activiteiten.group_activiteiten_directie,1,1,0,0
+access_kosten_dashboard_boekhouding,kosten.dashboard.boekhouding,model_kosten_dashboard,activiteiten.group_activiteiten_boekhouding,1,1,0,0
+access_kosten_dashboard_admin,kosten.dashboard.admin,model_kosten_dashboard,activiteiten.group_activiteiten_admin,1,1,0,0

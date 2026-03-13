@@ -143,7 +143,7 @@
                                        invisible="state == 'selection_of_form'"/>
                             <field name="assigned_to"
                                    invisible="state == 'selection_of_form'"
-                                   readonly="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren', 'bevestiging') or assigned_to"
+                                   readonly="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren', 'bevestiging')"
                                    groups="professionalisering.group_professionalisering_directie"/>
                             <field name="directie_id"
                                    invisible="state not in ('bevestiging', 'weigering', 'done')"/>
