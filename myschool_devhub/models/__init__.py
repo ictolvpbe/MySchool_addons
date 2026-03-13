@@ -4,3 +4,5 @@ from . import project
 from . import sprint
 from . import release
 from . import item
+from . import test_type
+from . import test_item

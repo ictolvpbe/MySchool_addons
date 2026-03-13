@@ -11,3 +11,7 @@ access_devhub_release_user,devhub.release.user,model_devhub_release,myschool_dev
 access_devhub_release_manager,devhub.release.manager,model_devhub_release,myschool_devhub.group_devhub_manager,1,1,1,1
 access_devhub_tag_user,devhub.tag.user,model_devhub_tag,myschool_devhub.group_devhub_user,1,0,0,0
 access_devhub_tag_manager,devhub.tag.manager,model_devhub_tag,myschool_devhub.group_devhub_manager,1,1,1,1
+access_devhub_test_type_user,devhub.test.type.user,model_devhub_test_type,myschool_devhub.group_devhub_user,1,0,0,0
+access_devhub_test_type_manager,devhub.test.type.manager,model_devhub_test_type,myschool_devhub.group_devhub_manager,1,1,1,1
+access_devhub_test_item_user,devhub.test.item.user,model_devhub_test_item,myschool_devhub.group_devhub_user,1,0,0,0
+access_devhub_test_item_manager,devhub.test.item.manager,model_devhub_test_item,myschool_devhub.group_devhub_manager,1,1,1,1
