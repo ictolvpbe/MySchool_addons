@@ -365,6 +365,20 @@
               sequence="100"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_data_export"
+              name="Export Data"
+              parent="menu_tools"
+              action="action_data_exchange_export"
+              sequence="110"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_data_import"
+              name="Import Data"
+              parent="menu_tools"
+              action="action_data_exchange_import"
+              sequence="120"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <!-- ========================================= -->
     <!-- LOG VIEWER (sequence: 95) -->
     <!-- ========================================= -->

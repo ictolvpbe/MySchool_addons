@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ========================================= -->
+    <!-- DATA EXCHANGE FORM VIEW -->
+    <!-- ========================================= -->
+
+    <record id="view_data_exchange_form" model="ir.ui.view">
+        <field name="name">myschool.data.exchange.form</field>
+        <field name="model">myschool.data.exchange</field>
+        <field name="arch" type="xml">
+            <form string="Data Exchange">
+                <field name="mode" invisible="1"/>
+
+                <!-- EXPORT MODE -->
+                <div invisible="mode != 'export'" class="mb-3">
+                    <div class="alert alert-info" role="alert">
+                        <strong>Export structural data</strong> to a JSON file for deployment on another server.
+                        <br/>Includes: organization types, person types, role types, period types,
+                        relation types, organizations (excl. classgroups/persongroups),
+                        roles, periods, proprelations (ORG-TREE, BRSO, SR-BR),
+                        config items (excl. encrypted), and CI relations.
+                        <br/>Excludes: persons, classgroups, persongroups, betasks, system events, encrypted credentials.
+                    </div>
+                </div>
+
+                <!-- IMPORT MODE -->
+                <div invisible="mode != 'import'" class="mb-3">
+                    <div class="alert alert-warning" role="alert">
+                        <strong>Import structural data</strong> from a previously exported JSON file.
+                        <br/>Existing records will be updated (matched by natural key).
+                        New records will be created.
+                    </div>
+                    <group>
+                        <field name="import_file" filename="import_filename" string="JSON File"/>
+                        <field name="import_filename" invisible="1"/>
+                    </group>
+                </div>
+
+                <!-- RESULT -->
+                <div invisible="not result_summary">
+                    <field name="result_summary" widget="text" readonly="1" nolabel="1"
+                           class="w-100" style="min-height: 200px;"/>
+                </div>
+
+                <footer>
+                    <button name="action_export" string="Export" type="object"
+                            class="btn-primary" invisible="mode != 'export'"/>
+                    <button name="action_import" string="Import" type="object"
+                            class="btn-primary" invisible="mode != 'import'"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ========================================= -->
+    <!-- ACTIONS -->
+    <!-- ========================================= -->
+
+    <record id="action_data_exchange_export" model="ir.actions.act_window">
+        <field name="name">Export Data</field>
+        <field name="res_model">myschool.data.exchange</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="context">{'default_mode': 'export'}</field>
+    </record>
+
+    <record id="action_data_exchange_import" model="ir.actions.act_window">
+        <field name="name">Import Data</field>
+        <field name="res_model">myschool.data.exchange</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="context">{'default_mode': 'import'}</field>
+    </record>
+
+</odoo>
