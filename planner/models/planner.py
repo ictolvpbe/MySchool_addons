@@ -24,6 +24,7 @@ class PlannerRecord(models.Model):
     afwezige_id = fields.Many2one(
         'planner.afwezige.leerkracht',
         string='Afwezige',
+        store=False,
     )
     leerkracht_id = fields.Many2one(
         'hr.employee',

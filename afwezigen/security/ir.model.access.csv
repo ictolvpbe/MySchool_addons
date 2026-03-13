@@ -1,5 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_myschool_afwezigen_boekhouding,myschool.afwezigen.boekhouding,model_myschool_afwezigen,activiteiten.group_activiteiten_boekhouding,1,1,0,0
-access_myschool_afwezigen_directie,myschool.afwezigen.directie,model_myschool_afwezigen,activiteiten.group_activiteiten_directie,1,1,0,0
-access_myschool_afwezigen_admin,myschool.afwezigen.admin,model_myschool_afwezigen,activiteiten.group_activiteiten_admin,1,1,0,0
-access_myschool_afwezigen_system,myschool.afwezigen.system,model_myschool_afwezigen,base.group_system,1,1,0,0
