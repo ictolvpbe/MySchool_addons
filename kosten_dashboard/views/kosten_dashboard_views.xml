@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- ============================================ -->
+    <!-- Kosten per medewerker: overzicht             -->
+    <!-- ============================================ -->
+
+    <record id="view_kosten_medewerker_list" model="ir.ui.view">
+        <field name="name">kosten.per.medewerker.list</field>
+        <field name="model">kosten.per.medewerker</field>
+        <field name="arch" type="xml">
+            <list default_order="totale_kost desc" create="false" edit="false" delete="false">
+                <field name="employee_id"/>
+                <field name="school_id"/>
+                <field name="aantal_activiteiten"/>
+                <field name="aantal_prof"/>
+                <field name="aantal_totaal"/>
+                <field name="kost_activiteiten" sum="Totaal" widget="float" digits="[10,2]"/>
+                <field name="kost_prof" sum="Totaal" widget="float" digits="[10,2]"/>
+                <field name="totale_kost" sum="Totaal" widget="float" digits="[10,2]"
+                       decoration-danger="totale_kost &gt; 2000"
+                       decoration-warning="totale_kost &gt; 1000 and totale_kost &lt;= 2000"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kosten_medewerker_pivot" model="ir.ui.view">
+        <field name="name">kosten.per.medewerker.pivot</field>
+        <field name="model">kosten.per.medewerker</field>
+        <field name="arch" type="xml">
+            <pivot>
+                <field name="school_id" type="row"/>
+                <field name="employee_id" type="row"/>
+                <field name="totale_kost" type="measure"/>
+                <field name="kost_activiteiten" type="measure"/>
+                <field name="kost_prof" type="measure"/>
+                <field name="aantal_totaal" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_kosten_medewerker_graph" model="ir.ui.view">
+        <field name="name">kosten.per.medewerker.graph</field>
+        <field name="model">kosten.per.medewerker</field>
+        <field name="arch" type="xml">
+            <graph type="bar">
+                <field name="employee_id"/>
+                <field name="totale_kost" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="view_kosten_medewerker_search" model="ir.ui.view">
+        <field name="name">kosten.per.medewerker.search</field>
+        <field name="model">kosten.per.medewerker</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="employee_id" string="Medewerker"/>
+                <field name="school_id" string="School"/>
+                <group>
+                    <filter string="School" name="group_school"
+                            domain="[]" context="{'group_by': 'school_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_kosten_medewerker" model="ir.actions.act_window">
+        <field name="name">Kosten per medewerker</field>
+        <field name="res_model">kosten.per.medewerker</field>
+        <field name="view_mode">list,pivot,graph</field>
+    </record>
+
+    <!-- ============================================ -->
+    <!-- Kosten detail: per activiteit/prof           -->
+    <!-- ============================================ -->
+
+    <record id="view_kosten_detail_list" model="ir.ui.view">
+        <field name="name">kosten.detail.list</field>
+        <field name="model">kosten.detail</field>
+        <field name="arch" type="xml">
+            <list default_order="datum desc" create="false" edit="false" delete="false">
+                <field name="datum"/>
+                <field name="employee_id"/>
+                <field name="bron" widget="badge"
+                       decoration-info="bron == 'activiteit'"
+                       decoration-success="bron == 'professionalisering'"/>
+                <field name="titel"/>
+                <field name="school_id"/>
+                <field name="aantal_deelnemers"/>
+                <field name="totale_kost" widget="float" digits="[10,2]"/>
+                <field name="eigen_kost" sum="Totaal" widget="float" digits="[10,2]"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kosten_detail_pivot" model="ir.ui.view">
+        <field name="name">kosten.detail.pivot</field>
+        <field name="model">kosten.detail</field>
+        <field name="arch" type="xml">
+            <pivot>
+                <field name="employee_id" type="row"/>
+                <field name="bron" type="col"/>
+                <field name="eigen_kost" type="measure"/>
+                <field name="totale_kost" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_kosten_detail_search" model="ir.ui.view">
+        <field name="name">kosten.detail.search</field>
+        <field name="model">kosten.detail</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="employee_id" string="Medewerker"/>
+                <field name="titel" string="Titel"/>
+                <field name="school_id" string="School"/>
+                <filter string="Activiteiten" name="activiteiten"
+                        domain="[('bron', '=', 'activiteit')]"/>
+                <filter string="Professionalisering" name="professionalisering"
+                        domain="[('bron', '=', 'professionalisering')]"/>
+                <separator/>
+                <group>
+                    <filter string="Medewerker" name="group_employee"
+                            domain="[]" context="{'group_by': 'employee_id'}"/>
+                    <filter string="Type" name="group_bron"
+                            domain="[]" context="{'group_by': 'bron'}"/>
+                    <filter string="School" name="group_school"
+                            domain="[]" context="{'group_by': 'school_id'}"/>
+                    <filter string="Datum" name="group_datum"
+                            domain="[]" context="{'group_by': 'datum:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_kosten_detail" model="ir.actions.act_window">
+        <field name="name">Kosten detail</field>
+        <field name="res_model">kosten.detail</field>
+        <field name="view_mode">list,pivot</field>
+    </record>
+</odoo>

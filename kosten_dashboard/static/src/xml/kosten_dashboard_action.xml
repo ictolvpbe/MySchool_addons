@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="kosten_dashboard.KostenDashboardAction">
+        <div class="o_kosten_dashboard_container h-100">
+            <View t-if="viewProps" t-props="viewProps"/>
+        </div>
+    </t>
+</templates>

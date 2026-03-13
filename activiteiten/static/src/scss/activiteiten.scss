@@ -1,0 +1,20 @@
+.o_activiteiten_record_form {
+    .btn {
+        box-shadow: 0 2px 8px rgba(0, 125, 140, 0.1);
+    }
+
+    // Highlight editable fields so the user knows where to fill in
+    .o_form_editable {
+
+        // Checkbox fields
+        .o_field_boolean:not(.o_readonly_modifier) .form-check-input {
+            border-color: #007d8c !important;
+        }
+
+        // Bold teal labels next to editable fields
+        .o_wrap_label:has(+ .o_wrap_input .o_field_widget:not(.o_readonly_modifier)) label {
+            font-weight: 600;
+            color: #007d8c;
+        }
+    }
+}

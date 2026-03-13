@@ -1,0 +1,111 @@
+/* ============================================================================
+   Kosten Dashboard
+   ============================================================================ */
+
+/* --- Dashboard page container --- */
+.o_kosten_dashboard .o_form_sheet_bg {
+    background: var(--ms-bg, #ffffff) !important;
+}
+.o_kosten_dashboard .o_form_sheet {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+.o_kosten_dashboard .o_form_statusbar {
+    display: none !important;
+}
+
+/* --- Top spenders table --- */
+.ms-top-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.ms-top-table tr {
+    border-bottom: 1px solid var(--ms-border-light, #e8f0f0);
+}
+.ms-top-table tr:last-child {
+    border-bottom: none;
+}
+.ms-top-table td {
+    padding: 10px 8px;
+    font-size: 13px;
+    color: var(--ms-text, #003333);
+}
+.ms-top-table .ms-rank {
+    width: 28px;
+    font-weight: 700;
+    color: var(--ms-brand-1, #007d8c);
+    font-size: 14px;
+}
+.ms-top-table .ms-name {
+    font-weight: 500;
+}
+.ms-top-table .ms-school {
+    color: var(--ms-gray, #9B9B9B);
+    font-size: 12px;
+}
+.ms-top-table .ms-amount {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- Cost bar --- */
+.ms-cost-bar-bg {
+    height: 6px;
+    background: var(--ms-border-light, #e8f0f0);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+.ms-cost-bar {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--ms-brand-1, #007d8c), var(--ms-brand-3, #00ACBF));
+}
+
+/* --- Split card (activiteiten vs prof) --- */
+.ms-split-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.ms-split-item {
+    text-align: center;
+    padding: 12px;
+}
+.ms-split-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: var(--ms-gray, #9B9B9B);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.ms-split-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--ms-black, #252525);
+}
+.ms-split-value .o_field_widget {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--ms-black, #252525);
+    display: inline;
+}
+.ms-split-sub {
+    font-size: 11px;
+    color: var(--ms-gray, #9B9B9B);
+    margin-top: 2px;
+}
+.ms-split-sub .o_field_widget {
+    display: inline;
+    font-size: 11px;
+    color: var(--ms-gray, #9B9B9B);
+}
+.ms-split-divider {
+    border-left: 1px solid var(--ms-border-light, #e8f0f0);
+}

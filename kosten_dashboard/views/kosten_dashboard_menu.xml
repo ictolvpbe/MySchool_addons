@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <menuitem id="menu_kosten_root"
+              name="Kosten"
+              action="action_kosten_dashboard_client"
+              sequence="70"
+              groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+
+    <menuitem id="menu_kosten_medewerker"
+              name="Per medewerker"
+              parent="menu_kosten_root"
+              action="action_kosten_medewerker"
+              sequence="10"/>
+
+    <menuitem id="menu_kosten_detail"
+              name="Detail"
+              parent="menu_kosten_root"
+              action="action_kosten_detail"
+              sequence="20"/>
+</odoo>

@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_kosten_dashboard_form" model="ir.ui.view">
+        <field name="name">kosten.dashboard.form</field>
+        <field name="model">kosten.dashboard</field>
+        <field name="arch" type="xml">
+            <form string="Kosten Dashboard" create="false" delete="false" class="o_kosten_dashboard">
+                <sheet>
+                    <div class="ms-page-title">Kosten Overzicht</div>
+
+                    <!-- ===== KPI ROW ===== -->
+                    <div class="ms-kpi-row">
+                        <div class="ms-kpi-card c1">
+                            <div class="ms-kpi-label">Totale kost</div>
+                            <div class="ms-kpi-value">
+                                <field name="kpi_totale_kost" widget="monetary"
+                                       options="{'currency_id': false}"/>
+                            </div>
+                            <div class="ms-kpi-sub">alle medewerkers</div>
+                        </div>
+                        <div class="ms-kpi-card c2">
+                            <div class="ms-kpi-label">Medewerkers</div>
+                            <div class="ms-kpi-value">
+                                <field name="kpi_aantal_medewerkers"/>
+                            </div>
+                            <div class="ms-kpi-sub">met kosten</div>
+                        </div>
+                        <div class="ms-kpi-card c3">
+                            <div class="ms-kpi-label">Gemiddelde kost</div>
+                            <div class="ms-kpi-value">
+                                <field name="kpi_gemiddelde_kost" widget="monetary"
+                                       options="{'currency_id': false}"/>
+                            </div>
+                            <div class="ms-kpi-sub">per medewerker</div>
+                        </div>
+                        <div class="ms-kpi-card c4">
+                            <div class="ms-kpi-label">Totaal items</div>
+                            <div class="ms-kpi-value">
+                                <field name="kpi_aantal_activiteiten"/>
+                            </div>
+                            <div class="ms-kpi-sub">activiteiten</div>
+                        </div>
+                    </div>
+
+                    <!-- ===== MAIN GRID ===== -->
+                    <div class="ms-grid">
+                        <!-- LEFT COLUMN -->
+                        <div>
+                            <!-- Top spenders -->
+                            <div class="ms-card">
+                                <div class="ms-card-header">
+                                    <span><i class="fa fa-trophy me-1"/> Top 5 kosten</span>
+                                    <button name="action_open_kosten_medewerker" type="object"
+                                            class="ms-link">Bekijk alles &#8594;</button>
+                                </div>
+                                <div class="ms-card-body ms-html-field">
+                                    <field name="top_spenders_html" class="w-100"/>
+                                </div>
+                            </div>
+
+                            <!-- Cost split card -->
+                            <div class="ms-card">
+                                <div class="ms-card-header">
+                                    <span><i class="fa fa-pie-chart me-1"/> Verdeling kosten</span>
+                                </div>
+                                <div class="ms-card-body">
+                                    <div class="ms-split-row">
+                                        <div class="ms-split-item">
+                                            <div class="ms-split-label">Activiteiten</div>
+                                            <div class="ms-split-value">
+                                                <field name="kpi_kost_activiteiten" widget="float" digits="[10,2]"/>
+                                            </div>
+                                            <div class="ms-split-sub">
+                                                <field name="kpi_aantal_activiteiten"/> items
+                                            </div>
+                                        </div>
+                                        <div class="ms-split-item ms-split-divider">
+                                            <div class="ms-split-label">Professionalisering</div>
+                                            <div class="ms-split-value">
+                                                <field name="kpi_kost_prof" widget="float" digits="[10,2]"/>
+                                            </div>
+                                            <div class="ms-split-sub">
+                                                <field name="kpi_aantal_prof"/> items
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN -->
+                        <div>
+                            <!-- Quick Actions -->
+                            <div class="ms-card">
+                                <div class="ms-card-header">Snelle acties</div>
+                                <div class="ms-card-body">
+                                    <div class="ms-quick-actions">
+                                        <button name="action_open_kosten_medewerker" type="object"
+                                                class="ms-qa-btn">
+                                            <div class="ms-qa-icon c1"><i class="fa fa-users"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Per medewerker</strong>
+                                                <span>Overzicht kosten</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_open_kosten_detail" type="object"
+                                                class="ms-qa-btn">
+                                            <div class="ms-qa-icon c2"><i class="fa fa-list"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Detail</strong>
+                                                <span>Per activiteit/prof</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_open_kosten_pivot" type="object"
+                                                class="ms-qa-btn">
+                                            <div class="ms-qa-icon c3"><i class="fa fa-table"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Draaitabel</strong>
+                                                <span>Pivot analyse</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_open_kosten_graph" type="object"
+                                                class="ms-qa-btn">
+                                            <div class="ms-qa-icon c4"><i class="fa fa-bar-chart"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Grafiek</strong>
+                                                <span>Visueel overzicht</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Client action for the dashboard -->
+    <record id="action_kosten_dashboard_client" model="ir.actions.client">
+        <field name="name">Kosten</field>
+        <field name="tag">kosten_dashboard_action</field>
+    </record>
+</odoo>

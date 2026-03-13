@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Inherit myschool.org form to add student count stat button -->
+    <record id="view_org_form_inherit_activiteiten" model="ir.ui.view">
+        <field name="name">myschool.org.form.inherit.activiteiten</field>
+        <field name="model">myschool.org</field>
+        <field name="inherit_id" ref="myschool_admin.view_myschool_org_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_view_students"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-users">
+                    <field name="student_count" string="Leerlingen" widget="statinfo"/>
+                </button>
+            </xpath>
+        </field>
+    </record>
+</odoo>
