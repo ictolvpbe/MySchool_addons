@@ -31,6 +31,11 @@ export class LogViewerClient extends Component {
             fileSize: "",
             lastRefresh: "",
             fileModified: "",
+            isConsole: false,
+            // config hints
+            hasLogfileConfig: false,
+            hasFileLogs: false,
+            showConfigHint: false,
         });
 
         this._refreshTimer = null;
@@ -52,13 +57,18 @@ export class LogViewerClient extends Component {
 
     async _loadAvailableLogs() {
         try {
-            const logs = await this.orm.call(
+            const info = await this.orm.call(
                 "myschool.log.viewer",
-                "_get_available_logs",
+                "get_viewer_info",
                 [],
             );
-            this.state.availableLogs = logs || [];
-            // Auto-select the first real log
+            this.state.availableLogs = info.available_logs || [];
+            this.state.hasLogfileConfig = info.has_logfile_config;
+            this.state.hasFileLogs = info.has_file_logs;
+            this.state.showConfigHint = !info.has_logfile_config;
+
+            // Auto-select the first log and load it
+            const logs = this.state.availableLogs;
             if (logs.length && logs[0][0] !== "none") {
                 this.state.selectedLog = logs[0][0];
                 await this.refreshLog();
@@ -87,6 +97,7 @@ export class LogViewerClient extends Component {
             this.state.lastRefresh = result.timestamp || "";
             this.state.fileSize = result.file_size || "";
             this.state.fileModified = result.file_modified || "";
+            this.state.isConsole = result.is_console || false;
 
             this._scrollToBottom();
         } catch (e) {
@@ -228,8 +239,13 @@ export class LogViewerClient extends Component {
 
     get terminalTitle() {
         if (!this.state.selectedLog) return "log viewer";
+        if (this.state.selectedLog === "__console__") return "stdout (live console)";
         const parts = this.state.selectedLog.split("/");
         return parts[parts.length - 1] || "log viewer";
+    }
+
+    onDismissConfigHint() {
+        this.state.showConfigHint = false;
     }
 }
 

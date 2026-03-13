@@ -1,0 +1,333 @@
+/* ===================================================================
+   Log Viewer — OWL2 Client Action Styles
+   =================================================================== */
+
+/* --- Container --- */
+.lv-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 100px);
+    padding: 0 16px 16px;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* --- Toolbar --- */
+.lv-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.lv-toolbar select,
+.lv-toolbar input[type="number"],
+.lv-toolbar input[type="text"] {
+    height: 32px;
+    font-size: 13px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+.lv-toolbar select {
+    min-width: 180px;
+    max-width: 300px;
+}
+
+.lv-toolbar input[type="number"] {
+    width: 70px;
+}
+
+.lv-toolbar input[type="text"] {
+    width: 180px;
+}
+
+.lv-toolbar .lv-separator {
+    width: 1px;
+    height: 24px;
+    background: #dee2e6;
+    margin: 0 2px;
+}
+
+.lv-toolbar label {
+    font-size: 13px;
+    font-weight: 500;
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* --- Toolbar buttons --- */
+.lv-btn {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 13px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.lv-btn:hover {
+    background: #f8f9fa;
+}
+
+.lv-btn-primary {
+    background: #714B67;
+    color: #fff;
+    border-color: #714B67;
+}
+
+.lv-btn-primary:hover {
+    background: #5c3d55;
+}
+
+.lv-btn-success {
+    background: #28a745;
+    color: #fff;
+    border-color: #28a745;
+}
+
+.lv-btn-success:hover {
+    background: #218838;
+}
+
+.lv-btn-danger {
+    background: #dc3545;
+    color: #fff;
+    border-color: #dc3545;
+}
+
+.lv-btn-danger:hover {
+    background: #c82333;
+}
+
+/* --- Auto-refresh controls --- */
+.lv-auto-refresh {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.lv-auto-refresh input[type="number"] {
+    width: 55px;
+}
+
+/* --- Status bar --- */
+.lv-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 0;
+    font-size: 12px;
+    color: #6c757d;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.lv-live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #28a745;
+    font-weight: 600;
+}
+
+.lv-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #28a745;
+    animation: lv-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes lv-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* --- Config hint banner --- */
+.lv-config-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 14px;
+    margin-bottom: 4px;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #664d03;
+    line-height: 1.5;
+}
+
+.lv-config-hint-content {
+    flex: 1;
+}
+
+.lv-config-hint-content code {
+    background: rgba(0,0,0,0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.lv-config-code {
+    display: inline-block;
+    margin: 4px 0 0;
+    padding: 3px 8px;
+    background: rgba(0,0,0,0.06);
+    border-radius: 3px;
+    font-family: 'Consolas', monospace;
+    font-size: 12px;
+    color: #664d03;
+}
+
+.lv-config-hint-close {
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    color: #664d03;
+    padding: 0 4px;
+    line-height: 1;
+    opacity: 0.6;
+}
+
+.lv-config-hint-close:hover {
+    opacity: 1;
+}
+
+/* --- Console badge --- */
+.lv-console-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #fff;
+    background: #6f42c1;
+    border-radius: 10px;
+}
+
+/* --- Terminal output --- */
+.lv-terminal {
+    flex: 1;
+    overflow-y: auto;
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px 16px;
+    border-radius: 0 0 6px 6px;
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    tab-size: 4;
+}
+
+.lv-terminal-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    margin-top: 8px;
+    overflow: hidden;
+}
+
+.lv-terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    font-size: 12px;
+    color: #8b949e;
+}
+
+.lv-terminal-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.lv-terminal-dot-red { background: #ff5f56; }
+.lv-terminal-dot-yellow { background: #ffbd2e; }
+.lv-terminal-dot-green { background: #27c93f; }
+
+.lv-terminal-title {
+    margin-left: 8px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+/* --- Loading overlay --- */
+.lv-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    color: #8b949e;
+    font-size: 14px;
+    gap: 8px;
+}
+
+.lv-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #30363d;
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: lv-spin 0.8s linear infinite;
+}
+
+@keyframes lv-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* --- Empty state --- */
+.lv-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: #8b949e;
+    text-align: center;
+}
+
+.lv-empty-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+    .lv-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .lv-toolbar select,
+    .lv-toolbar input[type="text"] {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .lv-toolbar .lv-separator {
+        display: none;
+    }
+
+    .lv-status-bar {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+}

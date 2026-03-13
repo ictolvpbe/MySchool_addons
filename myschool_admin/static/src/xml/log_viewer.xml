@@ -4,6 +4,21 @@
     <t t-name="myschool_admin.LogViewerClient">
         <div class="lv-container">
 
+            <!-- ===== Config hint banner ===== -->
+            <t t-if="state.showConfigHint">
+                <div class="lv-config-hint">
+                    <div class="lv-config-hint-content">
+                        <strong>No logfile configured.</strong>
+                        Odoo is logging to stdout only, so you see the in-memory console buffer below.
+                        To enable persistent log file viewing, add this to your
+                        <code>odoo.conf</code>:
+                        <pre class="lv-config-code">logfile = /path/to/odoo.log</pre>
+                        Then restart Odoo. The log file will appear in the dropdown.
+                    </div>
+                    <button class="lv-config-hint-close" t-on-click="onDismissConfigHint">x</button>
+                </div>
+            </t>
+
             <!-- ===== Toolbar ===== -->
             <div class="lv-toolbar">
 
@@ -87,6 +102,9 @@
                         <span class="lv-live-dot"/>
                         LIVE
                     </span>
+                </t>
+                <t t-if="state.isConsole">
+                    <span class="lv-console-badge">CONSOLE</span>
                 </t>
                 <span t-if="lineCount">Lines: <t t-esc="lineCount"/></span>
                 <span t-if="state.fileSize">Size: <t t-esc="state.fileSize"/></span>
