@@ -8,84 +8,188 @@
             <form>
                 <header>
                     <field name="is_owner" invisible="1"/>
+                    <field name="is_admin" invisible="1"/>
+                    <field name="current_user_invited" invisible="1"/>
+                    <field name="current_user_invite_state" invisible="1"/>
+                    <!-- Invited teacher: Accept/Reject -->
+                    <button name="action_accept_invite"
+                            string="Uitnodiging accepteren"
+                            type="object"
+                            class="btn-success"
+                            invisible="not current_user_invited or current_user_invite_state != 'pending'"/>
+                    <button name="action_reject_invite"
+                            string="Uitnodiging weigeren"
+                            type="object"
+                            class="btn-danger"
+                            invisible="not current_user_invited or current_user_invite_state != 'pending'"/>
                     <!-- Employee: Submit -->
                     <button name="action_submit"
                             string="Indienen"
                             type="object"
                             class="btn-primary"
-                            invisible="state != 'selection_of_form'"/>
+                            invisible="state != 'selection_of_form' or not is_owner"/>
                     <!-- Employee: Reset to draft after rejection -->
                     <button name="action_reset_draft"
                             string="Opnieuw indienen"
                             type="object"
                             class="btn-secondary"
                             invisible="state != 'weigering' or not is_owner"/>
+                    <!-- Admin: Reset to draft after rejection (non-owner) -->
+                    <button name="action_reset_draft"
+                            string="Opnieuw indienen"
+                            type="object"
+                            class="btn-secondary"
+                            groups="professionalisering.group_professionalisering_admin"
+                            invisible="state != 'weigering' or is_owner"/>
                     <!-- Directie: Approve -->
                     <button name="action_approve"
                             string="Goedkeuren"
                             type="object"
                             class="btn-primary"
                             groups="professionalisering.group_professionalisering_directie"
-                            invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
+                            invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')"/>
                     <!-- Directie: Reject -->
                     <button name="action_reject"
                             string="Afkeuren"
                             type="object"
                             class="btn-danger"
                             groups="professionalisering.group_professionalisering_directie"
-                            invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
-                    <!-- Boekhouding: Confirm payment -->
+                            invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')"/>
+                    <!-- Boekhouding: Confirm payment / S-Code -->
                     <button name="action_confirm_payment"
-                            string="Betaling bevestigd"
+                            string="S-Code bevestigen"
                             type="object"
                             class="btn-primary"
-                            groups="professionalisering.group_professionalisering_boekhouding"
+                            groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"
                             invisible="state != 'bevestiging' or payment_done == True"/>
-                    <!-- Vervangingen: Confirm replacement -->
-                    <button name="action_confirm_replacement"
-                            string="Vervanging ingepland"
+                    <!-- Owner: Submit proof -->
+                    <button name="action_submit_bewijs"
+                            string="Bewijs indienen"
                             type="object"
                             class="btn-primary"
-                            groups="professionalisering.group_professionalisering_vervangingen"
-                            invisible="state != 'bevestiging' or replacement_done == True"/>
-                    <field name="state" widget="statusbar" statusbar_visible="selection_of_form,fill_in_form_binnenschoolse,bevestiging,done"/>
+                            invisible="state != 'done' or bewijs_ingediend or not is_owner"/>
+                    <!-- Owner or Admin: delete unsubmitted -->
+                    <button name="action_delete"
+                            string="Verwijderen"
+                            type="object"
+                            class="btn-danger"
+                            invisible="(not is_owner) or state != 'selection_of_form'"
+                            confirm="Weet u zeker dat u deze aanvraag wilt verwijderen?"/>
+                    <button name="action_delete"
+                            string="Verwijderen"
+                            type="object"
+                            class="btn-danger"
+                            groups="professionalisering.group_professionalisering_admin"
+                            invisible="is_owner or state != 'selection_of_form'"
+                            confirm="Weet u zeker dat u deze aanvraag wilt verwijderen?"/>
+
+                    <field name="state" widget="statusbar" statusbar_visible="selection_of_form,fill_in_form_individueel,bevestiging,done"/>
                 </header>
                 <sheet>
+                    <!-- Title -->
                     <div class="oe_title">
                         <h1>
                             <field name="name" readonly="1"/>
                         </h1>
+                        <h3 class="mt-1">
+                            <span class="text-muted">
+                                Medewerker: <field name="employee_id" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)" class="oe_inline" nolabel="1"/>
+                                <span invisible="not titel"> — </span>
+                                <field name="titel" readonly="1" class="oe_inline" invisible="not titel"/>
+                            </span>
+                        </h3>
                     </div>
+
                     <field name="priority" widget="priority"
                            groups="professionalisering.group_professionalisering_directie"/>
+                    <field name="currency_id" invisible="1"/>
+                    <field name="show_invites" invisible="1"/>
+                    <field name="has_pending_invites" invisible="1"/>
+
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not has_pending_invites">
+                        Niet alle uitnodigingen zijn beantwoord. De aanvraag kan pas ingediend worden wanneer alle collega's hebben gereageerd.
+                    </div>
+
+                    <!-- Two-column layout -->
                     <group>
+                        <!-- LEFT COLUMN: Professionalisering + Planning -->
                         <group>
-                            <field name="type" readonly="state != 'selection_of_form'"/>
-                            <field name="titel" readonly="state != 'selection_of_form'"/>
-                            <field name="employee_id" readonly="state != 'selection_of_form'"/>
-                            <field name="school_id" readonly="state != 'selection_of_form'"/>
-                            <field name="verschillende_dagen" readonly="state != 'selection_of_form'"/>
-                            <field name="start_date" readonly="state != 'selection_of_form'"/>
-                            <field name="end_date" readonly="state != 'selection_of_form'" invisible="verschillende_dagen == True"/>
-                            <field name="cost" readonly="state != 'selection_of_form'"/>
-                            <field name="vak" readonly="state != 'selection_of_form'"/>
+                            <separator string="Professionalisering"/>
+                            <field name="type" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="subtype_individueel" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="type != 'individueel'"/>
+                            <field name="subtype_teamleren" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="type != 'teamleren'"/>
+                            <field name="titel" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   placeholder="bv. Cursus differentiatie in de klas"/>
+                            <field name="school_id"
+                                   options="{'no_open': True}"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="vak" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="cost" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   placeholder="bv. 150.00"/>
+
+                            <separator string="Planning"/>
+                            <field name="start_date" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="end_date" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="verschillende_dagen == True"/>
+                            <field name="verschillende_dagen" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
                         </group>
+
+                        <!-- RIGHT COLUMN: Beoordeling + Financieel -->
                         <group>
+                            <separator string="Beoordeling"
+                                       invisible="state == 'selection_of_form'"/>
                             <field name="assigned_to"
                                    invisible="state == 'selection_of_form'"
-                                   readonly="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe', 'bevestiging')"
+                                   readonly="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren', 'bevestiging') or assigned_to"
                                    groups="professionalisering.group_professionalisering_directie"/>
-                            <field name="directie_id" invisible="state not in ('bevestiging', 'weigering', 'done')"/>
-                            <field name="payment_done" readonly="1" invisible="state not in ('bevestiging', 'done')"/>
-                            <field name="replacement_id"
+                            <field name="directie_id"
+                                   invisible="state not in ('bevestiging', 'weigering', 'done')"/>
+
+                            <!-- Financieel section -->
+                            <separator string="Financieel"
+                                       invisible="state not in ('bevestiging', 'done')"/>
+                            <field name="s_code_name"
+                                   placeholder="bv. S-1234"
                                    invisible="state not in ('bevestiging', 'done')"
-                                   readonly="replacement_done == True"/>
-                            <field name="replacement_done" readonly="1" invisible="state not in ('bevestiging', 'done')"/>
+                                   readonly="state != 'bevestiging'"
+                                   groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
+                            <field name="s_code_price"
+                                   placeholder="bv. 500.00"
+                                   invisible="state not in ('bevestiging', 'done')"
+                                   readonly="state != 'bevestiging'"
+                                   groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
+                            <field name="totale_kost"
+                                   invisible="state not in ('bevestiging', 'done')"
+                                   groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
+                            <field name="payment_done" readonly="1"
+                                   invisible="state not in ('bevestiging', 'done')"/>
                         </group>
                     </group>
+
+                    <!-- Tabs -->
                     <notebook>
+                        <page string="Uitnodigingen" invisible="not show_invites">
+                            <button name="action_send_invites"
+                                    string="Uitnodigingen versturen"
+                                    type="object"
+                                    class="btn-primary mb-3"
+                                    invisible="state != 'selection_of_form' or not invite_ids or not is_owner"/>
+                            <field name="invite_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
+                                <list editable="bottom">
+                                    <field name="employee_id"/>
+                                    <field name="notified" column_invisible="1"/>
+                                    <field name="state" readonly="1" widget="badge"
+                                           decoration-info="state == 'pending'"
+                                           decoration-success="state == 'accepted'"
+                                           decoration-danger="state == 'rejected'"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Datums" invisible="verschillende_dagen != True">
-                            <field name="date_line_ids" readonly="state != 'selection_of_form'">
+                            <field name="date_line_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
                                 <list editable="bottom">
                                     <field name="date"/>
                                     <field name="cost"/>
@@ -93,19 +197,87 @@
                             </field>
                         </page>
                         <page string="Beschrijving">
-                            <field name="description" readonly="state != 'selection_of_form'"/>
+                            <field name="description"
+                                   placeholder="Geef een korte beschrijving van de opleiding, het doel en eventuele bijzonderheden..."
+                                   readonly="(state != 'selection_of_form' or (not is_owner and not is_admin)) and not (current_user_invited and current_user_invite_state == 'pending')"/>
                         </page>
-                        <page string="Afkeuring" invisible="state != 'weigering'"
+                        <page string="Kosten"
+                              invisible="state not in ('bevestiging', 'done')"
+                              groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin">
+                            <field name="kosten_ids" readonly="state != 'bevestiging'">
+                                <list editable="bottom" create="1" delete="1">
+                                    <field name="is_auto" column_invisible="1"/>
+                                    <field name="omschrijving" readonly="is_auto"/>
+                                    <field name="bedrag" readonly="is_auto"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                </list>
+                            </field>
+                        </page>
+                        <!-- Bewijs tab -->
+                        <page string="Bewijs" invisible="state != 'done'">
+                            <group>
+                                <group>
+                                    <!-- Video/Podcast: link -->
+                                    <field name="bewijs_link"
+                                           string="Link naar video"
+                                           placeholder="bv. https://youtube.com/..."
+                                           readonly="bewijs_ingediend and not is_admin"
+                                           invisible="subtype_individueel != 'video'"/>
+                                    <field name="bewijs_link"
+                                           string="Link naar podcast"
+                                           placeholder="bv. https://spotify.com/..."
+                                           readonly="bewijs_ingediend and not is_admin"
+                                           invisible="subtype_individueel != 'podcast'"/>
+                                    <!-- Lezen/Interne opvolging: beschrijving -->
+                                    <field name="bewijs_beschrijving"
+                                           string="Samenvatting"
+                                           placeholder="Beschrijf kort wat u gelezen heeft en wat u geleerd heeft..."
+                                           readonly="bewijs_ingediend and not is_admin"
+                                           invisible="subtype_individueel != 'lezen'"/>
+                                    <field name="bewijs_beschrijving"
+                                           string="Verslag"
+                                           placeholder="Beschrijf het verloop en de resultaten van de opvolging..."
+                                           readonly="bewijs_ingediend and not is_admin"
+                                           invisible="subtype_individueel != 'interne_opvolging'"/>
+                                    <!-- Teamleren: beschrijving -->
+                                    <field name="bewijs_beschrijving"
+                                           string="Verslag"
+                                           placeholder="Beschrijf het verloop en de resultaten..."
+                                           readonly="bewijs_ingediend and not is_admin"
+                                           invisible="type != 'teamleren'"/>
+                                </group>
+                                <group>
+                                    <field name="bewijs_ingediend" readonly="1"/>
+                                </group>
+                            </group>
+                            <!-- Cursus/Workshop: attest upload -->
+                            <separator string="Attest / Certificaat"
+                                       invisible="subtype_individueel not in ('cursus', 'workshop')"/>
+                            <field name="bewijs_document_ids" widget="many2many_binary"
+                                   readonly="bewijs_ingediend and not is_admin"
+                                   invisible="subtype_individueel not in ('cursus', 'workshop')"/>
+                            <!-- Teamleren: document upload -->
+                            <separator string="Documenten"
+                                       invisible="type != 'teamleren'"/>
+                            <field name="bewijs_document_ids" widget="many2many_binary"
+                                   readonly="bewijs_ingediend and not is_admin"
+                                   invisible="type != 'teamleren'"/>
+                        </page>
+                        <!-- Afkeuring: for medewerker after rejection -->
+                        <page string="Afkeuring"
+                              invisible="state != 'weigering'"
                               groups="professionalisering.group_professionalisering_user">
                             <group>
                                 <field name="rejection_reason" readonly="1"/>
                             </group>
                         </page>
-                        <page string="Afkeuring" invisible="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe', 'weigering')"
-                              groups="professionalisering.group_professionalisering_directie">
+                        <!-- Afkeuring: for directie to fill in -->
+                        <page string="Afkeuring"
+                              groups="professionalisering.group_professionalisering_directie"
+                              invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')">
                             <group>
                                 <field name="rejection_reason"
-                                       readonly="state not in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')"/>
+                                       placeholder="Geef de reden op waarom deze aanvraag wordt afgekeurd..."/>
                             </group>
                         </page>
                     </notebook>
@@ -129,11 +301,16 @@
                 <field name="employee_id"/>
                 <field name="school_id"/>
                 <field name="dates_display" widget="html"/>
-                <field name="total_cost" string="Kost"/>
+                <field name="total_cost" string="Geschatte kost" optional="show"/>
+                <field name="totale_kost" string="Totaal"
+                       groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
                 <field name="assigned_to" optional="show"
                        groups="professionalisering.group_professionalisering_directie"/>
-                <field name="replacement_id" optional="hide"/>
-                <field name="state" widget="badge" decoration-info="state == 'selection_of_form'" decoration-warning="state in ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe')" decoration-success="state in ('bevestiging', 'done')" decoration-danger="state == 'weigering'"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'selection_of_form'"
+                       decoration-warning="state in ('fill_in_form_individueel', 'fill_in_form_teamleren')"
+                       decoration-success="state in ('bevestiging', 'done')"
+                       decoration-danger="state == 'weigering'"/>
             </list>
         </field>
     </record>
@@ -148,15 +325,14 @@
                 <field name="employee_id"/>
                 <field name="name"/>
                 <field name="assigned_to"/>
-                <filter string="Mijn aanvragen" name="my_requests" domain="[('employee_id.user_id', '=', uid)]"/>
+                <filter string="Mijn aanvragen" name="my_requests" domain="['|', ('employee_id.user_id', '=', uid), ('invite_ids.employee_id.user_id', '=', uid)]"/>
                 <separator/>
                 <filter string="Aan mij toegewezen" name="assigned_to_me" domain="[('assigned_to.user_id', '=', uid)]"/>
-                <filter string="Te beoordelen" name="to_approve" domain="[('state', 'in', ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe'))]"/>
+                <filter string="Te beoordelen" name="to_approve" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
                 <filter string="Betaling openstaand" name="payment_pending" domain="[('state', '=', 'bevestiging'), ('payment_done', '=', False)]"/>
-                <filter string="Vervanging openstaand" name="replacement_pending" domain="[('state', '=', 'bevestiging'), ('replacement_done', '=', False)]"/>
                 <separator/>
                 <filter string="Formulier kiezen" name="state_selection_of_form" domain="[('state', '=', 'selection_of_form')]"/>
-                <filter string="Ingediend" name="state_submitted" domain="[('state', 'in', ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe'))]"/>
+                <filter string="Ingediend" name="state_submitted" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
                 <filter string="Bevestigd" name="state_bevestiging" domain="[('state', '=', 'bevestiging')]"/>
                 <filter string="Geweigerd" name="state_weigering" domain="[('state', '=', 'weigering')]"/>
                 <filter string="Afgerond" name="state_done" domain="[('state', '=', 'done')]"/>
@@ -169,6 +345,62 @@
                     <filter string="Toegewezen aan" name="group_assigned" domain="[]" context="{'group_by': 'assigned_to'}"/>
                 </group>
             </search>
+        </field>
+    </record>
+
+    <!-- Invite Form View -->
+    <record id="view_professionalisering_invite_form" model="ir.ui.view">
+        <field name="name">professionalisering.invite.form</field>
+        <field name="model">professionalisering.invite</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_accept"
+                            string="Accepteren"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'pending'"/>
+                    <button name="action_reject"
+                            string="Weigeren"
+                            type="object"
+                            class="btn-danger"
+                            invisible="state != 'pending'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="professionalisering_titel"/>
+                            <field name="invited_by"/>
+                        </group>
+                        <group>
+                            <field name="employee_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Invite List View -->
+    <record id="view_professionalisering_invite_list" model="ir.ui.view">
+        <field name="name">professionalisering.invite.list</field>
+        <field name="model">professionalisering.invite</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="professionalisering_titel"/>
+                <field name="invited_by"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'pending'"
+                       decoration-success="state == 'accepted'"
+                       decoration-danger="state == 'rejected'"/>
+                <button name="action_accept" string="Accepteren" type="object"
+                        class="btn-primary" icon="fa-check"
+                        invisible="state != 'pending'"/>
+                <button name="action_reject" string="Weigeren" type="object"
+                        class="btn-danger" icon="fa-times"
+                        invisible="state != 'pending'"/>
+            </list>
         </field>
     </record>
 </odoo>

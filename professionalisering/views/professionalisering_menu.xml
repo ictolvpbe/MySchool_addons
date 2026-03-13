@@ -5,8 +5,7 @@
         <field name="name">Mijn Aanvragen</field>
         <field name="res_model">professionalisering.record</field>
         <field name="view_mode">list,form</field>
-        <field name="domain">[('employee_id.user_id', '=', uid)]</field>
-        <field name="context">{'search_default_my_requests': 1}</field>
+        <field name="domain">['|', ('employee_id.user_id', '=', uid), ('invite_ids.employee_id.user_id', '=', uid)]</field>
     </record>
 
     <!-- Action: To Approve (Directie) -->
@@ -14,7 +13,7 @@
         <field name="name">Te Beoordelen</field>
         <field name="res_model">professionalisering.record</field>
         <field name="view_mode">list,form</field>
-        <field name="domain">[('state', 'in', ('fill_in_form_binnenschoolse', 'fill_in_form_buitenschoolse', 'fill_in_form_externe'))]</field>
+        <field name="domain">[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]</field>
     </record>
 
     <!-- Action: Payments (Boekhouding) -->
@@ -30,7 +29,7 @@
         <field name="name">Vervangingen</field>
         <field name="res_model">professionalisering.record</field>
         <field name="view_mode">list,form</field>
-        <field name="domain">[('state', '=', 'bevestiging'), ('replacement_done', '=', False)]</field>
+        <field name="domain">[('state', '=', 'bevestiging')]</field>
     </record>
 
     <!-- Action: All Requests -->
@@ -38,6 +37,14 @@
         <field name="name">Alle Aanvragen</field>
         <field name="res_model">professionalisering.record</field>
         <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Action: My Invitations -->
+    <record id="action_professionalisering_invites" model="ir.actions.act_window">
+        <field name="name">Mijn Uitnodigingen</field>
+        <field name="res_model">professionalisering.invite</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('employee_id.user_id', '=', uid)]</field>
     </record>
 
     <!-- Root Menu -->
@@ -51,6 +58,12 @@
               parent="menu_professionalisering_root"
               action="action_professionalisering_my"
               sequence="10"/>
+
+    <menuitem id="menu_professionalisering_invites"
+              name="Mijn Uitnodigingen"
+              parent="menu_professionalisering_root"
+              action="action_professionalisering_invites"
+              sequence="15"/>
 
     <menuitem id="menu_professionalisering_approve"
               name="Te Beoordelen"
