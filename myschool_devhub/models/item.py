@@ -36,6 +36,7 @@ class DevhubItem(models.Model):
     release_id = fields.Many2one('devhub.release', string='Release')
     parent_id = fields.Many2one('devhub.item', string='Parent Item')
     child_ids = fields.One2many('devhub.item', 'parent_id', string='Sub-items')
+    child_count = fields.Integer(compute='_compute_child_count', string='Sub-items')
     tag_ids = fields.Many2many('devhub.tag', string='Tags')
     depends_on_ids = fields.Many2many(
         'devhub.item', 'devhub_item_dependency_rel',
@@ -70,6 +71,26 @@ class DevhubItem(models.Model):
                 item.display_name = f"{item.project_id.code}-{item.sequence} {item.name}"
             else:
                 item.display_name = item.name or ''
+
+    @api.depends('child_ids')
+    def _compute_child_count(self):
+        for item in self:
+            item.child_count = len(item.child_ids)
+
+    def action_open_sub_items(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'{self.display_name} - Sub-items',
+            'res_model': 'devhub.item',
+            'view_mode': 'kanban,list,form',
+            'domain': [('parent_id', '=', self.id)],
+            'context': {
+                'default_parent_id': self.id,
+                'default_project_id': self.project_id.id,
+                'default_item_type': 'task',
+            },
+        }
 
     @api.model
     def _group_expand_stage_ids(self, stages, domain):
