@@ -19,7 +19,7 @@
     'data': [
         'security/process_mapper_security.xml',
         'security/ir.model.access.csv',
-        'data/activiteiten_process_data.xml',
+        #'data/activiteiten_process_data.xml',
         'views/process_map_views.xml',
         'views/process_mapper_client_views.xml',
         'views/menu_views.xml',
