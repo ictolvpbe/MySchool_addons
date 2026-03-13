@@ -21,15 +21,17 @@ class PlannerRecord(models.Model):
     )
     titel = fields.Char(string='Onderwerp inhaalmoment', required=True)
     description = fields.Text(string='Beschrijving')
-    available_leerkracht_ids = fields.Many2many(
-        'myschool.person',
-        compute='_compute_available_leerkracht_ids',
-        store=False,
+    afwezige_id = fields.Many2one(
+        'planner.afwezige.leerkracht',
+        string='Afwezige',
     )
     leerkracht_id = fields.Many2one(
-        'myschool.person',
+        'hr.employee',
         string='Afwezige leerkracht',
-        domain="[('id', 'in', available_leerkracht_ids)]",
+    )
+    klas_id = fields.Many2one(
+        'myschool.org',
+        string='Afwezige klas',
     )
     afwezigheid_info = fields.Text(
         string='Afwezigheid',
@@ -126,43 +128,84 @@ class PlannerRecord(models.Model):
             else:
                 record.tijdslot_display = False
 
-    @api.depends('leerkracht_id')
+    @api.onchange('afwezige_id')
+    def _onchange_afwezige_id(self):
+        if self.afwezige_id:
+            afw = self.afwezige_id
+            self.leerkracht_id = afw.employee_id
+            self.klas_id = afw.klas_id
+            self.titel = f'Vervanging {afw.employee_name or ""} - {afw.titel or ""}'
+            if afw.datum:
+                self.inhaal_date = afw.datum.date()
+        else:
+            self.leerkracht_id = False
+            self.klas_id = False
+
+    @api.depends('leerkracht_id', 'klas_id')
     def _compute_afwezigheid_info(self):
         tz = timezone(self.env.user.tz or 'Europe/Brussels')
         for record in self:
-            if not record.leerkracht_id:
+            if not record.leerkracht_id and not record.klas_id:
                 record.afwezigheid_info = False
                 continue
-            activiteiten = self.env['activiteiten.record'].search([
-                ('state', 'in', ('approved', 's_code', 'vervanging', 'done')),
-                ('leerkracht_ids', 'in', [record.leerkracht_id.id]),
-            ], order='datetime asc')
-            if not activiteiten:
-                record.afwezigheid_info = 'Geen activiteiten gevonden.'
-                continue
             lines = []
-            for act in activiteiten:
-                if act.datetime:
-                    utc_start = timezone('UTC').localize(act.datetime)
-                    local_start = utc_start.astimezone(tz)
-                    datum_str = local_start.strftime('%d/%m/%Y %H:%M')
-                    if act.datetime_end:
-                        utc_end = timezone('UTC').localize(act.datetime_end)
-                        local_end = utc_end.astimezone(tz)
-                        datum_str += f' - {local_end.strftime("%H:%M")}'
-                else:
-                    datum_str = 'Geen datum'
-                lines.append(f'{datum_str}: {act.titel or act.name}')
-            record.afwezigheid_info = '\n'.join(lines)
-
-    def _compute_available_leerkracht_ids(self):
-        activiteiten = self.env['activiteiten.record'].search([
-            ('state', 'in', ('approved', 's_code', 'vervanging', 'done')),
-            ('leerkracht_ids', '!=', False),
-        ])
-        all_teacher_ids = activiteiten.mapped('leerkracht_ids').ids
-        for record in self:
-            record.available_leerkracht_ids = [(6, 0, all_teacher_ids)]
+            if record.leerkracht_id:
+                # Activiteiten (via myschool.person link)
+                person = self.env['myschool.person'].search([
+                    ('odoo_employee_id', '=', record.leerkracht_id.id),
+                ], limit=1)
+                if person:
+                    activiteiten = self.env['activiteiten.record'].search([
+                        ('state', 'in', ('approved', 's_code', 'vervanging', 'done')),
+                        ('leerkracht_ids', 'in', [person.id]),
+                    ], order='datetime asc')
+                    for act in activiteiten:
+                        if act.datetime:
+                            utc_start = timezone('UTC').localize(act.datetime)
+                            local_start = utc_start.astimezone(tz)
+                            datum_str = local_start.strftime('%d/%m/%Y %H:%M')
+                            if act.datetime_end:
+                                utc_end = timezone('UTC').localize(act.datetime_end)
+                                local_end = utc_end.astimezone(tz)
+                                datum_str += f' - {local_end.strftime("%H:%M")}'
+                        else:
+                            datum_str = 'Geen datum'
+                        lines.append(f'[Activiteit] {datum_str}: {act.titel or act.name}')
+                # Professionalisering
+                prof_records = self.env['professionalisering.record'].search([
+                    ('state', 'in', ('bevestiging', 'done')),
+                    '|',
+                    ('employee_id', '=', record.leerkracht_id.id),
+                    '&', ('invite_ids.employee_id', '=', record.leerkracht_id.id),
+                         ('invite_ids.state', '=', 'accepted'),
+                ], order='start_date asc')
+                for pr in prof_records:
+                    datum_str = pr.start_date.strftime('%d/%m/%Y') if pr.start_date else 'Geen datum'
+                    if pr.end_date and pr.end_date != pr.start_date:
+                        datum_str += f' - {pr.end_date.strftime("%d/%m/%Y")}'
+                    lines.append(f'[Professionalisering] {datum_str}: {pr.titel}')
+            if record.klas_id:
+                # Activiteiten for this class
+                activiteiten = self.env['activiteiten.record'].search([
+                    ('state', 'in', ('approved', 's_code', 'vervanging', 'done')),
+                    ('klas_ids', 'in', [record.klas_id.id]),
+                ], order='datetime asc')
+                for act in activiteiten:
+                    if act.datetime:
+                        utc_start = timezone('UTC').localize(act.datetime)
+                        local_start = utc_start.astimezone(tz)
+                        datum_str = local_start.strftime('%d/%m/%Y %H:%M')
+                        if act.datetime_end:
+                            utc_end = timezone('UTC').localize(act.datetime_end)
+                            local_end = utc_end.astimezone(tz)
+                            datum_str += f' - {local_end.strftime("%H:%M")}'
+                    else:
+                        datum_str = 'Geen datum'
+                    lines.append(f'[Activiteit] {datum_str}: {act.titel or act.name}')
+            if not lines:
+                record.afwezigheid_info = 'Geen afwezigheden gevonden.'
+            else:
+                record.afwezigheid_info = '\n'.join(lines)
 
     @api.model_create_multi
     def create(self, vals_list):
