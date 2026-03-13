@@ -6,11 +6,12 @@ Log Viewer Model
 Provides functionality to read and tail log files in real-time.
 """
 
+import base64
 import os
 import glob
 from datetime import datetime
 from odoo import models, fields, api, _
-from odoo.exceptions import UserError, AccessError
+from odoo.exceptions import UserError
 from odoo import tools
 import logging
 
@@ -112,8 +113,6 @@ class LogViewer(models.TransientModel):
     @api.model
     def _get_available_logs(self):
         """Get list of available log files."""
-        self._check_admin_access()
-        
         log_files = []
         
         # Get configured log file
@@ -146,12 +145,6 @@ class LogViewer(models.TransientModel):
             log_files.append(('none', 'No log files found'))
         
         return log_files
-
-    def _check_admin_access(self):
-        """Ensure only admins can access log files."""
-        if not self.env.user.has_group('myschool_core.group_myschool_core_admin'):
-            if not self.env.user.has_group('base.group_system'):
-                raise AccessError(_('Only administrators can view log files.'))
 
     def _tail_file(self, filepath, num_lines=100):
         """
@@ -263,8 +256,6 @@ class LogViewer(models.TransientModel):
 
     def action_refresh(self):
         """Refresh the log content."""
-        self._check_admin_access()
-        
         if not self.log_file or self.log_file == 'none':
             self.log_content = "No log file selected."
             return
@@ -285,8 +276,6 @@ class LogViewer(models.TransientModel):
 
     def action_download(self):
         """Download the current log file."""
-        self._check_admin_access()
-        
         if not self.log_file or self.log_file == 'none':
             raise UserError(_('No log file selected.'))
         
@@ -298,7 +287,7 @@ class LogViewer(models.TransientModel):
         attachment = self.env['ir.attachment'].create({
             'name': filename,
             'type': 'binary',
-            'datas': content.encode('utf-8'),
+            'datas': base64.b64encode(content.encode('utf-8')),
             'mimetype': 'text/plain',
         })
         
@@ -320,8 +309,6 @@ class LogViewer(models.TransientModel):
         AJAX endpoint for real-time log updates.
         Called by JavaScript for auto-refresh.
         """
-        self._check_admin_access()
-        
         if not log_file or log_file == 'none':
             return {'content': 'No log file selected.', 'timestamp': ''}
         

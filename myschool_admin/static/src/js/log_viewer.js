@@ -2,184 +2,235 @@
 
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
-import { Component, useState, onWillStart, onMounted, onWillUnmount } from "@odoo/owl";
+import { Component, useState, useRef, onWillStart, onWillUnmount } from "@odoo/owl";
 
 /**
- * Log Viewer Widget Component
- * 
- * Provides real-time log viewing with auto-refresh capability.
- * Similar to 'tail -f' command in Linux.
+ * LogViewerClient — OWL2 client-action component.
+ *
+ * Real-time server-log viewer (tail -f style).
+ * Polls the backend via orm.call() and auto-scrolls.
  */
-export class LogViewerWidget extends Component {
-    static template = "myschool_admin.LogViewerWidget";
-    static props = {
-        logFile: { type: String, optional: true },
-        numLines: { type: Number, optional: true },
-        filterLevel: { type: String, optional: true },
-        searchText: { type: String, optional: true },
-        autoRefresh: { type: Boolean, optional: true },
-        refreshInterval: { type: Number, optional: true },
-    };
+export class LogViewerClient extends Component {
+    static template = "myschool_admin.LogViewerClient";
 
     setup() {
-        this.rpc = useService("rpc");
+        this.orm = useService("orm");
         this.notification = useService("notification");
-        
+        this.logOutputRef = useRef("logOutput");
+
         this.state = useState({
+            selectedLog: "",
+            numLines: 100,
+            filterLevel: "all",
+            searchText: "",
             logContent: "",
-            isLoading: false,
-            lastRefresh: null,
+            autoRefresh: false,
+            refreshInterval: 5,
+            loading: false,
+            availableLogs: [],
             fileSize: "",
+            lastRefresh: "",
             fileModified: "",
-            error: null,
         });
-        
-        this.refreshTimer = null;
-        
-        onMounted(() => {
-            if (this.props.autoRefresh) {
-                this.startAutoRefresh();
+
+        this._refreshTimer = null;
+        this._searchDebounce = null;
+
+        onWillStart(async () => {
+            await this._loadAvailableLogs();
+        });
+
+        onWillUnmount(() => {
+            this._stopAutoRefresh();
+            if (this._searchDebounce) {
+                clearTimeout(this._searchDebounce);
             }
         });
-        
-        onWillUnmount(() => {
-            this.stopAutoRefresh();
-        });
+    }
+
+    // ---- Data loading ----
+
+    async _loadAvailableLogs() {
+        try {
+            const logs = await this.orm.call(
+                "myschool.log.viewer",
+                "_get_available_logs",
+                [],
+            );
+            this.state.availableLogs = logs || [];
+            // Auto-select the first real log
+            if (logs.length && logs[0][0] !== "none") {
+                this.state.selectedLog = logs[0][0];
+                await this.refreshLog();
+            }
+        } catch (e) {
+            console.error("Failed to load available logs:", e);
+            this.notification.add("Could not load log files", { type: "danger" });
+        }
     }
 
     async refreshLog() {
-        if (!this.props.logFile) {
+        const logFile = this.state.selectedLog;
+        if (!logFile || logFile === "none") {
             this.state.logContent = "No log file selected.";
             return;
         }
-        
-        this.state.isLoading = true;
-        this.state.error = null;
-        
+
+        this.state.loading = true;
         try {
-            const result = await this.rpc("/myschool/logviewer/refresh", {
-                log_file: this.props.logFile,
-                num_lines: this.props.numLines || 100,
-                filter_level: this.props.filterLevel || "all",
-                search_text: this.props.searchText || "",
-            });
-            
-            if (result.error) {
-                this.state.error = result.error;
-                this.state.logContent = `Error: ${result.error}`;
-            } else {
-                this.state.logContent = result.content;
-                this.state.lastRefresh = result.timestamp;
-                this.state.fileSize = result.file_size;
-                this.state.fileModified = result.file_modified;
-            }
-        } catch (error) {
-            this.state.error = error.message;
-            this.state.logContent = `Error: ${error.message}`;
-            this.notification.add(error.message, { type: "danger" });
+            const result = await this.orm.call(
+                "myschool.log.viewer",
+                "get_log_content_ajax",
+                [logFile, this.state.numLines, this.state.filterLevel, this.state.searchText || ""],
+            );
+            this.state.logContent = result.content || "";
+            this.state.lastRefresh = result.timestamp || "";
+            this.state.fileSize = result.file_size || "";
+            this.state.fileModified = result.file_modified || "";
+
+            this._scrollToBottom();
+        } catch (e) {
+            console.error("Log refresh error:", e);
+            this.state.logContent = `Error: ${e.message || e}`;
+            this.notification.add("Error loading log", { type: "danger" });
         } finally {
-            this.state.isLoading = false;
+            this.state.loading = false;
         }
     }
 
-    startAutoRefresh() {
-        if (this.refreshTimer) {
-            this.stopAutoRefresh();
+    // ---- Auto-refresh ----
+
+    _startAutoRefresh() {
+        this._stopAutoRefresh();
+        const ms = (this.state.refreshInterval || 5) * 1000;
+        this._refreshTimer = setInterval(() => this.refreshLog(), ms);
+    }
+
+    _stopAutoRefresh() {
+        if (this._refreshTimer) {
+            clearInterval(this._refreshTimer);
+            this._refreshTimer = null;
         }
-        
-        const interval = (this.props.refreshInterval || 5) * 1000;
-        this.refreshTimer = setInterval(() => {
-            this.refreshLog();
-        }, interval);
-        
-        // Initial refresh
+    }
+
+    // ---- Scroll ----
+
+    _scrollToBottom() {
+        requestAnimationFrame(() => {
+            const el = this.logOutputRef.el;
+            if (el) {
+                el.scrollTop = el.scrollHeight;
+            }
+        });
+    }
+
+    // ---- Event handlers ----
+
+    onLogFileChange(ev) {
+        this.state.selectedLog = ev.target.value;
         this.refreshLog();
     }
 
-    stopAutoRefresh() {
-        if (this.refreshTimer) {
-            clearInterval(this.refreshTimer);
-            this.refreshTimer = null;
+    onNumLinesChange(ev) {
+        this.state.numLines = parseInt(ev.target.value) || 100;
+        this.refreshLog();
+    }
+
+    onFilterLevelChange(ev) {
+        this.state.filterLevel = ev.target.value;
+        this.refreshLog();
+    }
+
+    onSearchInput(ev) {
+        const value = ev.target.value;
+        if (this._searchDebounce) {
+            clearTimeout(this._searchDebounce);
+        }
+        this._searchDebounce = setTimeout(() => {
+            this.state.searchText = value;
+            this.refreshLog();
+        }, 300);
+    }
+
+    onToggleAutoRefresh() {
+        this.state.autoRefresh = !this.state.autoRefresh;
+        if (this.state.autoRefresh) {
+            this._startAutoRefresh();
+        } else {
+            this._stopAutoRefresh();
         }
     }
 
-    scrollToBottom() {
-        const logContainer = document.querySelector(".log-content-container");
-        if (logContainer) {
-            logContainer.scrollTop = logContainer.scrollHeight;
+    onIntervalChange(ev) {
+        this.state.refreshInterval = parseInt(ev.target.value) || 5;
+        if (this.state.autoRefresh) {
+            this._startAutoRefresh();
         }
+    }
+
+    onClickRefresh() {
+        this.refreshLog();
+    }
+
+    onClickScrollBottom() {
+        this._scrollToBottom();
+    }
+
+    async onClickDownload() {
+        const logFile = this.state.selectedLog;
+        if (!logFile || logFile === "none") {
+            this.notification.add("No log file selected", { type: "warning" });
+            return;
+        }
+        try {
+            // Create a temporary record and call action_download
+            const ids = await this.orm.call(
+                "myschool.log.viewer",
+                "create",
+                [{ log_file: logFile, num_lines: 10000 }],
+            );
+            const action = await this.orm.call(
+                "myschool.log.viewer",
+                "action_download",
+                [Array.isArray(ids) ? ids : [ids]],
+            );
+            if (action && action.url) {
+                window.open(action.url, "_blank");
+            }
+        } catch (e) {
+            console.error("Download error:", e);
+            this.notification.add("Download failed", { type: "danger" });
+        }
+    }
+
+    onClickClearFilters() {
+        this.state.filterLevel = "all";
+        this.state.searchText = "";
+        this.refreshLog();
+    }
+
+    // ---- Formatting helpers ----
+
+    get lineCount() {
+        if (!this.state.logContent) return 0;
+        return this.state.logContent.split("\n").length;
+    }
+
+    get formattedRefresh() {
+        if (!this.state.lastRefresh) return "";
+        try {
+            const d = new Date(this.state.lastRefresh);
+            return d.toLocaleTimeString("nl-BE");
+        } catch {
+            return this.state.lastRefresh;
+        }
+    }
+
+    get terminalTitle() {
+        if (!this.state.selectedLog) return "log viewer";
+        const parts = this.state.selectedLog.split("/");
+        return parts[parts.length - 1] || "log viewer";
     }
 }
 
-// Register the component
-registry.category("view_widgets").add("log_viewer_widget", LogViewerWidget);
-
-
-/**
- * Auto-refresh handler for the standard form view.
- * This adds auto-refresh capability to the standard log viewer form.
- */
-document.addEventListener("DOMContentLoaded", function() {
-    let autoRefreshTimer = null;
-    
-    function setupAutoRefresh() {
-        const autoRefreshCheckbox = document.querySelector('input[name="auto_refresh"]');
-        const refreshIntervalInput = document.querySelector('input[name="refresh_interval"]');
-        const refreshButton = document.querySelector('button[name="action_refresh"]');
-        
-        if (!autoRefreshCheckbox || !refreshButton) {
-            return;
-        }
-        
-        function startAutoRefresh() {
-            const interval = parseInt(refreshIntervalInput?.value || 5) * 1000;
-            
-            if (autoRefreshTimer) {
-                clearInterval(autoRefreshTimer);
-            }
-            
-            autoRefreshTimer = setInterval(() => {
-                refreshButton.click();
-                scrollLogToBottom();
-            }, interval);
-        }
-        
-        function stopAutoRefresh() {
-            if (autoRefreshTimer) {
-                clearInterval(autoRefreshTimer);
-                autoRefreshTimer = null;
-            }
-        }
-        
-        function scrollLogToBottom() {
-            const logTextarea = document.querySelector('textarea[name="log_content"]');
-            if (logTextarea) {
-                logTextarea.scrollTop = logTextarea.scrollHeight;
-            }
-        }
-        
-        autoRefreshCheckbox.addEventListener("change", function() {
-            if (this.checked) {
-                startAutoRefresh();
-            } else {
-                stopAutoRefresh();
-            }
-        });
-        
-        // Check initial state
-        if (autoRefreshCheckbox.checked) {
-            startAutoRefresh();
-        }
-    }
-    
-    // Setup when form is loaded
-    const observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            if (mutation.addedNodes.length) {
-                setupAutoRefresh();
-            }
-        });
-    });
-    
-    observer.observe(document.body, { childList: true, subtree: true });
-});
+registry.category("actions").add("myschool_log_viewer", LogViewerClient);

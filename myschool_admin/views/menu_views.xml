@@ -365,5 +365,15 @@
               sequence="100"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <!-- ========================================= -->
+    <!-- LOG VIEWER (sequence: 95) -->
+    <!-- ========================================= -->
+
+    <menuitem id="menu_myschool_log_viewer"
+              name="Log Viewer"
+              parent="menu_myschool_root"
+              action="action_log_viewer"
+              sequence="95"
+              groups="myschool_core.group_myschool_core_admin"/>
 
 </odoo>

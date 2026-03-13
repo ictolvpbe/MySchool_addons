@@ -1,52 +1,130 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
-    
-    <t t-name="myschool_admin.LogViewerWidget" >
-        <div class="log-viewer-widget">
-            <div class="log-viewer-header d-flex justify-content-between align-items-center mb-2">
-                <div class="log-viewer-info">
-                    <span t-if="state.lastRefresh" class="text-muted small">
-                        Last refresh: <t t-esc="state.lastRefresh"/>
-                    </span>
-                    <span t-if="state.fileSize" class="text-muted small ms-3">
-                        Size: <t t-esc="state.fileSize"/>
-                    </span>
-                </div>
-                <div class="log-viewer-actions">
-                    <button class="btn btn-sm btn-primary" t-on-click="refreshLog" t-att-disabled="state.isLoading">
-                        <t t-if="state.isLoading">
-                            <span class="spinner-border spinner-border-sm" role="status"/>
-                            Loading...
-                        </t>
-                        <t t-else="">
-                            🔄 Refresh
-                        </t>
+
+    <t t-name="myschool_admin.LogViewerClient">
+        <div class="lv-container">
+
+            <!-- ===== Toolbar ===== -->
+            <div class="lv-toolbar">
+
+                <!-- Log file selector -->
+                <label>File:</label>
+                <select t-on-change="onLogFileChange">
+                    <option value="">-- select log --</option>
+                    <t t-foreach="state.availableLogs" t-as="log" t-key="log[0]">
+                        <option t-att-value="log[0]"
+                                t-att-selected="log[0] === state.selectedLog">
+                            <t t-esc="log[1]"/>
+                        </option>
+                    </t>
+                </select>
+
+                <div class="lv-separator"/>
+
+                <!-- Lines -->
+                <label>Lines:</label>
+                <input type="number" min="10" max="5000" step="50"
+                       t-att-value="state.numLines"
+                       t-on-change="onNumLinesChange"/>
+
+                <div class="lv-separator"/>
+
+                <!-- Level filter -->
+                <label>Level:</label>
+                <select t-on-change="onFilterLevelChange" t-att-value="state.filterLevel">
+                    <option value="all"      t-att-selected="state.filterLevel === 'all'">All</option>
+                    <option value="debug"    t-att-selected="state.filterLevel === 'debug'">DEBUG</option>
+                    <option value="info"     t-att-selected="state.filterLevel === 'info'">INFO</option>
+                    <option value="warning"  t-att-selected="state.filterLevel === 'warning'">WARNING</option>
+                    <option value="error"    t-att-selected="state.filterLevel === 'error'">ERROR</option>
+                    <option value="critical" t-att-selected="state.filterLevel === 'critical'">CRITICAL</option>
+                </select>
+
+                <div class="lv-separator"/>
+
+                <!-- Search -->
+                <input type="text" placeholder="Search..."
+                       t-att-value="state.searchText"
+                       t-on-input="onSearchInput"/>
+
+                <div class="lv-separator"/>
+
+                <!-- Auto-refresh -->
+                <div class="lv-auto-refresh">
+                    <button t-att-class="state.autoRefresh ? 'lv-btn lv-btn-success' : 'lv-btn'"
+                            t-on-click="onToggleAutoRefresh">
+                        <t t-if="state.autoRefresh">Auto ON</t>
+                        <t t-else="">Auto OFF</t>
                     </button>
-                    <button class="btn btn-sm btn-secondary ms-1" t-on-click="scrollToBottom">
-                        ⬇️ Scroll to Bottom
-                    </button>
+                    <input type="number" min="1" max="60"
+                           t-att-value="state.refreshInterval"
+                           t-on-change="onIntervalChange"/>
+                    <span style="font-size:12px;color:#6c757d">s</span>
                 </div>
+
+                <div class="lv-separator"/>
+
+                <!-- Action buttons -->
+                <button class="lv-btn lv-btn-primary" t-on-click="onClickRefresh"
+                        t-att-disabled="state.loading">
+                    Refresh
+                </button>
+                <button class="lv-btn" t-on-click="onClickScrollBottom">
+                    Bottom
+                </button>
+                <button class="lv-btn" t-on-click="onClickDownload">
+                    Download
+                </button>
+                <button class="lv-btn" t-on-click="onClickClearFilters">
+                    Clear
+                </button>
             </div>
-            
-            <div t-if="state.error" class="alert alert-danger" role="alert">
-                <t t-esc="state.error"/>
+
+            <!-- ===== Status bar ===== -->
+            <div class="lv-status-bar">
+                <t t-if="state.autoRefresh">
+                    <span class="lv-live-indicator">
+                        <span class="lv-live-dot"/>
+                        LIVE
+                    </span>
+                </t>
+                <span t-if="lineCount">Lines: <t t-esc="lineCount"/></span>
+                <span t-if="state.fileSize">Size: <t t-esc="state.fileSize"/></span>
+                <span t-if="formattedRefresh">Updated: <t t-esc="formattedRefresh"/></span>
+                <t t-if="state.loading">
+                    <span class="lv-live-indicator" style="color:#58a6ff">
+                        <span class="lv-spinner"/> loading...
+                    </span>
+                </t>
             </div>
-            
-            <div class="log-content-container" 
-                 style="font-family: 'Consolas', 'Monaco', monospace; 
-                        font-size: 12px; 
-                        background-color: #1e1e1e; 
-                        color: #d4d4d4;
-                        padding: 15px; 
-                        border-radius: 5px;
-                        white-space: pre-wrap; 
-                        word-wrap: break-word;
-                        min-height: 400px; 
-                        max-height: 600px; 
-                        overflow-y: auto;">
-                <t t-esc="state.logContent"/>
+
+            <!-- ===== Terminal ===== -->
+            <div class="lv-terminal-wrapper">
+                <div class="lv-terminal-header">
+                    <span class="lv-terminal-dot lv-terminal-dot-red"/>
+                    <span class="lv-terminal-dot lv-terminal-dot-yellow"/>
+                    <span class="lv-terminal-dot lv-terminal-dot-green"/>
+                    <span class="lv-terminal-title"><t t-esc="terminalTitle"/></span>
+                </div>
+
+                <t t-if="!state.selectedLog">
+                    <div class="lv-empty">
+                        <div class="lv-empty-icon">&#128196;</div>
+                        <div>Select a log file to begin.</div>
+                    </div>
+                </t>
+                <t t-elif="state.loading and !state.logContent">
+                    <div class="lv-loading">
+                        <span class="lv-spinner"/>
+                        Loading log file...
+                    </div>
+                </t>
+                <t t-else="">
+                    <pre class="lv-terminal" t-ref="logOutput"><t t-esc="state.logContent"/></pre>
+                </t>
             </div>
+
         </div>
     </t>
-    
+
 </templates>

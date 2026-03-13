@@ -33,3 +33,4 @@ access_recalc_employee_roles_wizard,myschool.recalc.employee.roles.wizard,model_
 access_create_persongroup_wizard,myschool.create.persongroup.wizard,model_myschool_create_persongroup_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_manage_persongroup_members_wizard,myschool.manage.persongroup.members.wizard,model_myschool_manage_persongroup_members_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_cleanup_wizard,myschool.cleanup.wizard,model_myschool_cleanup_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_log_viewer,myschool.log.viewer,model_myschool_log_viewer,myschool_core.group_myschool_core_admin,1,1,1,1
