@@ -9,12 +9,9 @@
                 <field name="datum"/>
                 <field name="datum_end" optional="show"/>
                 <field name="record_type" string="Type"/>
-                <field name="leerkracht_id" invisible="record_type != 'leerkracht'"/>
-                <field name="klas_id" invisible="record_type != 'klas'"/>
+                <field name="employee_name" string="Afwezige"/>
                 <field name="titel"/>
                 <field name="school_id"/>
-                <field name="state" widget="badge"
-                       decoration-success="state in ('approved', 's_code', 'vervanging', 'done')"/>
                 <button name="action_plan_vervanging"
                         string="Vervanging plannen"
                         type="object"
@@ -30,14 +27,15 @@
         <field name="model">planner.afwezige.leerkracht</field>
         <field name="arch" type="xml">
             <search>
-                <field name="leerkracht_id" string="Leerkracht"/>
-                <field name="klas_id" string="Klas"/>
-                <field name="titel" string="Activiteit"/>
+                <field name="employee_name" string="Afwezige"/>
+                <field name="titel" string="Titel"/>
                 <field name="school_id" string="School"/>
                 <filter string="Leerkrachten" name="leerkrachten"
                         domain="[('record_type', '=', 'leerkracht')]"/>
                 <filter string="Klassen" name="klassen"
                         domain="[('record_type', '=', 'klas')]"/>
+                <filter string="Professionalisering" name="professionalisering"
+                        domain="[('record_type', '=', 'professionalisering')]"/>
                 <separator/>
                 <filter string="Vandaag" name="today"
                         domain="[('datum', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00')),
@@ -52,10 +50,8 @@
                             domain="[]" context="{'group_by': 'datum:day'}"/>
                     <filter string="Type" name="group_type"
                             domain="[]" context="{'group_by': 'record_type'}"/>
-                    <filter string="Leerkracht" name="group_leerkracht"
-                            domain="[]" context="{'group_by': 'leerkracht_id'}"/>
-                    <filter string="Klas" name="group_klas"
-                            domain="[]" context="{'group_by': 'klas_id'}"/>
+                    <filter string="Afwezige" name="group_afwezige"
+                            domain="[]" context="{'group_by': 'employee_id'}"/>
                     <filter string="School" name="group_school"
                             domain="[]" context="{'group_by': 'school_id'}"/>
                 </group>
