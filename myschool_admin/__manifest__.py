@@ -55,9 +55,7 @@
         # Menus (must load after all actions are defined)
         'views/menu_views.xml',
 
-        #demo data
-        'data/sequence.xml',
-        'data/sys_event_data.xml',
+        # Note: sequence.xml and sys_event_data.xml are loaded by myschool_core
 
         #Services
         #'services/data/ir_cron_data.xml',
