@@ -479,10 +479,10 @@ class DataExchange(models.TransientModel):
             if not name:
                 skipped += 1
                 continue
+            shortname = item.get('shortname') or None
             role_type = RoleType.search([('name', '=', item.get('role_type', ''))], limit=1)
             vals = {
                 'name': name,
-                'shortname': item.get('shortname') or False,
                 'role_type_id': role_type.id if role_type else False,
                 'has_ui_access': item.get('has_ui_access', True),
                 'has_group': item.get('has_group', False),
@@ -493,7 +493,11 @@ class DataExchange(models.TransientModel):
                 'description': item.get('description') or False,
                 'has_odoo_group': item.get('has_odoo_group', False),
             }
-            shortname = item.get('shortname')
+            # Only set shortname when non-empty to avoid UNIQUE constraint
+            # violations from multiple roles with empty shortname
+            if shortname:
+                vals['shortname'] = shortname
+            # Match by name first, then by shortname
             existing = Role.search([('name', '=', name)], limit=1)
             if not existing and shortname:
                 existing = Role.search([('shortname', '=', shortname)], limit=1)
@@ -678,7 +682,12 @@ class DataExchange(models.TransientModel):
             vals = {'name': name}
             for f in extra_fields:
                 if f in item:
-                    vals[f] = item[f] if item[f] != '' else False
+                    val = item[f]
+                    # Skip empty strings for fields that may have UNIQUE
+                    # constraints (e.g. shortname) to avoid violations
+                    if val == '' and f == 'shortname':
+                        continue
+                    vals[f] = val if val != '' else False
             existing = model.search([('name', '=', name)], limit=1)
             if existing:
                 existing.write(vals)
