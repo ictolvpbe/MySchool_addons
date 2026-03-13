@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<odoo>
-    <menuitem id="menu_afwezigen_root"
-              name="Afwezigen"
-              action="action_afwezigen_open"
-              sequence="15"
-              groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin,base.group_system"/>
-</odoo>

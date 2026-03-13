@@ -11,11 +11,11 @@ class PlannerVervangingLine(models.Model):
         required=True, ondelete='cascade',
     )
     leerkracht_id = fields.Many2one(
-        'myschool.person', string='Leerkracht (afwezig)',
+        'hr.employee', string='Leerkracht (afwezig)',
         required=True,
     )
     vervanger_id = fields.Many2one(
-        'myschool.person', string='Vervanger',
+        'hr.employee', string='Vervanger',
         required=True,
     )
     inhaal_datum = fields.Datetime(
