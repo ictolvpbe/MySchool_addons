@@ -49,6 +49,9 @@
         'views/ldap_server_config_views.xml',
         'views/sync_test_runner_views.xml',
 
+        # Data Exchange
+        'views/data_exchange_views.xml',
+
         # Wizards (must load before menus that reference wizard actions)
         'views/wizard_views.xml',
 
