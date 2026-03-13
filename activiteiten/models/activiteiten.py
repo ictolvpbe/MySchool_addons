@@ -108,11 +108,16 @@ class Activiteiten(models.Model):
     )
     verzekering_done = fields.Boolean(string='Verzekering geregeld', default=False)
     rejection_reason = fields.Text(string='Reden voor afkeuring')
+    invite_ids = fields.One2many(
+        'activiteiten.invite', 'activiteit_id', string='Uitnodigingen',
+    )
+    has_pending_invites = fields.Boolean(compute='_compute_has_pending_invites')
     student_count = fields.Integer(
         string='Aantal leerlingen',
         compute='_compute_student_count',
     )
     is_owner = fields.Boolean(compute='_compute_is_owner')
+    can_manage_invites = fields.Boolean(compute='_compute_can_manage_invites')
     display_state = fields.Selection([
         ('draft', 'Concept'),
         ('form_invullen', 'Formulier invullen'),
@@ -180,7 +185,50 @@ class Activiteiten(models.Model):
     @api.depends_context('uid')
     def _compute_is_owner(self):
         for record in self:
-            record.is_owner = record.create_uid.id == self.env.uid
+            record.is_owner = not record.create_uid or record.create_uid.id == self.env.uid
+
+    @api.depends_context('uid')
+    def _compute_can_manage_invites(self):
+        is_admin = self.env.user.has_group('activiteiten.group_activiteiten_admin')
+        for record in self:
+            record.can_manage_invites = is_admin or record.is_owner
+
+    @api.depends('invite_ids.state')
+    def _compute_has_pending_invites(self):
+        for record in self:
+            record.has_pending_invites = any(
+                i.state == 'pending' for i in record.invite_ids
+            )
+
+    def action_send_invites(self):
+        from .activiteiten_invite import LATE_STATES
+        for record in self:
+            unsent = record.invite_ids.filtered(lambda i: not i.notified and i.state == 'pending')
+            if not unsent:
+                raise UserError("Er zijn geen nieuwe uitnodigingen om te versturen.")
+            unsent._notify_invited_person()
+            unsent.write({'notified': True})
+            # Notify vervangingen if activity is already past approval
+            if record.state in LATE_STATES:
+                self._notify_vervangingen_new_invites(unsent)
+
+    def action_accept_invite(self):
+        for record in self:
+            invite = record.invite_ids.filtered(
+                lambda i: i.person_id.odoo_user_id == self.env.user and i.state == 'pending'
+            )[:1]
+            if not invite:
+                raise UserError("U heeft geen openstaande uitnodiging voor deze activiteit.")
+            invite.action_accept()
+
+    def action_reject_invite(self):
+        for record in self:
+            invite = record.invite_ids.filtered(
+                lambda i: i.person_id.odoo_user_id == self.env.user and i.state == 'pending'
+            )[:1]
+            if not invite:
+                raise UserError("U heeft geen openstaande uitnodiging voor deze activiteit.")
+            invite.action_reject()
 
     dates_display = fields.Html(
         string='Datum',
@@ -352,16 +400,6 @@ class Activiteiten(models.Model):
         ('name_unique', 'UNIQUE(name)', 'De referentie moet uniek zijn.'),
     ]
 
-    @api.model
-    def default_get(self, fields_list):
-        defaults = super().default_get(fields_list)
-        if 'leerkracht_ids' in fields_list:
-            person = self.env['myschool.person'].search(
-                [('odoo_user_id', '=', self.env.uid)], limit=1)
-            if person:
-                defaults['leerkracht_ids'] = [(6, 0, [person.id])]
-        return defaults
-
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
@@ -369,7 +407,20 @@ class Activiteiten(models.Model):
                 vals['name'] = self._next_reference()
             if vals.get('activity_type') and vals.get('state', 'draft') == 'draft':
                 vals['state'] = 'form_invullen'
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        # Auto-add the creator as a teacher with an accepted invite
+        for record in records:
+            person = self.env['myschool.person'].search(
+                [('odoo_user_id', '=', record.create_uid.id)], limit=1)
+            if person:
+                record.leerkracht_ids = [(4, person.id)]
+                self.env['activiteiten.invite'].create({
+                    'activiteit_id': record.id,
+                    'person_id': person.id,
+                    'state': 'accepted',
+                    'notified': True,
+                })
+        return records
 
     def _next_reference(self):
         """Get next unique reference, syncing the sequence if needed."""
@@ -578,6 +629,37 @@ class Activiteiten(models.Model):
                     summary='Vervanging inplannen via Planner',
                     note=f'De S-Code voor activiteit "{record.titel}" is ingevuld. '
                          f'Maak een inhaalplan aan in de Planner en dien het in om de vervanging af te ronden.',
+                    user_id=user.id,
+                )
+
+    def _notify_vervangingen_new_invites(self, invites):
+        """Notify vervangingen team when new teachers are invited after activity is past approval."""
+        vervangingen_group = self.env.ref(
+            'activiteiten.group_activiteiten_vervangingen', raise_if_not_found=False)
+        if not vervangingen_group:
+            return
+        vervangingen_users = vervangingen_group.user_ids
+        if not vervangingen_users:
+            return
+        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        names = ', '.join(invites.mapped('person_id.name'))
+        for record in self:
+            partner_ids = vervangingen_users.mapped('partner_id').ids
+            record.message_post(
+                body=(
+                    '<p><strong>Vervanging update:</strong> Nieuwe uitnodiging(en) verstuurd '
+                    'voor activiteit <strong>%s</strong> aan: %s. '
+                    'De vervanging moet mogelijk aangepast worden.</p>'
+                ) % (record.titel, names),
+                partner_ids=partner_ids,
+                message_type='notification',
+                subtype_xmlid='mail.mt_note',
+            )
+            for user in vervangingen_users:
+                record.activity_schedule(
+                    activity_type_id=activity_type.id if activity_type else False,
+                    summary='Vervanging aanpassen: %s' % record.titel,
+                    note='Nieuwe leerkracht(en) uitgenodigd: %s. Controleer de vervanging.' % names,
                     user_id=user.id,
                 )
 

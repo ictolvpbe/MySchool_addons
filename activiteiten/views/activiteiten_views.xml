@@ -138,9 +138,6 @@
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="klas_ids" widget="many2many_tags"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
-                            <field name="leerkracht_ids" widget="many2many_tags"
-                                   options="{'no_quick_create': True, 'no_create': True}"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="lokaal"
                                    placeholder="bv. A101, Turnzaal, ..."
                                    invisible="activity_type != 'binnenschools'"
@@ -199,8 +196,37 @@
                         </group>
                     </group>
 
+                    <!-- Pending invite warning -->
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not has_pending_invites">
+                        <field name="has_pending_invites" invisible="1"/>
+                        <strong>Let op:</strong> Er zijn nog openstaande uitnodigingen.
+                    </div>
+
                     <!-- Tabs -->
                     <notebook invisible="not activity_type">
+                        <!-- Uitnodigingen tab -->
+                        <page string="Uitnodigingen">
+                            <field name="can_manage_invites" invisible="1"/>
+                            <button name="action_send_invites"
+                                    string="Uitnodigingen versturen"
+                                    type="object"
+                                    class="btn-primary mb-3"
+                                    invisible="(state not in ('draft', 'form_invullen', 'bus_refused', 'approved', 's_code', 'vervanging', 'done') or not invite_ids or not can_manage_invites)"/>
+                            <field name="invite_ids"
+                                   readonly="not can_manage_invites or state not in ('draft', 'form_invullen', 'bus_refused', 'approved', 's_code', 'vervanging', 'done')">
+                                <list editable="bottom">
+                                    <field name="person_id"
+                                           domain="[('id', 'in', parent.available_leerkracht_ids)]"
+                                           options="{'no_quick_create': True, 'no_create': True}"/>
+                                    <field name="notified" column_invisible="1"/>
+                                    <field name="state" readonly="1" widget="badge"
+                                           decoration-info="state == 'pending'"
+                                           decoration-success="state == 'accepted'"
+                                           decoration-danger="state == 'rejected'"/>
+                                </list>
+                            </field>
+                        </page>
                         <page string="Beschrijving">
                             <field name="description"
                                    placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
