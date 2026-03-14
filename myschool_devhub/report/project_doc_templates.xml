@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- End-User Documentation PDF Template -->
+    <template id="report_user_doc">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="doc">
+                <t t-call="web.external_layout">
+                    <div class="page" style="font-family:sans-serif;line-height:1.6;color:#333;">
+                        <t t-if="doc.doc_user_html">
+                            <t t-out="doc.doc_user_html"/>
+                        </t>
+                        <t t-else="">
+                            <h1 t-field="doc.name"/>
+                            <p style="color:#888;">No end-user documentation has been generated yet.
+                               Please generate it from the project form first.</p>
+                        </t>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <!-- Technical Documentation PDF Template -->
+    <template id="report_tech_doc">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="doc">
+                <t t-call="web.external_layout">
+                    <div class="page" style="font-family:sans-serif;line-height:1.6;color:#333;">
+                        <t t-if="doc.doc_technical_html">
+                            <t t-out="doc.doc_technical_html"/>
+                        </t>
+                        <t t-else="">
+                            <h1 t-field="doc.name"/>
+                            <p style="color:#888;">No technical documentation has been generated yet.
+                               Please generate it from the project form first.</p>
+                        </t>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+</odoo>
