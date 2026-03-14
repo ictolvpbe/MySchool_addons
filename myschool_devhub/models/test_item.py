@@ -1,3 +1,5 @@
+import re
+
 from odoo import models, fields, api
 
 
@@ -16,6 +18,8 @@ class DevhubTestItem(models.Model):
     test_type_id = fields.Many2one('devhub.test.type', string='Test Type')
     module_id = fields.Many2one('ir.module.module', string='Module')
     view_name = fields.Char(string='View XML ID')
+    view_display_name = fields.Char(string='View', compute='_compute_view_display_name',
+                                     store=True)
     element_info = fields.Char(string='Element Info')
     state = fields.Selection([
         ('not_tested', 'Not Tested'),
@@ -32,6 +36,17 @@ class DevhubTestItem(models.Model):
     ], default='manual', required=True)
     sequence = fields.Integer(default=10)
     is_active = fields.Boolean(default=True)
+
+    @api.depends('view_name')
+    def _compute_view_display_name(self):
+        for rec in self:
+            name = rec.view_name or ''
+            # Strip module prefix (e.g. "myschool_admin.some_view" → "some_view")
+            if '.' in name:
+                name = name.split('.', 1)[1]
+            # Convert underscores to spaces and title-case for readability
+            name = re.sub(r'_', ' ', name).strip().title()
+            rec.view_display_name = name
 
     def action_pass(self):
         self.write({

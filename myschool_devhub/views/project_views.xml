@@ -1,6 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <!-- Project Kanban View -->
+    <record id="devhub_project_view_kanban" model="ir.ui.view">
+        <field name="name">devhub.project.kanban</field>
+        <field name="model">devhub.project</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="responsible_id"/>
+                <field name="item_count"/>
+                <field name="open_bug_count"/>
+                <field name="process_map_count"/>
+                <field name="test_progress"/>
+                <field name="is_active"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <strong class="fs-5"><field name="name"/></strong>
+                            <span class="badge text-bg-secondary"><field name="code"/></span>
+                        </div>
+                        <field name="responsible_id" widget="many2one_avatar_user"/>
+                        <div class="d-flex gap-3 mt-2 text-muted small">
+                            <span title="Items"><i class="fa fa-tasks"/> <field name="item_count"/></span>
+                            <span title="Open Bugs" t-if="record.open_bug_count.raw_value > 0"
+                                  class="text-danger">
+                                <i class="fa fa-bug"/> <field name="open_bug_count"/>
+                            </span>
+                            <span title="Process Maps" t-if="record.process_map_count.raw_value > 0">
+                                <i class="fa fa-sitemap"/> <field name="process_map_count"/>
+                            </span>
+                        </div>
+                        <div class="mt-2" t-if="record.test_progress.raw_value > 0">
+                            <field name="test_progress" widget="progressbar"/>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
     <!-- Project List View -->
     <record id="devhub_project_view_list" model="ir.ui.view">
         <field name="name">devhub.project.list</field>
@@ -50,6 +90,12 @@
         <field name="model">devhub.project</field>
         <field name="arch" type="xml">
             <form class="o_devhub_project_form">
+                <header>
+                    <button name="action_save_form" type="object"
+                        string="Save" class="btn-primary" icon="fa-save"/>
+                    <button string="Cancel" special="cancel"
+                        class="btn-secondary" icon="fa-undo"/>
+                </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
                         <button name="action_open_process_maps" type="object"
@@ -278,7 +324,7 @@
     <record id="devhub_project_action" model="ir.actions.act_window">
         <field name="name">Projects</field>
         <field name="res_model">devhub.project</field>
-        <field name="view_mode">list,form</field>
+        <field name="view_mode">kanban,list,form</field>
         <field name="context">{'search_default_active': 1}</field>
     </record>
 
