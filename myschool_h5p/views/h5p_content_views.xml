@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="h5p_content_view_list" model="ir.ui.view">
+        <field name="name">h5p.content.list</field>
+        <field name="model">h5p.content</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="content_type" widget="badge"/>
+                <field name="learning_path_id"/>
+                <field name="h5p_filename"/>
+                <field name="result_count"/>
+                <field name="avg_score"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="h5p_content_view_form" model="ir.ui.view">
+        <field name="name">h5p.content.form</field>
+        <field name="model">h5p.content</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_results" type="object"
+                                class="oe_stat_button" icon="fa-bar-chart"
+                                invisible="result_count == 0">
+                            <field name="result_count" string="Results" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Content Title"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="content_type"/>
+                            <field name="learning_path_id"/>
+                            <field name="sequence"/>
+                        </group>
+                        <group>
+                            <field name="h5p_file" filename="h5p_filename"/>
+                            <field name="h5p_filename" invisible="True"/>
+                            <field name="avg_score"/>
+                        </group>
+                    </group>
+                    <div class="mb-3" invisible="not h5p_file">
+                        <button name="action_preview" type="object"
+                            string="Play H5P Content" class="btn btn-primary"
+                            icon="fa-play-circle"/>
+                    </div>
+                    <field name="description" placeholder="Optional description..."/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="h5p_content_view_search" model="ir.ui.view">
+        <field name="name">h5p.content.search</field>
+        <field name="model">h5p.content</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="learning_path_id"/>
+                <separator/>
+                <filter string="Content Type" name="group_type"
+                    context="{'group_by': 'content_type'}"/>
+                <filter string="Learning Path" name="group_path"
+                    context="{'group_by': 'learning_path_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="h5p_content_action" model="ir.actions.act_window">
+        <field name="name">H5P Content</field>
+        <field name="res_model">h5p.content</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>
