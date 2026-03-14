@@ -92,6 +92,19 @@ class DevhubProject(models.Model):
         for project in self:
             project.process_map_count = len(project.process_map_ids)
 
+    def action_save_form(self):
+        """Explicit save — the record is already saved before this method runs."""
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Saved',
+                'message': 'Project saved successfully.',
+                'type': 'success',
+                'sticky': False,
+            },
+        }
+
     def action_open_process_maps(self):
         self.ensure_one()
         return {
@@ -133,6 +146,7 @@ class DevhubProject(models.Model):
             'domain': [('project_id', '=', self.id)],
             'context': {
                 'default_project_id': self.id,
+                'search_default_group_type': 1,
                 'search_default_group_view': 1,
             },
         }

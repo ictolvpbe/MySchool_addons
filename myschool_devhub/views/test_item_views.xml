@@ -113,7 +113,7 @@
                 <separator/>
                 <filter string="My Tests" name="my_tests" domain="[('tester_id', '=', uid)]"/>
                 <separator/>
-                <filter string="View" name="group_view" context="{'group_by': 'view_name'}"/>
+                <filter string="View" name="group_view" context="{'group_by': 'view_display_name'}"/>
                 <filter string="State" name="group_state" context="{'group_by': 'state'}"/>
                 <filter string="Test Type" name="group_type" context="{'group_by': 'test_type_id'}"/>
                 <filter string="Module" name="group_module" context="{'group_by': 'module_id'}"/>
@@ -128,7 +128,7 @@
         <field name="name">Things To Test (3T)</field>
         <field name="res_model">devhub.test.item</field>
         <field name="view_mode">list,form</field>
-        <field name="context">{'search_default_not_tested': 1}</field>
+        <field name="context">{'search_default_not_tested': 1, 'search_default_group_type': 1}</field>
     </record>
 
     <!-- Test Type Action (for config) -->
