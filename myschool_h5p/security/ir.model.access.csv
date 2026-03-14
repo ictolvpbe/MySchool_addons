@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_h5p_learning_path,h5p.learning.path,model_h5p_learning_path,base.group_user,1,1,1,1
+access_h5p_content,h5p.content,model_h5p_content,base.group_user,1,1,1,1
+access_h5p_result,h5p.result,model_h5p_result,base.group_user,1,1,1,0

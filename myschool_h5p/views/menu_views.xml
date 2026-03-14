@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <menuitem id="h5p_menu_root" name="H5P Learning"
+        web_icon="myschool_h5p,static/description/icon.png"
+        sequence="35"/>
+
+    <menuitem id="h5p_menu_paths" name="Learning Paths"
+        parent="h5p_menu_root"
+        action="h5p_learning_path_action"
+        sequence="10"/>
+
+    <menuitem id="h5p_menu_content" name="Content Library"
+        parent="h5p_menu_root"
+        action="h5p_content_action"
+        sequence="20"/>
+
+    <menuitem id="h5p_menu_results" name="Results"
+        parent="h5p_menu_root"
+        action="h5p_result_action"
+        sequence="30"/>
+
+</odoo>
