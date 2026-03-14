@@ -2,3 +2,164 @@
 .o_devhub_project_form .o_form_sheet_bg {
     max-width: 100%;
 }
+
+/* ---- Process Mapper: User Story selector ---- */
+.pm-story-linked {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: #E8F5E9;
+    border: 1px solid #A5D6A7;
+    border-radius: 4px;
+    font-size: 12px;
+}
+.pm-story-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pm-story-clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #888;
+    padding: 0 2px;
+    font-size: 11px;
+}
+.pm-story-clear:hover {
+    color: #d32f2f;
+}
+
+.pm-story-search-wrapper {
+    display: flex;
+    gap: 4px;
+}
+.pm-story-search {
+    flex: 1;
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+}
+.pm-story-create-toggle {
+    background: #4CAF50;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    width: 28px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.pm-story-create-toggle:hover {
+    background: #388E3C;
+}
+
+.pm-story-results {
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-top: 4px;
+    background: #fff;
+}
+.pm-story-result-item {
+    padding: 5px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+.pm-story-result-item:last-child {
+    border-bottom: none;
+}
+.pm-story-result-item:hover {
+    background: #E8F5E9;
+}
+.pm-story-no-results {
+    padding: 8px;
+    font-size: 12px;
+    color: #888;
+    text-align: center;
+}
+
+.pm-story-create-form {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.pm-story-create-form input,
+.pm-story-create-form select {
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+}
+.pm-story-create-btn {
+    background: #4CAF50;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    align-self: flex-start;
+}
+.pm-story-create-btn:hover {
+    background: #388E3C;
+}
+
+/* ---- Documentation container ---- */
+.devhub-doc-container {
+    max-height: 70vh;
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 16px;
+    background: #fafafa;
+}
+.devhub-doc h1 {
+    font-size: 24px;
+    color: #1a237e;
+    margin-bottom: 4px;
+}
+.devhub-doc h2 {
+    font-size: 20px;
+    color: #283593;
+    border-bottom: 2px solid #e8eaf6;
+    padding-bottom: 4px;
+    margin-top: 24px;
+}
+.devhub-doc h3 {
+    font-size: 16px;
+    color: #3949ab;
+    margin-top: 16px;
+}
+.devhub-doc h4 {
+    font-size: 14px;
+    color: #5c6bc0;
+    margin-top: 12px;
+}
+.devhub-doc table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+    font-size: 13px;
+}
+.devhub-doc th {
+    background: #f5f5f5;
+    font-weight: 600;
+}
+.devhub-doc th, .devhub-doc td {
+    border: 1px solid #ddd;
+    padding: 6px 8px;
+    text-align: left;
+}
+.devhub-doc code {
+    background: #f5f5f5;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+

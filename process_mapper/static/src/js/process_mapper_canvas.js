@@ -1,6 +1,6 @@
 /** @odoo-module */
 
-import { Component, useState, useRef, onWillStart, onMounted, onWillUnmount } from "@odoo/owl";
+import { Component, useState, useRef, onWillStart, onMounted, onWillUnmount, onWillUpdateProps } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 
@@ -1688,6 +1688,8 @@ class ProcessMapperProperties extends Component {
         onCreatePreset: { type: Function },
         onUpdatePresetColor: { type: Function },
         onDelete: { type: Function },
+        requestFieldBuilder: { type: Boolean, optional: true },
+        onFieldBuilderOpened: { type: Function, optional: true },
     };
 
     setup() {
@@ -1699,6 +1701,17 @@ class ProcessMapperProperties extends Component {
             newPresetColor: '#E3F2FD',
         });
         this.stepIcons = STEP_ICONS;
+        this._lastRequestFieldBuilder = false;
+
+        onWillUpdateProps((nextProps) => {
+            if (nextProps.requestFieldBuilder && !this._lastRequestFieldBuilder) {
+                this.state.showFieldBuilder = true;
+                if (nextProps.onFieldBuilderOpened) {
+                    nextProps.onFieldBuilderOpened();
+                }
+            }
+            this._lastRequestFieldBuilder = nextProps.requestFieldBuilder || false;
+        });
     }
 
     onInputChange(field, ev) {
@@ -1935,6 +1948,7 @@ class ProcessMapperCanvas extends Component {
         onSnapStepToGrid: { type: Function },
         onSnapStepsToGrid: { type: Function },
         onUpdateLabelOffset: { type: Function },
+        onStepContextMenu: { type: Function, optional: true },
         snapIndicators: { type: Array },
     };
 
@@ -2698,6 +2712,12 @@ class ProcessMapperCanvas extends Component {
         }, 50);
     }
 
+    onStepContextMenu(ev, step) {
+        if (this.props.onStepContextMenu) {
+            this.props.onStepContextMenu(step.id, ev.clientX, ev.clientY);
+        }
+    }
+
     onEditInput(ev) {
         this.state.editingText = ev.target.value;
     }
@@ -3015,6 +3035,10 @@ class ProcessMapperClient extends Component {
             canvasWidth: 800,
             canvasHeight: 600,
             lanePresets: [],
+            contextMenu: { visible: false, x: 0, y: 0, stepId: null },
+            rolePopover: { visible: false, x: 0, y: 0, stepId: null },
+            rolePopoverQuery: '',
+            requestFieldBuilder: false,
         });
 
         this._onKeydown = this._onKeydown.bind(this);
@@ -3255,6 +3279,12 @@ class ProcessMapperClient extends Component {
     onSelectElement(id, type) {
         this.state.selectedIds = id !== null ? [id] : [];
         this.state.selectedType = type;
+        if (this.state.contextMenu.visible) {
+            this.closeContextMenu();
+        }
+        if (this.state.rolePopover.visible) {
+            this.closeRolePopover();
+        }
     }
 
     onMultiSelect(ids) {
@@ -3747,6 +3777,105 @@ class ProcessMapperClient extends Component {
         this._pushHistory();
     }
 
+    // --- Context Menu ---
+
+    onStepContextMenu(stepId, clientX, clientY) {
+        // Select the step
+        this.onSelectElement(stepId, 'step');
+        // Close role popover if open
+        if (this.state.rolePopover.visible) {
+            this.closeRolePopover();
+        }
+        // Position relative to the pm-main container
+        const main = document.querySelector('.pm-main');
+        const rect = main ? main.getBoundingClientRect() : { left: 0, top: 0 };
+        this.state.contextMenu = {
+            visible: true,
+            x: clientX - rect.left,
+            y: clientY - rect.top,
+            stepId,
+        };
+    }
+
+    closeContextMenu() {
+        this.state.contextMenu = { visible: false, x: 0, y: 0, stepId: null };
+    }
+
+    _getContextMenuStep() {
+        const id = this.state.contextMenu.stepId;
+        return id ? this.state.steps.find(s => s.id === id) : null;
+    }
+
+    getContextMenuItems() {
+        const step = this._getContextMenuStep();
+        if (!step) return [];
+        return [
+            {
+                id: 'role',
+                label: step.role_id ? 'Change Role' : 'Add Role',
+                icon: 'fa-users',
+            },
+            {
+                id: 'field_builder',
+                label: 'Field Builder',
+                icon: 'fa-wrench',
+            },
+            {
+                id: 'delete',
+                label: 'Delete',
+                icon: 'fa-trash',
+            },
+        ];
+    }
+
+    getFilteredRoles() {
+        const q = (this.state.rolePopoverQuery || '').toLowerCase();
+        if (!q) return this.state.roles || [];
+        return (this.state.roles || []).filter(r => r.name.toLowerCase().includes(q));
+    }
+
+    onContextMenuAction(itemId) {
+        if (itemId === 'role') {
+            // Capture position, close menu, open role popover
+            const { x, y, stepId } = this.state.contextMenu;
+            this.closeContextMenu();
+            this.state.rolePopover = { visible: true, x, y, stepId };
+            this.state.rolePopoverQuery = '';
+            return;
+        }
+        if (itemId === 'field_builder') {
+            this.closeContextMenu();
+            this.state.requestFieldBuilder = true;
+            return;
+        }
+        if (itemId === 'delete') {
+            this.closeContextMenu();
+            this.onDelete();
+            return;
+        }
+    }
+
+    onCtxSetRole(roleId) {
+        const stepId = this.state.rolePopover.stepId;
+        const step = stepId ? this.state.steps.find(s => s.id === stepId) : null;
+        if (!step) return;
+        step.role_id = roleId || false;
+        const role = roleId ? this.state.roles.find(r => r.id === roleId) : null;
+        step.role_name = role ? role.name : '';
+        this.state.dirty = true;
+        this._pushHistory();
+        this.closeRolePopover();
+    }
+
+    closeRolePopover() {
+        this.state.rolePopover = { visible: false, x: 0, y: 0, stepId: null };
+        this.state.rolePopoverQuery = '';
+    }
+
+    onFieldBuilderOpened() {
+        this.state.requestFieldBuilder = false;
+    }
+
     // --- Copy/Paste ---
 
     _copySelected() {
@@ -4115,6 +4244,12 @@ class ProcessMapperClient extends Component {
     // --- Keyboard ---
 
     _onKeydown(ev) {
+        // Escape closes role popover even when input is focused
+        if (ev.key === 'Escape' && this.state.rolePopover.visible) {
+            ev.preventDefault();
+            this.closeRolePopover();
+            return;
+        }
         // Don't handle if input focused
         if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'TEXTAREA' || ev.target.tagName === 'SELECT') return;
 

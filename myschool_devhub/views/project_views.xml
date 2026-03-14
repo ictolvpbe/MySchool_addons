@@ -52,6 +52,11 @@
             <form class="o_devhub_project_form">
                 <sheet>
                     <div class="oe_button_box" name="button_box">
+                        <button name="action_open_process_maps" type="object"
+                                class="oe_stat_button" icon="fa-sitemap"
+                                invisible="process_map_count == 0">
+                            <field name="process_map_count" string="Process Maps" widget="statinfo"/>
+                        </button>
                         <button name="action_open_test_items" type="object"
                                 class="oe_stat_button" icon="fa-check-square-o"
                                 invisible="test_item_count == 0">
@@ -71,10 +76,16 @@
                             <field name="is_active"/>
                         </group>
                     </group>
+                    <div class="mb-3">
+                        <button name="action_open_or_create_process_map" type="object"
+                            string="Process Map" class="btn btn-secondary"
+                            icon="fa-sitemap"/>
+                    </div>
                     <notebook>
                         <page string="User Stories" name="stories">
                             <field name="story_ids">
                                 <list>
+                                    <field name="sequence" widget="handle"/>
                                     <field name="display_name" string="Story"/>
                                     <button name="action_open_sub_items" type="object"
                                         string="Open Items" icon="fa-th-large"
@@ -95,6 +106,7 @@
                                 icon="fa-th-large"/>
                             <field name="bug_ids">
                                 <list>
+                                    <field name="sequence" widget="handle"/>
                                     <field name="display_name" string="Item"/>
                                     <field name="stage_id"/>
                                     <field name="priority" widget="priority"/>
@@ -111,6 +123,7 @@
                                 icon="fa-th-large"/>
                             <field name="improvement_ids">
                                 <list>
+                                    <field name="sequence" widget="handle"/>
                                     <field name="display_name" string="Item"/>
                                     <field name="item_type" widget="badge"
                                         decoration-info="item_type == 'story'"
@@ -130,6 +143,7 @@
                                 icon="fa-th-large"/>
                             <field name="item_ids">
                                 <list>
+                                    <field name="sequence" widget="handle"/>
                                     <field name="display_name" string="Item"/>
                                     <field name="item_type" widget="badge"
                                         decoration-danger="item_type == 'bug'"
@@ -168,6 +182,9 @@
                             </field>
                         </page>
                         <page string="Process Maps" name="process_maps">
+                            <button name="action_create_process_map" type="object"
+                                string="New Process Map" class="btn btn-primary mb-3"
+                                icon="fa-plus"/>
                             <field name="process_map_ids">
                                 <list>
                                     <field name="name"/>
@@ -198,6 +215,42 @@
                         </page>
                         <page string="Description" name="description">
                             <field name="description"/>
+                        </page>
+                        <page string="Documentation" name="documentation">
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <button name="action_generate_user_doc" type="object"
+                                    string="Generate End-User Doc" class="btn btn-primary"
+                                    icon="fa-book"
+                                    confirm="Generate end-user documentation from project data?"/>
+                                <button name="action_generate_tech_doc" type="object"
+                                    string="Generate Technical Doc" class="btn btn-primary"
+                                    icon="fa-cogs"
+                                    confirm="Generate technical documentation from project data?"/>
+                                <button name="%(myschool_devhub.action_report_user_doc)d" type="action"
+                                    string="Download User Doc PDF" class="btn btn-secondary"
+                                    icon="fa-file-pdf-o"
+                                    invisible="not doc_user_html"/>
+                                <button name="%(myschool_devhub.action_report_tech_doc)d" type="action"
+                                    string="Download Tech Doc PDF" class="btn btn-secondary"
+                                    icon="fa-file-pdf-o"
+                                    invisible="not doc_technical_html"/>
+                                <span class="text-muted" invisible="not doc_generated_date">
+                                    Last generated: <field name="doc_generated_date" widget="datetime"/>
+                                </span>
+                            </div>
+                            <div invisible="not doc_user_html" class="mb-4">
+                                <h3>End-User Documentation</h3>
+                                <field name="doc_user_html" class="devhub-doc-container"/>
+                            </div>
+                            <div invisible="not doc_technical_html" class="mb-4">
+                                <h3>Technical Documentation</h3>
+                                <field name="doc_technical_html" class="devhub-doc-container"/>
+                            </div>
+                            <div invisible="doc_user_html or doc_technical_html">
+                                <p class="text-muted">
+                                    No documentation generated yet. Click one of the buttons above to generate.
+                                </p>
+                            </div>
                         </page>
                     </notebook>
                 </sheet>

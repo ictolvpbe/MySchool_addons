@@ -187,7 +187,8 @@
                     <t t-foreach="props.steps" t-as="step" t-key="step.id">
                         <g t-att-class="getStepClass(step)"
                            t-on-mousedown.stop="(ev) => this.onStepMouseDown(ev, step)"
-                           t-on-dblclick.stop="(ev) => this.onStepDblClick(ev, step)">
+                           t-on-dblclick.stop="(ev) => this.onStepDblClick(ev, step)"
+                           t-on-contextmenu.stop.prevent="(ev) => this.onStepContextMenu(ev, step)">
 
                             <!-- Start Event: circle -->
                             <t t-if="step.step_type === 'start'">
@@ -340,6 +341,20 @@
                                       font-size="9" fill="#F9A825" text-anchor="middle" dominant-baseline="central"
                                       font-weight="bold" class="pm-annotation-icon">i</text>
                                 <title><t t-esc="step.annotation"/></title>
+                            </t>
+
+                            <!-- User story indicator (populated by myschool_devhub when installed) -->
+                            <t t-if="step.devhub_item_id and (step.step_type === 'task' or step.step_type === 'subprocess')">
+                                <g class="pm-story-indicator">
+                                    <circle t-att-cx="step.x_position + 12"
+                                            t-att-cy="step.y_position + (step.height || 60) - 12" r="7"
+                                            fill="#E8F5E9" stroke="#4CAF50" stroke-width="1"/>
+                                    <text t-att-x="step.x_position + 12"
+                                          t-att-y="step.y_position + (step.height || 60) - 11"
+                                          font-size="9" fill="#4CAF50" text-anchor="middle" dominant-baseline="central"
+                                          font-weight="bold">S</text>
+                                    <title><t t-esc="'Story: ' + (step.devhub_item_name || '')"/></title>
+                                </g>
                             </t>
 
                             <!-- Connector dots (visible on hover) -->
@@ -1640,7 +1655,8 @@
                         onSnapStepToGrid="(id) => this.onSnapStepToGrid(id)"
                         onSnapStepsToGrid="(ids) => this.onSnapStepsToGrid(ids)"
                         onUpdateLabelOffset="(connId, t) => this.onUpdateLabelOffset(connId, t)"
-                        snapIndicators="state.snapIndicators"/>
+                        snapIndicators="state.snapIndicators"
+                        onStepContextMenu="(id, cx, cy) => this.onStepContextMenu(id, cx, cy)"/>
 
                     <ProcessMapperProperties
                         selectedElement="this.getSelectedElement()"
@@ -1655,7 +1671,77 @@
                         onFieldRecordsSave="(stepId, result) => this.onFieldRecordsSave(stepId, result)"
                         onCreatePreset="(name, color) => this.onCreatePreset(name, color)"
                         onUpdatePresetColor="(id, color) => this.onUpdatePresetColor(id, color)"
-                        onDelete="() => this.onDelete()"/>
+                        onDelete="() => this.onDelete()"
+                        requestFieldBuilder="state.requestFieldBuilder"
+                        onFieldBuilderOpened="() => this.onFieldBuilderOpened()"/>
+
+                    <!-- Context Menu overlay -->
+                    <t t-if="state.contextMenu.visible">
+                        <div class="pm-ctx-backdrop" t-on-click="() => this.closeContextMenu()"
+                             t-on-contextmenu.prevent="() => this.closeContextMenu()"/>
+                        <div class="pm-ctx-menu"
+                             t-attf-style="left:#{state.contextMenu.x}px;top:#{state.contextMenu.y}px">
+                            <t t-foreach="getContextMenuItems()" t-as="item" t-key="item.id">
+                                <div t-attf-class="pm-ctx-item #{item.id === 'delete' ? 'pm-ctx-item-danger' : ''}"
+                                     t-on-click.stop="() => this.onContextMenuAction(item.id)">
+                                    <i t-attf-class="fa #{item.icon} pm-ctx-icon"/>
+                                    <span t-esc="item.label"/>
+                                </div>
+                            </t>
+                        </div>
+                    </t>
+
+                    <!-- Role Popover -->
+                    <t t-if="state.rolePopover.visible">
+                        <div class="pm-ctx-backdrop" t-on-click="() => this.closeRolePopover()"
+                             t-on-contextmenu.prevent="() => this.closeRolePopover()"/>
+                        <div class="pm-role-popover"
+                             t-attf-style="left:#{state.rolePopover.x}px;top:#{state.rolePopover.y}px">
+                            <div class="pm-role-popover-header">
+                                <span>Select Role</span>
+                                <button class="pm-role-popover-close"
+                                        t-on-click.stop="() => this.closeRolePopover()"
+                                        title="Close">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <div class="pm-role-popover-search">
+                                <input type="text" placeholder="Search roles..."
+                                       t-att-value="state.rolePopoverQuery"
+                                       t-on-input="(ev) => { this.state.rolePopoverQuery = ev.target.value; }"
+                                       t-on-click.stop="() => {}"/>
+                            </div>
+                            <!-- Current role -->
+                            <t t-set="popoverStep" t-value="state.rolePopover.stepId ? state.steps.find(s => s.id === state.rolePopover.stepId) : null"/>
+                            <t t-if="popoverStep and popoverStep.role_id">
+                                <div class="pm-role-popover-current">
+                                    <i class="fa fa-user text-success"/>
+                                    <span t-esc="popoverStep.role_name"/>
+                                    <button class="pm-role-popover-remove"
+                                            t-on-click.stop="() => this.onCtxSetRole(false)"
+                                            title="Remove role">
+                                        <i class="fa fa-times"/>
+                                    </button>
+                                </div>
+                            </t>
+                            <!-- Role list -->
+                            <div class="pm-role-popover-list">
+                                <t t-foreach="this.getFilteredRoles()" t-as="role" t-key="role.id">
+                                    <div class="pm-role-popover-item"
+                                         t-on-click.stop="() => this.onCtxSetRole(role.id)">
+                                        <i class="fa fa-user"/>
+                                        <span t-esc="role.name"/>
+                                    </div>
+                                </t>
+                                <t t-if="this.getFilteredRoles().length === 0">
+                                    <div class="pm-role-popover-empty">
+                                        <i class="fa fa-info-circle"/>
+                                        <span>No roles found</span>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
                 </div>
 
                 <!-- Minimap overlay -->
