@@ -23,6 +23,8 @@
         'data/stage_data.xml',
         'data/tag_data.xml',
         'data/test_type_data.xml',
+        'report/project_doc_reports.xml',
+        'report/project_doc_templates.xml',
         'views/project_views.xml',
         'views/item_views.xml',
         'views/test_item_views.xml',
@@ -33,6 +35,8 @@
     'assets': {
         'web.assets_backend': [
             'myschool_devhub/static/src/css/devhub.css',
+            'myschool_devhub/static/src/js/process_mapper_devhub.js',
+            'myschool_devhub/static/src/xml/process_mapper_devhub.xml',
         ],
     },
     'demo': [],
