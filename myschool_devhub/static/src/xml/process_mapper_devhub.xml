@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+
+    <!-- ============================================================
+         Extend ProcessMapperClient: pass story props to Properties
+         ============================================================ -->
+    <t t-inherit="process_mapper.ProcessMapperClient" t-inherit-mode="extension">
+        <xpath expr="//ProcessMapperProperties" position="attributes">
+            <attribute name="userStories">state.userStories</attribute>
+            <attribute name="devhubProjects">state.devhubProjects</attribute>
+            <attribute name="onSearchStories">(q) => this.onSearchStories(q)</attribute>
+            <attribute name="onCreateStory">(n, p) => this.onCreateStory(n, p)</attribute>
+            <attribute name="onLinkStory">(id, name) => this.onLinkStory(id, name)</attribute>
+            <attribute name="onUnlinkStory">() => this.onUnlinkStory()</attribute>
+        </xpath>
+    </t>
+
+    <!-- ============================================================
+         Extend PropertiesPanel: add user story selector
+         ============================================================ -->
+    <t t-inherit="process_mapper.PropertiesPanel" t-inherit-mode="extension">
+        <xpath expr="//label[text()='Description']/.." position="after">
+            <!-- User Story link (only for task/subprocess steps) -->
+            <t t-if="props.selectedElement.step_type === 'task' or props.selectedElement.step_type === 'subprocess'">
+                <div class="pm-prop-group pm-story-selector">
+                    <label>User Story</label>
+
+                    <!-- Currently linked story -->
+                    <t t-if="props.selectedElement.devhub_item_id">
+                        <div class="pm-story-linked">
+                            <i class="fa fa-bookmark text-success me-1"/>
+                            <span class="pm-story-name" t-esc="props.selectedElement.devhub_item_name"/>
+                            <button class="pm-story-clear" t-on-click="() => this.onStoryClear()"
+                                    title="Unlink story">
+                                <i class="fa fa-times"/>
+                            </button>
+                        </div>
+                    </t>
+
+                    <!-- Search / link new story -->
+                    <t t-if="!props.selectedElement.devhub_item_id">
+                        <div class="pm-story-search-wrapper">
+                            <input type="text" class="pm-story-search"
+                                   placeholder="Search stories..."
+                                   t-att-value="storyState.searchQuery"
+                                   t-on-input="(ev) => this.onStorySearchInput(ev)"
+                                   t-on-focus="() => this.onStorySearchFocus()"/>
+                            <button class="pm-story-create-toggle"
+                                    t-on-click="() => this.toggleCreateStoryForm()"
+                                    title="Create new story">
+                                <i class="fa fa-plus"/>
+                            </button>
+                        </div>
+
+                        <!-- Search results -->
+                        <t t-if="storyState.showResults and props.userStories and props.userStories.length > 0">
+                            <div class="pm-story-results">
+                                <t t-foreach="props.userStories" t-as="story" t-key="story.id">
+                                    <div class="pm-story-result-item"
+                                         t-on-click="() => this.onStorySelect(story)">
+                                        <i class="fa fa-bookmark-o me-1"/>
+                                        <t t-esc="story.name"/>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+                        <t t-if="storyState.showResults and (!props.userStories or props.userStories.length === 0)">
+                            <div class="pm-story-results">
+                                <div class="pm-story-no-results">No stories found</div>
+                            </div>
+                        </t>
+
+                        <!-- Create new story form -->
+                        <t t-if="storyState.showCreateForm">
+                            <div class="pm-story-create-form">
+                                <input type="text" placeholder="Story name..."
+                                       t-att-value="storyState.newStoryName"
+                                       t-on-change="(ev) => this.onNewStoryNameChange(ev)"/>
+                                <select t-on-change="(ev) => this.onNewStoryProjectChange(ev)">
+                                    <option value="">-- Project --</option>
+                                    <t t-foreach="props.devhubProjects || []" t-as="proj" t-key="proj.id">
+                                        <option t-att-value="proj.id" t-esc="proj.name"/>
+                                    </t>
+                                </select>
+                                <button class="pm-story-create-btn"
+                                        t-on-click="() => this.onCreateNewStory()">
+                                    <i class="fa fa-check me-1"/>Create
+                                </button>
+                            </div>
+                        </t>
+                    </t>
+                </div>
+            </t>
+        </xpath>
+    </t>
+
+
+</templates>
