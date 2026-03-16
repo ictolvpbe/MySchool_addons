@@ -23,8 +23,18 @@
 
 // -- Status bar (teal-tinted) -----------------------------------------------
 .o_form_statusbar {
-    background: var(--myschool-surface) !important;
-    border-bottom: 1px solid var(--myschool-border-light) !important;
+    background-color: #f5fafa !important;
+    border-bottom: 1px solid var(--myschool-border) !important;
+}
+
+.o_form_view .o_form_statusbar .o_statusbar_buttons {
+    gap: 8px;
+}
+
+.o_form_view .o_form_statusbar .o_statusbar_buttons .btn {
+    border-radius: 6px;
+    font-size: 13px;
+    padding: 8px 16px;
 }
 
 // -- Stat buttons -----------------------------------------------------------
@@ -35,7 +45,7 @@
         border-right: 1px solid var(--myschool-border-light);
 
         .o_stat_value {
-            font-size: 18px;
+            font-size: 22px;
             font-weight: 700;
             color: var(--myschool-brand-1);
         }
@@ -54,22 +64,36 @@
 }
 
 // -- Form inner group labels ------------------------------------------------
-.o_form_view .o_inner_group .o_form_label {
+.o_form_view .o_inner_group .o_form_label,
+.o_form_view .o_form_label {
     font-size: 13px;
     color: var(--myschool-text-muted);
 }
 
 // -- Form title -------------------------------------------------------------
 .o_form_view .oe_title {
+    h1,
     h1 .o_field_widget {
         font-size: 20px;
         font-weight: 700;
         color: var(--myschool-text);
     }
+
+    h3 {
+        font-size: 13px;
+        color: var(--myschool-text-muted);
+        margin-top: 2px;
+    }
 }
 
-// -- Field group separators (uppercase titles) ------------------------------
-.o_form_view .o_horizontal_separator {
+// -- Field group headers (uppercase titles) ---------------------------------
+.o_form_view .o_horizontal_separator,
+.o_form_view .o_inner_group .o_group_header,
+.o_form_view .o_group .o_group_col_6 > .o_inner_group > div:first-child,
+.o_form_view .o_group > tbody > tr > td.o_group_header,
+.o_form_view .o_inner_group > .o_group_header,
+.o_form_view .o_wrap_label + .o_group_header,
+.o_form_view td.o_td_label[colspan] {
     font-size: 11px !important;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -80,24 +104,38 @@
     margin-bottom: 12px;
 }
 
+// -- Group column separator styling -----------------------------------------
+.o_form_view .o_group .o_group_col_6 {
+    border-color: var(--myschool-border-light);
+}
+
+// -- Inner group spacing ----------------------------------------------------
+.o_form_view .o_inner_group {
+    grid-template-columns: fit-content(140px) minmax(0, 1fr) !important;
+    margin-bottom: 16px;
+}
+
 // -- Buttons ----------------------------------------------------------------
-.btn-primary {
+.o_form_view .btn-primary,
+.o_list_view .btn-primary,
+.o_kanban_view .btn-primary,
+.o_control_panel .btn-primary,
+.modal-content .btn-primary {
     background-color: var(--myschool-brand-1) !important;
     border-color: var(--myschool-brand-1) !important;
 
-    &:hover,
-    &:focus {
+    &:hover {
         background-color: #006b78 !important;
         border-color: #006b78 !important;
     }
 
-    &:active {
-        background-color: #005a65 !important;
-        border-color: #005a65 !important;
+    &:focus {
+        box-shadow: 0 0 0 3px rgba(0, 125, 140, 0.25) !important;
     }
 }
 
-.btn-secondary {
+.o_form_view .btn-secondary,
+.o_control_panel .btn-secondary {
     border-color: var(--myschool-border);
     color: var(--myschool-text);
 
@@ -116,13 +154,15 @@
     }
 }
 
-// -- Many2many tags — no double border ---------------------------------------
+// -- Many2many tags — no double border on inner input -----------------------
 .o_field_many2many_tags {
     .o_input_dropdown,
-    .o_input_dropdown .o_input {
+    .o_input_dropdown .o_input,
+    .o_input_dropdown input.o_input {
         border: none !important;
         box-shadow: none !important;
         background: transparent !important;
+        padding: 0;
     }
 }
 
@@ -132,8 +172,9 @@
 
     input.o_input,
     textarea.o_input,
-    select.o_input {
-        border-color: var(--myschool-border);
+    select.o_input,
+    .o_input {
+        border: 1px solid var(--myschool-border);
         border-radius: 6px;
         padding: 7px 10px;
         font-size: 13px;
@@ -150,20 +191,41 @@
         textarea.o_input,
         select.o_input,
         .o_field_text,
+        .o_field_char_content,
         span {
-            background-color: var(--myschool-surface);
+            background-color: #f5fafa;
             border-color: var(--myschool-border-light);
             color: var(--myschool-text-muted);
         }
     }
 }
 
-// -- Inner group label width ------------------------------------------------
-.o_form_view .o_inner_group {
-    grid-template-columns: fit-content(140px) minmax(0, 1fr) !important;
+// -- Required field highlight -----------------------------------------------
+.o_form_view .o_field_widget.o_required_modifier input {
+    border-left: 3px solid var(--myschool-brand-1);
 }
 
-// -- Statusbar --------------------------------------------------------------
+// -- Monetary field — no double border --------------------------------------
+.o_form_view .o_field_monetary span.o_input,
+.o_form_view .o_field_monetary input.o_input {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+// -- All form fields same width ---------------------------------------------
+.o_form_view .o_inner_group .o_field_widget {
+    width: 100%;
+}
+
+.o_form_view .o_inner_group .o_field_widget .o_external_button {
+    display: none;
+}
+
+.o_form_view .o_field_monetary input {
+    width: 100%;
+}
+
+// -- Statusbar status arrows ------------------------------------------------
 .o_statusbar_status {
     .o_arrow_button {
         &.o_arrow_button_current {
@@ -177,19 +239,55 @@
     }
 }
 
+// -- List view container (card wrapper) -------------------------------------
+.o_list_view {
+    background-color: var(--myschool-bg);
+    padding: 0 16px;
+
+    .o_list_renderer {
+        background: var(--myschool-bg-card);
+        border-radius: 10px;
+        box-shadow: 0 1px 4px rgba(0, 60, 60, 0.08);
+        overflow: visible;
+        border: 1px solid var(--myschool-border);
+        margin-top: 4px;
+    }
+}
+
 // -- List view / tables -----------------------------------------------------
 .o_list_view .o_list_table,
 .o_form_view .o_list_table {
     font-size: 13px;
+    border: none;
+    margin-bottom: 0;
 
-    thead th {
-        background-color: var(--myschool-surface);
-        color: var(--myschool-text-muted);
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        font-weight: 600;
-        padding: 10px 12px;
+    // Remove default table border-radius so card container shows through
+    &,
+    & thead,
+    & thead tr:first-child th:first-child,
+    & thead tr:first-child th:last-child {
+        border-radius: 0;
+    }
+
+    thead {
+        background-color: #f5fafa;
+
+        th {
+            background-color: #f5fafa;
+            color: #9B9B9B;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            font-weight: 600;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--myschool-border);
+            border-top: none;
+            white-space: nowrap;
+
+            &:hover {
+                color: var(--myschool-text);
+            }
+        }
     }
 
     tbody {
@@ -197,22 +295,121 @@
             background-color: var(--myschool-hover-row);
         }
 
+        tr:last-child td {
+            border-bottom: none;
+        }
+
         td {
-            padding: 10px 12px;
+            padding: 11px 14px;
+            border-bottom: 1px solid var(--myschool-border-light);
+            border-top: none;
+            color: var(--myschool-text);
+            vertical-align: middle;
         }
     }
 
     td, th {
+        border-left: none;
+        border-right: none;
         border-color: var(--myschool-border-light);
     }
 }
 
+// -- List row selection -----------------------------------------------------
+.o_list_view .o_list_table .o_data_row.o_data_row_selected > td {
+    background-color: #d9f2f4;
+}
+
+// -- List checkbox accent ---------------------------------------------------
+.o_list_view input[type="checkbox"]:checked,
+.o_list_view .o_list_record_selector input[type="checkbox"]:checked {
+    accent-color: var(--myschool-brand-1);
+}
+
+// -- Muted (inactive) rows --------------------------------------------------
+.o_list_view .o_list_table .o_data_row.text-muted td {
+    opacity: 0.5;
+}
+
+// -- List pager value -------------------------------------------------------
+.o_list_view .o_pager .o_pager_value {
+    color: var(--myschool-text);
+    font-weight: 600;
+}
+
+// -- Group-by headers in list -----------------------------------------------
+.o_list_view .o_group_header {
+    background-color: #f5fafa;
+    font-weight: 600;
+    color: var(--myschool-text);
+
+    &:hover {
+        background-color: var(--myschool-hover-btn);
+    }
+}
+
+// -- "No records" message ---------------------------------------------------
+.o_list_view .o_view_nocontent .o_nocontent_help p {
+    color: var(--myschool-text-muted);
+}
+
+// -- Optional columns dropdown ----------------------------------------------
+.o_list_view .o_optional_columns_dropdown .dropdown-toggle {
+    color: #9B9B9B;
+
+    &:hover {
+        color: var(--myschool-brand-1);
+    }
+}
+
+// -- Many2many tags in list view --------------------------------------------
+.o_list_view .o_field_many2many_tags .badge {
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 12px;
+    padding: 2px 8px;
+}
+
+// -- Numeric alignment ------------------------------------------------------
+.o_list_view .o_list_table td.o_list_number {
+    font-variant-numeric: tabular-nums;
+}
+
+// -- "New" button (list) ----------------------------------------------------
+.o_control_panel .o_list_button_add {
+    background-color: var(--myschool-brand-1) !important;
+    border-color: var(--myschool-brand-1) !important;
+    color: #fff !important;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 16px;
+
+    &:hover {
+        background-color: #006b78 !important;
+        border-color: #006b78 !important;
+    }
+}
+
 // -- Badges -----------------------------------------------------------------
+.o_list_view .badge,
+.o_form_view .badge,
+.o_kanban_view .badge {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
 .badge {
     border-radius: 12px;
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.3px;
+}
+
+.badge.text-bg-primary {
+    background-color: var(--myschool-brand-1) !important;
 }
 
 .text-bg-success, .bg-success {
@@ -231,6 +428,32 @@
     background-color: #dc2626 !important;
 }
 
+// -- Decoration badges in list (light bg variants) --------------------------
+.o_list_view .o_field_badge .badge.text-bg-info {
+    background-color: #e0f2fe !important;
+    color: #0284c7 !important;
+}
+
+.o_list_view .o_field_badge .badge.text-bg-success {
+    background-color: #ccfbf1 !important;
+    color: #0d9488 !important;
+}
+
+.o_list_view .o_field_badge .badge.text-bg-warning {
+    background-color: #fef3c7 !important;
+    color: #d97706 !important;
+}
+
+.o_list_view .o_field_badge .badge.text-bg-danger {
+    background-color: #fee2e2 !important;
+    color: #dc2626 !important;
+}
+
+// -- Inactive ribbon --------------------------------------------------------
+.o_form_view .badge.text-bg-danger {
+    background-color: #dc2626 !important;
+}
+
 // -- Kanban -----------------------------------------------------------------
 .o_kanban_view {
     background-color: var(--myschool-bg);
@@ -242,8 +465,12 @@
 
         &:hover {
             border-color: var(--myschool-brand-2);
-            box-shadow: 0 2px 6px rgba(0, 125, 140, 0.12);
+            box-shadow: 0 2px 8px rgba(0, 125, 140, 0.08);
         }
+    }
+
+    .o_kanban_record .o_record_selected {
+        border-color: var(--myschool-brand-1);
     }
 
     .o_kanban_group_header {
@@ -258,15 +485,19 @@
             color: var(--myschool-text-muted);
             font-size: 13px;
             font-weight: 500;
+            padding: 10px 20px;
 
             &.active {
                 color: var(--myschool-brand-1);
                 font-weight: 600;
                 border-bottom: 2px solid var(--myschool-brand-1);
+                background-color: transparent;
             }
 
             &:hover:not(.active) {
                 color: var(--myschool-text);
+                background-color: #f5fafa;
+                border-color: transparent;
             }
         }
     }
@@ -278,6 +509,117 @@
         background-color: var(--myschool-brand-1);
         border-color: var(--myschool-brand-1);
     }
+
+    .o-mail-Message-bubble {
+        border-color: var(--myschool-border-light);
+
+        &:hover {
+            background-color: #f0f8f8;
+        }
+    }
+}
+
+// -- Modal dialogs ----------------------------------------------------------
+.modal-content {
+    border-radius: 12px;
+    border-color: var(--myschool-border-light);
+
+    .modal-header {
+        border-bottom-color: var(--myschool-border);
+        background-color: #f5fafa;
+    }
+
+    .modal-footer {
+        border-top-color: var(--myschool-border);
+    }
+}
+
+// -- Boolean toggles --------------------------------------------------------
+.o_form_view .o_boolean_toggle .custom-control-input:checked ~ .custom-control-label::before,
+.o_form_view .o_field_boolean .form-check-input:checked,
+.o_form_view .form-check-input:checked,
+.o_list_view .form-check-input:checked,
+.o_form_view .o_field_boolean_toggle input:checked + label,
+.o_form_view input[type="checkbox"]:checked {
+    background-color: var(--myschool-brand-2);
+    border-color: var(--myschool-brand-2);
+    accent-color: var(--myschool-brand-1);
+}
+
+.o_form_view .o_boolean_toggle .slider,
+.o_form_view .o_field_boolean_toggle .slider {
+    border-radius: 10px;
+}
+
+.o_form_view .o_boolean_toggle input:checked + .slider,
+.o_form_view .o_field_boolean_toggle input:checked + .slider {
+    background-color: var(--myschool-brand-2);
+}
+
+// -- Dropdown menus ---------------------------------------------------------
+.o_control_panel .dropdown-menu {
+    border-radius: 8px;
+    border-color: var(--myschool-border);
+    box-shadow: 0 4px 16px rgba(0, 60, 60, 0.1);
+
+    .dropdown-item:hover,
+    .dropdown-item:focus {
+        background-color: var(--myschool-hover-btn);
+        color: var(--myschool-brand-1);
+    }
+
+    .dropdown-item.selected,
+    .dropdown-item.active {
+        background-color: #d9f2f4;
+        color: var(--myschool-brand-1);
+        font-weight: 600;
+    }
+}
+
+// -- Search facets (active filter chips) ------------------------------------
+.o_control_panel .o_searchview_facet {
+    background-color: #d9f2f4;
+    border-color: var(--myschool-brand-2);
+    border-radius: 16px;
+    padding: 2px 12px;
+    font-size: 12px;
+    font-weight: 500;
+
+    .o_facet_value {
+        color: var(--myschool-brand-1);
+        font-weight: 500;
+    }
+}
+
+// -- Pager buttons ----------------------------------------------------------
+.o_control_panel .o_cp_pager .btn {
+    border-radius: 6px;
+    border-color: var(--myschool-border);
+    color: var(--myschool-text);
+    min-width: 32px;
+    min-height: 32px;
+
+    &:hover {
+        background-color: var(--myschool-hover-btn);
+        border-color: var(--myschool-brand-2);
+        color: var(--myschool-brand-1);
+    }
+}
+
+.o_control_panel .o_pager .o_pager_counter .o_pager_value {
+    color: var(--myschool-text);
+    font-weight: 600;
+}
+
+// -- View switch buttons ----------------------------------------------------
+.o_control_panel .o_cp_switch_buttons .btn.active {
+    color: var(--myschool-brand-1);
+}
+
+// -- Filter menu items ------------------------------------------------------
+.o_control_panel .o_filter_menu .dropdown-item.selected {
+    color: var(--myschool-brand-1);
+    font-weight: 600;
 }
 
 // -- Search bar focus -------------------------------------------------------
@@ -289,7 +631,7 @@
 }
 
 // -- Links ------------------------------------------------------------------
-a {
+.o_form_view a:not(.btn):not(.nav-link) {
     color: var(--myschool-brand-2);
 
     &:hover {
@@ -297,18 +639,41 @@ a {
     }
 }
 
+// -- Checkbox accent --------------------------------------------------------
+.o_form_view input[type="checkbox"]:checked,
+.o_list_view input[type="checkbox"]:checked {
+    accent-color: var(--myschool-brand-1);
+}
+
+input[type="checkbox"] {
+    accent-color: var(--myschool-brand-1);
+}
+
 // -- Selection highlights ---------------------------------------------------
 ::selection {
-    background-color: rgba(0, 125, 140, 0.2);
+    background-color: #d9f2f4;
+    color: var(--myschool-text);
 }
 
 // -- Scrollbar tint ---------------------------------------------------------
-::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 125, 140, 0.25);
-    border-radius: 4px;
+.o_form_view ::-webkit-scrollbar,
+.o_list_view ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.o_form_view ::-webkit-scrollbar-track,
+.o_list_view ::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.o_form_view ::-webkit-scrollbar-thumb,
+.o_list_view ::-webkit-scrollbar-thumb {
+    background: var(--myschool-border);
+    border-radius: 3px;
 
     &:hover {
-        background-color: rgba(0, 125, 140, 0.4);
+        background: var(--myschool-brand-2);
     }
 }
 
@@ -323,9 +688,4 @@ a {
     &:hover:not(.selected) {
         color: #003333 !important;
     }
-}
-
-// -- Checkbox accent --------------------------------------------------------
-input[type="checkbox"] {
-    accent-color: var(--myschool-brand-1);
 }

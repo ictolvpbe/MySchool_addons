@@ -1,6 +1,8 @@
 // ============================================================================
-// MySchool Theme – Color Overrides
-// This file is intentionally empty.
-// Colors are set via the post_init_hook and can be changed in
-// Settings > Backend Theme (MuK color editor).
+// MySchool Theme – Odoo SCSS Variable Overrides
+// These are set at asset compilation time and affect Odoo's Bootstrap build.
 // ============================================================================
+
+$o-brand-odoo: #007d8c;
+$o-brand-primary: #007d8c;
+$o-navbar-badge-bg: #007d8c;
