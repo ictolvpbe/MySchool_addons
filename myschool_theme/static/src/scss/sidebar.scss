@@ -1,0 +1,184 @@
+// ============================================================================
+// MySchool Theme – App Sidebar
+// ============================================================================
+
+$ms-sidebar-width: 200px;
+$ms-sidebar-collapsed-width: 52px;
+$ms-sidebar-bg: #003d42;
+$ms-sidebar-text: rgba(255, 255, 255, 0.75);
+$ms-sidebar-text-active: #fff;
+$ms-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+$ms-sidebar-active-bg: rgba(255, 255, 255, 0.15);
+$ms-sidebar-icon-size: 28px;
+
+// -- Main area wrapper (sidebar + content) ------------------------------------
+.ms_main_area {
+    display: flex;
+    flex: 1 1 auto;
+    height: 100%;
+    overflow: hidden;
+
+    // Re-apply Odoo's action manager styles that expect .o_action_manager
+    // to be a direct child of .o_web_client (broken by our wrapper div).
+    > .o_action_manager {
+        direction: ltr;
+        flex: 1 1 auto;
+        min-width: 0;          // Allow shrinking below content width (fixes scrollbar)
+        height: 100%;
+        overflow-x: hidden;
+        overflow-y: auto;      // Scroll here so the scrollbar sits at the far right edge
+
+        > .o_action {
+            height: auto;      // Let content determine height so parent scrolls
+            min-height: 100%;
+            display: flex;
+            flex-flow: column nowrap;
+            overflow: visible;
+
+            // Disable inner scroll — the action manager handles it now
+            .o_content {
+                overflow: visible !important;
+                height: auto !important;
+                flex: 1 0 auto;
+
+                // Odoo uses position:absolute on the child to fill height —
+                // undo that so content flows naturally for outer scroll
+                > .o_view_controller {
+                    position: static !important;
+                    height: auto !important;
+                }
+            }
+        }
+    }
+}
+
+// -- Center form sheets (Odoo defaults to left-align with margin-right:auto) --
+.ms_main_area .o_form_view .o_form_sheet_bg {
+    margin-left: auto;     // Override Odoo's left-align to center the form
+}
+
+// -- On XXL screens Odoo puts overflow:auto on .o_form_sheet_bg (max-width) --
+// -- which puts the scrollbar next to the content instead of the window edge --
+.ms_main_area .o_form_view.o_xxl_form_view .o_form_sheet_bg {
+    overflow: visible !important;
+}
+
+// -- Sidebar container --------------------------------------------------------
+.ms_sidebar {
+    width: $ms-sidebar-width;
+    min-width: $ms-sidebar-width;
+    height: 100%;
+    background-color: $ms-sidebar-bg;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.2s ease, min-width 0.2s ease;
+    overflow: hidden;
+    z-index: 1;
+
+    &.ms_sidebar_collapsed {
+        width: $ms-sidebar-collapsed-width;
+        min-width: $ms-sidebar-collapsed-width;
+
+        .ms_sidebar_label {
+            opacity: 0;
+            width: 0;
+            overflow: hidden;
+        }
+
+        .ms_sidebar_item {
+            justify-content: center;
+            padding: 8px 0;
+            margin: 1px 0;
+            gap: 0;
+        }
+    }
+}
+
+// -- Collapse toggle ----------------------------------------------------------
+.ms_sidebar_toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    min-height: 36px;
+    cursor: pointer;
+    color: $ms-sidebar-text;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+
+    &:hover {
+        color: $ms-sidebar-text-active;
+        background-color: $ms-sidebar-hover-bg;
+    }
+
+    i {
+        font-size: 14px;
+    }
+}
+
+// -- Nav list -----------------------------------------------------------------
+.ms_sidebar_nav {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 6px 0;
+
+    // Thin scrollbar
+    &::-webkit-scrollbar {
+        width: 4px;
+    }
+    &::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.2);
+        border-radius: 2px;
+    }
+}
+
+// -- Individual app item ------------------------------------------------------
+.ms_sidebar_item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    margin: 1px 6px;
+    border-radius: 6px;
+    color: $ms-sidebar-text;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+
+    &:hover {
+        background-color: $ms-sidebar-hover-bg;
+        color: $ms-sidebar-text-active;
+        text-decoration: none;
+    }
+
+    &.ms_sidebar_item_active {
+        background-color: $ms-sidebar-active-bg;
+        color: $ms-sidebar-text-active;
+    }
+}
+
+// -- App icon -----------------------------------------------------------------
+.ms_sidebar_icon {
+    width: $ms-sidebar-icon-size;
+    height: $ms-sidebar-icon-size;
+    min-width: $ms-sidebar-icon-size;
+    border-radius: 6px;
+    object-fit: cover;
+}
+
+// -- App label ----------------------------------------------------------------
+.ms_sidebar_label {
+    font-size: 13px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.2s ease;
+}
+
+// -- Hide sidebar on small screens --------------------------------------------
+@media (max-width: 767.98px) {
+    .ms_sidebar {
+        display: none;
+    }
+}

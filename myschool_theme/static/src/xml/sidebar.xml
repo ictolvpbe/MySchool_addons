@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_theme.AppSidebar">
+        <aside t-att-class="'ms_sidebar' + (state.collapsed ? ' ms_sidebar_collapsed' : '')">
+            <div class="ms_sidebar_toggle" t-on-click="toggleCollapse">
+                <i t-att-class="state.collapsed ? 'oi oi-chevron-right' : 'oi oi-chevron-left'"/>
+            </div>
+            <nav class="ms_sidebar_nav">
+                <t t-foreach="apps" t-as="app" t-key="app.id">
+                    <a
+                        class="ms_sidebar_item"
+                        t-att-class="{ ms_sidebar_item_active: currentApp and currentApp.id === app.id }"
+                        t-att-href="'/odoo/' + (app.actionPath or '')"
+                        t-att-title="app.name"
+                        t-on-click.prevent="() => this.onAppClick(app)"
+                    >
+                        <img
+                            t-if="app.webIconData"
+                            class="ms_sidebar_icon"
+                            t-att-src="app.webIconData"
+                            t-att-alt="app.name"
+                        />
+                        <img
+                            t-else=""
+                            class="ms_sidebar_icon"
+                            src="/base/static/description/icon.png"
+                            t-att-alt="app.name"
+                        />
+                        <span class="ms_sidebar_label"><t t-esc="app.name"/></span>
+                    </a>
+                </t>
+            </nav>
+        </aside>
+    </t>
+
+</templates>
