@@ -29,6 +29,11 @@ COLOR_FIELDS = [
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
+    theme_background_image = fields.Binary(
+        related='company_id.background_image',
+        readonly=False,
+    )
+
     ms_color_brand_1 = fields.Char(string='Brand Primary')
     ms_color_brand_2 = fields.Char(string='Brand Secondary')
     ms_color_brand_3 = fields.Char(string='Brand Accent 1')

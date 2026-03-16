@@ -90,11 +90,6 @@
         background-color: #006b78 !important;
         border-color: #006b78 !important;
     }
-
-    &:active {
-        background-color: #005a65 !important;
-        border-color: #005a65 !important;
-    }
 }
 
 .btn-secondary {
@@ -177,19 +172,34 @@
     }
 }
 
+// -- List view container (card wrapper) -------------------------------------
+.o_list_view {
+    .o_list_renderer {
+        background: var(--myschool-bg-card);
+        border-radius: 10px;
+        box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06);
+        overflow: hidden;
+    }
+}
+
 // -- List view / tables -----------------------------------------------------
 .o_list_view .o_list_table,
 .o_form_view .o_list_table {
     font-size: 13px;
 
     thead th {
-        background-color: var(--myschool-surface);
-        color: var(--myschool-text-muted);
+        background-color: #f5fafa;
+        color: #9B9B9B;
         font-size: 11px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.6px;
         font-weight: 600;
-        padding: 10px 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--myschool-border);
+
+        &:hover {
+            color: var(--myschool-text);
+        }
     }
 
     tbody {
@@ -197,8 +207,13 @@
             background-color: var(--myschool-hover-row);
         }
 
+        tr:last-child td {
+            border-bottom: none;
+        }
+
         td {
-            padding: 10px 12px;
+            padding: 11px 14px;
+            border-bottom: 1px solid var(--myschool-border-light);
         }
     }
 

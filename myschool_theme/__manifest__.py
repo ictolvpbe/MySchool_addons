@@ -1,14 +1,14 @@
 {
     'name': 'MySchool Theme',
     'summary': 'Teal-based backend theme for MySchool',
-    'version': '19.0.1.0.0',
+    'version': '19.0.2.0.0',
     'category': 'Themes/Backend',
     'license': 'LGPL-3',
     'author': 'MySchool',
     'depends': [
-        'muk_web_theme',
+        'web',
+        'base_setup',
     ],
-    'post_init_hook': 'post_init_hook',
     'data': [
         'views/res_config_settings_views.xml',
     ],
@@ -16,13 +16,18 @@
         'web._assets_primary_variables': [
             (
                 'after',
-                'muk_web_theme/static/src/scss/colors.scss',
+                'web/static/src/scss/primary_variables.scss',
                 'myschool_theme/static/src/scss/colors.scss',
             ),
         ],
         'web.assets_backend': [
             'myschool_theme/static/src/scss/layout.scss',
             'myschool_theme/static/src/scss/components.scss',
+            'myschool_theme/static/src/scss/appsmenu.scss',
+            'myschool_theme/static/src/scss/navbar.scss',
+            'myschool_theme/static/src/xml/navbar.xml',
+            'myschool_theme/static/src/js/appsmenu.js',
+            'myschool_theme/static/src/js/navbar.js',
         ],
     },
     'installable': True,
