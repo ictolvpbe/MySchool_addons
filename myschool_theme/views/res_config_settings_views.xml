@@ -68,6 +68,13 @@
                             <field name="ms_color_hover_btn" class="d-block w-25 p-0 m-0" widget="color"/>
                         </div>
                     </setting>
+                    <setting
+                        string="Background Image"
+                        company_dependent="1"
+                        help="Background image for the apps menu dashboard"
+                    >
+                        <field name="theme_background_image" widget="image" class="w-75"/>
+                    </setting>
                     <setting string="Reset">
                         <button
                             name="action_reset_myschool_colors"
