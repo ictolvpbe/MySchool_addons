@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Invite Form View -->
+    <record id="view_activiteiten_invite_form" model="ir.ui.view">
+        <field name="name">activiteiten.invite.form</field>
+        <field name="model">activiteiten.invite</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_accept"
+                            string="Accepteren"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'pending'"/>
+                    <button name="action_reject"
+                            string="Weigeren"
+                            type="object"
+                            class="btn-danger"
+                            invisible="state != 'pending'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="activiteit_titel"/>
+                            <field name="invited_by"/>
+                        </group>
+                        <group>
+                            <field name="person_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Invite List View -->
+    <record id="view_activiteiten_invite_list" model="ir.ui.view">
+        <field name="name">activiteiten.invite.list</field>
+        <field name="model">activiteiten.invite</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="activiteit_titel"/>
+                <field name="invited_by"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'pending'"
+                       decoration-success="state == 'accepted'"
+                       decoration-danger="state == 'rejected'"/>
+                <button name="action_accept" string="Accepteren" type="object"
+                        class="btn-primary" icon="fa-check"
+                        invisible="state != 'pending'"/>
+                <button name="action_reject" string="Weigeren" type="object"
+                        class="btn-danger" icon="fa-times"
+                        invisible="state != 'pending'"/>
+            </list>
+        </field>
+    </record>
+</odoo>
