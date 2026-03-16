@@ -200,9 +200,10 @@
     }
 }
 
-// -- Required field highlight -----------------------------------------------
-.o_form_view .o_field_widget.o_required_modifier input {
-    border-left: 3px solid var(--myschool-brand-1);
+// -- Embedded lists in form views — prevent column overflow -----------------
+.o_form_view .o_field_one2many,
+.o_form_view .o_field_many2many {
+    overflow-x: auto;
 }
 
 // -- Monetary field — no double border --------------------------------------
