@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Release List View -->
+    <record id="appfoundry_release_view_list" model="ir.ui.view">
+        <field name="name">appfoundry.release.list</field>
+        <field name="model">appfoundry.release</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="date_planned"/>
+                <field name="date_released"/>
+                <field name="state" widget="badge"
+                    decoration-info="state == 'draft'"
+                    decoration-warning="state == 'ready'"
+                    decoration-success="state == 'released'"
+                    decoration-muted="state == 'cancelled'"/>
+                <field name="total_items"/>
+                <field name="done_items"/>
+                <field name="progress" widget="progressbar"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Release Form View -->
+    <record id="appfoundry_release_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.release.form</field>
+        <field name="model">appfoundry.release</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_ready" string="Mark Ready" type="object"
+                        class="btn-primary"
+                        invisible="state != 'draft'"/>
+                    <button name="action_release" string="Release" type="object"
+                        class="btn-primary"
+                        invisible="state != 'ready'"/>
+                    <button name="action_cancel" string="Cancel" type="object"
+                        class="btn-secondary"
+                        confirm="Are you sure you want to cancel this release?"
+                        invisible="state not in ('draft', 'ready')"/>
+                    <button name="action_add_items_wizard" string="Add Items" type="object"
+                        class="btn-secondary"
+                        invisible="state not in ('draft', 'ready')"/>
+                    <field name="state" widget="statusbar"
+                        statusbar_visible="draft,ready,released"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="e.g. v2.1.0"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="project_id"/>
+                            <field name="date_planned"/>
+                            <field name="date_released"/>
+                        </group>
+                        <group>
+                            <field name="total_items"/>
+                            <field name="done_items"/>
+                            <field name="progress" widget="progressbar"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Items" name="items">
+                            <field name="item_ids">
+                                <list>
+                                    <field name="sequence" string="#"/>
+                                    <field name="name"/>
+                                    <field name="item_type" widget="badge"
+                                        decoration-danger="item_type == 'bug'"
+                                        decoration-info="item_type == 'story'"
+                                        decoration-success="item_type == 'task'"
+                                        decoration-warning="item_type == 'improvement'"/>
+                                    <field name="stage_id"/>
+                                    <field name="assigned_id" widget="many2one_avatar_user"/>
+                                    <field name="story_points"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Release Notes" name="notes">
+                            <button name="action_generate_changelog" string="Generate Changelog"
+                                type="object" class="btn-secondary mb-3"
+                                confirm="This will overwrite the current release notes. Continue?"
+                                invisible="state == 'cancelled'"/>
+                            <field name="notes"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Release Search View -->
+    <record id="appfoundry_release_view_search" model="ir.ui.view">
+        <field name="name">appfoundry.release.search</field>
+        <field name="model">appfoundry.release</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="project_id"/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Ready" name="ready" domain="[('state', '=', 'ready')]"/>
+                <filter string="Released" name="released" domain="[('state', '=', 'released')]"/>
+                <filter string="Cancelled" name="cancelled" domain="[('state', '=', 'cancelled')]"/>
+                <separator/>
+                <filter string="Project" name="group_project" context="{'group_by': 'project_id'}"/>
+                <filter string="State" name="group_state" context="{'group_by': 'state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Release Action -->
+    <record id="appfoundry_release_action" model="ir.actions.act_window">
+        <field name="name">Releases</field>
+        <field name="res_model">appfoundry.release</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Add Items Wizard Form View -->
+    <record id="appfoundry_release_add_items_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.release.add.items.form</field>
+        <field name="model">appfoundry.release.add.items</field>
+        <field name="arch" type="xml">
+            <form string="Add Items to Release">
+                <group>
+                    <field name="release_id" readonly="1"/>
+                    <field name="project_id" invisible="1"/>
+                    <field name="sprint_ids" widget="many2many_tags"/>
+                </group>
+                <field name="item_ids">
+                    <list>
+                        <field name="sequence" string="#"/>
+                        <field name="name"/>
+                        <field name="item_type" widget="badge"
+                            decoration-danger="item_type == 'bug'"
+                            decoration-info="item_type == 'story'"
+                            decoration-success="item_type == 'task'"
+                            decoration-warning="item_type == 'improvement'"/>
+                        <field name="stage_id"/>
+                        <field name="sprint_id"/>
+                        <field name="assigned_id" widget="many2one_avatar_user"/>
+                    </list>
+                </field>
+                <footer>
+                    <button name="action_add" string="Add to Release"
+                        type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

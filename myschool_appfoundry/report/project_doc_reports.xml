@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="action_report_user_doc" model="ir.actions.report">
+        <field name="name">End-User Documentation</field>
+        <field name="model">appfoundry.project</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">myschool_appfoundry.report_user_doc</field>
+        <field name="report_file">myschool_appfoundry.report_user_doc</field>
+        <field name="print_report_name">'%s - End-User Documentation' % object.name</field>
+        <field name="binding_type">report</field>
+    </record>
+
+    <record id="action_report_tech_doc" model="ir.actions.report">
+        <field name="name">Technical Documentation</field>
+        <field name="model">appfoundry.project</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">myschool_appfoundry.report_tech_doc</field>
+        <field name="report_file">myschool_appfoundry.report_tech_doc</field>
+        <field name="print_report_name">'%s - Technical Documentation' % object.name</field>
+        <field name="binding_type">report</field>
+    </record>
+
+</odoo>

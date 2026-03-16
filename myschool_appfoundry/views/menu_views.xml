@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Root Menu -->
+    <menuitem id="appfoundry_menu_root"
+        name="AppFoundry"
+        web_icon="myschool_appfoundry,static/description/icon.png"
+        sequence="40"/>
+
+    <!-- Projects (primary entry point) -->
+    <menuitem id="appfoundry_menu_projects"
+        name="Projects"
+        parent="appfoundry_menu_root"
+        action="appfoundry_project_action"
+        sequence="10"/>
+
+    <!-- Things To Test (3T) -->
+    <menuitem id="appfoundry_menu_test_items"
+        name="Things To Test (3T)"
+        parent="appfoundry_menu_root"
+        action="appfoundry_test_item_action"
+        sequence="20"/>
+
+    <!-- Configuration -->
+    <menuitem id="appfoundry_menu_config"
+        name="Configuration"
+        parent="appfoundry_menu_root"
+        groups="myschool_appfoundry.group_appfoundry_manager"
+        sequence="90"/>
+
+    <!-- Stage Action (for config menu) -->
+    <record id="appfoundry_stage_action" model="ir.actions.act_window">
+        <field name="name">Stages</field>
+        <field name="res_model">appfoundry.item.stage</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Tag Action (for config menu) -->
+    <record id="appfoundry_tag_action" model="ir.actions.act_window">
+        <field name="name">Tags</field>
+        <field name="res_model">appfoundry.tag</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="appfoundry_menu_config_stages"
+        name="Stages"
+        parent="appfoundry_menu_config"
+        action="appfoundry_stage_action"
+        sequence="10"/>
+
+    <menuitem id="appfoundry_menu_config_tags"
+        name="Tags"
+        parent="appfoundry_menu_config"
+        action="appfoundry_tag_action"
+        sequence="20"/>
+
+    <menuitem id="appfoundry_menu_config_test_types"
+        name="Test Types"
+        parent="appfoundry_menu_config"
+        action="appfoundry_test_type_action"
+        sequence="30"/>
+
+</odoo>
