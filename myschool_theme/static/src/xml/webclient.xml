@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_theme.WebClient"
+       t-inherit="web.WebClient"
+       t-inherit-mode="extension"
+    >
+        <xpath expr="//ActionContainer" position="replace">
+            <div class="ms_main_area">
+                <AppSidebar/>
+                <ActionContainer/>
+            </div>
+        </xpath>
+    </t>
+
+</templates>

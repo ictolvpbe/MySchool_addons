@@ -6,6 +6,7 @@ class KostenPerMedewerker(models.Model):
     _description = 'Kosten per medewerker'
     _auto = False
     _order = 'totale_kost desc'
+    _rec_name = 'employee_id'
 
     employee_id = fields.Many2one('hr.employee', string='Medewerker', readonly=True)
     school_id = fields.Many2one('myschool.org', string='School', readonly=True)
