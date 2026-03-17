@@ -89,19 +89,19 @@
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
-                        <button name="action_view_students"
+                        <button name="action_open_snapshot_students"
                                 type="object"
                                 class="oe_stat_button"
                                 icon="fa-users"
                                 invisible="not klas_ids">
-                            <field name="student_count" string="Leerlingen" widget="statinfo"/>
+                            <field name="snapshot_student_count" string="Leerlingen" widget="statinfo"/>
                         </button>
-                        <button name="action_view_leerkrachten"
+                        <button name="action_open_snapshot_leerkrachten"
                                 type="object"
                                 class="oe_stat_button"
                                 icon="fa-user"
                                 invisible="not leerkracht_ids">
-                            <field name="leerkracht_count" string="Leerkrachten" widget="statinfo"/>
+                            <field name="snapshot_leerkracht_count" string="Leerkrachten" widget="statinfo"/>
                         </button>
                     </div>
                     <!-- Form header: title + subtitle -->
@@ -146,9 +146,6 @@
                                    placeholder="bv. Technologielaan 1, 2800 Mechelen"
                                    invisible="activity_type != 'buitenschools'"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
-                            <field name="price"
-                                   placeholder="bv. 15.00"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="bus_nodig"
                                    invisible="activity_type == 'binnenschools'"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
@@ -181,14 +178,6 @@
                                    placeholder="bv. S-1234"
                                    invisible="state not in ('s_code', 'vervanging', 'done')"
                                    readonly="state != 's_code'"
-                                   groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
-                            <field name="s_code_price"
-                                   placeholder="bv. 500.00"
-                                   invisible="state not in ('s_code', 'vervanging', 'done')"
-                                   readonly="state != 's_code'"
-                                   groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
-                            <field name="totale_kost"
-                                   invisible="state not in ('s_code', 'vervanging', 'done')"
                                    groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
                             <field name="verzekering_done"
                                    readonly="1"
@@ -232,17 +221,45 @@
                                    placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                         </page>
-                        <page string="Kosten"
-                              invisible="state not in ('s_code', 'vervanging', 'done')"
-                              groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin">
-                            <field name="kosten_ids" readonly="state not in ('s_code', 'vervanging')">
-                                <list editable="bottom" create="1" delete="1">
-                                    <field name="is_auto" column_invisible="1"/>
-                                    <field name="omschrijving" readonly="is_auto"/>
-                                    <field name="bedrag" readonly="is_auto"/>
-                                    <field name="currency_id" column_invisible="1"/>
-                                </list>
-                            </field>
+                        <page string="Kosten">
+                            <div class="row">
+                                <div class="col-6">
+                                    <h4 class="mt-2 mb-3">Vaste kosten</h4>
+                                    <field name="kosten_vast_ids"
+                                           context="{'default_kosten_type': 'vast'}"
+                                           nolabel="1"
+                                           readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging')">
+                                        <list editable="bottom" create="1" delete="1">
+                                            <field name="is_auto" column_invisible="1"/>
+                                            <field name="kosten_type" column_invisible="1"/>
+                                            <field name="omschrijving" readonly="is_auto"/>
+                                            <field name="bedrag" readonly="is_auto"/>
+                                            <field name="currency_id" column_invisible="1"/>
+                                        </list>
+                                    </field>
+                                </div>
+                                <div class="col-6">
+                                    <h4 class="mt-2 mb-3">Variabele kosten</h4>
+                                    <field name="kosten_variabel_ids"
+                                           context="{'default_kosten_type': 'variabel'}"
+                                           nolabel="1"
+                                           readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging')">
+                                        <list editable="bottom" create="1" delete="1">
+                                            <field name="is_auto" column_invisible="1"/>
+                                            <field name="kosten_type" column_invisible="1"/>
+                                            <field name="omschrijving" readonly="is_auto"/>
+                                            <field name="bedrag" readonly="is_auto"/>
+                                            <field name="currency_id" column_invisible="1"/>
+                                        </list>
+                                    </field>
+                                </div>
+                            </div>
+                            <group class="mt-3">
+                                <field name="bijdragen_regeling"
+                                       readonly="state not in ('s_code', 'draft', 'form_invullen', 'bus_refused', 'pending_approval')"
+                                       groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+                                <field name="totale_kost" readonly="1"/>
+                            </group>
                         </page>
                         <!-- Afkeuring: for medewerker after rejection -->
                         <page string="Afkeuring"
@@ -258,6 +275,16 @@
                             <group>
                                 <field name="rejection_reason"
                                        placeholder="Geef de reden op waarom deze activiteit wordt afgekeurd..."/>
+                            </group>
+                        </page>
+                        <!-- Instellingen tab: only for boekhouding/admin -->
+                        <page string="Instellingen"
+                              groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin">
+                            <group>
+                                <group string="Verzekering">
+                                    <field name="verzekering_pct" string="Verzekering (%)"
+                                           readonly="state in ('done')"/>
+                                </group>
                             </group>
                         </page>
                     </notebook>

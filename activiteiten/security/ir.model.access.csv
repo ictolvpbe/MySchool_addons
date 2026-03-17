@@ -11,6 +11,9 @@ access_myschool_org_type_activiteiten,myschool.org.type.activiteiten,myschool_co
 access_invite_user,activiteiten.invite.user,model_activiteiten_invite,group_activiteiten_personeelslid,1,1,1,1
 access_invite_directie,activiteiten.invite.directie,model_activiteiten_invite,group_activiteiten_directie,1,1,0,0
 access_invite_admin,activiteiten.invite.admin,model_activiteiten_invite,group_activiteiten_admin,1,1,1,1
-access_kosten_line_user,activiteiten.kosten.line.user,model_activiteiten_kosten_line,group_activiteiten_personeelslid,1,0,0,0
+access_kosten_line_user,activiteiten.kosten.line.user,model_activiteiten_kosten_line,group_activiteiten_personeelslid,1,1,1,1
 access_kosten_line_boekhouding,activiteiten.kosten.line.boekhouding,model_activiteiten_kosten_line,group_activiteiten_boekhouding,1,1,1,1
 access_kosten_line_admin,activiteiten.kosten.line.admin,model_activiteiten_kosten_line,group_activiteiten_admin,1,1,1,1
+access_snapshot_line_user,activiteiten.snapshot.line.user,model_activiteiten_snapshot_line,group_activiteiten_personeelslid,1,0,0,0
+access_snapshot_line_admin,activiteiten.snapshot.line.admin,model_activiteiten_snapshot_line,group_activiteiten_admin,1,1,1,1
+access_snapshot_wizard_user,activiteiten.snapshot.wizard.user,model_activiteiten_snapshot_wizard,group_activiteiten_personeelslid,1,1,1,1
