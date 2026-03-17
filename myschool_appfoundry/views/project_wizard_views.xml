@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Project Wizard Form View -->
+    <record id="appfoundry_project_wizard_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.project.wizard.form</field>
+        <field name="model">appfoundry.project.wizard</field>
+        <field name="arch" type="xml">
+            <form string="New Project Wizard">
+                <field name="step" invisible="1"/>
+                <field name="project_id" invisible="1"/>
+                <field name="current_release_id" invisible="1"/>
+
+                <div class="text-center mb-4">
+                    <h3 class="text-primary">
+                        <field name="step_label" readonly="1"/>
+                    </h3>
+                </div>
+
+                <!-- Step 1: Project Setup -->
+                <div invisible="step != 1">
+                    <p class="text-muted mb-3">
+                        Set up the basics for your new project.
+                        A first version (v0.1.0) will be created automatically.
+                    </p>
+                    <group>
+                        <group>
+                            <field name="project_name" placeholder="My Awesome App"
+                                required="step == 1"/>
+                            <field name="project_code" placeholder="MAA"
+                                required="step == 1"/>
+                        </group>
+                        <group>
+                            <field name="project_responsible_id"
+                                widget="many2one_avatar_user"/>
+                        </group>
+                    </group>
+                </div>
+
+                <!-- Step 2: App User Story -->
+                <div invisible="step != 2">
+                    <p class="text-muted mb-3">
+                        Describe the overall purpose and goals of your application.
+                        What problem does it solve? Who are the users?
+                    </p>
+                    <field name="project_description"
+                        placeholder="Describe what your application does, who it's for, and what problems it solves..."/>
+                </div>
+
+                <!-- Step 3: Process Map -->
+                <div invisible="step != 3">
+                    <p class="text-muted mb-3">
+                        Optionally create a process map to visualize the workflow
+                        of your application. You can skip this step and add process
+                        maps later from the project page.
+                    </p>
+                    <group>
+                        <field name="create_process_map"/>
+                        <field name="process_map_name" placeholder="Main Workflow"
+                            invisible="not create_process_map"
+                            required="create_process_map"/>
+                    </group>
+                </div>
+
+                <!-- Step 4: User Stories -->
+                <div invisible="step != 4">
+                    <p class="text-muted mb-3">
+                        Add and manage user stories for your project. Each story
+                        describes a feature from the user's perspective.
+                    </p>
+                    <field name="item_ids"
+                        context="{'default_project_id': project_id, 'default_release_id': current_release_id, 'default_item_type': 'story'}">
+                        <list editable="bottom">
+                            <field name="name" string="Story Title"/>
+                            <field name="description" optional="show"/>
+                            <field name="priority" widget="priority"/>
+                            <field name="stage_id" optional="hide"/>
+                        </list>
+                    </field>
+                </div>
+
+                <!-- Step 5: Review Prompt -->
+                <div invisible="step != 5">
+                    <p class="text-muted mb-3">
+                        Review the generated prompt below. You can edit it before
+                        copying to Claude Code.
+                    </p>
+                    <field name="generated_prompt" class="font-monospace"/>
+                </div>
+
+                <!-- Step 6: Done -->
+                <div invisible="step != 6">
+                    <div class="text-center py-4">
+                        <h2 class="text-success">
+                            <i class="fa fa-check-circle"/> Project Ready!
+                        </h2>
+                        <p class="lead mt-3">
+                            Your project
+                            <strong><field name="project_name" readonly="1"/></strong>
+                            has been set up with version v0.1.0.
+                        </p>
+                        <div class="alert alert-info mt-4 text-start" role="alert">
+                            <h4><i class="fa fa-clipboard"/> Next Steps</h4>
+                            <ol class="mb-0">
+                                <li>Copy the generated prompt from the previous step</li>
+                                <li>Open <strong>Claude Code</strong> in your terminal</li>
+                                <li>Paste the prompt and let Claude Code build your Odoo module</li>
+                                <li>Review the generated code and iterate to improve it</li>
+                                <li>Come back to AppFoundry to track progress, manage stories, and run tests</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <footer>
+                    <button name="action_previous" type="object" string="Previous"
+                        class="btn-secondary" icon="fa-arrow-left"
+                        invisible="step &lt;= 1 or step &gt;= 6"/>
+                    <button name="action_next" type="object" string="Next"
+                        class="btn-primary" icon="fa-arrow-right"
+                        invisible="step &gt;= 4"/>
+                    <button name="action_next" type="object" string="Generate Prompt"
+                        class="btn-primary" icon="fa-magic"
+                        invisible="step != 4"/>
+                    <button name="action_next" type="object" string="Finish"
+                        class="btn-primary" icon="fa-check"
+                        invisible="step != 5"/>
+                    <button name="action_skip" type="object" string="Skip"
+                        class="btn-secondary"
+                        invisible="step != 3"/>
+                    <button name="action_done" type="object" string="Open Project"
+                        class="btn-primary" icon="fa-folder-open"
+                        invisible="step != 6"/>
+                    <button name="action_skip_wizard" type="object"
+                        string="Skip Wizard" class="btn-secondary"
+                        icon="fa-forward" invisible="step != 1"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Wizard Action -->
+    <record id="action_project_wizard" model="ir.actions.act_window">
+        <field name="name">New Project Wizard</field>
+        <field name="res_model">appfoundry.project.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

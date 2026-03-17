@@ -6,7 +6,7 @@
         <field name="name">appfoundry.project.kanban</field>
         <field name="model">appfoundry.project</field>
         <field name="arch" type="xml">
-            <kanban class="o_kanban_mobile">
+            <kanban class="o_kanban_mobile" on_create="myschool_appfoundry.action_project_wizard">
                 <field name="name"/>
                 <field name="code"/>
                 <field name="responsible_id"/>

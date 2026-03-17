@@ -25,6 +25,7 @@
         'data/test_type_data.xml',
         'report/project_doc_reports.xml',
         'report/project_doc_templates.xml',
+        'views/project_wizard_views.xml',
         'views/project_views.xml',
         'views/item_views.xml',
         'views/test_item_views.xml',
