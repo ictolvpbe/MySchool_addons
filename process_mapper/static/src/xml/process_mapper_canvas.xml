@@ -343,8 +343,8 @@
                                 <title><t t-esc="step.annotation"/></title>
                             </t>
 
-                            <!-- User story indicator (populated by myschool_devhub when installed) -->
-                            <t t-if="step.devhub_item_id and (step.step_type === 'task' or step.step_type === 'subprocess')">
+                            <!-- User story indicator (populated by myschool_appfoundry when installed) -->
+                            <t t-if="step.appfoundry_item_id and (step.step_type === 'task' or step.step_type === 'subprocess')">
                                 <g class="pm-story-indicator">
                                     <circle t-att-cx="step.x_position + 12"
                                             t-att-cy="step.y_position + (step.height || 60) - 12" r="7"
@@ -353,7 +353,7 @@
                                           t-att-y="step.y_position + (step.height || 60) - 11"
                                           font-size="9" fill="#4CAF50" text-anchor="middle" dominant-baseline="central"
                                           font-weight="bold">S</text>
-                                    <title><t t-esc="'Story: ' + (step.devhub_item_name || '')"/></title>
+                                    <title><t t-esc="'Story: ' + (step.appfoundry_item_name || '')"/></title>
                                 </g>
                             </t>
 

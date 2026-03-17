@@ -16,7 +16,7 @@
     'author': 'MySchool OLVP',
     'website': 'https://www.olvp.be',
     'license': 'LGPL-3',
-    'depends': ['base','mail','myschool_core','web'],
+    'depends': ['base','mail','myschool_core','myschool_theme','web'],
     'data': [
         # Securityaccount_analytic_applicability
         'security/ir.model.access.csv',

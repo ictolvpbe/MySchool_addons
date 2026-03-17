@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Project Kanban View -->
+    <record id="appfoundry_project_view_kanban" model="ir.ui.view">
+        <field name="name">appfoundry.project.kanban</field>
+        <field name="model">appfoundry.project</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="responsible_id"/>
+                <field name="item_count"/>
+                <field name="open_bug_count"/>
+                <field name="process_map_count"/>
+                <field name="test_progress"/>
+                <field name="is_active"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <strong class="fs-5"><field name="name"/></strong>
+                            <span class="badge text-bg-secondary"><field name="code"/></span>
+                        </div>
+                        <field name="responsible_id" widget="many2one_avatar_user"/>
+                        <div class="d-flex gap-3 mt-2 text-muted small">
+                            <span title="Items"><i class="fa fa-tasks"/> <field name="item_count"/></span>
+                            <span title="Open Bugs" t-if="record.open_bug_count.raw_value > 0"
+                                  class="text-danger">
+                                <i class="fa fa-bug"/> <field name="open_bug_count"/>
+                            </span>
+                            <span title="Process Maps" t-if="record.process_map_count.raw_value > 0">
+                                <i class="fa fa-sitemap"/> <field name="process_map_count"/>
+                            </span>
+                        </div>
+                        <div class="mt-2" t-if="record.test_progress.raw_value > 0">
+                            <field name="test_progress" widget="progressbar"/>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Project List View -->
+    <record id="appfoundry_project_view_list" model="ir.ui.view">
+        <field name="name">appfoundry.project.list</field>
+        <field name="model">appfoundry.project</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="phase" widget="badge"
+                    decoration-info="phase == 'new'"
+                    decoration-warning="phase == 'dev'"
+                    decoration-danger="phase == 'test'"
+                    decoration-success="phase == 'stable'"
+                    decoration-muted="phase == 'eol'"/>
+                <field name="responsible_id" widget="many2one_avatar_user"/>
+                <field name="item_count"/>
+                <field name="open_bug_count"/>
+                <field name="is_active"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Project Form View (workspace) -->
+    <record id="appfoundry_project_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.project.form</field>
+        <field name="model">appfoundry.project</field>
+        <field name="arch" type="xml">
+            <form class="o_appfoundry_project_form">
+                <header>
+                    <button name="action_save_form" type="object"
+                        string="Save" class="btn-primary" icon="fa-save"/>
+                    <button string="Cancel" special="cancel"
+                        class="btn-secondary" icon="fa-undo"/>
+                    <button name="action_phase_dev" type="object"
+                        string="Start Dev" class="btn-primary"
+                        invisible="phase != 'new'"/>
+                    <button name="action_phase_test" type="object"
+                        string="To Test" class="btn-primary"
+                        invisible="phase != 'dev'"/>
+                    <button name="action_phase_stable" type="object"
+                        string="Mark Stable" class="btn-primary"
+                        invisible="phase != 'test'"/>
+                    <button name="action_new_release" type="object"
+                        string="New Release" class="btn-primary"
+                        icon="fa-rocket"
+                        invisible="phase != 'stable'"/>
+                    <button name="action_phase_eol" type="object"
+                        string="End of Life" class="btn-secondary"
+                        invisible="phase not in ('stable',)"
+                        confirm="Mark this project as End of Life?"/>
+                    <field name="phase" widget="statusbar" statusbar_visible="new,dev,test,stable,eol"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_process_maps" type="object"
+                                class="oe_stat_button" icon="fa-sitemap"
+                                invisible="process_map_count == 0">
+                            <field name="process_map_count" string="Process Maps" widget="statinfo"/>
+                        </button>
+                        <button name="action_open_test_items" type="object"
+                                class="oe_stat_button" icon="fa-check-square-o"
+                                invisible="test_item_count == 0">
+                            <field name="test_item_count" string="Test Items" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <div class="oe_title mb-2">
+                        <div class="d-flex align-items-baseline gap-2">
+                            <h2><field name="name" placeholder="Project Name"
+                                style="min-width: 500px;"/></h2>
+                            <h3 class="text-muted"><field name="code" placeholder="Code"/></h3>
+                        </div>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="current_release_id"
+                                placeholder="v0.1.0 — created on save"
+                                options="{'no_create': True, 'no_open': True}"/>
+                            <field name="responsible_id" widget="many2one_avatar_user"/>
+                            <field name="module_ids" widget="many2many_tags"/>
+                            <field name="is_active"/>
+                        </group>
+                    </group>
+                    <div class="mb-3 d-flex gap-2">
+                        <button name="action_open_items" type="object"
+                            string="All Items" class="btn btn-secondary"
+                            icon="fa-th-list"/>
+                        <button name="action_open_or_create_process_map" type="object"
+                            string="Process Map" class="btn btn-secondary"
+                            icon="fa-sitemap"/>
+                    </div>
+                    <notebook>
+                        <page string="User Stories" name="stories">
+                            <field name="story_ids"
+                                domain="[('release_id', '=', current_release_id)]"
+                                context="{'default_release_id': current_release_id}">
+                                <list no_open="0">
+                                    <field name="sequence" column_invisible="1"/>
+                                    <field name="display_name" string="Story" width="500px"/>
+                                    <button name="action_open_sub_items" type="object"
+                                        string="Open Items" icon="fa-th-large"
+                                        class="btn btn-link"/>
+                                    <field name="stage_id"/>
+                                    <field name="priority" widget="priority"/>
+                                    <field name="assigned_id" widget="many2one_avatar_user"/>
+                                    <field name="child_count" string="Sub-items"/>
+                                    <field name="story_points"/>
+                                    <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Project User Story" name="description">
+                            <field name="description"/>
+                        </page>
+                        <page string="Sprints" name="sprints">
+                            <field name="sprint_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="date_start"/>
+                                    <field name="date_end"/>
+                                    <field name="state" widget="badge"/>
+                                    <field name="total_points"/>
+                                    <field name="completed_points"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Releases" name="releases">
+                            <field name="release_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="date_planned"/>
+                                    <field name="state" widget="badge"/>
+                                    <field name="progress" widget="progressbar"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Process Maps" name="process_maps">
+                            <button name="action_create_process_map" type="object"
+                                string="New Process Map" class="btn btn-primary mb-3"
+                                icon="fa-plus"/>
+                            <field name="process_map_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="description"/>
+                                    <field name="state" widget="badge"/>
+                                    <field name="version"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Tests (3T)" name="tests">
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <button name="action_generate_test_items" type="object"
+                                    string="Generate 3T from Modules" class="btn btn-primary"
+                                    icon="fa-magic"
+                                    confirm="This will scan linked modules and generate test items. Continue?"/>
+                                <button name="action_open_test_items" type="object"
+                                    string="Open Tests" class="btn btn-secondary"
+                                    icon="fa-external-link"
+                                    invisible="test_item_count == 0"/>
+                                <span class="text-muted" invisible="test_item_count == 0">
+                                    <field name="test_item_count"/> items |
+                                    Progress: <field name="test_progress" widget="progressbar" class="d-inline"/>
+                                </span>
+                            </div>
+                        </page>
+                        <page string="Team" name="team">
+                            <field name="member_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                        </page>
+                        <page string="Documentation" name="documentation">
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <button name="action_generate_user_doc" type="object"
+                                    string="Generate End-User Doc" class="btn btn-primary"
+                                    icon="fa-book"
+                                    confirm="Generate end-user documentation from project data?"/>
+                                <button name="action_generate_tech_doc" type="object"
+                                    string="Generate Technical Doc" class="btn btn-primary"
+                                    icon="fa-cogs"
+                                    confirm="Generate technical documentation from project data?"/>
+                                <button name="%(myschool_appfoundry.action_report_user_doc)d" type="action"
+                                    string="Download User Doc PDF" class="btn btn-secondary"
+                                    icon="fa-file-pdf-o"
+                                    invisible="not doc_user_html"/>
+                                <button name="%(myschool_appfoundry.action_report_tech_doc)d" type="action"
+                                    string="Download Tech Doc PDF" class="btn btn-secondary"
+                                    icon="fa-file-pdf-o"
+                                    invisible="not doc_technical_html"/>
+                                <span class="text-muted" invisible="not doc_generated_date">
+                                    Last generated: <field name="doc_generated_date" widget="datetime"/>
+                                </span>
+                            </div>
+                            <div invisible="not doc_user_html" class="mb-4">
+                                <h3>End-User Documentation</h3>
+                                <field name="doc_user_html" class="appfoundry-doc-container"/>
+                            </div>
+                            <div invisible="not doc_technical_html" class="mb-4">
+                                <h3>Technical Documentation</h3>
+                                <field name="doc_technical_html" class="appfoundry-doc-container"/>
+                            </div>
+                            <div invisible="doc_user_html or doc_technical_html">
+                                <p class="text-muted">
+                                    No documentation generated yet. Click one of the buttons above to generate.
+                                </p>
+                            </div>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Project Search View -->
+    <record id="appfoundry_project_view_search" model="ir.ui.view">
+        <field name="name">appfoundry.project.search</field>
+        <field name="model">appfoundry.project</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="responsible_id"/>
+                <filter string="Active" name="active" domain="[('is_active', '=', True)]"/>
+                <separator/>
+                <filter string="Project Lead" name="group_responsible" context="{'group_by': 'responsible_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Project Action -->
+    <record id="appfoundry_project_action" model="ir.actions.act_window">
+        <field name="name">Projects</field>
+        <field name="res_model">appfoundry.project</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+</odoo>
