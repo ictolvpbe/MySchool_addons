@@ -60,6 +60,142 @@ class AppfoundryProject(models.Model):
     ], string='Phase', default='new', required=True, tracking=True)
     is_active = fields.Boolean(default=True)
 
+    # --- Guided setup ---
+    process_map_skipped = fields.Boolean(default=False)
+    has_user_story = fields.Boolean(compute='_compute_has_user_story', store=True)
+    generated_prompt = fields.Text('Generated Prompt')
+
+    @api.depends('description')
+    def _compute_has_user_story(self):
+        for project in self:
+            if project.description:
+                text = re.sub(r'<[^>]+>', '', str(project.description)).strip()
+                project.has_user_story = bool(text)
+            else:
+                project.has_user_story = False
+
+    def action_open_user_story_wizard(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'App User Story',
+            'res_model': 'appfoundry.user.story.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_project_id': self.id},
+        }
+
+    def action_skip_process_map(self):
+        self.write({'process_map_skipped': True})
+
+    def action_open_prompt_wizard(self):
+        self.ensure_one()
+        self.generated_prompt = self._build_claude_prompt()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Prompt Generator',
+            'res_model': 'appfoundry.prompt.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_project_id': self.id},
+        }
+
+    def action_open_icon_wizard(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Icon Generator',
+            'res_model': 'appfoundry.icon.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_project_id': self.id},
+        }
+
+    def _build_claude_prompt(self):
+        """Generate a Claude Code prompt from project data."""
+        self.ensure_one()
+        stories = self.env['appfoundry.item'].search([
+            ('project_id', '=', self.id),
+            ('item_type', '=', 'story'),
+        ], order='sequence')
+
+        lines = [f'# Odoo 19 Module: {self.name} ({self.code})', '']
+
+        # Description
+        lines.append('## Project Description')
+        if self.description:
+            desc = re.sub(r'<[^>]+>', '', str(self.description)).strip()
+            lines.append(desc)
+        else:
+            lines.append('(No description provided)')
+        lines.append('')
+
+        # User stories
+        lines.append('## User Stories')
+        lines.append('')
+        if stories:
+            priority_map = {'0': 'Low', '1': 'Normal', '2': 'High', '3': 'Critical'}
+            for idx, story in enumerate(stories, 1):
+                prio = priority_map.get(story.priority, 'Normal')
+                lines.append(f'### {idx}. {story.display_name}')
+                lines.append(f'Priority: {prio}')
+                if story.description:
+                    desc = re.sub(r'<[^>]+>', '', str(story.description)).strip()
+                    if desc:
+                        lines.append(desc)
+                lines.append('')
+        else:
+            lines += ['(No user stories defined)', '']
+
+        # Process maps
+        if self.process_map_ids:
+            lines.append('## Process Maps')
+            for pmap in self.process_map_ids:
+                lines.append(f'### {pmap.name}')
+                if pmap.description:
+                    lines.append(pmap.description)
+                # Include lanes
+                if pmap.lane_ids:
+                    lines.append('Lanes/Roles:')
+                    for lane in pmap.lane_ids.sorted('sequence'):
+                        lines.append(f'- {lane.name}')
+                # Include steps
+                if pmap.step_ids:
+                    lines.append('Steps:')
+                    for step in pmap.step_ids:
+                        extra = ''
+                        if step.system_action:
+                            extra = f' (system action: {step.system_action})'
+                        if step.annotation:
+                            extra += f' — {step.annotation}'
+                        lines.append(f'- [{step.step_type}] {step.name}{extra}')
+                lines.append('')
+
+        # Implementation instructions
+        code_lower = re.sub(r'[^a-z0-9]+', '_', self.code.lower()).strip('_')
+        lines.append('## Implementation Instructions')
+        lines.append('')
+        lines.append(f'Build an Odoo 19 module named `{code_lower}` that implements '
+                     f'the user stories above.')
+        lines.append('')
+        lines.append('Odoo 19 conventions:')
+        lines.append('- Use `<list>` tag for list views (not `<tree>`)')
+        lines.append('- Use `list,form` in `view_mode` (not `tree,form`)')
+        lines.append('- Data files: `<odoo><data noupdate="1">...</data></odoo>`')
+        lines.append('- Do NOT use `type="qweb"` on `<field>` elements in data XML')
+        lines.append('- Do NOT use `<group>` inside `<search>` views')
+        lines.append('- Use `widget="badge"` with decorations (not `widget="label_selection"`)')
+        lines.append('')
+        lines.append('Module structure:')
+        lines.append('- `__manifest__.py` with proper dependencies')
+        lines.append('- Models in `models/`')
+        lines.append('- Views in `views/`')
+        lines.append('- Security groups and access rules in `security/`')
+        lines.append('')
+        lines.append('Write clean, maintainable code following Odoo best practices.')
+
+        return '\n'.join(lines)
+
     # --- Icon Generator ---
     icon_main_color = fields.Char(
         string='Hoofdkleur',
@@ -170,6 +306,13 @@ class AppfoundryProject(models.Model):
 
     def action_open_items(self):
         return self._item_action(f'{self.name} — Items')
+
+    def action_open_stories(self):
+        return self._item_action(
+            f'{self.name} — User Stories',
+            extra_domain=[('item_type', '=', 'story')],
+            extra_context={'default_item_type': 'story'},
+        )
 
     def action_open_bugs(self):
         return self._item_action(

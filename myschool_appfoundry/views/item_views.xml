@@ -104,8 +104,8 @@
                         <group>
                             <field name="assigned_id" widget="many2one_avatar_user"/>
                             <field name="reviewer_id" widget="many2one_avatar_user"/>
-                            <field name="sprint_id"/>
-                            <field name="release_id"/>
+                            <field name="sprint_id" domain="[('project_id', '=', project_id)]"/>
+                            <field name="release_id" domain="[('project_id', '=', project_id)]"/>
                             <field name="date_deadline"/>
                             <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
                         </group>

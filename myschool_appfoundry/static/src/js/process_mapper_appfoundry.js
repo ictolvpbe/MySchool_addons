@@ -7,19 +7,30 @@ import { useState, onWillStart } from "@odoo/owl";
 
 // Get the ProcessMapperClient from the actions registry
 const ProcessMapperClient = registry.category("actions").get("process_mapper_canvas");
-const { ProcessMapperProperties } = ProcessMapperClient.components;
+const { ProcessMapperProperties, ProcessMapperToolbar } = ProcessMapperClient.components;
 
 // -------------------------------------------------------------------
-// Patch ProcessMapperClient: user story loading & management
+// Patch Toolbar: add Close button prop
+// -------------------------------------------------------------------
+const origToolbarProps = { ...ProcessMapperToolbar.props };
+ProcessMapperToolbar.props = {
+    ...origToolbarProps,
+    onClose: { type: Function, optional: true },
+};
+
+// -------------------------------------------------------------------
+// Patch ProcessMapperClient: user story loading & management + close
 // -------------------------------------------------------------------
 patch(ProcessMapperClient.prototype, {
     setup() {
         super.setup();
         this.state.userStories = [];
         this.state.appfoundryProjects = [];
+        this.state.activeProjectId = false;
 
         onWillStart(async () => {
             await this._loadAppfoundryProjects();
+            await this._detectActiveProject();
         });
     },
 
@@ -34,6 +45,24 @@ patch(ProcessMapperClient.prototype, {
             this.state.appfoundryProjects = projects;
         } catch {
             // appfoundry module data might not be accessible
+        }
+    },
+
+    async _detectActiveProject() {
+        // Find the project that owns this process map
+        if (!this.state.mapId) return;
+        try {
+            const projects = await this.orm.searchRead(
+                "appfoundry.project",
+                [["process_map_ids", "in", [this.state.mapId]], ["is_active", "=", true]],
+                ["id", "name"],
+                { limit: 1 },
+            );
+            if (projects.length > 0) {
+                this.state.activeProjectId = projects[0].id;
+            }
+        } catch {
+            // ignore
         }
     },
 
@@ -87,6 +116,41 @@ patch(ProcessMapperClient.prototype, {
         el.appfoundry_item_name = '';
         this.state.dirty = true;
         this._pushHistory();
+    },
+
+    // --- Close button ---
+    async onClose() {
+        if (this.state.dirty) {
+            const confirmed = await new Promise((resolve) => {
+                const dialog = this.env.services.dialog;
+                if (dialog && dialog.add) {
+                    // Use Odoo's ConfirmationDialog
+                    const { ConfirmationDialog } = odoo.loader.modules.get("@web/core/confirmation_dialog/confirmation_dialog") || {};
+                    if (ConfirmationDialog) {
+                        dialog.add(ConfirmationDialog, {
+                            title: "Unsaved Changes",
+                            body: "You have unsaved changes. Do you want to save before closing?",
+                            confirmLabel: "Save & Close",
+                            cancelLabel: "Discard",
+                            confirm: async () => {
+                                await this.saveDiagram();
+                                resolve(true);
+                            },
+                            cancel: () => resolve(true),
+                        });
+                        return;
+                    }
+                }
+                // Fallback: browser confirm
+                if (confirm("You have unsaved changes. Save before closing?")) {
+                    this.saveDiagram().then(() => resolve(true));
+                } else {
+                    resolve(true);
+                }
+            });
+            if (!confirmed) return;
+        }
+        this.actionService.restore();
     },
 
     // --- Context menu: flat User Story items ---
@@ -150,6 +214,7 @@ patch(ProcessMapperClient.prototype, {
             target: 'new',
             context: {
                 default_item_type: 'story',
+                default_project_id: this.state.activeProjectId || false,
             },
         }, {
             onClose: async () => {
@@ -236,6 +301,7 @@ ProcessMapperProperties.props = {
     ...origProps,
     userStories: { type: Array, optional: true },
     appfoundryProjects: { type: Array, optional: true },
+    activeProjectId: { type: [Number, Boolean], optional: true },
     onSearchStories: { type: Function, optional: true },
     onCreateStory: { type: Function, optional: true },
     onLinkStory: { type: Function, optional: true },
@@ -293,6 +359,10 @@ patch(ProcessMapperProperties.prototype, {
     toggleCreateStoryForm() {
         this.storyState.showCreateForm = !this.storyState.showCreateForm;
         this.storyState.showResults = false;
+        // Auto-select the active project if available
+        if (this.storyState.showCreateForm && this.props.activeProjectId && !this.storyState.selectedProjectId) {
+            this.storyState.selectedProjectId = this.props.activeProjectId;
+        }
     },
 
     onNewStoryNameChange(ev) {
@@ -311,7 +381,6 @@ patch(ProcessMapperProperties.prototype, {
         await this.props.onCreateStory(name, projectId);
         this.storyState.showCreateForm = false;
         this.storyState.newStoryName = '';
-        this.storyState.selectedProjectId = false;
+        // Keep selectedProjectId for next creation
     },
 });
-

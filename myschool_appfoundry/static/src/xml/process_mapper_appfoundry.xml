@@ -3,15 +3,33 @@
 
     <!-- ============================================================
          Extend ProcessMapperClient: pass story props to Properties
+         and close handler to Toolbar
          ============================================================ -->
     <t t-inherit="process_mapper.ProcessMapperClient" t-inherit-mode="extension">
         <xpath expr="//ProcessMapperProperties" position="attributes">
             <attribute name="userStories">state.userStories</attribute>
             <attribute name="appfoundryProjects">state.appfoundryProjects</attribute>
+            <attribute name="activeProjectId">state.activeProjectId</attribute>
             <attribute name="onSearchStories">(q) => this.onSearchStories(q)</attribute>
             <attribute name="onCreateStory">(n, p) => this.onCreateStory(n, p)</attribute>
             <attribute name="onLinkStory">(id, name) => this.onLinkStory(id, name)</attribute>
             <attribute name="onUnlinkStory">() => this.onUnlinkStory()</attribute>
+        </xpath>
+        <xpath expr="//ProcessMapperToolbar" position="attributes">
+            <attribute name="onClose">() => this.onClose()</attribute>
+        </xpath>
+    </t>
+
+    <!-- ============================================================
+         Extend Toolbar: add Close button after Print
+         ============================================================ -->
+    <t t-inherit="process_mapper.Toolbar" t-inherit-mode="extension">
+        <xpath expr="//button[@t-on-click='props.onPrint']" position="after">
+            <div class="pm-toolbar-divider"/>
+            <button class="pm-toolbar-btn pm-close-btn" t-on-click="props.onClose"
+                    title="Close Process Mapper">
+                <i class="fa fa-times"/> Close
+            </button>
         </xpath>
     </t>
 
@@ -79,7 +97,9 @@
                                 <select t-on-change="(ev) => this.onNewStoryProjectChange(ev)">
                                     <option value="">-- Project --</option>
                                     <t t-foreach="props.appfoundryProjects || []" t-as="proj" t-key="proj.id">
-                                        <option t-att-value="proj.id" t-esc="proj.name"/>
+                                        <option t-att-value="proj.id"
+                                                t-att-selected="proj.id === (props.activeProjectId || false)"
+                                                t-esc="proj.name"/>
                                     </t>
                                 </select>
                                 <button class="pm-story-create-btn"

@@ -27,6 +27,7 @@ class AppfoundryProjectWizard(models.TransientModel):
     # Step 3 — Process Map
     create_process_map = fields.Boolean('Create a Process Map')
     process_map_name = fields.Char('Process Map Name')
+    created_process_map_id = fields.Many2one('process.map', readonly=True)
 
     # Step 4 — User Stories
     item_ids = fields.Many2many('appfoundry.item', string='User Stories')
@@ -58,8 +59,7 @@ class AppfoundryProjectWizard(models.TransientModel):
         elif self.step == 2:
             self._do_step_2()
         elif self.step == 3:
-            # Step 3 handles its own advancement and may open process map
-            return self._do_step_3_and_advance()
+            self._do_step_3()
         elif self.step == 4:
             self._do_step_4()
         self.step += 1
@@ -151,38 +151,17 @@ class AppfoundryProjectWizard(models.TransientModel):
         if self.project_id:
             self.project_id.write({'description': self.project_description})
 
-    def _do_step_3_and_advance(self):
-        """Create process map if requested, advance to step 4.
-
-        When a map is created, opens its form as a dialog on top of the
-        wizard.  Closing that dialog refreshes the wizard at step 4.
-        """
-        process_map = False
+    def _do_step_3(self):
         if self.create_process_map and self.process_map_name:
             existing = self.project_id.process_map_ids.filtered(
                 lambda m: m.name == self.process_map_name
             )
             if not existing:
-                process_map = self.env['process.map'].create({
+                new_map = self.env['process.map'].create({
                     'name': self.process_map_name,
                 })
-                self.project_id.process_map_ids = [(4, process_map.id)]
-            else:
-                process_map = existing[0]
-
-        self.step = 4
-        self._refresh_items()
-
-        if process_map:
-            return {
-                'type': 'ir.actions.act_window',
-                'name': 'Edit Process Map',
-                'res_model': 'process.map',
-                'res_id': process_map.id,
-                'view_mode': 'form',
-                'target': 'new',
-            }
-        return self._reopen()
+                self.project_id.process_map_ids = [(4, new_map.id)]
+                self.created_process_map_id = new_map
 
     def _do_step_4(self):
         """Re-fetch stories and generate prompt."""
@@ -266,3 +245,105 @@ class AppfoundryProjectWizard(models.TransientModel):
         lines.append('Write clean, maintainable code following Odoo best practices.')
 
         self.generated_prompt = '\n'.join(lines)
+
+
+class AppfoundryUserStoryWizard(models.TransientModel):
+    _name = 'appfoundry.user.story.wizard'
+    _description = 'Edit App User Story'
+
+    project_id = fields.Many2one('appfoundry.project', required=True, readonly=True)
+    description = fields.Html('App User Story')
+
+    @api.model
+    def default_get(self, fields_list):
+        defaults = super().default_get(fields_list)
+        project_id = defaults.get('project_id')
+        if project_id:
+            project = self.env['appfoundry.project'].browse(project_id)
+            defaults['description'] = project.description
+        return defaults
+
+    def action_save(self):
+        self.project_id.write({'description': self.description})
+        return {'type': 'ir.actions.act_window_close'}
+
+
+class AppfoundryPromptWizard(models.TransientModel):
+    _name = 'appfoundry.prompt.wizard'
+    _description = 'Generate Claude Code Prompt'
+
+    project_id = fields.Many2one('appfoundry.project', required=True, readonly=True)
+    generated_prompt = fields.Text('Generated Prompt')
+
+    @api.model
+    def default_get(self, fields_list):
+        defaults = super().default_get(fields_list)
+        project_id = defaults.get('project_id')
+        if project_id:
+            project = self.env['appfoundry.project'].browse(project_id)
+            defaults['generated_prompt'] = project.generated_prompt or project._build_claude_prompt()
+        return defaults
+
+
+class AppfoundryIconWizard(models.TransientModel):
+    _name = 'appfoundry.icon.wizard'
+    _description = 'Icon Generator'
+
+    project_id = fields.Many2one('appfoundry.project', required=True, readonly=True)
+    icon_main_color = fields.Char(string='Hoofdkleur')
+    icon_accent_color = fields.Char(string='Accentkleur')
+    icon_module_name = fields.Char(
+        string='Modulenaam',
+        help='Technische modulenaam voor het icoon (bepaalt de vorm).',
+    )
+    icon_preview = fields.Binary(string='Icoon voorbeeld', readonly=True)
+
+    @api.model
+    def default_get(self, fields_list):
+        defaults = super().default_get(fields_list)
+        project_id = defaults.get('project_id')
+        if project_id:
+            project = self.env['appfoundry.project'].browse(project_id)
+            defaults['icon_main_color'] = project.icon_main_color
+            defaults['icon_accent_color'] = project.icon_accent_color
+            defaults['icon_module_name'] = project.icon_module_name
+            defaults['icon_preview'] = project.icon_preview
+        return defaults
+
+    def action_generate_preview(self):
+        import base64
+        from odoo.addons.myschool_theme.models.icon_generator import generate_icon
+        for record in self:
+            module_name = record.icon_module_name or record.project_id.code or ''
+            icon_bytes = generate_icon(
+                record.icon_main_color or '#007d8c',
+                record.icon_accent_color or '#00C4D9',
+                module_name=module_name.lower().replace(' ', '_'),
+                display_name=record.project_id.name or module_name,
+            )
+            preview = base64.b64encode(icon_bytes)
+            record.icon_preview = preview
+            record.project_id.write({
+                'icon_main_color': record.icon_main_color,
+                'icon_accent_color': record.icon_accent_color,
+                'icon_module_name': record.icon_module_name,
+                'icon_preview': preview,
+            })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Icon Generator',
+            'res_model': self._name,
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
+    def action_apply_to_menu(self):
+        for record in self:
+            record.project_id.write({
+                'icon_main_color': record.icon_main_color,
+                'icon_accent_color': record.icon_accent_color,
+                'icon_module_name': record.icon_module_name,
+            })
+            record.project_id.action_apply_icon_to_menu()
+        return {'type': 'ir.actions.act_window_close'}

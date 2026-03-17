@@ -59,6 +59,13 @@
                             invisible="not create_process_map"
                             required="create_process_map"/>
                     </group>
+                    <div class="alert alert-success mt-3" role="alert"
+                        invisible="not created_process_map_id">
+                        <i class="fa fa-check"/> Process map
+                        <strong><field name="created_process_map_id" readonly="1"
+                            options="{'no_open': True}"/></strong>
+                        created. You can open the Canvas Editor from the project page.
+                    </div>
                 </div>
 
                 <!-- Step 4: User Stories -->
@@ -145,6 +152,83 @@
         <field name="res_model">appfoundry.project.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
+    </record>
+
+    <!-- User Story Wizard Form -->
+    <record id="appfoundry_user_story_wizard_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.user.story.wizard.form</field>
+        <field name="model">appfoundry.user.story.wizard</field>
+        <field name="arch" type="xml">
+            <form string="App User Story">
+                <field name="project_id" invisible="1"/>
+                <p class="text-muted mb-3">
+                    Describe the overall purpose and goals of your application.
+                    What problem does it solve? Who are the users?
+                </p>
+                <field name="description"
+                    placeholder="Describe what your application does, who it's for, and what problems it solves..."
+                    style="min-height: 350px;"/>
+                <footer>
+                    <button name="action_save" type="object" string="Save"
+                        class="btn-primary" icon="fa-check"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Icon Wizard Form -->
+    <record id="appfoundry_icon_wizard_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.icon.wizard.form</field>
+        <field name="model">appfoundry.icon.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Icon Generator">
+                <field name="project_id" invisible="1"/>
+                <group>
+                    <group string="Kleuren">
+                        <field name="icon_main_color" widget="color"/>
+                        <field name="icon_accent_color" widget="color"/>
+                        <field name="icon_module_name"
+                               placeholder="bv. myschool_admin, activiteiten, ..."/>
+                    </group>
+                    <group string="Voorbeeld">
+                        <field name="icon_preview" widget="image"
+                               class="oe_avatar"
+                               options="{'size': [100, 100]}"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_generate_preview" type="object"
+                        string="Voorbeeld genereren" class="btn-primary"
+                        icon="fa-paint-brush"/>
+                    <button name="action_apply_to_menu" type="object"
+                        string="Toepassen op app menu" class="btn-secondary"
+                        icon="fa-check"
+                        confirm="Het icoon wordt toegepast op het app menu van deze module. Doorgaan?"/>
+                    <button string="Sluiten" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Prompt Wizard Form -->
+    <record id="appfoundry_prompt_wizard_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.prompt.wizard.form</field>
+        <field name="model">appfoundry.prompt.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Prompt Generator">
+                <field name="project_id" invisible="1"/>
+                <p class="text-muted mb-3">
+                    Review the generated prompt below. You can edit it before
+                    copying to Claude Code.
+                </p>
+                <field name="generated_prompt" class="font-monospace"
+                    style="min-height: 400px;"/>
+                <footer>
+                    <button string="Close" special="cancel" class="btn-primary"/>
+                </footer>
+            </form>
+        </field>
     </record>
 
 </odoo>

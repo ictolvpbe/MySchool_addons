@@ -55,6 +55,11 @@ class AppfoundryItem(models.Model):
     def _default_stage(self):
         return self.env['appfoundry.item.stage'].search([], order='sequence', limit=1)
 
+    @api.onchange('project_id')
+    def _onchange_project_id(self):
+        if self.project_id and not self.release_id:
+            self.release_id = self.project_id.current_release_id
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
