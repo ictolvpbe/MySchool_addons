@@ -25,10 +25,8 @@
                     </p>
                     <group>
                         <group>
-                            <field name="project_name" placeholder="My Awesome App"
-                                required="step == 1"/>
-                            <field name="project_code" placeholder="MAA"
-                                required="step == 1"/>
+                            <field name="project_name" placeholder="My Awesome App"/>
+                            <field name="project_code" placeholder="MAA"/>
                         </group>
                         <group>
                             <field name="project_responsible_id"
@@ -44,7 +42,8 @@
                         What problem does it solve? Who are the users?
                     </p>
                     <field name="project_description"
-                        placeholder="Describe what your application does, who it's for, and what problems it solves..."/>
+                        placeholder="Describe what your application does, who it's for, and what problems it solves..."
+                        style="min-height: 350px;"/>
                 </div>
 
                 <!-- Step 3: Process Map -->
