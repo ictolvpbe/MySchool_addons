@@ -63,11 +63,11 @@ class AppfoundryProject(models.Model):
     # --- Icon Generator ---
     icon_main_color = fields.Char(
         string='Hoofdkleur',
-        default=lambda self: self.env['appfoundry.icon.config']._get_defaults().main_color,
+        default=lambda self: self.env['appfoundry.icon.config'].sudo()._get_defaults().main_color,
     )
     icon_accent_color = fields.Char(
         string='Accentkleur',
-        default=lambda self: self.env['appfoundry.icon.config']._get_defaults().accent_color,
+        default=lambda self: self.env['appfoundry.icon.config'].sudo()._get_defaults().accent_color,
     )
     icon_module_name = fields.Char(
         string='Modulenaam',
