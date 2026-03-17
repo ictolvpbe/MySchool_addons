@@ -58,7 +58,8 @@ class AppfoundryProjectWizard(models.TransientModel):
         elif self.step == 2:
             self._do_step_2()
         elif self.step == 3:
-            self._do_step_3()
+            # Step 3 handles its own advancement and may open process map
+            return self._do_step_3_and_advance()
         elif self.step == 4:
             self._do_step_4()
         self.step += 1
@@ -94,7 +95,20 @@ class AppfoundryProjectWizard(models.TransientModel):
         return {'type': 'ir.actions.act_window_close'}
 
     def action_skip_wizard(self):
-        """Skip the wizard and open the standard project form."""
+        """Skip wizard. Create the project first if name+code are given."""
+        if self.project_name and self.project_code:
+            project = self.env['appfoundry.project'].create({
+                'name': self.project_name,
+                'code': self.project_code,
+                'responsible_id': self.project_responsible_id.id or self.env.user.id,
+            })
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'appfoundry.project',
+                'res_id': project.id,
+                'view_mode': 'form',
+                'target': 'current',
+            }
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'appfoundry.project',
@@ -137,16 +151,38 @@ class AppfoundryProjectWizard(models.TransientModel):
         if self.project_id:
             self.project_id.write({'description': self.project_description})
 
-    def _do_step_3(self):
+    def _do_step_3_and_advance(self):
+        """Create process map if requested, advance to step 4.
+
+        When a map is created, opens its form as a dialog on top of the
+        wizard.  Closing that dialog refreshes the wizard at step 4.
+        """
+        process_map = False
         if self.create_process_map and self.process_map_name:
             existing = self.project_id.process_map_ids.filtered(
                 lambda m: m.name == self.process_map_name
             )
             if not existing:
-                new_map = self.env['process.map'].create({
+                process_map = self.env['process.map'].create({
                     'name': self.process_map_name,
                 })
-                self.project_id.process_map_ids = [(4, new_map.id)]
+                self.project_id.process_map_ids = [(4, process_map.id)]
+            else:
+                process_map = existing[0]
+
+        self.step = 4
+        self._refresh_items()
+
+        if process_map:
+            return {
+                'type': 'ir.actions.act_window',
+                'name': 'Edit Process Map',
+                'res_model': 'process.map',
+                'res_id': process_map.id,
+                'view_mode': 'form',
+                'target': 'new',
+            }
+        return self._reopen()
 
     def _do_step_4(self):
         """Re-fetch stories and generate prompt."""
