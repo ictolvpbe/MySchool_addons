@@ -7,3 +7,4 @@ from . import item
 from . import test_type
 from . import test_item
 from . import process_map_ext
+from . import icon_config

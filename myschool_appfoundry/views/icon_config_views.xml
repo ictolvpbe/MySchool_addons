@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="appfoundry_icon_config_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.icon.config.form</field>
+        <field name="model">appfoundry.icon.config</field>
+        <field name="arch" type="xml">
+            <form string="Icon Generator Standaardkleuren">
+                <sheet>
+                    <group>
+                        <group string="Standaardkleuren voor nieuwe projecten">
+                            <field name="main_color" widget="color"/>
+                            <field name="accent_color" widget="color"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Server action to open or create the singleton -->
+    <record id="appfoundry_icon_config_open" model="ir.actions.server">
+        <field name="name">Icon Generator Kleuren</field>
+        <field name="model_id" ref="model_appfoundry_icon_config"/>
+        <field name="state">code</field>
+        <field name="code">
+config = env['appfoundry.icon.config']._get_defaults()
+action = {
+    'type': 'ir.actions.act_window',
+    'name': 'Icon Generator',
+    'res_model': 'appfoundry.icon.config',
+    'view_mode': 'form',
+    'res_id': config.id,
+    'target': 'current',
+}
+        </field>
+    </record>
+
+</odoo>

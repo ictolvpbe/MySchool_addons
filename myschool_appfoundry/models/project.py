@@ -60,6 +60,59 @@ class AppfoundryProject(models.Model):
     ], string='Phase', default='new', required=True, tracking=True)
     is_active = fields.Boolean(default=True)
 
+    # --- Icon Generator ---
+    icon_main_color = fields.Char(
+        string='Hoofdkleur',
+        default=lambda self: self.env['appfoundry.icon.config']._get_defaults().main_color,
+    )
+    icon_accent_color = fields.Char(
+        string='Accentkleur',
+        default=lambda self: self.env['appfoundry.icon.config']._get_defaults().accent_color,
+    )
+    icon_module_name = fields.Char(
+        string='Modulenaam',
+        help='Technische modulenaam voor het icoon (bepaalt de vorm).',
+    )
+    icon_preview = fields.Binary(string='Icoon voorbeeld', readonly=True, attachment=False)
+
+    def action_generate_icon_preview(self):
+        """Generate a preview icon using the icon generator."""
+        import base64
+        from odoo.addons.myschool_theme.models.icon_generator import generate_icon
+        for record in self:
+            module_name = record.icon_module_name or record.code or record.name or ''
+            icon_bytes = generate_icon(
+                record.icon_main_color or '#007d8c',
+                record.icon_accent_color or '#00C4D9',
+                module_name=module_name.lower().replace(' ', '_'),
+                display_name=record.name or module_name,
+            )
+            record.icon_preview = base64.b64encode(icon_bytes)
+
+    def action_apply_icon_to_menu(self):
+        """Apply the generated icon to the module's app menu."""
+        import base64
+        from odoo.addons.myschool_theme.models.icon_generator import generate_icon
+        for record in self:
+            module_name = record.icon_module_name or record.code or record.name or ''
+            mod_name_clean = module_name.lower().replace(' ', '_')
+            icon_bytes = generate_icon(
+                record.icon_main_color or '#007d8c',
+                record.icon_accent_color or '#00C4D9',
+                module_name=mod_name_clean,
+                display_name=record.name or module_name,
+            )
+            icon_b64 = base64.b64encode(icon_bytes)
+            # Find matching root menu by module name
+            menus = self.env['ir.ui.menu'].sudo().search([
+                ('parent_id', '=', False),
+            ])
+            for menu in menus:
+                xmlid = menu.get_external_id().get(menu.id, '')
+                if xmlid and xmlid.startswith(mod_name_clean + '.'):
+                    menu.write({'web_icon_data': icon_b64})
+                    break
+
     def action_phase_dev(self):
         self.write({'phase': 'dev'})
 

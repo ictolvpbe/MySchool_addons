@@ -244,6 +244,34 @@
                                 </p>
                             </div>
                         </page>
+                        <page string="Icon Generator" name="icon_generator">
+                            <group>
+                                <group string="Kleuren">
+                                    <field name="icon_main_color" widget="color"/>
+                                    <field name="icon_accent_color" widget="color"/>
+                                    <field name="icon_module_name"
+                                           placeholder="bv. myschool_admin, activiteiten, ..."/>
+                                </group>
+                                <group string="Voorbeeld">
+                                    <field name="icon_preview" widget="image"
+                                           class="oe_avatar"
+                                           options="{'size': [100, 100]}"/>
+                                </group>
+                            </group>
+                            <div class="d-flex gap-2 mt-3">
+                                <button name="action_generate_icon_preview"
+                                        type="object"
+                                        string="Voorbeeld genereren"
+                                        class="btn-primary"
+                                        icon="fa-paint-brush"/>
+                                <button name="action_apply_icon_to_menu"
+                                        type="object"
+                                        string="Toepassen op app menu"
+                                        class="btn-secondary"
+                                        icon="fa-check"
+                                        confirm="Het icoon wordt toegepast op het app menu van deze module. Doorgaan?"/>
+                            </div>
+                        </page>
                     </notebook>
                 </sheet>
             </form>

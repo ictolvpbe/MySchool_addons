@@ -14,5 +14,10 @@
         <field name="comment">Full access to all AppFoundry models.</field>
     </record>
 
+    <!-- MySchool admin automatically gets AppFoundry manager access -->
+    <record id="myschool_core.group_myschool_core_admin" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_appfoundry_manager'))]"/>
+    </record>
+
     </data>
 </odoo>
