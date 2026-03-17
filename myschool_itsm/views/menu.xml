@@ -7,6 +7,7 @@
     <menuitem id="menu_itsm_root"
               name="IT Service Management"
               web_icon="myschool_itsm,static/description/icon.png"
+              groups="myschool_itsm.group_itsm_user"
               sequence="30"/>
 
     <!-- ================================================================
