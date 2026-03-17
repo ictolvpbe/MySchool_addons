@@ -23,6 +23,7 @@ COLOR_FIELDS = [
     ('hover_row', '--myschool-hover-row'),
     ('hover_btn', '--myschool-hover-btn'),
     ('surface', '--myschool-surface'),
+    ('sidebar_bg', '--myschool-sidebar-bg'),
 ]
 
 
@@ -47,6 +48,49 @@ class ResConfigSettings(models.TransientModel):
     ms_color_hover_row = fields.Char(string='Row Hover')
     ms_color_hover_btn = fields.Char(string='Button Hover')
     ms_color_surface = fields.Char(string='Surface')
+    ms_color_sidebar_bg = fields.Char(string='Sidebar Background')
+
+    # Icon color pairs (stored in ir.config_parameter)
+    ms_icon_pair_1_main = fields.Char(
+        string='Pair 1 Main',
+        config_parameter='myschool_theme.icon_pair_1_main',
+        default='#007d8c',
+    )
+    ms_icon_pair_1_accent = fields.Char(
+        string='Pair 1 Accent',
+        config_parameter='myschool_theme.icon_pair_1_accent',
+        default='#00C4D9',
+    )
+    ms_icon_pair_2_main = fields.Char(
+        string='Pair 2 Main',
+        config_parameter='myschool_theme.icon_pair_2_main',
+        default='#2E7D32',
+    )
+    ms_icon_pair_2_accent = fields.Char(
+        string='Pair 2 Accent',
+        config_parameter='myschool_theme.icon_pair_2_accent',
+        default='#66BB6A',
+    )
+    ms_icon_pair_3_main = fields.Char(
+        string='Pair 3 Main',
+        config_parameter='myschool_theme.icon_pair_3_main',
+        default='#C62828',
+    )
+    ms_icon_pair_3_accent = fields.Char(
+        string='Pair 3 Accent',
+        config_parameter='myschool_theme.icon_pair_3_accent',
+        default='#EF5350',
+    )
+    ms_icon_pair_4_main = fields.Char(
+        string='Pair 4 Main',
+        config_parameter='myschool_theme.icon_pair_4_main',
+        default='#F57F17',
+    )
+    ms_icon_pair_4_accent = fields.Char(
+        string='Pair 4 Accent',
+        config_parameter='myschool_theme.icon_pair_4_accent',
+        default='#FFCA28',
+    )
 
     # ----------------------------------------------------------
     # Helper
@@ -145,6 +189,13 @@ class ResConfigSettings(models.TransientModel):
             'tag': 'reload',
         }
 
+    def action_regenerate_icons(self):
+        self.env['myschool_theme.icon.manager']._regenerate_all_icons()
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload',
+        }
+
     # ----------------------------------------------------------
     # CRUD
     # ----------------------------------------------------------
@@ -156,8 +207,22 @@ class ResConfigSettings(models.TransientModel):
             res[f'ms_color_{suffix}'] = colors.get(suffix, '')
         return res
 
+    def _ms_icon_colors_changed(self):
+        """Check if any icon color pair changed since last save."""
+        get = self.env['ir.config_parameter'].sudo().get_param
+        for i in range(1, 5):
+            for suffix in ('main', 'accent'):
+                param = f'myschool_theme.icon_pair_{i}_{suffix}'
+                field = f'ms_icon_pair_{i}_{suffix}'
+                if self[field] and self[field] != get(param, ''):
+                    return True
+        return False
+
     def set_values(self):
+        icon_changed = self._ms_icon_colors_changed()
         res = super().set_values()
         if self._ms_detect_change():
             self._ms_replace_colors()
+        if icon_changed:
+            self.env['myschool_theme.icon.manager']._regenerate_all_icons()
         return res

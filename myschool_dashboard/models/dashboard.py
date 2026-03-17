@@ -449,25 +449,31 @@ class MySchoolDashboard(models.Model):
         model = 'activiteiten.record'
         user = self.env(su=False).user
         if self._is_admin(model):
-            pass
+            pass  # no filter for admin
         elif self._is_manager(model):
             visible_states = set()
+            search_default = None
             role_checks = {
-                'directie': 'activiteiten.group_activiteiten_directie',
-                'aankoop': 'activiteiten.group_activiteiten_aankoop',
-                'boekhouding': 'activiteiten.group_activiteiten_boekhouding',
-                'vervangingen': 'activiteiten.group_activiteiten_vervangingen',
+                'directie': ('activiteiten.group_activiteiten_directie', 'search_default_to_approve'),
+                'aankoop': ('activiteiten.group_activiteiten_aankoop', 'search_default_bus_check'),
+                'boekhouding': ('activiteiten.group_activiteiten_boekhouding', 'search_default_s_code_pending'),
+                'vervangingen': ('activiteiten.group_activiteiten_vervangingen', 'search_default_replacement_pending'),
             }
-            for role, group in role_checks.items():
+            for role, (group, sd) in role_checks.items():
                 if user.has_group(group):
                     visible_states.update(self._ROLE_STATES[role])
+                    if not search_default:
+                        search_default = sd
             if visible_states:
                 action['domain'] = [('state', 'in', list(visible_states))]
+            if search_default:
+                action['context'] = {search_default: 1}
         else:
             action['domain'] = [
                 ('create_uid', '=', self.env.uid),
                 ('state', 'in', self._ROLE_STATES['medewerker']),
             ]
+            action['context'] = {'search_default_my_requests': 1}
         return action
 
     def action_new_activiteit(self):

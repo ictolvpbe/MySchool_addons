@@ -68,6 +68,49 @@
                             <field name="ms_color_hover_btn" class="d-block w-25 p-0 m-0" widget="color"/>
                         </div>
                     </setting>
+                    <setting string="Sidebar" help="App sidebar background color">
+                        <div class="w-50 row">
+                            <label for="ms_color_sidebar_bg" string="Sidebar Background" class="d-block w-75 py-2"/>
+                            <field name="ms_color_sidebar_bg" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                    </setting>
+                    <setting string="App Icon Colors" help="4 color pairs for auto-generated app icons. Each pair has a main color and an accent color.">
+                        <div class="w-75 row mb-2">
+                            <span class="col-4 fw-bold">Pair 1</span>
+                            <label for="ms_icon_pair_1_main" string="Main" class="col-2 py-1"/>
+                            <field name="ms_icon_pair_1_main" class="col-2 p-0 m-0" widget="color"/>
+                            <label for="ms_icon_pair_1_accent" string="Accent" class="col-2 py-1"/>
+                            <field name="ms_icon_pair_1_accent" class="col-2 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-75 row mb-2">
+                            <span class="col-4 fw-bold">Pair 2</span>
+                            <label for="ms_icon_pair_2_main" string="Main" class="col-2 py-1"/>
+                            <field name="ms_icon_pair_2_main" class="col-2 p-0 m-0" widget="color"/>
+                            <label for="ms_icon_pair_2_accent" string="Accent" class="col-2 py-1"/>
+                            <field name="ms_icon_pair_2_accent" class="col-2 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-75 row mb-2">
+                            <span class="col-4 fw-bold">Pair 3</span>
+                            <label for="ms_icon_pair_3_main" string="Main" class="col-2 py-1"/>
+                            <field name="ms_icon_pair_3_main" class="col-2 p-0 m-0" widget="color"/>
+                            <label for="ms_icon_pair_3_accent" string="Accent" class="col-2 py-1"/>
+                            <field name="ms_icon_pair_3_accent" class="col-2 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-75 row mb-2">
+                            <span class="col-4 fw-bold">Pair 4</span>
+                            <label for="ms_icon_pair_4_main" string="Main" class="col-2 py-1"/>
+                            <field name="ms_icon_pair_4_main" class="col-2 p-0 m-0" widget="color"/>
+                            <label for="ms_icon_pair_4_accent" string="Accent" class="col-2 py-1"/>
+                            <field name="ms_icon_pair_4_accent" class="col-2 p-0 m-0" widget="color"/>
+                        </div>
+                        <button
+                            name="action_regenerate_icons"
+                            icon="fa-paint-brush"
+                            type="object"
+                            string="Regenerate All App Icons"
+                            class="btn-link mt-2"
+                        />
+                    </setting>
                     <setting
                         string="Background Image"
                         company_dependent="1"

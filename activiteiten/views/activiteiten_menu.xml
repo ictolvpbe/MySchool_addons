@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <!-- Action: My Requests (Personeelslid) -->
+    <!-- Main action (no domain, no search_default — Python injects defaults per role) -->
+    <record id="action_activiteiten_main" model="ir.actions.act_window">
+        <field name="name">Activiteiten</field>
+        <field name="res_model">activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Action: My Requests -->
     <record id="action_activiteiten_my" model="ir.actions.act_window">
         <field name="name">Mijn Aanvragen</field>
         <field name="res_model">activiteiten.record</field>
         <field name="view_mode">list,form</field>
-        <field name="domain">[('create_uid', '=', uid)]</field>
-        <field name="context">{'search_default_my_requests': 1}</field>
     </record>
 
     <!-- Action: Bus Controle (Aankoop) -->
@@ -14,7 +19,7 @@
         <field name="name">Bus Controle</field>
         <field name="res_model">activiteiten.record</field>
         <field name="view_mode">list,form</field>
-        <field name="domain">[('state', '=', 'bus_check')]</field>
+        <field name="context">{'search_default_bus_check': 1}</field>
     </record>
 
     <!-- Action: Te Beoordelen (Directie) -->
@@ -22,7 +27,7 @@
         <field name="name">Te Beoordelen</field>
         <field name="res_model">activiteiten.record</field>
         <field name="view_mode">list,form</field>
-        <field name="domain">[('state', '=', 'pending_approval')]</field>
+        <field name="context">{'search_default_to_approve': 1}</field>
     </record>
 
     <!-- Action: S-Code (Boekhouding) -->
@@ -30,7 +35,7 @@
         <field name="name">S-Code &amp; Verzekering</field>
         <field name="res_model">activiteiten.record</field>
         <field name="view_mode">list,form</field>
-        <field name="domain">[('state', 'in', ('approved', 's_code'))]</field>
+        <field name="context">{'search_default_s_code_pending': 1}</field>
     </record>
 
     <!-- Action: Vervangingen -->
@@ -38,7 +43,7 @@
         <field name="name">Vervangingen</field>
         <field name="res_model">activiteiten.record</field>
         <field name="view_mode">list,form</field>
-        <field name="domain">[('state', '=', 'vervanging')]</field>
+        <field name="context">{'search_default_replacement_pending': 1}</field>
     </record>
 
     <!-- Action: My Invitations -->
@@ -59,53 +64,54 @@
     <!-- Root Menu -->
     <menuitem id="menu_activiteiten_root"
               name="Activiteiten"
+              action="action_activiteiten_main"
               sequence="60"/>
 
     <!-- Submenus -->
-    <menuitem id="menu_activiteiten_my"
-              name="Mijn Aanvragen"
+    <menuitem id="menu_activiteiten_boekhouding"
+              name="S-Code &amp; Verzekering"
               parent="menu_activiteiten_root"
-              action="action_activiteiten_my"
+              action="action_activiteiten_boekhouding"
+              groups="activiteiten.group_activiteiten_boekhouding"
               sequence="10"/>
-
-    <menuitem id="menu_activiteiten_invites"
-              name="Mijn Uitnodigingen"
-              parent="menu_activiteiten_root"
-              action="action_activiteiten_invites"
-              sequence="12"/>
-
-    <menuitem id="menu_activiteiten_bus_check"
-              name="Bus Controle"
-              parent="menu_activiteiten_root"
-              action="action_activiteiten_bus_check"
-              groups="activiteiten.group_activiteiten_aankoop"
-              sequence="15"/>
 
     <menuitem id="menu_activiteiten_approve"
               name="Te Beoordelen"
               parent="menu_activiteiten_root"
               action="action_activiteiten_approve"
               groups="activiteiten.group_activiteiten_directie"
-              sequence="20"/>
+              sequence="11"/>
 
-    <menuitem id="menu_activiteiten_boekhouding"
-              name="S-Code &amp; Verzekering"
+    <menuitem id="menu_activiteiten_bus_check"
+              name="Bus Controle"
               parent="menu_activiteiten_root"
-              action="action_activiteiten_boekhouding"
-              groups="activiteiten.group_activiteiten_boekhouding"
-              sequence="30"/>
+              action="action_activiteiten_bus_check"
+              groups="activiteiten.group_activiteiten_aankoop"
+              sequence="12"/>
 
     <menuitem id="menu_activiteiten_vervangingen"
               name="Vervangingen"
               parent="menu_activiteiten_root"
               action="action_activiteiten_vervangingen"
               groups="activiteiten.group_activiteiten_vervangingen"
-              sequence="35"/>
+              sequence="13"/>
 
     <menuitem id="menu_activiteiten_all"
               name="Alle Aanvragen"
               parent="menu_activiteiten_root"
               action="action_activiteiten_all"
               groups="activiteiten.group_activiteiten_admin"
-              sequence="40"/>
+              sequence="14"/>
+
+    <menuitem id="menu_activiteiten_my"
+              name="Mijn Aanvragen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_my"
+              sequence="20"/>
+
+    <menuitem id="menu_activiteiten_invites"
+              name="Mijn Uitnodigingen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_invites"
+              sequence="21"/>
 </odoo>

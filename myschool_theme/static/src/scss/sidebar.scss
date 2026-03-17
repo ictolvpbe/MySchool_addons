@@ -4,7 +4,7 @@
 
 $ms-sidebar-width: 200px;
 $ms-sidebar-collapsed-width: 52px;
-$ms-sidebar-bg: #003d42;
+$ms-sidebar-bg: var(--myschool-sidebar-bg, #003d42);
 $ms-sidebar-text: rgba(255, 255, 255, 0.75);
 $ms-sidebar-text-active: #fff;
 $ms-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
