@@ -20,6 +20,7 @@
         'views/activiteiten_invite_views.xml',
         'views/activiteiten_menu.xml',
         'views/org_views.xml',
+        'wizard/snapshot_wizard_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

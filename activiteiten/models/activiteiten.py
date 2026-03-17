@@ -95,6 +95,16 @@ class Activiteiten(models.Model):
         'activiteiten.kosten.line', 'activiteit_id',
         string='Kosten',
     )
+    kosten_vast_ids = fields.One2many(
+        'activiteiten.kosten.line', 'activiteit_id',
+        string='Vaste kosten',
+        domain=[('kosten_type', '=', 'vast')],
+    )
+    kosten_variabel_ids = fields.One2many(
+        'activiteiten.kosten.line', 'activiteit_id',
+        string='Variabele kosten',
+        domain=[('kosten_type', '=', 'variabel')],
+    )
     totale_kost = fields.Monetary(
         string='Totale kost',
         currency_field='currency_id',
@@ -106,6 +116,16 @@ class Activiteiten(models.Model):
         compute='_compute_kosten_display',
         sanitize=False,
     )
+    bijdragen_regeling = fields.Boolean(
+        string='Bijdragen regeling',
+        default=False,
+        help='Geeft aan dat deze activiteit onder de bijdragenregeling valt.',
+    )
+    verzekering_pct = fields.Float(
+        string='Verzekeringspercentage (%)',
+        compute='_compute_verzekering_pct',
+        inverse='_inverse_verzekering_pct',
+    )
     verzekering_done = fields.Boolean(string='Verzekering geregeld', default=False)
     rejection_reason = fields.Text(string='Reden voor afkeuring')
     invite_ids = fields.One2many(
@@ -115,6 +135,18 @@ class Activiteiten(models.Model):
     student_count = fields.Integer(
         string='Aantal leerlingen',
         compute='_compute_student_count',
+    )
+    snapshot_line_ids = fields.One2many(
+        'activiteiten.snapshot.line', 'activiteit_id',
+        string='Deelnemers snapshot',
+    )
+    snapshot_student_count = fields.Integer(
+        string='Leerlingen (ingediend)',
+        compute='_compute_snapshot_counts',
+    )
+    snapshot_leerkracht_count = fields.Integer(
+        string='Leerkrachten (ingediend)',
+        compute='_compute_snapshot_counts',
     )
     is_owner = fields.Boolean(compute='_compute_is_owner')
     can_manage_invites = fields.Boolean(compute='_compute_can_manage_invites')
@@ -159,28 +191,122 @@ class Activiteiten(models.Model):
             else:
                 record.student_count = 0
 
-    def action_view_students(self):
+    @api.depends('snapshot_line_ids')
+    def _compute_snapshot_counts(self):
+        for record in self:
+            lines = record.snapshot_line_ids.filtered(lambda l: not l.date_to)
+            record.snapshot_student_count = len(
+                lines.filtered(lambda l: l.snapshot_type == 'student'))
+            record.snapshot_leerkracht_count = len(
+                lines.filtered(lambda l: l.snapshot_type == 'leerkracht'))
+
+    def _get_current_students(self):
+        """Get the current student person records for the selected classes."""
         self.ensure_one()
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
-        person_ids = []
-        if person_tree_type and self.klas_ids:
-            rels = PropRelation.search([
-                ('proprelation_type_id', '=', person_tree_type.id),
-                ('id_org', 'in', self.klas_ids.ids),
-                ('id_person', '!=', False),
-                ('is_active', '=', True),
-            ])
-            person_ids = rels.mapped('id_person').ids
+        if not person_tree_type or not self.klas_ids:
+            return self.env['myschool.person']
+        rels = PropRelation.search([
+            ('proprelation_type_id', '=', person_tree_type.id),
+            ('id_org', 'in', self.klas_ids.ids),
+            ('id_person', '!=', False),
+            ('is_active', '=', True),
+        ])
+        return rels.mapped('id_person')
+
+    def _create_snapshot(self):
+        """Create snapshot lines for current students and teachers."""
+        SnapshotLine = self.env['activiteiten.snapshot.line']
+        today = fields.Date.context_today(self)
+        for record in self:
+            # Remove old snapshot lines (fresh snapshot on each submit)
+            record.snapshot_line_ids.unlink()
+            vals_list = []
+            # Students
+            students = record._get_current_students()
+            for student in students:
+                vals_list.append({
+                    'activiteit_id': record.id,
+                    'person_id': student.id,
+                    'snapshot_type': 'student',
+                    'date_from': today,
+                })
+            # Teachers
+            for teacher in record.leerkracht_ids:
+                vals_list.append({
+                    'activiteit_id': record.id,
+                    'person_id': teacher.id,
+                    'snapshot_type': 'leerkracht',
+                    'date_from': today,
+                })
+            if vals_list:
+                SnapshotLine.create(vals_list)
+
+    def action_update_snapshot(self):
+        """Update snapshot: mark people no longer in the class/activity."""
+        today = fields.Date.context_today(self)
+        for record in self:
+            current_students = record._get_current_students()
+            current_teachers = record.leerkracht_ids
+            for line in record.snapshot_line_ids.filtered(lambda l: not l.date_to):
+                if line.snapshot_type == 'student' and line.person_id not in current_students:
+                    line.date_to = today
+                elif line.snapshot_type == 'leerkracht' and line.person_id not in current_teachers:
+                    line.date_to = today
+            # Add new people that weren't in the snapshot yet
+            existing_student_ids = record.snapshot_line_ids.filtered(
+                lambda l: l.snapshot_type == 'student' and not l.date_to
+            ).mapped('person_id').ids
+            existing_teacher_ids = record.snapshot_line_ids.filtered(
+                lambda l: l.snapshot_type == 'leerkracht' and not l.date_to
+            ).mapped('person_id').ids
+            vals_list = []
+            for student in current_students:
+                if student.id not in existing_student_ids:
+                    vals_list.append({
+                        'activiteit_id': record.id,
+                        'person_id': student.id,
+                        'snapshot_type': 'student',
+                        'date_from': today,
+                    })
+            for teacher in current_teachers:
+                if teacher.id not in existing_teacher_ids:
+                    vals_list.append({
+                        'activiteit_id': record.id,
+                        'person_id': teacher.id,
+                        'snapshot_type': 'leerkracht',
+                        'date_from': today,
+                    })
+            if vals_list:
+                self.env['activiteiten.snapshot.line'].create(vals_list)
+
+    def _open_snapshot_wizard(self, snapshot_type):
+        """Open the snapshot wizard for the given type."""
+        self.ensure_one()
+        # Auto-update snapshot when opening
+        if self.state not in ('draft', 'form_invullen'):
+            self.action_update_snapshot()
+        wiz = self.env['activiteiten.snapshot.wizard'].create({
+            'activiteit_id': self.id,
+            'snapshot_type': snapshot_type,
+        })
+        label = 'Leerlingen' if snapshot_type == 'student' else 'Leerkrachten'
         return {
             'type': 'ir.actions.act_window',
-            'name': f'Leerlingen - {self.titel or self.name}',
-            'res_model': 'myschool.person',
-            'view_mode': 'list,form',
-            'domain': [('id', 'in', person_ids)],
-            'context': {'create': False},
+            'name': label,
+            'res_model': 'activiteiten.snapshot.wizard',
+            'view_mode': 'form',
+            'res_id': wiz.id,
+            'target': 'new',
         }
+
+    def action_open_snapshot_students(self):
+        return self._open_snapshot_wizard('student')
+
+    def action_open_snapshot_leerkrachten(self):
+        return self._open_snapshot_wizard('leerkracht')
 
     @api.depends_context('uid')
     def _compute_is_owner(self):
@@ -270,15 +396,35 @@ class Activiteiten(models.Model):
             else:
                 record.dates_display = ''
 
-    @api.depends('s_code_price', 'kosten_ids.bedrag')
+    def _get_verzekering_pct(self):
+        """Get the insurance percentage from settings (default 2%)."""
+        pct = self.env['ir.config_parameter'].sudo().get_param(
+            'activiteiten.verzekering_pct', '2.0')
+        try:
+            return float(pct)
+        except (ValueError, TypeError):
+            return 2.0
+
+    def _compute_verzekering_pct(self):
+        pct = self._get_verzekering_pct()
+        for record in self:
+            record.verzekering_pct = pct
+
+    def _inverse_verzekering_pct(self):
+        for record in self:
+            self.env['ir.config_parameter'].sudo().set_param(
+                'activiteiten.verzekering_pct', str(record.verzekering_pct))
+
+    @api.depends('kosten_ids.bedrag')
     def _compute_totale_kost(self):
         for record in self:
-            record.totale_kost = (record.s_code_price or 0) + sum(record.kosten_ids.mapped('bedrag'))
+            record.totale_kost = sum(record.kosten_ids.mapped('bedrag'))
 
-    @api.onchange('s_code_price', 'bus_price', 'kosten_ids')
+    @api.onchange('bus_price', 'kosten_ids')
     def _onchange_recalculate_verzekering(self):
+        pct = self._get_verzekering_pct() / 100.0
         verzekering_line = None
-        other_total = self.s_code_price or 0
+        other_total = 0
         for line in self.kosten_ids:
             if line.is_auto and 'Verzekering' in (line.omschrijving or ''):
                 verzekering_line = line
@@ -288,14 +434,12 @@ class Activiteiten(models.Model):
             else:
                 other_total += line.bedrag or 0
         if verzekering_line:
-            verzekering_line.bedrag = other_total * 0.02
+            verzekering_line.bedrag = other_total * pct
 
-    @api.depends('s_code_price', 'kosten_ids.bedrag', 'kosten_ids.omschrijving')
+    @api.depends('kosten_ids.bedrag', 'kosten_ids.omschrijving')
     def _compute_kosten_display(self):
         for record in self:
             lines = []
-            if record.s_code_price:
-                lines.append('S-Code: € %.2f' % record.s_code_price)
             for line in record.kosten_ids:
                 lines.append('%s: € %.2f' % (line.omschrijving or '', line.bedrag or 0))
             record.kosten_display = '<br/>'.join(lines) if lines else ''
@@ -458,6 +602,8 @@ class Activiteiten(models.Model):
                 raise UserError("Vul een titel in.")
             if not record.datetime:
                 raise UserError("Vul een datum en tijdstip in.")
+            # Snapshot students and teachers at submission time
+            record._create_snapshot()
             if record.bus_nodig:
                 record.state = 'bus_check'
             else:
@@ -488,18 +634,10 @@ class Activiteiten(models.Model):
         for record in self:
             if record.state != 'pending_approval':
                 raise UserError("Alleen aanvragen in afwachting kunnen goedgekeurd worden.")
-            if record.activity_type == 'binnenschools':
-                record.state = 'done'
-            else:
-                record.state = 's_code'
+            record.state = 's_code'
         self._send_notification('approved')
         self._schedule_owner_approved_activity()
-        buitenschools = self.filtered(lambda r: r.activity_type == 'buitenschools')
-        if buitenschools:
-            buitenschools._schedule_boekhouding_activity()
-        binnenschools = self.filtered(lambda r: r.activity_type == 'binnenschools')
-        if binnenschools:
-            binnenschools._schedule_vervangingen_activity()
+        self._schedule_boekhouding_activity()
 
     def action_reject(self):
         for record in self:
@@ -515,18 +653,23 @@ class Activiteiten(models.Model):
 
     # --- Boekhouding actions ---
 
+    def _is_multiday(self):
+        """Check if the activity spans 2 or more days."""
+        self.ensure_one()
+        if not self.datetime or not self.datetime_end:
+            return False
+        return self.datetime.date() != self.datetime_end.date()
+
     def action_confirm_s_code(self):
+        pct = self._get_verzekering_pct()
         for record in self:
             if record.state != 's_code':
                 raise UserError("S-Code kan alleen in de S-Code fase bevestigd worden.")
             if not record.s_code_name:
                 raise UserError("Vul eerst de S-Code in.")
-            if not record.s_code_price:
-                raise UserError("Vul eerst het S-Code bedrag in.")
             # Remove any existing auto lines and recreate them
             auto_lines_to_remove = record.kosten_ids.filtered(lambda l: l.is_auto)
             if auto_lines_to_remove:
-                # Bypass the unlink protection for auto lines
                 auto_lines_to_remove.with_context(force_unlink_auto=True).unlink()
             auto_lines = []
             if record.bus_price:
@@ -534,21 +677,27 @@ class Activiteiten(models.Model):
                     'activiteit_id': record.id,
                     'omschrijving': 'Bus',
                     'bedrag': record.bus_price,
+                    'kosten_type': 'vast',
                     'is_auto': True,
                 })
-            # Include manual kosten lines in the basis
-            manual_total = sum(
-                l.bedrag for l in record.kosten_ids if not l.is_auto)
-            basis_bedrag = (record.s_code_price or 0) + (record.bus_price or 0) + manual_total
-            verzekering_bedrag = basis_bedrag * 0.02
-            auto_lines.append({
-                'activiteit_id': record.id,
-                'omschrijving': 'Verzekering (2%)',
-                'bedrag': verzekering_bedrag,
-                'is_auto': True,
-            })
-            self.env['activiteiten.kosten.line'].create(auto_lines)
-            record.verzekering_done = True
+            # Only add verzekering for multi-day activities (2+ days)
+            if record._is_multiday():
+                manual_total = sum(
+                    l.bedrag for l in record.kosten_ids if not l.is_auto)
+                basis_bedrag = (record.bus_price or 0) + manual_total
+                verzekering_bedrag = basis_bedrag * (pct / 100.0)
+                auto_lines.append({
+                    'activiteit_id': record.id,
+                    'omschrijving': 'Verzekering (%.1f%%)' % pct,
+                    'bedrag': verzekering_bedrag,
+                    'kosten_type': 'vast',
+                    'is_auto': True,
+                })
+                record.verzekering_done = True
+            else:
+                record.verzekering_done = False
+            if auto_lines:
+                self.env['activiteiten.kosten.line'].create(auto_lines)
             record.state = 'done'
         self._schedule_vervangingen_activity()
 
@@ -569,26 +718,25 @@ class Activiteiten(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        if 's_code_price' in vals or 'bus_price' in vals:
+        if 'bus_price' in vals:
             self._recalculate_auto_lines()
         return res
 
     def _recalculate_auto_lines(self):
+        pct = self._get_verzekering_pct() / 100.0
         for record in self:
             record.invalidate_recordset(['kosten_ids'])
             verzekering_line = record.kosten_ids.filtered(
                 lambda l: l.is_auto and 'Verzekering' in (l.omschrijving or ''))
             bus_line = record.kosten_ids.filtered(
                 lambda l: l.is_auto and l.omschrijving == 'Bus')
-            if not verzekering_line:
-                continue
-            # Update bus line amount
             if bus_line and record.bus_price:
                 bus_line.write({'bedrag': record.bus_price})
-            # Recalculate verzekering (2% of all costs except verzekering itself)
-            other_total = (record.s_code_price or 0) + sum(
+            if not verzekering_line:
+                continue
+            other_total = sum(
                 l.bedrag for l in record.kosten_ids if l.id != verzekering_line.id)
-            verzekering_line.write({'bedrag': other_total * 0.02})
+            verzekering_line.write({'bedrag': other_total * pct})
 
     def unlink(self):
         is_admin = self.env.user.has_group('activiteiten.group_activiteiten_admin')

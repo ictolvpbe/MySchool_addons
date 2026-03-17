@@ -18,6 +18,10 @@ class ActiviteitenKostenLine(models.Model):
     currency_id = fields.Many2one(
         related='activiteit_id.currency_id',
     )
+    kosten_type = fields.Selection([
+        ('vast', 'Vaste kosten'),
+        ('variabel', 'Variabele kosten'),
+    ], string='Type', default='vast', required=True)
     is_auto = fields.Boolean(string='Automatisch', default=False)
 
     @api.model_create_multi

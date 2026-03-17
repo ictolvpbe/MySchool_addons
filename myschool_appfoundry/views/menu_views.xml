@@ -60,4 +60,10 @@
         action="appfoundry_test_type_action"
         sequence="30"/>
 
+    <menuitem id="appfoundry_menu_config_icon"
+        name="Icon Generator"
+        parent="appfoundry_menu_config"
+        action="appfoundry_icon_config_open"
+        sequence="40"/>
+
 </odoo>
