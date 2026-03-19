@@ -9,6 +9,7 @@
             <kanban class="o_kanban_mobile">
                 <field name="name"/>
                 <field name="code"/>
+                <field name="phase"/>
                 <field name="responsible_id"/>
                 <field name="item_count"/>
                 <field name="open_bug_count"/>
@@ -20,6 +21,12 @@
                         <div class="d-flex align-items-center gap-2 mb-1">
                             <strong class="fs-5"><field name="name"/></strong>
                             <span class="badge text-bg-secondary"><field name="code"/></span>
+                            <field name="phase" widget="badge"
+                                decoration-info="phase in ('idea', 'design')"
+                                decoration-warning="phase == 'dev'"
+                                decoration-danger="phase == 'test'"
+                                decoration-success="phase == 'stable'"
+                                decoration-muted="phase == 'eol'"/>
                         </div>
                         <field name="responsible_id" widget="many2one_avatar_user"/>
                         <div class="d-flex gap-3 mt-2 text-muted small">
@@ -50,7 +57,7 @@
                 <field name="name"/>
                 <field name="code"/>
                 <field name="phase" widget="badge"
-                    decoration-info="phase == 'new'"
+                    decoration-info="phase in ('idea', 'design')"
                     decoration-warning="phase == 'dev'"
                     decoration-danger="phase == 'test'"
                     decoration-success="phase == 'stable'"
@@ -74,9 +81,12 @@
                         string="Save" class="btn-primary" icon="fa-save"/>
                     <button string="Cancel" special="cancel"
                         class="btn-secondary" icon="fa-undo"/>
+                    <button name="action_phase_design" type="object"
+                        string="Start Design" class="btn-primary"
+                        invisible="phase != 'idea'"/>
                     <button name="action_phase_dev" type="object"
                         string="Start Dev" class="btn-primary"
-                        invisible="phase != 'new'"/>
+                        invisible="phase != 'design'"/>
                     <button name="action_phase_test" type="object"
                         string="To Test" class="btn-primary"
                         invisible="phase != 'dev'"/>
@@ -91,7 +101,7 @@
                         string="End of Life" class="btn-secondary"
                         invisible="phase not in ('stable',)"
                         confirm="Mark this project as End of Life?"/>
-                    <field name="phase" widget="statusbar" statusbar_visible="new,dev,test,stable,eol"/>
+                    <field name="phase" widget="statusbar" statusbar_visible="idea,design,dev,test,stable,eol"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -141,7 +151,7 @@
                         <button name="action_open_or_create_process_map" type="object"
                             string="Process Map" class="btn btn-secondary"
                             icon="fa-sitemap"
-                            invisible="process_map_count > 0 or (phase == 'new' and not has_user_story)"/>
+                            invisible="process_map_count > 0 or (phase in ('idea', 'design') and not has_user_story)"/>
                         <!-- Step 2: Process Map (done) -->
                         <button name="action_open_or_create_process_map" type="object"
                             string="Process Map" class="btn btn-outline-success"
@@ -150,13 +160,13 @@
                         <button name="action_skip_process_map" type="object"
                             string="Skip Process Map" class="btn btn-outline-secondary"
                             icon="fa-forward"
-                            invisible="phase != 'new' or not has_user_story or process_map_count > 0 or process_map_skipped"/>
+                            invisible="phase not in ('idea', 'design') or not has_user_story or process_map_count > 0 or process_map_skipped"/>
 
                         <!-- Step 3: User Stories (not done) -->
                         <button name="action_open_stories" type="object"
                             string="User Stories" class="btn btn-secondary"
                             icon="fa-bookmark"
-                            invisible="item_count > 0 or (phase == 'new' and (not has_user_story or (process_map_count == 0 and not process_map_skipped)))"/>
+                            invisible="item_count > 0 or (phase in ('idea', 'design') and (not has_user_story or (process_map_count == 0 and not process_map_skipped)))"/>
                         <!-- Step 3: User Stories (done) -->
                         <button name="action_open_stories" type="object"
                             string="User Stories" class="btn btn-outline-success"
@@ -167,7 +177,7 @@
                         <button name="action_open_prompt_wizard" type="object"
                             string="Prompt Generator" class="btn btn-secondary"
                             icon="fa-magic"
-                            invisible="generated_prompt or (phase == 'new' and (not has_user_story or (process_map_count == 0 and not process_map_skipped)))"/>
+                            invisible="generated_prompt or (phase in ('idea', 'design') and (not has_user_story or (process_map_count == 0 and not process_map_skipped)))"/>
                         <!-- Prompt Generator (done) -->
                         <button name="action_open_prompt_wizard" type="object"
                             string="Prompt Generator" class="btn btn-outline-success"
@@ -178,7 +188,7 @@
                         <button name="action_open_icon_wizard" type="object"
                             string="Icon Generator" class="btn btn-secondary"
                             icon="fa-paint-brush"
-                            invisible="icon_preview or (phase == 'new' and (not has_user_story or (process_map_count == 0 and not process_map_skipped)))"/>
+                            invisible="icon_preview or (phase in ('idea', 'design') and (not has_user_story or (process_map_count == 0 and not process_map_skipped)))"/>
                         <!-- Icon Generator (done) -->
                         <button name="action_open_icon_wizard" type="object"
                             string="Icon Generator" class="btn btn-outline-success"
@@ -189,7 +199,7 @@
                         <button name="action_open_items" type="object"
                             string="All Items" class="btn btn-secondary"
                             icon="fa-th-list"
-                            invisible="phase == 'new' and (not has_user_story or (process_map_count == 0 and not process_map_skipped))"/>
+                            invisible="phase in ('idea', 'design') and (not has_user_story or (process_map_count == 0 and not process_map_skipped))"/>
                     </div>
                     <notebook>
                         <page string="Sprints" name="sprints">

@@ -52,12 +52,13 @@ class AppfoundryProject(models.Model):
     test_item_count = fields.Integer(compute='_compute_test_item_count', string='Test Items')
     test_progress = fields.Float(compute='_compute_test_progress', string='Test Progress')
     phase = fields.Selection([
-        ('new', 'New'),
+        ('idea', 'Idea'),
+        ('design', 'Design'),
         ('dev', 'Dev'),
         ('test', 'Test'),
         ('stable', 'Stable'),
         ('eol', 'E.O.L.'),
-    ], string='Phase', default='new', required=True, tracking=True)
+    ], string='Phase', default='idea', required=True, tracking=True)
     is_active = fields.Boolean(default=True)
 
     # --- Guided setup ---
@@ -248,6 +249,9 @@ class AppfoundryProject(models.Model):
                 if xmlid and xmlid.startswith(mod_name_clean + '.'):
                     menu.write({'web_icon_data': icon_b64})
                     break
+
+    def action_phase_design(self):
+        self.write({'phase': 'design'})
 
     def action_phase_dev(self):
         self.write({'phase': 'dev'})
