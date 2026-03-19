@@ -6,5 +6,11 @@ from . import release
 from . import item
 from . import test_type
 from . import test_item
-from . import process_map_ext
+from . import process_map
+from . import process_map_lane
+from . import process_map_lane_preset
+from . import process_map_step
+from . import process_map_connection
+from . import process_map_version
+from . import process_map_field
 from . import icon_config

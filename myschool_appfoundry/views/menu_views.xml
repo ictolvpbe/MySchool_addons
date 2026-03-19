@@ -66,4 +66,17 @@
         action="appfoundry_icon_config_open"
         sequence="40"/>
 
+    <!-- Process Mapper -->
+    <menuitem id="appfoundry_menu_process_maps"
+        name="Process Maps"
+        parent="appfoundry_menu_root"
+        action="action_process_map_list"
+        sequence="30"/>
+
+    <menuitem id="appfoundry_menu_process_canvas"
+        name="Canvas Editor"
+        parent="appfoundry_menu_root"
+        action="action_process_mapper_client"
+        sequence="31"/>
+
 </odoo>
