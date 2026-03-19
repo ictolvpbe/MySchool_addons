@@ -670,6 +670,9 @@ class ProcessMap(models.Model):
         lines.append("- Use OWL2 for any custom frontend components")
         lines.append("- Use statusbar widget for state fields")
         lines.append("- Use proper field types (Many2one, One2many, Selection, etc.)")
+        lines.append("- Use @api.depends() for computed fields (NOT @fields.depends)")
+        lines.append("- Use group_ids (NOT groups_id) for ir.ui.menu")
+        lines.append("- act_window target values: 'current', 'new', 'fullscreen' (NOT 'inline')")
 
         return '\n'.join(lines)
 
