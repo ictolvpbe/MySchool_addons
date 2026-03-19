@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="seq_drukwerk_record" model="ir.sequence">
+            <field name="name">Drukwerk Aanvraag</field>
+            <field name="code">drukwerk.record</field>
+            <field name="prefix">DWK-</field>
+            <field name="padding">4</field>
+        </record>
+    </data>
+</odoo>

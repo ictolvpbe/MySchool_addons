@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Form View -->
+    <record id="view_drukwerk_form" model="ir.ui.view">
+        <field name="name">drukwerk.record.form</field>
+        <field name="model">drukwerk.record</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <!-- Personeelslid: submit -->
+                    <button name="action_submit"
+                            string="Indienen"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'form_invullen'"/>
+
+                    <!-- Personeelslid: reset -->
+                    <button name="action_reset_to_form"
+                            string="Terugzetten"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state != 'afdrukken'"
+                            groups="drukwerk.group_drukwerk_admin"/>
+
+                    <!-- Drukwerk: mark printed -->
+                    <button name="action_mark_printed"
+                            string="Afgedrukt"
+                            type="object"
+                            class="btn-primary"
+                            groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
+                            invisible="state != 'afdrukken'"/>
+
+                    <!-- Boekhouding: mark invoiced (only for gewoon drukwerk) -->
+                    <button name="action_mark_invoiced"
+                            string="Doorgerekend"
+                            type="object"
+                            class="btn-primary"
+                            groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
+                            invisible="state != 'doorrekenen' or drukwerk_type == 'examen'"/>
+
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="form_invullen,afdrukken,doorrekenen,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_students"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-users"
+                                invisible="not klas_ids">
+                            <field name="student_count" string="Leerlingen" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                        <h3 class="mt-1">
+                            <span class="text-muted">
+                                Aangemaakt door: <field name="create_uid" readonly="1" class="oe_inline" nolabel="1"/>
+                            </span>
+                        </h3>
+                    </div>
+
+                    <field name="currency_id" invisible="1"/>
+                    <field name="available_klas_ids" invisible="1"/>
+                    <field name="is_owner" invisible="1"/>
+
+                    <group>
+                        <group>
+                            <field name="drukwerk_type"
+                                   required="1"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                        </group>
+                    </group>
+
+                    <group invisible="not drukwerk_type">
+                        <group string="Aanvraag">
+                            <field name="titel"
+                                   placeholder="bv. Werkbladen wiskunde H3"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="school_id"
+                                   options="{'no_open': True}"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="klas_ids" widget="many2many_tags"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                        </group>
+                        <group string="Totalen">
+                            <field name="total_pages"/>
+                            <field name="total_cost"
+                                   invisible="drukwerk_type == 'examen'"/>
+                        </group>
+                    </group>
+
+                    <notebook invisible="not drukwerk_type">
+                        <page string="Drukwerk items">
+                            <field name="line_ids"
+                                   readonly="state not in ('draft', 'form_invullen', 'afdrukken')">
+                                <list editable="bottom" create="1" delete="1">
+                                    <field name="document_filename" column_invisible="1"/>
+                                    <field name="document_file" filename="document_filename" widget="binary"/>
+                                    <field name="aantal_paginas"/>
+                                    <field name="aantal_kopies"/>
+                                    <field name="kleur"/>
+                                    <field name="dubbelzijdig"/>
+                                    <field name="prijs_per_pagina"
+                                           groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
+                                           column_invisible="parent.drukwerk_type == 'examen'"/>
+                                    <field name="subtotaal"
+                                           column_invisible="parent.drukwerk_type == 'examen'"/>
+                                    <field name="opmerking" optional="hide"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Toelichting">
+                            <field name="description"
+                                   placeholder="Eventuele extra informatie voor de drukkerij..."
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="view_drukwerk_list" model="ir.ui.view">
+        <field name="name">drukwerk.record.list</field>
+        <field name="model">drukwerk.record</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="create_uid" string="Aangemaakt door"/>
+                <field name="drukwerk_type"/>
+                <field name="titel"/>
+                <field name="school_id" optional="show"/>
+                <field name="klas_ids" widget="many2many_tags" optional="show"/>
+                <field name="student_count" string="Leerlingen"/>
+                <field name="total_pages" string="Pagina's"/>
+                <field name="total_cost" string="Kost"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state in ('form_invullen', 'afdrukken')"
+                       decoration-success="state in ('doorrekenen', 'done')"
+                />
+            </list>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_drukwerk_search" model="ir.ui.view">
+        <field name="name">drukwerk.record.search</field>
+        <field name="model">drukwerk.record</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="titel"/>
+                <field name="name"/>
+                <filter string="Mijn aanvragen" name="my_requests"
+                        domain="[('create_uid', '=', uid)]"/>
+                <separator/>
+                <filter string="Te drukken" name="to_print"
+                        domain="[('state', '=', 'afdrukken')]"/>
+                <filter string="Door te rekenen" name="to_invoice"
+                        domain="[('state', '=', 'doorrekenen')]"/>
+                <filter string="Afgerond" name="done"
+                        domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter string="Gewoon drukwerk" name="gewoon"
+                        domain="[('drukwerk_type', '=', 'gewoon')]"/>
+                <filter string="Examen drukwerk" name="examen"
+                        domain="[('drukwerk_type', '=', 'examen')]"/>
+                <group>
+                    <filter string="Status" name="group_state"
+                            domain="[]" context="{'group_by': 'state'}"/>
+                    <filter string="School" name="group_school"
+                            domain="[]" context="{'group_by': 'school_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+</odoo>
