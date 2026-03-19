@@ -4,7 +4,15 @@
               name="Kosten"
               action="action_kosten_dashboard_client"
               sequence="70"
-              groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+              groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin"/>
+
+    <!-- Force update groups on existing menu record -->
+    <record id="menu_kosten_root" model="ir.ui.menu">
+        <field name="group_ids" eval="[(6, 0, [
+            ref('activiteiten.group_activiteiten_directie'),
+            ref('activiteiten.group_activiteiten_admin'),
+        ])]"/>
+    </record>
 
     <menuitem id="menu_kosten_detail"
               name="Detail"

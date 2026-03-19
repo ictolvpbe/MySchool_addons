@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="action_drukwerk" model="ir.actions.act_window">
+        <field name="name">Drukwerk</field>
+        <field name="res_model">drukwerk.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_my_requests': 1}</field>
+    </record>
+
+    <menuitem id="menu_drukwerk_root"
+              name="Drukwerk"
+              sequence="75"/>
+
+    <menuitem id="menu_drukwerk_aanvragen"
+              name="Aanvragen"
+              parent="menu_drukwerk_root"
+              action="action_drukwerk"
+              sequence="10"/>
+
+    <menuitem id="menu_drukwerk_instellingen"
+              name="Instellingen"
+              parent="menu_drukwerk_root"
+              action="action_drukwerk_config_open"
+              groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
+              sequence="90"/>
+</odoo>

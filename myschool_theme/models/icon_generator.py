@@ -385,6 +385,24 @@ def _shape_request(d, m, a, dk):
         d.line([(60, y + 3), (63, y + 7), (68, y)], fill=a, width=2)
 
 
+def _shape_printer(d, m, a, dk):
+    """Drukwerk / printing — printer with paper."""
+    # Printer body
+    d.rounded_rectangle([10, 30, 90, 70], radius=8, fill=m)
+    # Paper input (top)
+    d.rounded_rectangle([25, 8, 75, 38], radius=4, fill=(230, 235, 240, 255))
+    # Text lines on paper
+    d.rounded_rectangle([32, 15, 68, 19], radius=2, fill=a)
+    d.rounded_rectangle([32, 23, 60, 27], radius=2, fill=a)
+    # Paper output (bottom)
+    d.rounded_rectangle([25, 62, 75, 92], radius=4, fill=(230, 235, 240, 255))
+    # Text lines on output
+    d.rounded_rectangle([32, 70, 68, 74], radius=2, fill=dk)
+    d.rounded_rectangle([32, 78, 55, 82], radius=2, fill=dk)
+    # Printer button
+    d.ellipse([42, 45, 58, 58], fill=a)
+
+
 def _shape_generic(d, m, a, dk):
     """Generic fallback — abstract overlapping shapes."""
     d.ellipse([5, 18, 55, 68], fill=m)
@@ -413,6 +431,7 @@ MODULE_SHAPES = {
     'knowledge_builder': _shape_book,
     'kosten_dashboard': _shape_euro,
     'security_phishing': _shape_shield,
+    'drukwerk': _shape_printer,
     'hr': _shape_users,
     'project': _shape_sitemap,
     'sale': _shape_cart,
@@ -458,6 +477,8 @@ KEYWORD_SHAPES = {
     'maintenance': _shape_wrench,
     'request': _shape_request, 'aanvra': _shape_request,
     'approval': _shape_request,
+    'druk': _shape_printer, 'print': _shape_printer,
+    'kopie': _shape_printer,
 }
 
 

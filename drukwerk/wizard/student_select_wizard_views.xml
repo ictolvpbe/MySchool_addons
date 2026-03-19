@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_student_select_wizard_form" model="ir.ui.view">
+        <field name="name">drukwerk.student.select.wizard.form</field>
+        <field name="model">drukwerk.student.select.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Leerlingen selecteren">
+                <field name="drukwerk_id" invisible="1"/>
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <button name="action_select_all"
+                            string="Selecteer alles"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-check-square-o"/>
+                    <button name="action_deselect_all"
+                            string="Deselecteer alles"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-square-o"/>
+                    <span class="text-muted">
+                        <field name="selected_count" class="oe_inline"/> / <field name="total_count" class="oe_inline"/> geselecteerd
+                    </span>
+                </div>
+                <field name="line_ids">
+                    <list editable="bottom" create="0" delete="0">
+                        <field name="selected" widget="boolean_toggle"/>
+                        <field name="person_name" readonly="1"/>
+                        <field name="person_id" column_invisible="1"/>
+                    </list>
+                </field>
+                <footer>
+                    <button name="action_confirm"
+                            string="Bevestigen"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Annuleren" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>
