@@ -379,6 +379,13 @@
               sequence="120"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_create_filialen"
+              name="Filialen aanmaken"
+              parent="menu_tools"
+              action="action_create_filialen_wizard"
+              sequence="130"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <!-- ========================================= -->
     <!-- LOG VIEWER (sequence: 95) -->
     <!-- ========================================= -->

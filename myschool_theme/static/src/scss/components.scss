@@ -25,6 +25,7 @@
 .o_form_statusbar {
     background-color: #f5fafa !important;
     border-bottom: 1px solid var(--myschool-border) !important;
+    border-radius: 12px 12px 0 0;
 }
 
 .o_form_view .o_form_statusbar .o_statusbar_buttons {
@@ -204,6 +205,48 @@
 .o_form_view .o_field_one2many,
 .o_form_view .o_field_many2many {
     overflow-x: auto;
+
+    // Prevent sticky header from overlapping the first data row
+    .o_list_table thead {
+        position: relative !important;
+    }
+    .o_list_table thead th {
+        position: relative !important;
+    }
+}
+
+// -- Rounded corners on embedded lists in form views ------------------------
+.o_form_view .o_field_one2many,
+.o_form_view .o_field_many2many {
+    border: 1px solid var(--myschool-border-light) !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    background: var(--myschool-bg-card) !important;
+
+    // Remove any inner borders/shadows/rounding so the outer container is the only shape
+    * {
+        border-radius: 0 !important;
+        box-shadow: none !important;
+    }
+
+    .o_list_table {
+        border: none !important;
+        margin-bottom: 0 !important;
+
+        // Remove the bottom empty rows' background so they blend with the card
+        tfoot td {
+            background: transparent !important;
+        }
+    }
+}
+
+// -- Unchecked checkboxes more visible --------------------------------------
+.o_form_view input[type="checkbox"]:not(:checked),
+.o_list_view input[type="checkbox"]:not(:checked),
+.o_form_view .form-check-input:not(:checked),
+.o_list_view .form-check-input:not(:checked) {
+    border: 2px solid var(--myschool-border) !important;
+    opacity: 1 !important;
 }
 
 // -- Monetary field — no double border --------------------------------------
@@ -247,7 +290,7 @@
 
     .o_list_renderer {
         background: var(--myschool-bg-card);
-        border-radius: 10px;
+        border-radius: 12px;
         box-shadow: 0 1px 4px rgba(0, 60, 60, 0.08);
         overflow: visible;
         border: 1px solid var(--myschool-border);
@@ -267,7 +310,7 @@
     & thead,
     & thead tr:first-child th:first-child,
     & thead tr:first-child th:last-child {
-        border-radius: 8px;
+        border-radius: 12px;
     }
 
     thead {
@@ -280,7 +323,7 @@
             text-transform: uppercase;
             letter-spacing: 0.6px;
             font-weight: 600;
-            padding: 12px 14px;
+            padding: 18px 14px;
             border-bottom: 1px solid var(--myschool-border);
             border-top: none;
             white-space: nowrap;
@@ -460,7 +503,7 @@
     background-color: var(--myschool-bg);
 
     .o_kanban_record {
-        border-radius: 10px;
+        border-radius: 12px;
         border-color: var(--myschool-border);
         box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06);
 
@@ -559,7 +602,7 @@
 
 // -- Dropdown menus ---------------------------------------------------------
 .o_control_panel .dropdown-menu {
-    border-radius: 8px;
+    border-radius: 12px;
     border-color: var(--myschool-border);
     box-shadow: 0 4px 16px rgba(0, 60, 60, 0.1);
 

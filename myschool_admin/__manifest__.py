@@ -48,6 +48,7 @@
         'views/object_browser_views.xml',
         'views/ldap_server_config_views.xml',
         'views/sync_test_runner_views.xml',
+        'views/res_company_views.xml',
 
         # Data Exchange
         'views/data_exchange_views.xml',

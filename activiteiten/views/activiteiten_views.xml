@@ -94,14 +94,14 @@
                                 class="oe_stat_button"
                                 icon="fa-users"
                                 invisible="not klas_ids">
-                            <field name="snapshot_student_count" string="Leerlingen" widget="statinfo"/>
+                            <field name="student_count" string="Leerlingen" widget="statinfo"/>
                         </button>
                         <button name="action_open_snapshot_leerkrachten"
                                 type="object"
                                 class="oe_stat_button"
                                 icon="fa-user"
                                 invisible="not leerkracht_ids">
-                            <field name="snapshot_leerkracht_count" string="Leerkrachten" widget="statinfo"/>
+                            <field name="leerkracht_count" string="Leerkrachten" widget="statinfo"/>
                         </button>
                     </div>
                     <!-- Form header: title + subtitle -->
@@ -119,6 +119,7 @@
                     </div>
 
                     <field name="currency_id" invisible="1"/>
+                    <field name="allowed_school_json" invisible="1"/>
                     <field name="available_klas_ids" invisible="1"/>
                     <field name="available_leerkracht_ids" invisible="1"/>
 

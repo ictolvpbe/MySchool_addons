@@ -31,6 +31,7 @@ from . import informat_dto
 from . import smartschool_service
 from . import ldap_server_config
 from . import ldap_service
+from . import res_company
 from . import res_users
 
 

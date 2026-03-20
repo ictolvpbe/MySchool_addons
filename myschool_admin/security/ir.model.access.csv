@@ -35,3 +35,4 @@ access_manage_persongroup_members_wizard,myschool.manage.persongroup.members.wiz
 access_cleanup_wizard,myschool.cleanup.wizard,model_myschool_cleanup_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_log_viewer,myschool.log.viewer,model_myschool_log_viewer,myschool_core.group_myschool_core_admin,1,1,1,1
 access_data_exchange,myschool.data.exchange,model_myschool_data_exchange,myschool_core.group_myschool_core_admin,1,1,1,1
+access_create_filialen_wizard,myschool.create.filialen.wizard,model_myschool_create_filialen_wizard,myschool_core.group_myschool_core_admin,1,1,1,1

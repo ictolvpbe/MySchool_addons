@@ -53,7 +53,11 @@ class ProfessionaliseringRecord(models.Model):
         'myschool.org',
         string='School',
         required=True,
-        default=lambda self: self.env.user.school_ids[:1],
+        default=lambda self: self.env.company.school_id or self.env.user.school_ids[:1],
+        domain="[('id', 'in', allowed_school_json)]",
+    )
+    allowed_school_json = fields.Json(
+        compute='_compute_allowed_school_json',
     )
     is_owner = fields.Boolean(compute='_compute_is_owner')
     is_admin = fields.Boolean(compute='_compute_is_admin')
@@ -133,6 +137,13 @@ class ProfessionaliseringRecord(models.Model):
         ('2', 'Hoog'),
         ('3', 'Urgent'),
     ], string='Prioriteit', default='0')
+
+    @api.depends_context('uid', 'company')
+    def _compute_allowed_school_json(self):
+        schools = self.env.company.school_id or self.env.user.school_ids
+        ids = schools.ids or self.env['myschool.org'].sudo().search([('org_type_id.name', '=', 'SCHOOL'), ('is_active', '=', True)]).ids
+        for record in self:
+            record.allowed_school_json = ids
 
     @api.depends('invite_ids', 'invite_ids.employee_id', 'invite_ids.state')
     @api.depends_context('uid')

@@ -24,7 +24,11 @@ class DrukwerkRecord(models.Model):
     school_id = fields.Many2one(
         'myschool.org',
         string='School',
-        default=lambda self: self.env.user.school_ids[:1],
+        default=lambda self: self.env.company.school_id or self.env.user.school_ids[:1],
+        domain="[('id', 'in', allowed_school_json)]",
+    )
+    allowed_school_json = fields.Json(
+        compute='_compute_allowed_school_json',
     )
     available_klas_ids = fields.Many2many(
         'myschool.org',
@@ -81,6 +85,13 @@ class DrukwerkRecord(models.Model):
     def _compute_is_owner(self):
         for record in self:
             record.is_owner = not record.create_uid or record.create_uid.id == self.env.uid
+
+    @api.depends_context('uid', 'company')
+    def _compute_allowed_school_json(self):
+        schools = self.env.company.school_id or self.env.user.school_ids
+        ids = schools.ids or self.env['myschool.org'].sudo().search([('org_type_id.name', '=', 'SCHOOL'), ('is_active', '=', True)]).ids
+        for record in self:
+            record.allowed_school_json = ids
 
     @api.depends('school_id')
     def _compute_available_klas_ids(self):
@@ -256,9 +267,10 @@ class DrukwerkRecord(models.Model):
         }
 
     def unlink(self):
-        for record in self:
-            if record.state not in ('draft', 'form_invullen'):
-                raise UserError("U kunt alleen aanvragen verwijderen die nog niet ingediend zijn.")
+        if not self.env.user.has_group('drukwerk.group_drukwerk_admin'):
+            for record in self:
+                if record.state not in ('draft', 'form_invullen'):
+                    raise UserError("U kunt alleen aanvragen verwijderen die nog niet ingediend zijn.")
         return super().unlink()
 
     def _notify_drukwerk_team(self):

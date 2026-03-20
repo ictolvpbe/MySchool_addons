@@ -25,7 +25,11 @@ class Activiteiten(models.Model):
     school_id = fields.Many2one(
         'myschool.org',
         string='School',
-        default=lambda self: self.env.user.school_ids[:1],
+        default=lambda self: self.env.company.school_id or self.env.user.school_ids[:1],
+        domain="[('id', 'in', allowed_school_json)]",
+    )
+    allowed_school_json = fields.Json(
+        compute='_compute_allowed_school_json',
     )
     datetime = fields.Datetime(string='Startdatum en tijdstip')
     datetime_end = fields.Datetime(string='Einddatum en tijdstip')
@@ -160,6 +164,13 @@ class Activiteiten(models.Model):
         ('rejected', 'Afgekeurd'),
         ('done', 'Afgerond'),
     ], string='Status', compute='_compute_display_state')
+
+    @api.depends_context('uid', 'company')
+    def _compute_allowed_school_json(self):
+        schools = self.env.company.school_id or self.env.user.school_ids
+        ids = schools.ids or self.env['myschool.org'].sudo().search([('org_type_id.name', '=', 'SCHOOL'), ('is_active', '=', True)]).ids
+        for record in self:
+            record.allowed_school_json = ids
 
     @api.depends('state')
     @api.depends_context('uid')

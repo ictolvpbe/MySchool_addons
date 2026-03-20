@@ -45,7 +45,7 @@
 
 .db-hero {
     background: linear-gradient(135deg, var(--ms-brand-1, #007d8c) 0%, var(--ms-brand-2, #0094A4) 50%, var(--ms-brand-3, #00ACBF) 100%);
-    border-radius: 14px;
+    border-radius: 12px;
     padding: 28px 32px;
     margin-bottom: 24px;
     display: flex;
@@ -58,7 +58,7 @@
 .db-hero-icon {
     width: 64px;
     height: 64px;
-    border-radius: 16px;
+    border-radius: 12px;
     background: rgba(255, 255, 255, 0.15);
     display: flex;
     align-items: center;
@@ -139,7 +139,7 @@
 
 .db-kpi-card {
     background: var(--ms-bg-card, #fff);
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 20px 24px;
     box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06);
     display: flex;
@@ -209,7 +209,7 @@
 
 .db-card {
     background: var(--ms-bg-card, #fff);
-    border-radius: 10px;
+    border-radius: 12px;
     box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06);
     overflow: hidden;
 }
@@ -337,7 +337,7 @@
     gap: 10px;
     padding: 12px 16px;
     border: 1px solid var(--ms-border, #d6e4e4);
-    border-radius: 8px;
+    border-radius: 12px;
     background: var(--ms-bg-card, #fff);
     font-size: 13px;
     color: var(--ms-text, #003333);
@@ -354,7 +354,7 @@
 .db-qa-icon {
     width: 32px;
     height: 32px;
-    border-radius: 8px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;

@@ -103,6 +103,7 @@
                     <field name="priority" widget="priority"
                            groups="professionalisering.group_professionalisering_directie"/>
                     <field name="currency_id" invisible="1"/>
+                    <field name="allowed_school_json" invisible="1"/>
                     <field name="show_invites" invisible="1"/>
                     <field name="has_pending_invites" invisible="1"/>
 

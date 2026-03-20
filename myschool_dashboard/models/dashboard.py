@@ -176,20 +176,26 @@ class MySchoolDashboard(models.Model):
         return False
 
     def _get_base_domain(self, model_name):
-        """Admin sees all, directie sees unassigned + assigned-to-them, medewerker only their own."""
+        """Admin sees all, directie sees unassigned + assigned-to-them, medewerker only their own.
+        When the current company has a school_id set, filter by that school."""
+        domain = []
+        # Filter by current company's school if set
+        school = self.env.company.school_id
+        if school:
+            domain.append(('school_id', '=', school.id))
         if self._is_admin(model_name):
-            return []
+            return domain
         if model_name == 'activiteiten.record':
             if self._is_directie_or_admin(model_name) or self._is_manager(model_name):
-                return []
-            return [('create_uid', '=', self.env.uid)]
+                return domain
+            return domain + [('create_uid', '=', self.env.uid)]
         if self._is_directie_or_admin(model_name):
-            return [
+            return domain + [
                 '|',
                 ('assigned_to', '=', False),
                 ('assigned_to.user_id', '=', self.env.uid),
             ]
-        return [('employee_id.user_id', '=', self.env.uid)]
+        return domain + [('employee_id.user_id', '=', self.env.uid)]
 
     @api.depends_context('uid')
     def _compute_access_rights(self):
