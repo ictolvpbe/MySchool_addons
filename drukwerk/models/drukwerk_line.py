@@ -21,7 +21,8 @@ class DrukwerkLine(models.Model):
     aantal_paginas = fields.Integer(string='Pagina\'s', default=1)
     aantal_kopies = fields.Integer(
         string='Kopieën',
-        help='Aantal kopieën per leerling. Wordt vermenigvuldigd met het aantal leerlingen.',
+        compute='_compute_aantal_kopies',
+        store=True,
     )
     prijs_per_pagina = fields.Float(
         string='Prijs per pagina',
@@ -95,26 +96,22 @@ class DrukwerkLine(models.Model):
         except Exception:
             _logger.warning('Could not count pages for %s', self.document_filename, exc_info=True)
 
+    @api.depends('kopie_leerkracht', 'drukwerk_id.student_ids')
+    def _compute_aantal_kopies(self):
+        for line in self:
+            count = len(line.drukwerk_id.student_ids)
+            if line.kopie_leerkracht:
+                count += 1
+            line.aantal_kopies = count
+
     def action_download_pdf(self):
-        """Open the PDF document for printing."""
+        """Open the PDF in a print page with all settings displayed."""
         self.ensure_one()
         if not self.document_file:
             raise ValidationError("Geen document beschikbaar om af te drukken.")
-        attachment = self.env['ir.attachment'].search([
-            ('res_model', '=', self._name),
-            ('res_id', '=', self.id),
-            ('res_field', '=', 'document_file'),
-        ], limit=1)
-        if attachment:
-            return {
-                'type': 'ir.actions.act_url',
-                'url': f'/web/content/{attachment.id}?download=false',
-                'target': 'new',
-            }
-        # Fallback: download via field
         return {
             'type': 'ir.actions.act_url',
-            'url': f'/web/content?model={self._name}&id={self.id}&field=document_file&filename_field=document_filename&download=false',
+            'url': f'/drukwerk/print/{self.id}',
             'target': 'new',
         }
 

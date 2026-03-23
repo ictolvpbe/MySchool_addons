@@ -112,7 +112,7 @@
                                 <list editable="bottom" create="1" delete="1">
                                     <field name="document_filename" column_invisible="1"/>
                                     <field name="document_file" filename="document_filename" widget="binary" options="{'accepted_file_extensions': '.pdf'}"/>
-                                    <field name="aantal_paginas"/>
+                                    <field name="aantal_paginas" readonly="1"/>
                                     <field name="aantal_kopies"/>
                                     <field name="kleur"/>
                                     <field name="formaat"/>
