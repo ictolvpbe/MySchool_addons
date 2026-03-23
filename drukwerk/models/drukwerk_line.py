@@ -95,6 +95,29 @@ class DrukwerkLine(models.Model):
         except Exception:
             _logger.warning('Could not count pages for %s', self.document_filename, exc_info=True)
 
+    def action_download_pdf(self):
+        """Open the PDF document for printing."""
+        self.ensure_one()
+        if not self.document_file:
+            raise ValidationError("Geen document beschikbaar om af te drukken.")
+        attachment = self.env['ir.attachment'].search([
+            ('res_model', '=', self._name),
+            ('res_id', '=', self.id),
+            ('res_field', '=', 'document_file'),
+        ], limit=1)
+        if attachment:
+            return {
+                'type': 'ir.actions.act_url',
+                'url': f'/web/content/{attachment.id}?download=false',
+                'target': 'new',
+            }
+        # Fallback: download via field
+        return {
+            'type': 'ir.actions.act_url',
+            'url': f'/web/content?model={self._name}&id={self.id}&field=document_file&filename_field=document_filename&download=false',
+            'target': 'new',
+        }
+
     @staticmethod
     def _count_pdf_pages(pdf_bytes):
         """Count pages in a PDF using PyPDF2 or pikepdf, fallback to regex."""

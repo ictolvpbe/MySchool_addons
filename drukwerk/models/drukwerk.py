@@ -140,14 +140,9 @@ class DrukwerkRecord(models.Model):
 
     @api.onchange('klas_ids')
     def _onchange_klas_ids_select_students(self):
-        """Add students from new classes, remove students from removed classes."""
-        all_class_students = self._get_students_from_classes()
-        current_students = self.student_ids
-        # Keep only students that are still in the selected classes
-        kept = current_students & all_class_students
-        # Add new students (in selected classes but not yet selected)
-        new = all_class_students - current_students
-        self.student_ids = kept | new
+        """Select all students from the selected classes."""
+        students = self._get_students_from_classes()
+        self.student_ids = [(5, 0, 0)] + [(4, sid) for sid in students.ids]
 
     def action_select_all_students(self):
         """Select all students from the chosen classes."""
@@ -251,7 +246,6 @@ class DrukwerkRecord(models.Model):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
-        selected_ids = set(self.student_ids.ids)
         wiz = self.env['drukwerk.student.select.wizard'].create({
             'drukwerk_id': self.id,
         })
@@ -268,7 +262,7 @@ class DrukwerkRecord(models.Model):
                     'wizard_id': wiz.id,
                     'person_id': rel.id_person.id,
                     'klas_id': rel.id_org.id,
-                    'selected': rel.id_person.id in selected_ids,
+                    'selected': True,
                 })
         if lines:
             self.env['drukwerk.student.select.line'].create(lines)
