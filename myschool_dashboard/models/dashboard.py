@@ -66,6 +66,30 @@ class MySchoolDashboard(models.Model):
     act_done = fields.Integer(
         string="Act. Afgerond", compute='_compute_activiteiten_counts')
 
+    # Access drukwerk
+    has_drukwerk_access = fields.Boolean(
+        compute='_compute_access_rights')
+    is_drukwerk_drukwerk = fields.Boolean(
+        compute='_compute_access_rights')
+    is_drukwerk_boekhouding = fields.Boolean(
+        compute='_compute_access_rights')
+    is_drukwerk_manager = fields.Boolean(
+        compute='_compute_access_rights')
+
+    # Counts drukwerk
+    druk_total = fields.Integer(
+        string="Druk. Totaal", compute='_compute_drukwerk_counts')
+    druk_draft = fields.Integer(
+        string="Druk. Concept", compute='_compute_drukwerk_counts')
+    druk_form_invullen = fields.Integer(
+        string="Druk. Formulier", compute='_compute_drukwerk_counts')
+    druk_afdrukken = fields.Integer(
+        string="Druk. Afdrukken", compute='_compute_drukwerk_counts')
+    druk_doorrekenen = fields.Integer(
+        string="Druk. Doorrekenen", compute='_compute_drukwerk_counts')
+    druk_done = fields.Integer(
+        string="Druk. Afgerond", compute='_compute_drukwerk_counts')
+
     # Counts professionalisering
     prof_total = fields.Integer(
         string="Prof. Totaal", compute='_compute_professionalisering_counts')
@@ -101,6 +125,8 @@ class MySchoolDashboard(models.Model):
             'professionalisering.group_professionalisering_admin',
         'activiteiten.record':
             'activiteiten.group_activiteiten_admin',
+        'drukwerk.record':
+            'drukwerk.group_drukwerk_admin',
     }
     _ALL_GROUPS = {
         'professionalisering.record': [
@@ -118,6 +144,12 @@ class MySchoolDashboard(models.Model):
             'activiteiten.group_activiteiten_directie',
             'activiteiten.group_activiteiten_admin',
         ],
+        'drukwerk.record': [
+            'drukwerk.group_drukwerk_personeelslid',
+            'drukwerk.group_drukwerk_drukwerk',
+            'drukwerk.group_drukwerk_boekhouding',
+            'drukwerk.group_drukwerk_admin',
+        ],
     }
     _MANAGER_GROUPS = {
         'professionalisering.record': [
@@ -132,6 +164,11 @@ class MySchoolDashboard(models.Model):
             'activiteiten.group_activiteiten_aankoop',
             'activiteiten.group_activiteiten_boekhouding',
             'activiteiten.group_activiteiten_vervangingen',
+        ],
+        'drukwerk.record': [
+            'drukwerk.group_drukwerk_drukwerk',
+            'drukwerk.group_drukwerk_boekhouding',
+            'drukwerk.group_drukwerk_admin',
         ],
     }
 
@@ -185,6 +222,10 @@ class MySchoolDashboard(models.Model):
             domain.append(('school_id', '=', school.id))
         if self._is_admin(model_name):
             return domain
+        if model_name == 'drukwerk.record':
+            if self._is_manager(model_name):
+                return domain
+            return domain + [('create_uid', '=', self.env.uid)]
         if model_name == 'activiteiten.record':
             if self._is_directie_or_admin(model_name) or self._is_manager(model_name):
                 return domain
@@ -201,19 +242,27 @@ class MySchoolDashboard(models.Model):
     def _compute_access_rights(self):
         professionalisering = self._has_access('professionalisering.record')
         activiteiten = self._has_access('activiteiten.record')
+        drukwerk = self._has_access('drukwerk.record')
         prof_mgr = self._is_manager('professionalisering.record')
         acti_mgr = self._is_manager('activiteiten.record')
+        druk_mgr = self._is_manager('drukwerk.record')
         user = self.env(su=False).user
         is_admin = user.has_group('activiteiten.group_activiteiten_admin')
         act_verv = is_admin or user.has_group('activiteiten.group_activiteiten_vervangingen')
         act_aank = is_admin or user.has_group('activiteiten.group_activiteiten_aankoop')
         act_boek = is_admin or user.has_group('activiteiten.group_activiteiten_boekhouding')
         act_dir = is_admin or user.has_group('activiteiten.group_activiteiten_directie')
+        druk_drukwerk = user.has_group('drukwerk.group_drukwerk_drukwerk')
+        druk_boekhouding = user.has_group('drukwerk.group_drukwerk_boekhouding')
         for rec in self:
             rec.has_professionalisering_access = professionalisering
             rec.has_activiteiten_access = activiteiten
+            rec.has_drukwerk_access = drukwerk
             rec.is_prof_manager = prof_mgr
             rec.is_act_manager = acti_mgr
+            rec.is_drukwerk_manager = druk_mgr
+            rec.is_drukwerk_drukwerk = druk_drukwerk
+            rec.is_drukwerk_boekhouding = druk_boekhouding
             rec.is_act_vervangingen = act_verv
             rec.is_act_aankoop = act_aank
             rec.is_act_boekhouding = act_boek
@@ -230,26 +279,30 @@ class MySchoolDashboard(models.Model):
     def _compute_kpi(self):
         act_raw = self._get_state_counts('activiteiten.record')
         prof_raw = self._get_state_counts('professionalisering.record')
-        # Pending = draft + form_invullen + bus_check (act) + selection_of_form + fill_in_form_* (prof)
+        druk_raw = self._get_state_counts('drukwerk.record')
+        # Pending = draft + form_invullen + bus_check (act) + selection_of_form + fill_in_form_* (prof) + draft + form_invullen (druk)
         pending = (
             act_raw.get('draft', 0) + act_raw.get('form_invullen', 0) +
             act_raw.get('bus_check', 0) +
             prof_raw.get('selection_of_form', 0) +
             prof_raw.get('fill_in_form_individueel', 0) +
-            prof_raw.get('fill_in_form_teamleren', 0)
+            prof_raw.get('fill_in_form_teamleren', 0) +
+            druk_raw.get('draft', 0) + druk_raw.get('form_invullen', 0)
         )
-        # Action needed = pending_approval + bus_refused (act) + wacht_op_goedkeuring (prof)
+        # Action needed = pending_approval + bus_refused (act) + wacht_op_goedkeuring (prof) + afdrukken + doorrekenen (druk)
         action_needed = (
             act_raw.get('pending_approval', 0) +
             act_raw.get('bus_refused', 0) +
             act_raw.get('s_code', 0) +
             act_raw.get('vervanging', 0) +
-            prof_raw.get('wacht_op_goedkeuring', 0)
+            prof_raw.get('wacht_op_goedkeuring', 0) +
+            druk_raw.get('afdrukken', 0) + druk_raw.get('doorrekenen', 0)
         )
-        # Approved (across both)
+        # Approved (across all)
         approved = (
             act_raw.get('approved', 0) + act_raw.get('done', 0) +
-            prof_raw.get('bevestiging', 0) + prof_raw.get('done', 0)
+            prof_raw.get('bevestiging', 0) + prof_raw.get('done', 0) +
+            druk_raw.get('done', 0)
         )
         # Rejected
         rejected = (
@@ -298,6 +351,23 @@ class MySchoolDashboard(models.Model):
             else:
                 rec.prof_total = sum(
                     v for k, v in counts.items() if k != 'done'
+                )
+
+    @api.depends_context('uid')
+    def _compute_drukwerk_counts(self):
+        raw = self._get_state_counts('drukwerk.record')
+        is_manager = self._is_manager('drukwerk.record')
+        for rec in self:
+            rec.druk_draft = raw.get('draft', 0)
+            rec.druk_form_invullen = raw.get('form_invullen', 0)
+            rec.druk_afdrukken = raw.get('afdrukken', 0)
+            rec.druk_doorrekenen = raw.get('doorrekenen', 0)
+            rec.druk_done = raw.get('done', 0)
+            if is_manager:
+                rec.druk_total = sum(raw.values())
+            else:
+                rec.druk_total = sum(
+                    v for k, v in raw.items() if k != 'done'
                 )
 
     @api.depends_context('uid')
@@ -360,6 +430,14 @@ class MySchoolDashboard(models.Model):
             return 'Gisteren'
         return f'{days} dagen geleden'
 
+    _DRUK_STATE_LABEL = {
+        'draft': ('Concept', 'ms-badge-neutral'),
+        'form_invullen': ('Formulier', 'ms-badge-info'),
+        'afdrukken': ('Afdrukken', 'ms-badge-warning'),
+        'doorrekenen': ('Doorrekenen', 'ms-badge-warning'),
+        'done': ('Afgerond', 'ms-badge-success'),
+    }
+
     _ACT_STATE_LABEL = {
         'draft': ('Concept', 'ms-badge-neutral'),
         'form_invullen': ('Formulier', 'ms-badge-info'),
@@ -410,6 +488,28 @@ class MySchoolDashboard(models.Model):
                     f'<strong>{titel}</strong> '
                     f'<span class="ms-badge-status ms-badge-neutral">Prof.</span><br>'
                     f'<span class="ms-time">{self._relative_time(p.write_date)}</span>'
+                    f'</li>'
+                )))
+        # Recent drukwerk
+        if self._has_access('drukwerk.record'):
+            domain = self._get_base_domain('drukwerk.record')
+            druks = self.env['drukwerk.record'].search(
+                domain, limit=5, order='write_date desc')
+            for d in druks:
+                label, css = self._DRUK_STATE_LABEL.get(d.state, ('', ''))
+                titel = html_escape(d.titel or d.name or '')
+                if d.state == 'done':
+                    dot = 'success'
+                elif d.state in ('afdrukken', 'doorrekenen'):
+                    dot = 'warning'
+                else:
+                    dot = 'info'
+                items.append((d.write_date, (
+                    f'<li class="{dot}">'
+                    f'<strong>{titel}</strong> '
+                    f'<span class="ms-badge-status {css}">{label}</span> '
+                    f'<span class="ms-badge-status ms-badge-neutral">Drukwerk</span><br>'
+                    f'<span class="ms-time">{self._relative_time(d.write_date)}</span>'
                     f'</li>'
                 )))
         # Sort combined and take top 8
@@ -496,6 +596,32 @@ class MySchoolDashboard(models.Model):
             'type': 'ir.actions.act_window',
             'name': 'Nieuwe professionalisering',
             'res_model': 'professionalisering.record',
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def action_open_drukwerk_list(self):
+        action = self.env['ir.actions.act_window']._for_xml_id(
+            'myschool_dashboard.action_open_drukwerk_list')
+        model = 'drukwerk.record'
+        if self._is_admin(model):
+            pass
+        elif self._is_manager(model):
+            user = self.env(su=False).user
+            if user.has_group('drukwerk.group_drukwerk_drukwerk'):
+                action['context'] = {'search_default_to_print': 1}
+            elif user.has_group('drukwerk.group_drukwerk_boekhouding'):
+                action['context'] = {'search_default_to_invoice': 1}
+        else:
+            action['domain'] = [('create_uid', '=', self.env.uid)]
+            action['context'] = {'search_default_my_requests': 1}
+        return action
+
+    def action_new_drukwerk(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Nieuw drukwerk',
+            'res_model': 'drukwerk.record',
             'view_mode': 'form',
             'target': 'current',
         }

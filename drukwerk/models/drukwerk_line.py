@@ -3,6 +3,7 @@ import io
 import logging
 
 from odoo import models, fields, api
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -29,8 +30,30 @@ class DrukwerkLine(models.Model):
             self.env['ir.config_parameter'].sudo().get_param(
                 'drukwerk.prijs_per_pagina', '0.03')),
     )
-    kleur = fields.Boolean(string='Kleur', default=False)
-    dubbelzijdig = fields.Boolean(string='Dubbelzijdig', default=False)
+    kleur = fields.Selection([
+        ('zw', 'Zwart-wit'),
+        ('kleur', 'Kleur'),
+    ], string='Kleur', default='zw', required=True)
+    formaat = fields.Selection([
+        ('a4', 'A4'),
+        ('a3', 'A3'),
+    ], string='Formaat', default='a4', required=True)
+    prijs_kleur = fields.Float(
+        string='Toeslag kleur',
+        digits=(10, 4),
+        default=lambda self: float(
+            self.env['ir.config_parameter'].sudo().get_param(
+                'drukwerk.prijs_kleur', '0.05')),
+    )
+    prijs_a3 = fields.Float(
+        string='Toeslag A3',
+        digits=(10, 4),
+        default=lambda self: float(
+            self.env['ir.config_parameter'].sudo().get_param(
+                'drukwerk.prijs_a3', '0.02')),
+    )
+    dubbelzijdig = fields.Boolean(string='Dubbelzijdig', default=True)
+    kopie_leerkracht = fields.Boolean(string='Kopie leerkracht', default=False)
     opmerking = fields.Char(string='Opmerking')
     currency_id = fields.Many2one(related='drukwerk_id.currency_id')
     subtotaal = fields.Monetary(
@@ -40,11 +63,22 @@ class DrukwerkLine(models.Model):
         store=True,
     )
 
-    @api.depends('aantal_paginas', 'aantal_kopies', 'prijs_per_pagina')
+    @api.depends('aantal_paginas', 'aantal_kopies', 'prijs_per_pagina', 'kleur', 'prijs_kleur', 'formaat', 'prijs_a3')
     def _compute_subtotaal(self):
         for line in self:
             pages = (line.aantal_paginas or 0) * (line.aantal_kopies or 0)
-            line.subtotaal = pages * (line.prijs_per_pagina or 0)
+            price = line.prijs_per_pagina or 0
+            if line.kleur == 'kleur':
+                price += line.prijs_kleur or 0
+            if line.formaat == 'a3':
+                price += line.prijs_a3 or 0
+            line.subtotaal = pages * price
+
+    @api.constrains('document_filename')
+    def _check_pdf_only(self):
+        for line in self:
+            if line.document_filename and not line.document_filename.lower().endswith('.pdf'):
+                raise ValidationError("Alleen PDF-bestanden zijn toegestaan. Upload een .pdf bestand.")
 
     @api.onchange('document_file', 'document_filename')
     def _onchange_document_file(self):

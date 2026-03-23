@@ -24,6 +24,9 @@ COLOR_FIELDS = [
     ('hover_btn', '--myschool-hover-btn'),
     ('surface', '--myschool-surface'),
     ('sidebar_bg', '--myschool-sidebar-bg'),
+    ('statusbar_current', '--myschool-statusbar-current'),
+    ('statusbar_done', '--myschool-statusbar-done'),
+    ('statusbar_future', '--myschool-statusbar-future'),
 ]
 
 
@@ -49,6 +52,9 @@ class ResConfigSettings(models.TransientModel):
     ms_color_hover_btn = fields.Char(string='Button Hover')
     ms_color_surface = fields.Char(string='Surface')
     ms_color_sidebar_bg = fields.Char(string='Sidebar Background')
+    ms_color_statusbar_current = fields.Char(string='Statusbar Current')
+    ms_color_statusbar_done = fields.Char(string='Statusbar Done')
+    ms_color_statusbar_future = fields.Char(string='Statusbar Future')
 
     # Icon color pairs (stored in ir.config_parameter)
     ms_icon_pair_1_main = fields.Char(

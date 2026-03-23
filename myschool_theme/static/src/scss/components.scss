@@ -12,6 +12,7 @@
     border: 1px solid var(--myschool-border);
     border-radius: 12px;
     box-shadow: 0 1px 4px rgba(0, 60, 60, 0.07);
+    margin-top: 12px !important;
 }
 
 // -- Form header (avatar area) ----------------------------------------------
@@ -233,6 +234,14 @@
         border: none !important;
         margin-bottom: 0 !important;
 
+        // Top corners on header cells to match the container
+        thead tr:first-child th:first-child {
+            border-top-left-radius: 7px !important;
+        }
+        thead tr:first-child th:last-child {
+            border-top-right-radius: 7px !important;
+        }
+
         // Remove the bottom empty rows' background so they blend with the card
         tfoot td {
             background: transparent !important;
@@ -270,16 +279,26 @@
 }
 
 // -- Statusbar status arrows ------------------------------------------------
-.o_statusbar_status {
-    .o_arrow_button {
-        &.o_arrow_button_current {
-            background-color: var(--myschool-brand-1);
-            color: #fff;
-        }
+// DOM order is reversed (flex-flow: row-reverse):
+//   future steps → current step → completed steps
+.o_field_statusbar > .o_statusbar_status {
+    --o-statusbar-background-active: var(--myschool-statusbar-current);
+    --o-statusbar-border-active: var(--myschool-statusbar-current);
 
-        &.btn-primary {
-            background-color: var(--myschool-brand-1) !important;
+    > .o_arrow_button:not(.d-none) {
+        // Default: future steps (before current in DOM)
+        background-color: var(--myschool-statusbar-future) !important;
+
+        // Current step
+        &.o_arrow_button_current {
+            background-color: var(--myschool-statusbar-current) !important;
+            color: #fff !important;
         }
+    }
+
+    // Completed steps: siblings after current in DOM (= before current visually)
+    > .o_arrow_button.o_arrow_button_current ~ .o_arrow_button:not(.d-none) {
+        background-color: var(--myschool-statusbar-done) !important;
     }
 }
 
@@ -571,10 +590,12 @@
     .modal-header {
         border-bottom-color: var(--myschool-border);
         background-color: #f5fafa;
+        border-radius: 12px 12px 0 0;
     }
 
     .modal-footer {
         border-top-color: var(--myschool-border);
+        border-radius: 0 0 12px 12px;
     }
 }
 
@@ -598,6 +619,13 @@
 .o_form_view .o_boolean_toggle input:checked + .slider,
 .o_form_view .o_field_boolean_toggle input:checked + .slider {
     background-color: var(--myschool-brand-2);
+}
+
+// Round toggle switches in modal lists (e.g. student select wizard)
+.modal .o_list_view .o_boolean_toggle_cell .form-check-input,
+.modal .o_list_view .o_boolean_toggle .form-check-input,
+.modal .o_list_view .form-switch .form-check-input {
+    border-radius: 1em !important;
 }
 
 // -- Dropdown menus ---------------------------------------------------------

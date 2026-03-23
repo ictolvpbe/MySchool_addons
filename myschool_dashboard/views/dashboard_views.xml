@@ -9,8 +9,12 @@
                 <!-- Hidden access fields -->
                 <field name="has_professionalisering_access" invisible="1"/>
                 <field name="has_activiteiten_access" invisible="1"/>
+                <field name="has_drukwerk_access" invisible="1"/>
                 <field name="is_prof_manager" invisible="1"/>
                 <field name="is_act_manager" invisible="1"/>
+                <field name="is_drukwerk_manager" invisible="1"/>
+                <field name="is_drukwerk_drukwerk" invisible="1"/>
+                <field name="is_drukwerk_boekhouding" invisible="1"/>
                 <field name="is_act_vervangingen" invisible="1"/>
                 <field name="is_act_aankoop" invisible="1"/>
                 <field name="is_act_boekhouding" invisible="1"/>
@@ -147,6 +151,36 @@
                                     </div>
                                 </div>
                             </div>
+                            <!-- Drukwerk -->
+                            <div class="ms-card" invisible="not has_drukwerk_access">
+                                <div class="ms-card-header">
+                                    <span><i class="fa fa-print me-1"/> Drukwerk</span>
+                                    <button name="action_open_drukwerk_list" type="object"
+                                            class="ms-link">Bekijk alles &#8594;</button>
+                                </div>
+                                <div class="ms-card-body">
+                                    <div class="d-flex gap-2 flex-wrap mb-3">
+                                        <span class="ms-badge-status ms-badge-info">
+                                            <field name="druk_draft" class="d-inline"/> Concept
+                                        </span>
+                                        <span class="ms-badge-status ms-badge-info">
+                                            <field name="druk_form_invullen" class="d-inline"/> Formulier
+                                        </span>
+                                        <span class="ms-badge-status ms-badge-warning">
+                                            <field name="druk_afdrukken" class="d-inline"/> Afdrukken
+                                        </span>
+                                        <span class="ms-badge-status ms-badge-warning">
+                                            <field name="druk_doorrekenen" class="d-inline"/> Doorrekenen
+                                        </span>
+                                        <span class="ms-badge-status ms-badge-success">
+                                            <field name="druk_done" class="d-inline"/> Afgerond
+                                        </span>
+                                    </div>
+                                    <div class="text-muted" style="font-size: 12px;">
+                                        <field name="druk_total" class="d-inline"/> totaal
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- RIGHT COLUMN -->
@@ -165,15 +199,6 @@
                                                 <span>Aanvraag indienen</span>
                                             </div>
                                         </button>
-                                        <button name="action_new_professionalisering" type="object"
-                                                class="ms-qa-btn"
-                                                invisible="not has_professionalisering_access">
-                                            <div class="ms-qa-icon c2"><i class="fa fa-plus"/></div>
-                                            <div class="ms-qa-text">
-                                                <strong>Nieuwe professionalisering</strong>
-                                                <span>Aanvraag indienen</span>
-                                            </div>
-                                        </button>
                                         <button name="action_open_activiteiten_list" type="object"
                                                 class="ms-qa-btn"
                                                 invisible="not has_activiteiten_access">
@@ -183,12 +208,39 @@
                                                 <span>Overzicht bekijken</span>
                                             </div>
                                         </button>
+                                        <button name="action_new_professionalisering" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_professionalisering_access">
+                                            <div class="ms-qa-icon c2"><i class="fa fa-plus"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Nieuwe professionalisering</strong>
+                                                <span>Aanvraag indienen</span>
+                                            </div>
+                                        </button>
                                         <button name="action_open_professionalisering" type="object"
                                                 class="ms-qa-btn"
                                                 invisible="not has_professionalisering_access">
                                             <div class="ms-qa-icon c4"><i class="fa fa-list"/></div>
                                             <div class="ms-qa-text">
                                                 <strong>Mijn professionalisering</strong>
+                                                <span>Overzicht bekijken</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_new_drukwerk" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_drukwerk_access">
+                                            <div class="ms-qa-icon c1"><i class="fa fa-plus"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Nieuw drukwerk</strong>
+                                                <span>Aanvraag indienen</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_open_drukwerk_list" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_drukwerk_access">
+                                            <div class="ms-qa-icon c3"><i class="fa fa-list"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Mijn drukwerk</strong>
                                                 <span>Overzicht bekijken</span>
                                             </div>
                                         </button>
@@ -224,6 +276,12 @@
         <field name="view_mode">list,form</field>
     </record>
 
+    <record id="action_open_drukwerk_list" model="ir.actions.act_window">
+        <field name="name">Drukwerk</field>
+        <field name="res_model">drukwerk.record</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
     <!-- Add module name title to each form view -->
     <record id="view_professionalisering_form_title" model="ir.ui.view">
         <field name="name">professionalisering.record.form.title</field>
@@ -247,11 +305,25 @@
         </field>
     </record>
 
+    <record id="view_drukwerk_form_title" model="ir.ui.view">
+        <field name="name">drukwerk.record.form.title</field>
+        <field name="model">drukwerk.record</field>
+        <field name="inherit_id" ref="drukwerk.view_drukwerk_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@class='oe_title']" position="before">
+                <h2 class="text-muted">Drukwerk</h2>
+            </xpath>
+        </field>
+    </record>
+
     <!-- Hide the individual module root menus (we provide our own sub-menus) -->
     <record id="professionalisering.menu_professionalisering_root" model="ir.ui.menu">
         <field name="active" eval="False"/>
     </record>
     <record id="activiteiten.menu_activiteiten_root" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+    <record id="drukwerk.menu_drukwerk_root" model="ir.ui.menu">
         <field name="active" eval="False"/>
     </record>
 

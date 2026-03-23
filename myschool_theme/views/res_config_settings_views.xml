@@ -74,6 +74,20 @@
                             <field name="ms_color_sidebar_bg" class="d-block w-25 p-0 m-0" widget="color"/>
                         </div>
                     </setting>
+                    <setting string="Statusbar Colors" help="Colors for the status progress bar on forms">
+                        <div class="w-50 row">
+                            <label for="ms_color_statusbar_current" string="Current Step" class="d-block w-75 py-2"/>
+                            <field name="ms_color_statusbar_current" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_statusbar_done" string="Completed Steps" class="d-block w-75 py-2"/>
+                            <field name="ms_color_statusbar_done" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                        <div class="w-50 row">
+                            <label for="ms_color_statusbar_future" string="Future Steps" class="d-block w-75 py-2"/>
+                            <field name="ms_color_statusbar_future" class="d-block w-25 p-0 m-0" widget="color"/>
+                        </div>
+                    </setting>
                     <setting
                         string="Background Image"
                         company_dependent="1"

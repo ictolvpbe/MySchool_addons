@@ -5,7 +5,7 @@
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
-    'depends': ['base', 'myschool_core', 'professionalisering', 'activiteiten'],
+    'depends': ['base', 'myschool_core', 'professionalisering', 'activiteiten', 'drukwerk'],
     'data': [
         'security/ir.model.access.csv',
         'data/dashboard_data.xml',

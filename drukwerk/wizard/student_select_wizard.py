@@ -8,6 +8,7 @@ class StudentSelectLine(models.TransientModel):
     wizard_id = fields.Many2one('drukwerk.student.select.wizard', required=True, ondelete='cascade')
     person_id = fields.Many2one('myschool.person', string='Leerling', required=True)
     person_name = fields.Char(related='person_id.name', string='Naam')
+    klas_id = fields.Many2one('myschool.org', string='Klas')
     selected = fields.Boolean(string='Geselecteerd', default=True)
 
 

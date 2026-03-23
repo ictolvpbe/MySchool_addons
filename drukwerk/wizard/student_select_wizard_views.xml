@@ -8,24 +8,27 @@
             <form string="Leerlingen selecteren">
                 <field name="drukwerk_id" invisible="1"/>
                 <div class="d-flex align-items-center gap-3 mb-3">
-                    <button name="action_select_all"
-                            string="Selecteer alles"
-                            type="object"
-                            class="btn-secondary"
-                            icon="fa-check-square-o"/>
-                    <button name="action_deselect_all"
-                            string="Deselecteer alles"
-                            type="object"
-                            class="btn-secondary"
-                            icon="fa-square-o"/>
+                    <div class="btn-group">
+                        <button name="action_select_all"
+                                string="Selecteer alles"
+                                type="object"
+                                class="btn-secondary"
+                                icon="fa-check-square-o"/>
+                        <button name="action_deselect_all"
+                                string="Deselecteer alles"
+                                type="object"
+                                class="btn-secondary"
+                                icon="fa-square-o"/>
+                    </div>
                     <span class="text-muted">
                         <field name="selected_count" class="oe_inline"/> / <field name="total_count" class="oe_inline"/> geselecteerd
                     </span>
                 </div>
                 <field name="line_ids">
-                    <list editable="bottom" create="0" delete="0">
+                    <list editable="bottom" create="0" delete="0" default_group_by="klas_id">
                         <field name="selected" widget="boolean_toggle"/>
                         <field name="person_name" readonly="1"/>
+                        <field name="klas_id" readonly="1"/>
                         <field name="person_id" column_invisible="1"/>
                     </list>
                 </field>

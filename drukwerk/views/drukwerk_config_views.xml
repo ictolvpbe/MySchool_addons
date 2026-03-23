@@ -10,6 +10,8 @@
                     <group>
                         <group string="Prijzen">
                             <field name="prijs_per_pagina"/>
+                            <field name="prijs_kleur"/>
+                            <field name="prijs_a3"/>
                         </group>
                     </group>
                 </sheet>
