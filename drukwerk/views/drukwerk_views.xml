@@ -117,6 +117,8 @@
                                     <field name="kleur"/>
                                     <field name="formaat"/>
                                     <field name="dubbelzijdig"/>
+                                    <field name="nieten"/>
+                                    <field name="perforeren"/>
                                     <field name="kopie_leerkracht"/>
                                     <field name="prijs_per_pagina"
                                            groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
@@ -152,6 +154,8 @@
                                 <field name="kleur"/>
                                 <field name="formaat"/>
                                 <field name="dubbelzijdig"/>
+                                <field name="nieten"/>
+                                <field name="perforeren"/>
                                 <field name="kopie_leerkracht"/>
                                 <field name="opmerking"/>
                                 <button name="action_download_pdf"
@@ -188,6 +192,13 @@
                        decoration-warning="state in ('form_invullen', 'afdrukken')"
                        decoration-success="state in ('doorrekenen', 'done')"
                 />
+                <button name="action_print_all"
+                        string="Afdrukken"
+                        type="object"
+                        icon="fa-print"
+                        class="btn-primary"
+                        groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
+                        invisible="state != 'afdrukken'"/>
             </list>
         </field>
     </record>

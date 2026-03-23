@@ -232,6 +232,29 @@ class DrukwerkRecord(models.Model):
                 raise UserError("Kan alleen in de doorrekeningsfase afgerond worden.")
             record.state = 'done'
 
+    # --- Print actions ---
+
+    def action_print_all(self):
+        """Open all PDF lines for printing in new tabs."""
+        self.ensure_one()
+        if not self.line_ids:
+            raise UserError("Er zijn geen drukwerk items om af te drukken.")
+        urls = [f'/drukwerk/print/{line.id}' for line in self.line_ids if line.document_file]
+        if not urls:
+            raise UserError("Er zijn geen documenten beschikbaar om af te drukken.")
+        if len(urls) == 1:
+            return {
+                'type': 'ir.actions.act_url',
+                'url': urls[0],
+                'target': 'new',
+            }
+        # Open multiple tabs via a small HTML page
+        return {
+            'type': 'ir.actions.act_url',
+            'url': f'/drukwerk/print_all/{self.id}',
+            'target': 'new',
+        }
+
     # --- Shared actions ---
 
     def action_reset_to_form(self):
