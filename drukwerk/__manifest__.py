@@ -14,6 +14,7 @@
         'security/security_groups.xml',
         'security/ir.model.access.csv',
         'data/sequence.xml',
+        'data/cron.xml',
         'views/drukwerk_views.xml',
         'views/drukwerk_config_views.xml',
         'wizard/student_select_wizard_views.xml',

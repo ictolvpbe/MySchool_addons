@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError
 
@@ -21,6 +23,10 @@ class DrukwerkRecord(models.Model):
     ], string='Type drukwerk', tracking=True)
     titel = fields.Char(string='Omschrijving')
     description = fields.Text(string='Toelichting')
+    print_deadline = fields.Date(
+        string='Gewenste drukdatum',
+        tracking=True,
+    )
     school_id = fields.Many2one(
         'myschool.org',
         string='School',
@@ -333,4 +339,44 @@ class DrukwerkRecord(models.Model):
                     summary='Drukwerk doorrekenen',
                     note=f'Drukwerk "{record.titel}" is afgedrukt en kan doorgerekend worden.',
                     user_id=user.id,
+                )
+
+    @api.model
+    def _cron_print_deadline_reminder(self):
+        """Send reminder activities for records with print deadline tomorrow."""
+        tomorrow = fields.Date.today() + timedelta(days=1)
+        records = self.search([
+            ('print_deadline', '=', tomorrow),
+            ('state', '=', 'afdrukken'),
+        ])
+        if not records:
+            return
+        drukwerk_group = self.env.ref(
+            'drukwerk.group_drukwerk_drukwerk', raise_if_not_found=False)
+        admin_group = self.env.ref(
+            'drukwerk.group_drukwerk_admin', raise_if_not_found=False)
+        users = self.env['res.users']
+        if drukwerk_group:
+            users |= drukwerk_group.user_ids
+        if admin_group:
+            users |= admin_group.user_ids
+        if not users:
+            return
+        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        for record in records:
+            for user in users:
+                existing = self.env['mail.activity'].search([
+                    ('res_model', '=', 'drukwerk.record'),
+                    ('res_id', '=', record.id),
+                    ('user_id', '=', user.id),
+                    ('summary', '=', 'Drukwerk deadline morgen'),
+                ], limit=1)
+                if existing:
+                    continue
+                record.activity_schedule(
+                    activity_type_id=activity_type.id if activity_type else False,
+                    summary='Drukwerk deadline morgen',
+                    note=f'Drukwerk "{record.titel}" moet morgen ({tomorrow}) afgedrukt zijn!',
+                    user_id=user.id,
+                    date_deadline=tomorrow,
                 )

@@ -75,6 +75,8 @@
                             <field name="titel"
                                    placeholder="bv. Werkbladen wiskunde H3"
                                    readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="print_deadline"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
                             <field name="school_id"
                                    options="{'no_open': True}"
                                    readonly="state not in ('draft', 'form_invullen')"/>
@@ -145,6 +147,11 @@
 
                     <!-- Print-focused view for afdrukken state -->
                     <div invisible="state != 'afdrukken'">
+                        <group>
+                            <group>
+                                <field name="print_deadline" readonly="1"/>
+                            </group>
+                        </group>
                         <h3 class="mt-3 mb-3">Af te drukken items</h3>
                         <field name="line_ids" readonly="1">
                             <list create="0" delete="0">
@@ -182,6 +189,7 @@
                 <field name="create_uid" string="Aangemaakt door"/>
                 <field name="drukwerk_type"/>
                 <field name="titel"/>
+                <field name="print_deadline" optional="show"/>
                 <field name="school_id" optional="show"/>
                 <field name="klas_ids" widget="many2many_tags" optional="show"/>
                 <field name="student_count" string="Leerlingen"/>

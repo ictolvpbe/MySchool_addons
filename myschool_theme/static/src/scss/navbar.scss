@@ -4,4 +4,10 @@
 
 .o_main_navbar {
     border-bottom: none !important;
+
+    // Make systray icons (messaging, clock, etc.) bigger
+    .o_menu_systray .dropdown-toggle i.fa,
+    .o_menu_systray .dropdown-toggle i.oi {
+        font-size: 1.4em;
+    }
 }
