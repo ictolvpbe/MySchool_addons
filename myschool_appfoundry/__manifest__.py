@@ -11,12 +11,12 @@
         * Kanban board with configurable stages
         * Sprint planning and velocity tracking
         * Release management with progress tracking
-        * Integration with Process Mapper for workflow linking
+        * Built-in process mapping with SVG canvas editor
     """,
     'author': 'MySchool OLVP',
     'website': 'https://www.olvp.be',
     'license': 'LGPL-3',
-    'depends': ['base', 'mail', 'myschool_core', 'myschool_theme', 'process_mapper'],
+    'depends': ['base', 'mail', 'myschool_core', 'myschool_theme'],
     'data': [
         'security/security.xml',
         'security/ir.model.access.csv',
@@ -32,11 +32,17 @@
         'views/sprint_views.xml',
         'views/release_views.xml',
         'views/icon_config_views.xml',
+        'views/process_map_views.xml',
+        'views/process_mapper_client_views.xml',
+        'data/myschool_processes.xml',
         'views/menu_views.xml',
     ],
     'assets': {
         'web.assets_backend': [
             'myschool_appfoundry/static/src/css/appfoundry.css',
+            'myschool_appfoundry/static/src/css/process_mapper.css',
+            'myschool_appfoundry/static/src/js/process_mapper_canvas.js',
+            'myschool_appfoundry/static/src/xml/process_mapper_canvas.xml',
             'myschool_appfoundry/static/src/js/process_mapper_appfoundry.js',
             'myschool_appfoundry/static/src/xml/process_mapper_appfoundry.xml',
         ],
