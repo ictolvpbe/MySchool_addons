@@ -190,24 +190,6 @@
                                 <div class="ms-card-header">Snelle acties</div>
                                 <div class="ms-card-body">
                                     <div class="ms-quick-actions">
-                                        <button name="action_new_activiteit" type="object"
-                                                class="ms-qa-btn"
-                                                invisible="not has_activiteiten_access">
-                                            <div class="ms-qa-icon c1"><i class="fa fa-plus"/></div>
-                                            <div class="ms-qa-text">
-                                                <strong>Nieuwe activiteit</strong>
-                                                <span>Aanvraag indienen</span>
-                                            </div>
-                                        </button>
-                                        <button name="action_open_activiteiten_list" type="object"
-                                                class="ms-qa-btn"
-                                                invisible="not has_activiteiten_access">
-                                            <div class="ms-qa-icon c3"><i class="fa fa-list"/></div>
-                                            <div class="ms-qa-text">
-                                                <strong>Mijn activiteiten</strong>
-                                                <span>Overzicht bekijken</span>
-                                            </div>
-                                        </button>
                                         <button name="action_new_professionalisering" type="object"
                                                 class="ms-qa-btn"
                                                 invisible="not has_professionalisering_access">
@@ -223,6 +205,24 @@
                                             <div class="ms-qa-icon c4"><i class="fa fa-list"/></div>
                                             <div class="ms-qa-text">
                                                 <strong>Mijn professionalisering</strong>
+                                                <span>Overzicht bekijken</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_new_activiteit" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_activiteiten_access">
+                                            <div class="ms-qa-icon c1"><i class="fa fa-plus"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Nieuwe activiteit</strong>
+                                                <span>Aanvraag indienen</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_open_activiteiten_list" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_activiteiten_access">
+                                            <div class="ms-qa-icon c3"><i class="fa fa-list"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Mijn activiteiten</strong>
                                                 <span>Overzicht bekijken</span>
                                             </div>
                                         </button>

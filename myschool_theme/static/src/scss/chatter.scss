@@ -1,0 +1,58 @@
+/* Chatter toggle for all MySchool forms */
+
+/* When chatter is hidden, let the sheet take full width */
+.ms-chatter-hidden .o_form_sheet_bg {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
+}
+
+/* Remove rounded right corners on sheet when chatter is open beside it */
+.ms-has-chatter:not(.ms-chatter-hidden) .o_form_sheet {
+    --formView-sheet-border-radius: 0 !important;
+    --formView-sheet-border-radius-md: 0 !important;
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-radius: 0 !important;
+}
+
+.ms-has-chatter:not(.ms-chatter-hidden) .o_form_sheet_bg {
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+}
+
+.ms-has-chatter:not(.ms-chatter-hidden) .o_form_statusbar {
+    border-top-right-radius: 0 !important;
+}
+
+/* Compact aside chatter when visible */
+.o-mail-Form-chatter.o-aside {
+    width: 350px !important;
+    min-width: 350px !important;
+    max-height: 100vh;
+    overflow-y: auto;
+}
+
+/* Limit the thread height so it doesn't stretch endlessly */
+.o-mail-Form-chatter .o-mail-Thread {
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+/* Remove shadows on chatter topbar icons (search, paperclip, followers) */
+.o-mail-Form-chatter .o-mail-Chatter-topbar .btn-link,
+.o-mail-Form-chatter .o-mail-Chatter-topbar .btn,
+.o-mail-Form-chatter .o-mail-Followers-button {
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+
+/* Remove shadow on chatter top bar */
+.o-mail-Form-chatter .o-mail-Chatter-top.shadow-sm {
+    box-shadow: none !important;
+}
+
+/* No animations on chatter */
+.o-mail-Form-chatter {
+    transition: none !important;
+    animation: none !important;
+}

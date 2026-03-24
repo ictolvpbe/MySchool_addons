@@ -79,13 +79,30 @@ class DrukwerkPrintController(http.Controller):
             font-size: 13px;
             color: #856404;
         }}
+        .finishing-alert {{
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            border-radius: 6px;
+            padding: 10px 20px;
+            margin: 0 25px;
+            font-family: Arial, sans-serif;
+            font-size: 15px;
+            font-weight: bold;
+            color: #721c24;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .finishing-alert .finish-icon {{
+            font-size: 22px;
+        }}
         iframe {{
             width: 100%;
-            height: calc(100vh - 50px);
+            height: calc(100vh - {90 if (line.nieten or line.perforeren) else 50}px);
             border: none;
         }}
         @media print {{
-            .print-info {{ display: none !important; }}
+            .print-info, .finishing-alert {{ display: none !important; }}
             iframe {{ height: 100vh; }}
         }}
     </style>
@@ -101,6 +118,7 @@ class DrukwerkPrintController(http.Controller):
         <span><strong>Kopie leerkracht:</strong> <span class="badge badge-{'yes' if line.kopie_leerkracht else 'no'}">{kopie_leerkracht}</span></span>
         {'<span class="manual-warning">&#9888; Controleer kleurinstelling in afdrukvenster</span>' if line.kleur == 'kleur' else ''}
     </div>
+    {'<div class="finishing-alert"><span class="finish-icon">&#9888;</span> Stel in het afdrukvenster in: ' + ' + '.join(f for f in [('NIETEN' if line.nieten else ''), ('PERFOREREN' if line.perforeren else '')] if f) + ' &mdash; Gebruik <strong>Ctrl+Shift+P</strong> voor het systeemdialoogvenster met alle printeropties</div>' if (line.nieten or line.perforeren) else ''}
     <iframe id="pdf-frame" src="/drukwerk/print/{line_id}/pdf"
             onload="setTimeout(function(){{ document.getElementById('pdf-frame').contentWindow.print(); }}, 500);">
     </iframe>

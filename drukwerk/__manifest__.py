@@ -19,6 +19,7 @@
         'wizard/student_select_wizard_views.xml',
         'views/drukwerk_menu.xml',
     ],
+    'assets': {},
     'installable': True,
     'application': True,
     'auto_install': False,

@@ -8,6 +8,7 @@
     'depends': [
         'web',
         'base_setup',
+        'mail',
     ],
     'post_init_hook': 'post_init_hook',
     'data': [
@@ -34,6 +35,8 @@
             'myschool_theme/static/src/js/navbar.js',
             'myschool_theme/static/src/js/sidebar.js',
             'myschool_theme/static/src/js/webclient.js',
+            'myschool_theme/static/src/js/chatter_toggle.js',
+            'myschool_theme/static/src/scss/chatter.scss',
         ],
     },
     'installable': True,

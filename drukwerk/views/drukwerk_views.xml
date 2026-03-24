@@ -5,7 +5,7 @@
         <field name="name">drukwerk.record.form</field>
         <field name="model">drukwerk.record</field>
         <field name="arch" type="xml">
-            <form>
+            <form class="drukwerk_form">
                 <header>
                     <!-- Personeelslid: submit -->
                     <button name="action_submit"
@@ -148,15 +148,15 @@
                         <h3 class="mt-3 mb-3">Af te drukken items</h3>
                         <field name="line_ids" readonly="1">
                             <list create="0" delete="0">
-                                <field name="document_filename"/>
-                                <field name="aantal_paginas" string="Pagina's"/>
-                                <field name="aantal_kopies" string="Kopieën"/>
+                                <field name="document_filename" width="2"/>
+                                <field name="aantal_paginas" string="Pag."/>
+                                <field name="aantal_kopies" string="Kop."/>
                                 <field name="kleur"/>
                                 <field name="formaat"/>
-                                <field name="dubbelzijdig"/>
-                                <field name="nieten"/>
-                                <field name="perforeren"/>
-                                <field name="kopie_leerkracht"/>
+                                <field name="dubbelzijdig" string="2-zij."/>
+                                <field name="nieten" string="Niet."/>
+                                <field name="perforeren" string="Perf."/>
+                                <field name="kopie_leerkracht" string="Kop.lk."/>
                                 <field name="opmerking"/>
                                 <button name="action_download_pdf"
                                         string="Afdrukken"
