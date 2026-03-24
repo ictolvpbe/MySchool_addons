@@ -41,6 +41,20 @@ class MySchoolDashboard(models.Model):
         compute='_compute_access_rights')
     is_only_vervangingen = fields.Boolean(
         compute='_compute_access_rights')
+    is_prof_directie = fields.Boolean(
+        compute='_compute_access_rights')
+    is_prof_boekhouding = fields.Boolean(
+        compute='_compute_access_rights')
+    is_prof_vervangingen = fields.Boolean(
+        compute='_compute_access_rights')
+    is_prof_only_directie = fields.Boolean(
+        compute='_compute_access_rights')
+    is_prof_only_boekhouding = fields.Boolean(
+        compute='_compute_access_rights')
+    is_prof_only_vervangingen = fields.Boolean(
+        compute='_compute_access_rights')
+    is_prof_only_medewerker = fields.Boolean(
+        compute='_compute_access_rights')
 
     # Counts activiteiten (per actual state)
     act_total = fields.Integer(
@@ -103,6 +117,8 @@ class MySchoolDashboard(models.Model):
         string="Prof. Afgekeurd", compute='_compute_professionalisering_counts')
     prof_done = fields.Integer(
         string="Prof. Afgerond", compute='_compute_professionalisering_counts')
+    prof_payment_pending = fields.Integer(
+        string="Prof. Betaling openstaand", compute='_compute_professionalisering_counts')
 
     # KPI: combined pending / action-needed / approved / rejected
     kpi_pending = fields.Integer(compute='_compute_kpi')
@@ -248,6 +264,7 @@ class MySchoolDashboard(models.Model):
         druk_mgr = self._is_manager('drukwerk.record')
         user = self.env(su=False).user
         is_admin = user.has_group('activiteiten.group_activiteiten_admin')
+        prof_admin = user.has_group('professionalisering.group_professionalisering_admin')
         act_verv = is_admin or user.has_group('activiteiten.group_activiteiten_vervangingen')
         act_aank = is_admin or user.has_group('activiteiten.group_activiteiten_aankoop')
         act_boek = is_admin or user.has_group('activiteiten.group_activiteiten_boekhouding')
@@ -272,6 +289,13 @@ class MySchoolDashboard(models.Model):
             rec.is_only_directie = act_dir and not act_aank and not act_boek and not act_verv
             rec.is_only_medewerker = not act_dir and not act_aank and not act_boek and not act_verv
             rec.is_only_vervangingen = act_verv and not act_dir and not act_aank and not act_boek
+            rec.is_prof_directie = prof_admin or user.has_group('professionalisering.group_professionalisering_directie')
+            rec.is_prof_boekhouding = prof_admin or user.has_group('professionalisering.group_professionalisering_boekhouding')
+            rec.is_prof_vervangingen = prof_admin or user.has_group('professionalisering.group_professionalisering_vervangingen')
+            rec.is_prof_only_directie = rec.is_prof_directie and not rec.is_prof_boekhouding and not rec.is_prof_vervangingen
+            rec.is_prof_only_boekhouding = rec.is_prof_boekhouding and not rec.is_prof_directie and not rec.is_prof_vervangingen
+            rec.is_prof_only_vervangingen = rec.is_prof_vervangingen and not rec.is_prof_directie and not rec.is_prof_boekhouding
+            rec.is_prof_only_medewerker = not rec.is_prof_directie and not rec.is_prof_boekhouding and not rec.is_prof_vervangingen
 
     # --- KPI ---
 
@@ -346,6 +370,7 @@ class MySchoolDashboard(models.Model):
             rec.prof_approved = counts.get('approved', 0)
             rec.prof_rejected = counts.get('rejected', 0)
             rec.prof_done = counts.get('done', 0)
+            rec.prof_payment_pending = 0
             if is_manager:
                 rec.prof_total = sum(counts.values())
             else:
@@ -527,17 +552,28 @@ class MySchoolDashboard(models.Model):
         action = self.env['ir.actions.act_window']._for_xml_id(
             'myschool_dashboard.action_open_professionalisering')
         model = 'professionalisering.record'
+        user = self.env(su=False).user
         if self._is_admin(model):
-            action['context'] = {'search_default_to_approve': 1}
-        elif self._is_directie_or_admin(model):
-            action['domain'] = [
-                '|',
-                ('assigned_to', '=', False),
-                ('assigned_to.user_id', '=', self.env.uid),
-            ]
-            action['context'] = {'search_default_to_approve': 1}
+            pass  # no filter for admin
+        elif self._is_manager(model):
+            visible_states = set()
+            search_default = None
+            role_checks = {
+                'directie': ('professionalisering.group_professionalisering_directie', 'search_default_to_approve'),
+                'boekhouding': ('professionalisering.group_professionalisering_boekhouding', 'search_default_payment_pending'),
+                'vervangingen': ('professionalisering.group_professionalisering_vervangingen', 'search_default_replacement_pending'),
+            }
+            for role, (group, sd) in role_checks.items():
+                if user.has_group(group):
+                    visible_states.update(self._PROF_ROLE_STATES.get(role, []))
+                    if not search_default:
+                        search_default = sd
+            if visible_states:
+                action['domain'] = [('state', 'in', list(visible_states))]
+            if search_default:
+                action['context'] = {search_default: 1}
         else:
-            action['domain'] = [('employee_id.user_id', '=', self.env.uid)]
+            action['context'] = {'search_default_my_requests': 1}
         return action
 
     # States visible per role (matching dashboard counter visibility)
@@ -547,6 +583,14 @@ class MySchoolDashboard(models.Model):
         'boekhouding': ['approved', 's_code', 'vervanging', 'done', 'rejected'],
         'vervangingen': ['vervanging'],
         'medewerker': ['draft', 'form_invullen', 'bus_check', 'bus_refused', 'pending_approval', 'approved', 'rejected', 's_code', 'vervanging', 'done'],
+    }
+
+    # Professionalisering states visible per role
+    _PROF_ROLE_STATES = {
+        'directie': ['fill_in_form_individueel', 'fill_in_form_teamleren'],
+        'boekhouding': ['bevestiging', 'done'],
+        'vervangingen': ['bevestiging'],
+        'medewerker': ['selection_of_form', 'fill_in_form_individueel', 'fill_in_form_teamleren', 'bevestiging', 'weigering', 'done'],
     }
 
     def action_open_activiteiten_list(self):

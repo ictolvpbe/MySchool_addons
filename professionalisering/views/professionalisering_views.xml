@@ -331,6 +331,7 @@
                 <filter string="Aan mij toegewezen" name="assigned_to_me" domain="[('assigned_to.user_id', '=', uid)]"/>
                 <filter string="Te beoordelen" name="to_approve" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
                 <filter string="Betaling openstaand" name="payment_pending" domain="[('state', '=', 'bevestiging'), ('payment_done', '=', False)]"/>
+                <filter string="Vervangingen openstaand" name="replacement_pending" domain="[('state', '=', 'bevestiging')]"/>
                 <separator/>
                 <filter string="Formulier kiezen" name="state_selection_of_form" domain="[('state', '=', 'selection_of_form')]"/>
                 <filter string="Ingediend" name="state_submitted" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>

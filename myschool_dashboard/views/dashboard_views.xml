@@ -68,20 +68,32 @@
                                             class="ms-link">Bekijk alles &#8594;</button>
                                 </div>
                                 <div class="ms-card-body">
+                                    <field name="is_prof_directie" invisible="1"/>
+                                    <field name="is_prof_boekhouding" invisible="1"/>
+                                    <field name="is_prof_vervangingen" invisible="1"/>
+                                    <field name="is_prof_only_directie" invisible="1"/>
+                                    <field name="is_prof_only_boekhouding" invisible="1"/>
+                                    <field name="is_prof_only_vervangingen" invisible="1"/>
+                                    <field name="is_prof_only_medewerker" invisible="1"/>
                                     <div class="d-flex gap-2 flex-wrap mb-3">
-                                        <span class="ms-badge-status ms-badge-info">
+                                        <span class="ms-badge-status ms-badge-info"
+                                              invisible="is_prof_only_directie or is_prof_only_boekhouding or is_prof_only_vervangingen">
                                             <field name="prof_draft" class="d-inline"/> Concept
                                         </span>
-                                        <span class="ms-badge-status ms-badge-warning">
+                                        <span class="ms-badge-status ms-badge-warning"
+                                              invisible="is_prof_only_boekhouding or is_prof_only_vervangingen">
                                             <field name="prof_submitted" class="d-inline"/> Ingediend
                                         </span>
-                                        <span class="ms-badge-status ms-badge-success">
+                                        <span class="ms-badge-status ms-badge-success"
+                                              invisible="is_prof_only_directie">
                                             <field name="prof_approved" class="d-inline"/> Goedgekeurd
                                         </span>
-                                        <span class="ms-badge-status ms-badge-error">
+                                        <span class="ms-badge-status ms-badge-error"
+                                              invisible="is_prof_only_directie or is_prof_only_vervangingen">
                                             <field name="prof_rejected" class="d-inline"/> Afgekeurd
                                         </span>
-                                        <span class="ms-badge-status ms-badge-success" invisible="not is_prof_manager">
+                                        <span class="ms-badge-status ms-badge-success"
+                                              invisible="is_prof_only_directie or is_prof_only_medewerker or is_prof_only_vervangingen">
                                             <field name="prof_done" class="d-inline"/> Afgerond
                                         </span>
                                     </div>
@@ -267,7 +279,7 @@
         <field name="name">Professionalisering</field>
         <field name="res_model">professionalisering.record</field>
         <field name="view_mode">list,form</field>
-        <field name="context">{'search_default_my_requests': 1}</field>
+        <field name="context">{}</field>
     </record>
 
     <record id="action_open_activiteiten_list" model="ir.actions.act_window">

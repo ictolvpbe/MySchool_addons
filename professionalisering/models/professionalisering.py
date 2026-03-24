@@ -1,5 +1,37 @@
+import ast
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
+
+
+class IrActionsActWindow(models.Model):
+    _inherit = 'ir.actions.act_window'
+
+    def _get_action_dict(self):
+        result = super()._get_action_dict()
+        if result.get('res_model') == 'professionalisering.record':
+            raw_ctx = result.get('context') or '{}'
+            if isinstance(raw_ctx, str):
+                try:
+                    ctx = ast.literal_eval(raw_ctx)
+                except (ValueError, SyntaxError):
+                    ctx = {}
+            else:
+                ctx = dict(raw_ctx)
+            if not any(k.startswith('search_default_') for k in ctx):
+                user = self.env.user
+                if user.has_group('professionalisering.group_professionalisering_admin'):
+                    pass
+                elif user.has_group('professionalisering.group_professionalisering_boekhouding'):
+                    ctx['search_default_payment_pending'] = 1
+                elif user.has_group('professionalisering.group_professionalisering_directie'):
+                    ctx['search_default_to_approve'] = 1
+                elif user.has_group('professionalisering.group_professionalisering_vervangingen'):
+                    ctx['search_default_replacement_pending'] = 1
+                else:
+                    ctx['search_default_my_requests'] = 1
+                result['context'] = ctx
+        return result
 
 
 class ProfessionaliseringRecord(models.Model):
