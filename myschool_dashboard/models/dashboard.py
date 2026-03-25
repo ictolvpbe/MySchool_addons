@@ -580,7 +580,7 @@ class MySchoolDashboard(models.Model):
     _ROLE_STATES = {
         'directie': ['pending_approval'],
         'aankoop': ['bus_check'],
-        'boekhouding': ['approved', 's_code', 'vervanging', 'done', 'rejected'],
+        'boekhouding': ['approved', 's_code', 'vervanging', 'done'],
         'vervangingen': ['vervanging'],
         'medewerker': ['draft', 'form_invullen', 'bus_check', 'bus_refused', 'pending_approval', 'approved', 'rejected', 's_code', 'vervanging', 'done'],
     }
