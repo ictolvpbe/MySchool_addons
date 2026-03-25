@@ -9,6 +9,9 @@
                 <group string="Scholen">
                     <field name="school_ids" widget="many2many_tags"/>
                 </group>
+                <group string="Startactie">
+                    <field name="action_id"/>
+                </group>
             </xpath>
         </field>
     </record>

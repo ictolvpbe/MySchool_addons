@@ -64,6 +64,11 @@
         # User form extension
         'views/res_users_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'myschool_core/static/src/webclient/**/*',
+        ],
+    },
     'demo': [],
     'installable': True,
     'application': False,
