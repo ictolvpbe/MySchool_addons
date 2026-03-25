@@ -57,10 +57,10 @@
     margin-bottom: 24px;
 }
 .ms-kpi-card {
-    background: var(--ms-bg-card);
+    background: transparent !important;
     border-radius: 12px;
     padding: 20px 24px;
-    box-shadow: 0 1px 3px rgba(0,60,60,.06);
+    box-shadow: none !important;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -88,6 +88,15 @@
     font-weight: 700;
     color: var(--ms-black);
     display: inline;
+}
+.ms-kpi-value .o_field_widget span,
+.ms-kpi-value .o_field_widget .o_input,
+.ms-kpi-value .o_field_widget input,
+.ms-kpi-value .o_readonly_modifier span,
+.ms-kpi-value .o_readonly_modifier input {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 .ms-kpi-sub {
     font-size: 12px;
