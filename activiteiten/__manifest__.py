@@ -27,6 +27,7 @@
             'activiteiten/static/src/scss/activiteiten.scss',
         ],
     },
+    'post_init_hook': '_fix_missing_references',
     'installable': True,
     'application': True,
     'auto_install': False,

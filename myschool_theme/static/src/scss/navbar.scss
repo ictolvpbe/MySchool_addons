@@ -11,3 +11,22 @@
         font-size: 1.4em;
     }
 }
+
+// Make the user avatar's active/status indicator smaller and shift it right
+// so the user initial is more visible
+.o-web-UserMenu-imStatus {
+    right: -5px;
+    bottom: -3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50% !important;
+
+    span.smaller {
+        padding-top: 1px;
+        font-size: 8px;
+    }
+
+    i {
+        padding: 0;
+    }
+}

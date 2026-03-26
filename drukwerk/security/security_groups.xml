@@ -51,4 +51,9 @@
     <record id="myschool_core.group_myschool_core_admin" model="res.groups">
         <field name="implied_ids" eval="[(4, ref('group_drukwerk_admin'))]"/>
     </record>
+
+    <!-- EMPLOYEE role gets base drukwerk access -->
+    <record id="myschool_core.group_myschool_employee" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
+    </record>
 </odoo>

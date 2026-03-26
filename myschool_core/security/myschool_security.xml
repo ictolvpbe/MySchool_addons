@@ -20,6 +20,28 @@
         <field name="comment">Full access to all MySchool modules including Admin.</field>
     </record>
 
+    <!-- ===================================================================== -->
+    <!-- Role-based Groups (linked to myschool.role records in the database)   -->
+    <!-- ===================================================================== -->
+
+    <record id="group_myschool_employee" model="res.groups">
+        <field name="name">MySchool Employee</field>
+        <field name="implied_ids" eval="[(4, ref('group_myschool_core_user'))]"/>
+        <field name="comment">Linked to the EMPLOYEE role. Grants base access to employee-facing modules.</field>
+    </record>
+
+    <record id="group_myschool_relation" model="res.groups">
+        <field name="name">MySchool Relation</field>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">Linked to the RELATION role.</field>
+    </record>
+
+    <record id="group_myschool_student" model="res.groups">
+        <field name="name">MySchool Student</field>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">Linked to the STUDENT role.</field>
+    </record>
+
     </data>
 </odoo>
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <data noupdate="1">
+    <data noupdate="0">
         <record id="seq_activiteiten_record" model="ir.sequence">
             <field name="name">Activiteiten</field>
             <field name="code">activiteiten.record</field>
@@ -8,6 +8,7 @@
             <field name="padding">5</field>
             <field name="number_next">1</field>
             <field name="number_increment">1</field>
+            <field name="company_id" eval="False"/>
         </record>
     </data>
 </odoo>

@@ -51,4 +51,9 @@
         <field name="sequence">50</field>
         <field name="implied_ids" eval="[(4, ref('group_professionalisering_directie'))]"/>
     </record>
+
+    <!-- EMPLOYEE role gets base professionalisering access -->
+    <record id="myschool_core.group_myschool_employee" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
+    </record>
 </odoo>

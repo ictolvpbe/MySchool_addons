@@ -1,7 +1,11 @@
+import logging
+
 from markupsafe import Markup
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
 
 
 class Activiteiten(models.Model):
@@ -11,7 +15,6 @@ class Activiteiten(models.Model):
 
     name = fields.Char(
         string='Referentie',
-        required=True,
         copy=False,
         readonly=True,
         default='New',
@@ -233,7 +236,7 @@ class Activiteiten(models.Model):
         today = fields.Date.context_today(self)
         for record in self:
             # Remove old snapshot lines (fresh snapshot on each submit)
-            record.snapshot_line_ids.unlink()
+            record.snapshot_line_ids.sudo().unlink()
             vals_list = []
             # Students
             students = record._get_current_students()
@@ -555,21 +558,43 @@ class Activiteiten(models.Model):
         ('name_unique', 'UNIQUE(name)', 'De referentie moet uniek zijn.'),
     ]
 
+    def _auto_init(self):
+        res = super()._auto_init()
+        # Fix any existing records with missing references
+        self.env.cr.execute("""
+            SELECT id FROM activiteiten_record
+            WHERE name IS NULL OR name IN ('', 'New', 'new')
+        """)
+        broken_ids = [r[0] for r in self.env.cr.fetchall()]
+        if broken_ids:
+            for record_id in broken_ids:
+                ref = self.env['ir.sequence'].sudo().next_by_code('activiteiten.record')
+                if ref:
+                    self.env.cr.execute(
+                        "UPDATE activiteiten_record SET name = %s WHERE id = %s",
+                        (ref, record_id)
+                    )
+        return res
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
-            if vals.get('name', 'New') == 'New':
+            if vals.get('name', 'New') == 'New' or not vals.get('name'):
                 vals['name'] = self._next_reference()
             if vals.get('activity_type') and vals.get('state', 'draft') == 'draft':
                 vals['state'] = 'form_invullen'
         records = super().create(vals_list)
+        # Fix any records that still ended up without a proper reference
+        for record in records:
+            if not record.name or record.name == 'New':
+                record.sudo().name = self._next_reference()
         # Auto-add the creator as a teacher with an accepted invite
         for record in records:
-            person = self.env['myschool.person'].search(
+            person = self.env['myschool.person'].sudo().search(
                 [('odoo_user_id', '=', record.create_uid.id)], limit=1)
             if person:
-                record.leerkracht_ids = [(4, person.id)]
-                self.env['activiteiten.invite'].create({
+                record.sudo().leerkracht_ids = [(4, person.id)]
+                self.env['activiteiten.invite'].sudo().create({
                     'activiteit_id': record.id,
                     'person_id': person.id,
                     'state': 'accepted',
@@ -577,9 +602,16 @@ class Activiteiten(models.Model):
                 })
         return records
 
+    def write(self, vals):
+        res = super().write(vals)
+        for record in self:
+            if not record.name or record.name == 'New':
+                record.sudo().name = self._next_reference()
+        return res
+
     def _next_reference(self):
         """Get next unique reference, syncing the sequence if needed."""
-        last_record = self.search(
+        last_record = self.sudo().search(
             [('name', 'like', 'ACT-')],
             order='name desc', limit=1,
         )
@@ -589,14 +621,27 @@ class Activiteiten(models.Model):
                 last_number = int(last_record.name.replace('ACT-', ''))
             except ValueError:
                 pass
-        seq = self.env['ir.sequence'].search([
+        # Search without company filter to find the sequence regardless
+        seq = self.env['ir.sequence'].sudo().search([
             ('code', '=', 'activiteiten.record'),
         ], limit=1)
         if not seq:
-            raise UserError("Sequentie 'activiteiten.record' niet gevonden.")
+            seq = self.env['ir.sequence'].sudo().create({
+                'name': 'Activiteiten',
+                'code': 'activiteiten.record',
+                'prefix': 'ACT-',
+                'padding': 5,
+                'number_next': last_number + 1,
+                'number_increment': 1,
+                'company_id': False,
+            })
+            _logger.info('[ACT] Auto-created ir.sequence for activiteiten.record')
         if seq.number_next <= last_number:
             seq.sudo().write({'number_next': last_number + 1})
-        return self.env['ir.sequence'].next_by_code('activiteiten.record')
+        # Call _next() directly on the sequence to bypass company filtering
+        ref = seq.sudo()._next()
+        _logger.info('[ACT] Generated reference: %s', ref)
+        return ref
 
     # --- Personeelslid actions ---
 
@@ -620,6 +665,9 @@ class Activiteiten(models.Model):
             else:
                 record.state = 'pending_approval'
         self._send_notification('submit')
+        pending_records = self.filtered(lambda r: r.state == 'pending_approval')
+        if pending_records:
+            pending_records._schedule_directie_activity()
 
     # --- Aankoop actions ---
 
@@ -630,6 +678,7 @@ class Activiteiten(models.Model):
             record.bus_available = True
             record.state = 'pending_approval'
         self._send_notification('submit')
+        self._schedule_directie_activity()
 
     def action_bus_refused(self):
         for record in self:
@@ -819,6 +868,22 @@ class Activiteiten(models.Model):
                     activity_type_id=activity_type.id if activity_type else False,
                     summary='Vervanging aanpassen: %s' % record.titel,
                     note='Nieuwe leerkracht(en) uitgenodigd: %s. Controleer de vervanging.' % names,
+                    user_id=user.id,
+                )
+
+    def _schedule_directie_activity(self):
+        directie_group = self.env.ref(
+            'activiteiten.group_activiteiten_directie', raise_if_not_found=False)
+        if not directie_group:
+            return
+        directie_users = directie_group.user_ids
+        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        for record in self:
+            for user in directie_users:
+                record.activity_schedule(
+                    activity_type_id=activity_type.id if activity_type else False,
+                    summary='Activiteit goedkeuren',
+                    note=f'Er is een nieuwe aanvraag "{record.titel}" ingediend door {record.create_uid.name}. Gelieve deze te beoordelen.',
                     user_id=user.id,
                 )
 

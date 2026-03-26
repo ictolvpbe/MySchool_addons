@@ -227,7 +227,7 @@
                         <page string="Kosten">
                             <div class="row">
                                 <div class="col-6">
-                                    <h4 class="mt-2 mb-3">Vaste kosten</h4>
+                                    <h4 class="mt-4 mb-3">Vaste kosten</h4>
                                     <field name="kosten_vast_ids"
                                            context="{'default_kosten_type': 'vast'}"
                                            nolabel="1"
@@ -242,7 +242,7 @@
                                     </field>
                                 </div>
                                 <div class="col-6">
-                                    <h4 class="mt-2 mb-3">Variabele kosten</h4>
+                                    <h4 class="mt-4 mb-3">Variabele kosten</h4>
                                     <field name="kosten_variabel_ids"
                                            context="{'default_kosten_type': 'variabel'}"
                                            nolabel="1"
