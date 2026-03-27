@@ -5,7 +5,7 @@
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
-    'depends': ['base', 'myschool_core', 'professionalisering', 'activiteiten', 'drukwerk'],
+    'depends': ['base', 'myschool_core'],
     'data': [
         'security/ir.model.access.csv',
         'data/dashboard_data.xml',
@@ -23,5 +23,5 @@
     },
     'installable': True,
     'application': True,
-    'auto_install': False,
+    'auto_install': ['myschool_core'],
 }

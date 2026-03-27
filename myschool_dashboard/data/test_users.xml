@@ -11,16 +11,13 @@
         </record>
 
         <!-- ============================================================ -->
-        <!-- 1. MEDEWERKER — basic employee, sees own records only        -->
+        <!-- 1. MEDEWERKER - basic employee, sees own records only        -->
         <!-- ============================================================ -->
         <record id="test_user_medewerker" model="res.users">
             <field name="name">Test Medewerker</field>
             <field name="login">medewerker@test.com</field>
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
-            <field name="group_ids" eval="[
-                (4, ref('professionalisering.group_professionalisering_user')),
-            ]"/>
         </record>
         <record id="test_employee_medewerker" model="hr.employee">
             <field name="name">Test Medewerker</field>
@@ -28,16 +25,13 @@
         </record>
 
         <!-- ============================================================ -->
-        <!-- 2. DIRECTIE — approves/rejects, sees all records             -->
+        <!-- 2. DIRECTIE - approves/rejects, sees all records             -->
         <!-- ============================================================ -->
         <record id="test_user_directie" model="res.users">
             <field name="name">Test Directie</field>
             <field name="login">directie@test.com</field>
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
-            <field name="group_ids" eval="[
-                (4, ref('professionalisering.group_professionalisering_directie')),
-            ]"/>
         </record>
         <record id="test_employee_directie" model="hr.employee">
             <field name="name">Test Directie</field>
@@ -45,16 +39,13 @@
         </record>
 
         <!-- ============================================================ -->
-        <!-- 3. BOEKHOUDING — confirms payments, sees own school records  -->
+        <!-- 3. BOEKHOUDING - confirms payments, sees own school records  -->
         <!-- ============================================================ -->
         <record id="test_user_boekhouding" model="res.users">
             <field name="name">Test Boekhouding</field>
             <field name="login">boekhouding@test.com</field>
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
-            <field name="group_ids" eval="[
-                (4, ref('professionalisering.group_professionalisering_boekhouding')),
-            ]"/>
         </record>
         <record id="test_employee_boekhouding" model="hr.employee">
             <field name="name">Test Boekhouding</field>
@@ -62,16 +53,13 @@
         </record>
 
         <!-- ============================================================ -->
-        <!-- 4. VERVANGINGEN — schedules replacements, sees own school    -->
+        <!-- 4. VERVANGINGEN - schedules replacements, sees own school    -->
         <!-- ============================================================ -->
         <record id="test_user_vervangingen" model="res.users">
             <field name="name">Test Vervangingen</field>
             <field name="login">vervangingen@test.com</field>
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
-            <field name="group_ids" eval="[
-                (4, ref('professionalisering.group_professionalisering_vervangingen')),
-            ]"/>
         </record>
         <record id="test_employee_vervangingen" model="hr.employee">
             <field name="name">Test Vervangingen</field>
@@ -79,16 +67,13 @@
         </record>
 
         <!-- ============================================================ -->
-        <!-- 5. BEHEERDER — full admin access to everything               -->
+        <!-- 5. BEHEERDER - full admin access to everything               -->
         <!-- ============================================================ -->
         <record id="test_user_beheerder" model="res.users">
             <field name="name">Test Beheerder</field>
             <field name="login">beheerder@test.com</field>
             <field name="password">test12346</field>
             <field name="school_ids" eval="[(4, ref('test_school'))]"/>
-            <field name="group_ids" eval="[
-                (4, ref('professionalisering.group_professionalisering_admin')),
-            ]"/>
         </record>
         <record id="test_employee_beheerder" model="hr.employee">
             <field name="name">Test Beheerder</field>

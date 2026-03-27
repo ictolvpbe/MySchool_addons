@@ -1,7 +1,11 @@
+import logging
+
 from markupsafe import Markup
 from odoo.tools import html_escape
 
 from odoo import models, fields, api
+
+_logger = logging.getLogger(__name__)
 
 
 class MySchoolDashboard(models.Model):
@@ -13,6 +17,15 @@ class MySchoolDashboard(models.Model):
     def _compute_display_name(self):
         for record in self:
             record.display_name = 'My Dashboard'
+
+    # --- Optional module helper ---
+
+    def _safe_has_group(self, group_xmlid):
+        """Check if current user has a group, returns False if group doesn't exist."""
+        try:
+            return self.env(su=False).user.has_group(group_xmlid)
+        except (ValueError, KeyError):
+            return False
 
     # Access booleans
     has_professionalisering_access = fields.Boolean(
@@ -203,9 +216,10 @@ class MySchoolDashboard(models.Model):
     # --- Access checks (always use real user, not su) ---
 
     def _has_access(self, model_name):
-        user = self.env(su=False).user
+        if model_name not in self.env:
+            return False
         for group_xmlid in self._ALL_GROUPS.get(model_name, []):
-            if user.has_group(group_xmlid):
+            if self._safe_has_group(group_xmlid):
                 return True
         return False
 
@@ -213,18 +227,17 @@ class MySchoolDashboard(models.Model):
         group_xmlid = self._DIRECTIE_GROUPS.get(model_name)
         if not group_xmlid:
             return False
-        return self.env(su=False).user.has_group(group_xmlid)
+        return self._safe_has_group(group_xmlid)
 
     def _is_admin(self, model_name):
         group_xmlid = self._ADMIN_GROUPS.get(model_name)
         if not group_xmlid:
             return False
-        return self.env(su=False).user.has_group(group_xmlid)
+        return self._safe_has_group(group_xmlid)
 
     def _is_manager(self, model_name):
-        user = self.env(su=False).user
         for group_xmlid in self._MANAGER_GROUPS.get(model_name, []):
-            if user.has_group(group_xmlid):
+            if self._safe_has_group(group_xmlid):
                 return True
         return False
 
@@ -262,15 +275,14 @@ class MySchoolDashboard(models.Model):
         prof_mgr = self._is_manager('professionalisering.record')
         acti_mgr = self._is_manager('activiteiten.record')
         druk_mgr = self._is_manager('drukwerk.record')
-        user = self.env(su=False).user
-        is_admin = user.has_group('activiteiten.group_activiteiten_admin')
-        prof_admin = user.has_group('professionalisering.group_professionalisering_admin')
-        act_verv = is_admin or user.has_group('activiteiten.group_activiteiten_vervangingen')
-        act_aank = is_admin or user.has_group('activiteiten.group_activiteiten_aankoop')
-        act_boek = is_admin or user.has_group('activiteiten.group_activiteiten_boekhouding')
-        act_dir = is_admin or user.has_group('activiteiten.group_activiteiten_directie')
-        druk_drukwerk = user.has_group('drukwerk.group_drukwerk_drukwerk')
-        druk_boekhouding = user.has_group('drukwerk.group_drukwerk_boekhouding')
+        is_admin = self._safe_has_group('activiteiten.group_activiteiten_admin')
+        prof_admin = self._safe_has_group('professionalisering.group_professionalisering_admin')
+        act_verv = is_admin or self._safe_has_group('activiteiten.group_activiteiten_vervangingen')
+        act_aank = is_admin or self._safe_has_group('activiteiten.group_activiteiten_aankoop')
+        act_boek = is_admin or self._safe_has_group('activiteiten.group_activiteiten_boekhouding')
+        act_dir = is_admin or self._safe_has_group('activiteiten.group_activiteiten_directie')
+        druk_drukwerk = self._safe_has_group('drukwerk.group_drukwerk_drukwerk')
+        druk_boekhouding = self._safe_has_group('drukwerk.group_drukwerk_boekhouding')
         for rec in self:
             rec.has_professionalisering_access = professionalisering
             rec.has_activiteiten_access = activiteiten
@@ -289,9 +301,9 @@ class MySchoolDashboard(models.Model):
             rec.is_only_directie = act_dir and not act_aank and not act_boek and not act_verv
             rec.is_only_medewerker = not act_dir and not act_aank and not act_boek and not act_verv
             rec.is_only_vervangingen = act_verv and not act_dir and not act_aank and not act_boek
-            rec.is_prof_directie = prof_admin or user.has_group('professionalisering.group_professionalisering_directie')
-            rec.is_prof_boekhouding = prof_admin or user.has_group('professionalisering.group_professionalisering_boekhouding')
-            rec.is_prof_vervangingen = prof_admin or user.has_group('professionalisering.group_professionalisering_vervangingen')
+            rec.is_prof_directie = prof_admin or self._safe_has_group('professionalisering.group_professionalisering_directie')
+            rec.is_prof_boekhouding = prof_admin or self._safe_has_group('professionalisering.group_professionalisering_boekhouding')
+            rec.is_prof_vervangingen = prof_admin or self._safe_has_group('professionalisering.group_professionalisering_vervangingen')
             rec.is_prof_only_directie = rec.is_prof_directie and not rec.is_prof_boekhouding and not rec.is_prof_vervangingen
             rec.is_prof_only_boekhouding = rec.is_prof_boekhouding and not rec.is_prof_directie and not rec.is_prof_vervangingen
             rec.is_prof_only_vervangingen = rec.is_prof_vervangingen and not rec.is_prof_directie and not rec.is_prof_boekhouding
@@ -342,6 +354,8 @@ class MySchoolDashboard(models.Model):
     # --- Counts ---
 
     def _get_state_counts(self, model_name):
+        if model_name not in self.env:
+            return {}
         if not self._has_access(model_name):
             return {}
         domain = self._get_base_domain(model_name)
@@ -399,8 +413,7 @@ class MySchoolDashboard(models.Model):
     def _compute_activiteiten_counts(self):
         raw = self._get_state_counts('activiteiten.record')
         # Determine which states are visible for this user
-        user = self.env(su=False).user
-        is_admin = user.has_group('activiteiten.group_activiteiten_admin')
+        is_admin = self._safe_has_group('activiteiten.group_activiteiten_admin')
         if is_admin:
             visible_states = set(raw.keys())
         else:
@@ -413,7 +426,7 @@ class MySchoolDashboard(models.Model):
             }
             has_manager_role = False
             for role, group in manager_role_checks.items():
-                if user.has_group(group):
+                if self._safe_has_group(group):
                     visible_states.update(self._ROLE_STATES[role])
                     has_manager_role = True
             if not has_manager_role:
@@ -549,10 +562,16 @@ class MySchoolDashboard(models.Model):
     # --- Actions ---
 
     def action_open_professionalisering(self):
-        action = self.env['ir.actions.act_window']._for_xml_id(
-            'myschool_dashboard.action_open_professionalisering')
+        if 'professionalisering.record' not in self.env:
+            return False
+        action = {
+            'type': 'ir.actions.act_window',
+            'name': 'Professionalisering',
+            'res_model': 'professionalisering.record',
+            'view_mode': 'list,form',
+            'context': {},
+        }
         model = 'professionalisering.record'
-        user = self.env(su=False).user
         if self._is_admin(model):
             pass  # no filter for admin
         elif self._is_manager(model):
@@ -564,7 +583,7 @@ class MySchoolDashboard(models.Model):
                 'vervangingen': ('professionalisering.group_professionalisering_vervangingen', 'search_default_replacement_pending'),
             }
             for role, (group, sd) in role_checks.items():
-                if user.has_group(group):
+                if self._safe_has_group(group):
                     visible_states.update(self._PROF_ROLE_STATES.get(role, []))
                     if not search_default:
                         search_default = sd
@@ -594,10 +613,15 @@ class MySchoolDashboard(models.Model):
     }
 
     def action_open_activiteiten_list(self):
-        action = self.env['ir.actions.act_window']._for_xml_id(
-            'myschool_dashboard.action_open_activiteiten_list')
+        if 'activiteiten.record' not in self.env:
+            return False
+        action = {
+            'type': 'ir.actions.act_window',
+            'name': 'Activiteiten',
+            'res_model': 'activiteiten.record',
+            'view_mode': 'list,form',
+        }
         model = 'activiteiten.record'
-        user = self.env(su=False).user
         if self._is_admin(model):
             pass  # no filter for admin
         elif self._is_manager(model):
@@ -610,7 +634,7 @@ class MySchoolDashboard(models.Model):
                 'vervangingen': ('activiteiten.group_activiteiten_vervangingen', 'search_default_replacement_pending'),
             }
             for role, (group, sd) in role_checks.items():
-                if user.has_group(group):
+                if self._safe_has_group(group):
                     visible_states.update(self._ROLE_STATES[role])
                     if not search_default:
                         search_default = sd
@@ -627,6 +651,8 @@ class MySchoolDashboard(models.Model):
         return action
 
     def action_new_activiteit(self):
+        if 'activiteiten.record' not in self.env:
+            return False
         return {
             'type': 'ir.actions.act_window',
             'name': 'Nieuwe activiteit',
@@ -636,6 +662,8 @@ class MySchoolDashboard(models.Model):
         }
 
     def action_new_professionalisering(self):
+        if 'professionalisering.record' not in self.env:
+            return False
         return {
             'type': 'ir.actions.act_window',
             'name': 'Nieuwe professionalisering',
@@ -645,16 +673,21 @@ class MySchoolDashboard(models.Model):
         }
 
     def action_open_drukwerk_list(self):
-        action = self.env['ir.actions.act_window']._for_xml_id(
-            'myschool_dashboard.action_open_drukwerk_list')
+        if 'drukwerk.record' not in self.env:
+            return False
+        action = {
+            'type': 'ir.actions.act_window',
+            'name': 'Drukwerk',
+            'res_model': 'drukwerk.record',
+            'view_mode': 'list,form',
+        }
         model = 'drukwerk.record'
         if self._is_admin(model):
             pass
         elif self._is_manager(model):
-            user = self.env(su=False).user
-            if user.has_group('drukwerk.group_drukwerk_drukwerk'):
+            if self._safe_has_group('drukwerk.group_drukwerk_drukwerk'):
                 action['context'] = {'search_default_to_print': 1}
-            elif user.has_group('drukwerk.group_drukwerk_boekhouding'):
+            elif self._safe_has_group('drukwerk.group_drukwerk_boekhouding'):
                 action['context'] = {'search_default_to_invoice': 1}
         else:
             action['domain'] = [('create_uid', '=', self.env.uid)]
@@ -662,6 +695,8 @@ class MySchoolDashboard(models.Model):
         return action
 
     def action_new_drukwerk(self):
+        if 'drukwerk.record' not in self.env:
+            return False
         return {
             'type': 'ir.actions.act_window',
             'name': 'Nieuw drukwerk',
@@ -669,3 +704,77 @@ class MySchoolDashboard(models.Model):
             'view_mode': 'form',
             'target': 'current',
         }
+
+    # --- Optional apps: view inheritance & menu deactivation ---
+
+    _OPTIONAL_APPS = {
+        'professionalisering': {
+            'data_name': 'view_professionalisering_form_title',
+            'view_name': 'professionalisering.record.form.title',
+            'view_model': 'professionalisering.record',
+            'inherit_ref': 'professionalisering.view_professionalisering_form',
+            'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
+                    '<h2 class="text-muted">Professionalisering</h2></xpath>',
+            'menu_ref': 'professionalisering.menu_professionalisering_root',
+        },
+        'activiteiten': {
+            'data_name': 'view_activiteiten_form_title',
+            'view_name': 'activiteiten.record.form.title',
+            'view_model': 'activiteiten.record',
+            'inherit_ref': 'activiteiten.view_activiteiten_form',
+            'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
+                    '<h2 class="text-muted">Activiteit</h2></xpath>',
+            'menu_ref': 'activiteiten.menu_activiteiten_root',
+        },
+        'drukwerk': {
+            'data_name': 'view_drukwerk_form_title',
+            'view_name': 'drukwerk.record.form.title',
+            'view_model': 'drukwerk.record',
+            'inherit_ref': 'drukwerk.view_drukwerk_form',
+            'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
+                    '<h2 class="text-muted">Drukwerk</h2></xpath>',
+            'menu_ref': 'drukwerk.menu_drukwerk_root',
+        },
+    }
+
+    @api.model
+    def _register_hook(self):
+        super()._register_hook()
+        try:
+            self._setup_optional_apps()
+        except Exception:
+            _logger.warning('Failed to setup optional apps in dashboard', exc_info=True)
+
+    @api.model
+    def _setup_optional_apps(self):
+        """Create view inheritances and deactivate menus for installed optional apps."""
+        for module_name, cfg in self._OPTIONAL_APPS.items():
+            model_available = cfg['view_model'] in self.env
+
+            xml_id = f'myschool_dashboard.{cfg["data_name"]}'
+            existing_view = self.env.ref(xml_id, raise_if_not_found=False)
+
+            if model_available and not existing_view:
+                inherit_view = self.env.ref(cfg['inherit_ref'], raise_if_not_found=False)
+                if inherit_view:
+                    view = self.env['ir.ui.view'].sudo().create({
+                        'name': cfg['view_name'],
+                        'model': cfg['view_model'],
+                        'inherit_id': inherit_view.id,
+                        'arch': cfg['arch'],
+                    })
+                    self.env['ir.model.data'].sudo().create({
+                        'module': 'myschool_dashboard',
+                        'name': cfg['data_name'],
+                        'model': 'ir.ui.view',
+                        'res_id': view.id,
+                        'noupdate': False,
+                    })
+
+            # Deactivate/reactivate the module's root menu
+            menu = self.env.ref(cfg['menu_ref'], raise_if_not_found=False)
+            if menu:
+                if model_available and menu.active:
+                    menu.sudo().active = False
+                elif not model_available and not menu.active:
+                    menu.sudo().active = True
