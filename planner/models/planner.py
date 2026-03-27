@@ -172,19 +172,20 @@ class PlannerRecord(models.Model):
                         else:
                             datum_str = 'Geen datum'
                         lines.append(f'[Activiteit] {datum_str}: {act.titel or act.name}')
-                # Professionalisering
-                prof_records = self.env['professionalisering.record'].search([
-                    ('state', 'in', ('bevestiging', 'done')),
-                    '|',
-                    ('employee_id', '=', record.leerkracht_id.id),
-                    '&', ('invite_ids.employee_id', '=', record.leerkracht_id.id),
-                         ('invite_ids.state', '=', 'accepted'),
-                ], order='start_date asc')
-                for pr in prof_records:
-                    datum_str = pr.start_date.strftime('%d/%m/%Y') if pr.start_date else 'Geen datum'
-                    if pr.end_date and pr.end_date != pr.start_date:
-                        datum_str += f' - {pr.end_date.strftime("%d/%m/%Y")}'
-                    lines.append(f'[Professionalisering] {datum_str}: {pr.titel}')
+                # Professionalisering (optional module)
+                if 'professionalisering.record' in self.env:
+                    prof_records = self.env['professionalisering.record'].sudo().search([
+                        ('state', 'in', ('bevestiging', 'done')),
+                        '|',
+                        ('employee_id', '=', record.leerkracht_id.id),
+                        '&', ('invite_ids.employee_id', '=', record.leerkracht_id.id),
+                             ('invite_ids.state', '=', 'accepted'),
+                    ], order='start_date asc')
+                    for pr in prof_records:
+                        datum_str = pr.start_date.strftime('%d/%m/%Y') if pr.start_date else 'Geen datum'
+                        if pr.end_date and pr.end_date != pr.start_date:
+                            datum_str += f' - {pr.end_date.strftime("%d/%m/%Y")}'
+                        lines.append(f'[Professionalisering] {datum_str}: {pr.titel}')
             if record.klas_id:
                 # Activiteiten for this class
                 activiteiten = self.env['activiteiten.record'].search([

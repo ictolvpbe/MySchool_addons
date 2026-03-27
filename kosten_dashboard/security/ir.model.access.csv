@@ -1,7 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_kosten_medewerker_directie,kosten.per.medewerker.directie,model_kosten_per_medewerker,activiteiten.group_activiteiten_directie,1,0,0,0
-access_kosten_medewerker_admin,kosten.per.medewerker.admin,model_kosten_per_medewerker,activiteiten.group_activiteiten_admin,1,0,0,0
-access_kosten_detail_directie,kosten.detail.directie,model_kosten_detail,activiteiten.group_activiteiten_directie,1,0,0,0
-access_kosten_detail_admin,kosten.detail.admin,model_kosten_detail,activiteiten.group_activiteiten_admin,1,0,0,0
-access_kosten_dashboard_directie,kosten.dashboard.directie,model_kosten_dashboard,activiteiten.group_activiteiten_directie,1,1,0,0
-access_kosten_dashboard_admin,kosten.dashboard.admin,model_kosten_dashboard,activiteiten.group_activiteiten_admin,1,1,0,0
+access_kosten_medewerker_user,kosten.per.medewerker.user,model_kosten_per_medewerker,group_kosten_user,1,0,0,0
+access_kosten_detail_user,kosten.detail.user,model_kosten_detail,group_kosten_user,1,0,0,0
+access_kosten_dashboard_user,kosten.dashboard.user,model_kosten_dashboard,group_kosten_user,1,1,0,0
+access_kosten_dashboard_admin,kosten.dashboard.admin,model_kosten_dashboard,group_kosten_admin,1,1,0,0

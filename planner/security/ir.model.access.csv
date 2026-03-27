@@ -7,5 +7,3 @@ access_planner_tijdslot_user,planner.tijdslot.user,model_planner_tijdslot,group_
 access_planner_tijdslot_admin,planner.tijdslot.admin,model_planner_tijdslot,group_planner_admin,1,1,1,1
 access_planner_afwezige_user,planner.afwezige.leerkracht.user,model_planner_afwezige_leerkracht,group_planner_user,1,0,0,0
 access_planner_afwezige_admin,planner.afwezige.leerkracht.admin,model_planner_afwezige_leerkracht,group_planner_admin,1,0,0,0
-access_planner_professionalisering_user,professionalisering.record.planner.user,professionalisering.model_professionalisering_record,group_planner_user,1,0,0,0
-access_planner_professionalisering_admin,professionalisering.record.planner.admin,professionalisering.model_professionalisering_record,group_planner_admin,1,0,0,0

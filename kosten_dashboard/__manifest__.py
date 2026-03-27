@@ -1,12 +1,13 @@
 {
     'name': 'Kosten Dashboard',
-    'version': '1.3',
+    'version': '1.4',
     'summary': 'Overzicht van kosten per medewerker (activiteiten en professionalisering)',
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
-    'depends': ['base', 'hr', 'activiteiten', 'professionalisering', 'myschool_dashboard'],
+    'depends': ['base', 'hr', 'myschool_core', 'myschool_dashboard'],
     'data': [
+        'security/security_groups.xml',
         'security/ir.model.access.csv',
         'data/kosten_dashboard_data.xml',
         'views/kosten_dashboard_views.xml',

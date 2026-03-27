@@ -1,4 +1,8 @@
+import logging
+
 from odoo import models, fields, api
+
+_logger = logging.getLogger(__name__)
 
 
 class KostenDashboard(models.Model):
@@ -107,3 +111,33 @@ class KostenDashboard(models.Model):
             'view_mode': 'graph,list,pivot',
             'target': 'current',
         }
+
+    # --- Optional module integration ---
+
+    _OPTIONAL_GROUP_LINKS = [
+        ('activiteiten.group_activiteiten_directie', 'kosten_dashboard.group_kosten_user'),
+        ('activiteiten.group_activiteiten_admin', 'kosten_dashboard.group_kosten_admin'),
+        ('professionalisering.group_professionalisering_directie', 'kosten_dashboard.group_kosten_user'),
+        ('professionalisering.group_professionalisering_admin', 'kosten_dashboard.group_kosten_admin'),
+    ]
+
+    @api.model
+    def _register_hook(self):
+        super()._register_hook()
+        try:
+            # Recreate SQL views with current module availability
+            self.env['kosten.per.medewerker'].init()
+            self.env['kosten.detail'].init()
+            # Link security groups from optional modules
+            self._link_optional_groups()
+        except Exception:
+            _logger.warning('Failed to setup kosten dashboard optional modules', exc_info=True)
+
+    @api.model
+    def _link_optional_groups(self):
+        """When activiteiten/professionalisering is installed, auto-grant kosten access."""
+        for source_xmlid, target_xmlid in self._OPTIONAL_GROUP_LINKS:
+            source = self.env.ref(source_xmlid, raise_if_not_found=False)
+            target = self.env.ref(target_xmlid, raise_if_not_found=False)
+            if source and target and target not in source.implied_ids:
+                source.sudo().write({'implied_ids': [(4, target.id)]})

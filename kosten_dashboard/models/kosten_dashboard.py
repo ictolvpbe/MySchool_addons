@@ -1,4 +1,19 @@
+import logging
+
 from odoo import models, fields, tools, api
+
+_logger = logging.getLogger(__name__)
+
+
+def _table_exists(cr, table_name):
+    """Check if a database table exists."""
+    cr.execute("""
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = %s
+        )
+    """, (table_name,))
+    return cr.fetchone()[0]
 
 
 class KostenPerMedewerker(models.Model):
@@ -67,8 +82,86 @@ class KostenPerMedewerker(models.Model):
 
     def init(self):
         tools.drop_view_if_exists(self.env.cr, self._table)
-        self.env.cr.execute("""
-            CREATE OR REPLACE VIEW %s AS (
+        has_act = _table_exists(self.env.cr, 'activiteiten_record')
+        has_prof = _table_exists(self.env.cr, 'professionalisering_record')
+
+        parts = []
+        if has_act:
+            parts.append("""
+                SELECT
+                    p.odoo_employee_id AS emp_id,
+                    a.school_id AS school_id,
+                    1 AS act_count,
+                    0 AS prof_count,
+                    CASE
+                        WHEN (SELECT COUNT(*) FROM activiteiten_record_leerkracht_rel r2
+                              WHERE r2.record_id = a.id) > 0
+                        THEN COALESCE(a.totale_kost, 0) /
+                             (SELECT COUNT(*) FROM activiteiten_record_leerkracht_rel r2
+                              WHERE r2.record_id = a.id)
+                        ELSE COALESCE(a.totale_kost, 0)
+                    END AS act_kost,
+                    0 AS prof_kost
+                FROM activiteiten_record a
+                JOIN activiteiten_record_leerkracht_rel rel ON rel.record_id = a.id
+                JOIN myschool_person p ON p.id = rel.person_id
+                WHERE a.state IN ('approved', 's_code', 'vervanging', 'done')
+                  AND p.odoo_employee_id IS NOT NULL
+            """)
+
+        if has_prof:
+            parts.append("""
+                SELECT
+                    pr.employee_id AS emp_id,
+                    pr.school_id AS school_id,
+                    0 AS act_count,
+                    1 AS prof_count,
+                    0 AS act_kost,
+                    CASE
+                        WHEN (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
+                                   WHERE inv.professionalisering_id = pr.id
+                                     AND inv.state = 'accepted')) > 0
+                        THEN (COALESCE(pr.s_code_price, 0) +
+                              COALESCE((SELECT SUM(kl.bedrag)
+                                        FROM professionalisering_kosten_line kl
+                                        WHERE kl.professionalisering_id = pr.id), 0))
+                             / (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
+                                     WHERE inv.professionalisering_id = pr.id
+                                       AND inv.state = 'accepted'))
+                        ELSE 0
+                    END AS prof_kost
+                FROM professionalisering_record pr
+                WHERE pr.state IN ('bevestiging', 'done')
+            """)
+            parts.append("""
+                SELECT
+                    inv.employee_id AS emp_id,
+                    pr.school_id AS school_id,
+                    0 AS act_count,
+                    1 AS prof_count,
+                    0 AS act_kost,
+                    CASE
+                        WHEN (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
+                                   WHERE inv2.professionalisering_id = pr.id
+                                     AND inv2.state = 'accepted')) > 0
+                        THEN (COALESCE(pr.s_code_price, 0) +
+                              COALESCE((SELECT SUM(kl.bedrag)
+                                        FROM professionalisering_kosten_line kl
+                                        WHERE kl.professionalisering_id = pr.id), 0))
+                             / (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
+                                     WHERE inv2.professionalisering_id = pr.id
+                                       AND inv2.state = 'accepted'))
+                        ELSE 0
+                    END AS prof_kost
+                FROM professionalisering_record pr
+                JOIN professionalisering_invite inv ON inv.professionalisering_id = pr.id
+                WHERE pr.state IN ('bevestiging', 'done')
+                  AND inv.state = 'accepted'
+            """)
+
+        if parts:
+            inner_sql = " UNION ALL ".join(parts)
+            sql = """
                 SELECT
                     row_number() OVER () AS id,
                     emp_id AS employee_id,
@@ -79,83 +172,25 @@ class KostenPerMedewerker(models.Model):
                     SUM(act_kost) AS kost_activiteiten,
                     SUM(prof_kost) AS kost_prof,
                     SUM(act_kost + prof_kost) AS totale_kost
-                FROM (
-                    -- Activiteiten: kost per leerkracht (gedeeld door aantal leerkrachten)
-                    SELECT
-                        p.odoo_employee_id AS emp_id,
-                        a.school_id AS school_id,
-                        1 AS act_count,
-                        0 AS prof_count,
-                        CASE
-                            WHEN (SELECT COUNT(*) FROM activiteiten_record_leerkracht_rel r2
-                                  WHERE r2.record_id = a.id) > 0
-                            THEN COALESCE(a.totale_kost, 0) /
-                                 (SELECT COUNT(*) FROM activiteiten_record_leerkracht_rel r2
-                                  WHERE r2.record_id = a.id)
-                            ELSE COALESCE(a.totale_kost, 0)
-                        END AS act_kost,
-                        0 AS prof_kost
-                    FROM activiteiten_record a
-                    JOIN activiteiten_record_leerkracht_rel rel ON rel.record_id = a.id
-                    JOIN myschool_person p ON p.id = rel.person_id
-                    WHERE a.state IN ('approved', 's_code', 'vervanging', 'done')
-                      AND p.odoo_employee_id IS NOT NULL
-
-                    UNION ALL
-
-                    -- Professionalisering: eigenaar
-                    SELECT
-                        pr.employee_id AS emp_id,
-                        pr.school_id AS school_id,
-                        0 AS act_count,
-                        1 AS prof_count,
-                        0 AS act_kost,
-                        CASE
-                            WHEN (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
-                                       WHERE inv.professionalisering_id = pr.id
-                                         AND inv.state = 'accepted')) > 0
-                            THEN (COALESCE(pr.s_code_price, 0) +
-                                  COALESCE((SELECT SUM(kl.bedrag)
-                                            FROM professionalisering_kosten_line kl
-                                            WHERE kl.professionalisering_id = pr.id), 0))
-                                 / (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
-                                         WHERE inv.professionalisering_id = pr.id
-                                           AND inv.state = 'accepted'))
-                            ELSE 0
-                        END AS prof_kost
-                    FROM professionalisering_record pr
-                    WHERE pr.state IN ('bevestiging', 'done')
-
-                    UNION ALL
-
-                    -- Professionalisering: geaccepteerde uitnodigingen
-                    SELECT
-                        inv.employee_id AS emp_id,
-                        pr.school_id AS school_id,
-                        0 AS act_count,
-                        1 AS prof_count,
-                        0 AS act_kost,
-                        CASE
-                            WHEN (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
-                                       WHERE inv2.professionalisering_id = pr.id
-                                         AND inv2.state = 'accepted')) > 0
-                            THEN (COALESCE(pr.s_code_price, 0) +
-                                  COALESCE((SELECT SUM(kl.bedrag)
-                                            FROM professionalisering_kosten_line kl
-                                            WHERE kl.professionalisering_id = pr.id), 0))
-                                 / (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
-                                         WHERE inv2.professionalisering_id = pr.id
-                                           AND inv2.state = 'accepted'))
-                            ELSE 0
-                        END AS prof_kost
-                    FROM professionalisering_record pr
-                    JOIN professionalisering_invite inv ON inv.professionalisering_id = pr.id
-                    WHERE pr.state IN ('bevestiging', 'done')
-                      AND inv.state = 'accepted'
-                ) sub
+                FROM (%s) sub
                 GROUP BY emp_id, school_id
-            )
-        """ % self._table)
+            """ % inner_sql
+        else:
+            sql = """
+                SELECT
+                    1 AS id,
+                    NULL::integer AS employee_id,
+                    NULL::integer AS school_id,
+                    0 AS aantal_activiteiten,
+                    0 AS aantal_prof,
+                    0 AS aantal_totaal,
+                    0::numeric AS kost_activiteiten,
+                    0::numeric AS kost_prof,
+                    0::numeric AS totale_kost
+                WHERE FALSE
+            """
+
+        self.env.cr.execute("CREATE OR REPLACE VIEW %s AS (%s)" % (self._table, sql))
 
 
 class KostenDetail(models.Model):
@@ -179,9 +214,12 @@ class KostenDetail(models.Model):
 
     def init(self):
         tools.drop_view_if_exists(self.env.cr, self._table)
-        self.env.cr.execute("""
-            CREATE OR REPLACE VIEW %s AS (
-                -- Activiteiten per leerkracht
+        has_act = _table_exists(self.env.cr, 'activiteiten_record')
+        has_prof = _table_exists(self.env.cr, 'professionalisering_record')
+
+        parts = []
+        if has_act:
+            parts.append("""
                 SELECT
                     row_number() OVER () AS id,
                     p.odoo_employee_id AS employee_id,
@@ -206,10 +244,10 @@ class KostenDetail(models.Model):
                 JOIN myschool_person p ON p.id = rel.person_id
                 WHERE a.state IN ('approved', 's_code', 'vervanging', 'done')
                   AND p.odoo_employee_id IS NOT NULL
+            """)
 
-                UNION ALL
-
-                -- Professionalisering: eigenaar
+        if has_prof:
+            parts.append("""
                 SELECT
                     2000000 + row_number() OVER () AS id,
                     pr.employee_id AS employee_id,
@@ -240,10 +278,8 @@ class KostenDetail(models.Model):
                     pr.state AS state
                 FROM professionalisering_record pr
                 WHERE pr.state IN ('bevestiging', 'done')
-
-                UNION ALL
-
-                -- Professionalisering: geaccepteerde uitnodigingen
+            """)
+            parts.append("""
                 SELECT
                     3000000 + row_number() OVER () AS id,
                     inv.employee_id AS employee_id,
@@ -276,5 +312,24 @@ class KostenDetail(models.Model):
                 JOIN professionalisering_invite inv ON inv.professionalisering_id = pr.id
                 WHERE pr.state IN ('bevestiging', 'done')
                   AND inv.state = 'accepted'
-            )
-        """ % self._table)
+            """)
+
+        if parts:
+            sql = " UNION ALL ".join(parts)
+        else:
+            sql = """
+                SELECT
+                    1 AS id,
+                    NULL::integer AS employee_id,
+                    NULL::varchar AS bron,
+                    NULL::varchar AS titel,
+                    NULL::integer AS school_id,
+                    NULL::date AS datum,
+                    0::numeric AS totale_kost,
+                    0::numeric AS eigen_kost,
+                    0 AS aantal_deelnemers,
+                    NULL::varchar AS state
+                WHERE FALSE
+            """
+
+        self.env.cr.execute("CREATE OR REPLACE VIEW %s AS (%s)" % (self._table, sql))
