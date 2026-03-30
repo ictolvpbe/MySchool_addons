@@ -2,11 +2,9 @@
 <odoo>
     <record id="group_kosten_user" model="res.groups">
         <field name="name">Kosten Dashboard: Gebruiker</field>
-        <field name="category_id" ref="base.module_category_hidden"/>
     </record>
     <record id="group_kosten_admin" model="res.groups">
         <field name="name">Kosten Dashboard: Beheerder</field>
-        <field name="category_id" ref="base.module_category_hidden"/>
         <field name="implied_ids" eval="[(4, ref('group_kosten_user'))]"/>
     </record>
 </odoo>

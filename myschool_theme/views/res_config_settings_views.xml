@@ -104,6 +104,15 @@
                             class="btn-link"
                         />
                     </setting>
+                    <setting string="App Iconen">
+                        <button
+                            name="action_regenerate_icons"
+                            icon="fa-paint-brush"
+                            type="object"
+                            string="Iconen opnieuw genereren"
+                            class="btn-link"
+                        />
+                    </setting>
                 </block>
             </xpath>
         </field>

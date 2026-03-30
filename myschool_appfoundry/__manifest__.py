@@ -16,7 +16,7 @@
     'author': 'MySchool OLVP',
     'website': 'https://www.olvp.be',
     'license': 'LGPL-3',
-    'depends': ['base', 'mail', 'myschool_core', 'myschool_theme'],
+    'depends': ['base', 'mail', 'myschool_core', 'myschool_theme', 'process_mapper'],
     'data': [
         'security/security.xml',
         'security/ir.model.access.csv',
@@ -41,8 +41,6 @@
         'web.assets_backend': [
             'myschool_appfoundry/static/src/css/appfoundry.css',
             'myschool_appfoundry/static/src/css/process_mapper.css',
-            'myschool_appfoundry/static/src/js/process_mapper_canvas.js',
-            'myschool_appfoundry/static/src/xml/process_mapper_canvas.xml',
             'myschool_appfoundry/static/src/js/process_mapper_appfoundry.js',
             'myschool_appfoundry/static/src/xml/process_mapper_appfoundry.xml',
         ],
