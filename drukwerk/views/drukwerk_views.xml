@@ -22,6 +22,14 @@
                             invisible="state != 'afdrukken'"
                             groups="drukwerk.group_drukwerk_admin"/>
 
+                    <!-- Drukwerk: print PDF -->
+                    <button name="action_download_pdf"
+                            string="Afdrukken"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-print"
+                            groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
+                            invisible="state != 'afdrukken'"/>
                     <!-- Drukwerk: mark printed -->
                     <button name="action_mark_printed"
                             string="Afgedrukt"
@@ -97,82 +105,87 @@
                         </group>
                     </group>
 
+                    <!-- Document section -->
+                    <group string="Document" invisible="not drukwerk_type or state == 'afdrukken'">
+                        <group>
+                            <field name="document_filename" invisible="1"/>
+                            <field name="document_file" filename="document_filename"
+                                   widget="binary"
+                                   options="{'accepted_file_extensions': '.pdf'}"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="aantal_paginas" readonly="1"/>
+                            <field name="aantal_kopies" readonly="1"/>
+                            <field name="kopie_leerkracht"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                        </group>
+                        <group>
+                            <field name="kleur"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="formaat"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="papier_kleur"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="dik_papier"
+                                   invisible="drukwerk_type != 'gewoon'"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                        </group>
+                    </group>
+
+                    <!-- Print options -->
+                    <group string="Afdrukopties" invisible="not drukwerk_type or state == 'afdrukken'">
+                        <group>
+                            <field name="dubbelzijdig"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="nieten"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                        </group>
+                        <group>
+                            <field name="perforeren"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                        </group>
+                    </group>
+
+                    <!-- Toelichting -->
+                    <group string="Toelichting" invisible="not drukwerk_type or state == 'afdrukken'">
+                        <field name="description" nolabel="1"
+                               placeholder="Eventuele extra informatie voor de drukkerij..."
+                               readonly="state not in ('draft', 'form_invullen')"/>
+                    </group>
+
                     <!-- Compact summary for afdrukken state -->
                     <group invisible="state != 'afdrukken'">
                         <group>
                             <field name="titel" readonly="1"/>
                             <field name="student_count" string="Leerlingen"/>
                             <field name="total_pages"/>
+                            <field name="print_deadline" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="document_filename" invisible="1"/>
+                            <field name="document_file" filename="document_filename"
+                                   widget="binary" readonly="1"/>
+                            <field name="aantal_paginas" readonly="1"/>
+                            <field name="aantal_kopies" readonly="1"/>
+                            <field name="kleur" readonly="1"/>
+                            <field name="formaat" readonly="1"/>
+                            <field name="papier_kleur" readonly="1"/>
+                            <field name="dik_papier" readonly="1"
+                                   invisible="drukwerk_type != 'gewoon'"/>
                         </group>
                     </group>
 
-                    <!-- Standard notebook: hidden in afdrukken state -->
-                    <notebook invisible="not drukwerk_type or state == 'afdrukken'">
-                        <page string="Drukwerk items">
-                            <field name="line_ids"
-                                   readonly="state not in ('draft', 'form_invullen', 'afdrukken')">
-                                <list editable="bottom" create="1" delete="1">
-                                    <field name="document_filename" column_invisible="1"/>
-                                    <field name="document_file" filename="document_filename" widget="binary" options="{'accepted_file_extensions': '.pdf'}"/>
-                                    <field name="aantal_paginas" readonly="1"/>
-                                    <field name="aantal_kopies"/>
-                                    <field name="kleur"/>
-                                    <field name="formaat"/>
-                                    <field name="dubbelzijdig"/>
-                                    <field name="nieten"/>
-                                    <field name="perforeren"/>
-                                    <field name="kopie_leerkracht"/>
-                                    <field name="prijs_per_pagina"
-                                           groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
-                                           column_invisible="parent.drukwerk_type == 'examen'"/>
-                                    <field name="prijs_kleur" optional="hide"
-                                           groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
-                                           column_invisible="parent.drukwerk_type == 'examen'"/>
-                                    <field name="prijs_a3" optional="hide"
-                                           groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
-                                           column_invisible="parent.drukwerk_type == 'examen'"/>
-                                    <field name="subtotaal"
-                                           column_invisible="parent.drukwerk_type == 'examen'"/>
-                                    <field name="opmerking" optional="hide"/>
-                                    <field name="currency_id" column_invisible="1"/>
-                                </list>
-                            </field>
-                        </page>
-                        <page string="Toelichting">
-                            <field name="description"
-                                   placeholder="Eventuele extra informatie voor de drukkerij..."
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                        </page>
-                    </notebook>
-
-                    <!-- Print-focused view for afdrukken state -->
-                    <div invisible="state != 'afdrukken'">
+                    <!-- Print options for afdrukken state -->
+                    <group string="Printerinstellingen" invisible="state != 'afdrukken'">
                         <group>
-                            <group>
-                                <field name="print_deadline" readonly="1"/>
-                            </group>
+                            <field name="printer_code" readonly="1"/>
+                            <field name="dubbelzijdig"/>
+                            <field name="nieten"/>
                         </group>
-                        <h3 class="mt-3 mb-3">Af te drukken items</h3>
-                        <field name="line_ids" readonly="1">
-                            <list create="0" delete="0">
-                                <field name="document_filename" width="2"/>
-                                <field name="aantal_paginas" string="Pag."/>
-                                <field name="aantal_kopies" string="Kop."/>
-                                <field name="kleur"/>
-                                <field name="formaat"/>
-                                <field name="dubbelzijdig" string="2-zij."/>
-                                <field name="nieten" string="Niet."/>
-                                <field name="perforeren" string="Perf."/>
-                                <field name="kopie_leerkracht" string="Kop.lk."/>
-                                <field name="opmerking"/>
-                                <button name="action_download_pdf"
-                                        string="Afdrukken"
-                                        type="object"
-                                        icon="fa-print"
-                                        class="btn-primary"/>
-                            </list>
-                        </field>
-                    </div>
+                        <group>
+                            <field name="perforeren"/>
+                            <field name="gekleurd_papier"/>
+                        </group>
+                    </group>
                 </sheet>
                 <chatter/>
             </form>
@@ -185,6 +198,15 @@
         <field name="model">drukwerk.record</field>
         <field name="arch" type="xml">
             <list>
+                <header>
+                    <button name="action_open_config"
+                            string="Printerinstellingen"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-cog"
+                            display="always"
+                            groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"/>
+                </header>
                 <field name="name"/>
                 <field name="create_uid" string="Aangemaakt door"/>
                 <field name="drukwerk_type"/>
@@ -200,7 +222,7 @@
                        decoration-warning="state in ('form_invullen', 'afdrukken')"
                        decoration-success="state in ('doorrekenen', 'done')"
                 />
-                <button name="action_print_all"
+                <button name="action_download_pdf"
                         string="Afdrukken"
                         type="object"
                         icon="fa-print"

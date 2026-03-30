@@ -12,6 +12,7 @@
                             <field name="prijs_per_pagina"/>
                             <field name="prijs_kleur"/>
                             <field name="prijs_a3"/>
+                            <field name="prijs_dik_papier"/>
                         </group>
                     </group>
                 </sheet>
@@ -20,18 +21,19 @@
     </record>
 
     <record id="action_drukwerk_config_open" model="ir.actions.server">
-        <field name="name">Drukwerk Instellingen</field>
+        <field name="name">Prijsinstellingen</field>
         <field name="model_id" ref="model_drukwerk_config"/>
         <field name="state">code</field>
         <field name="code">
 config = env['drukwerk.config']._get_defaults()
 action = {
     'type': 'ir.actions.act_window',
-    'name': 'Instellingen',
+    'name': 'Prijsinstellingen',
     'res_model': 'drukwerk.config',
     'view_mode': 'form',
     'res_id': config.id,
     'target': 'current',
+    'views': [(False, 'form')],
 }
         </field>
     </record>

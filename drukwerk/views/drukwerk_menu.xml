@@ -18,9 +18,8 @@
               sequence="10"/>
 
     <menuitem id="menu_drukwerk_instellingen"
-              name="Instellingen"
+              name="Prijsinstellingen"
               parent="menu_drukwerk_root"
               action="action_drukwerk_config_open"
-              groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
-              sequence="90"/>
+              sequence="20"/>
 </odoo>
