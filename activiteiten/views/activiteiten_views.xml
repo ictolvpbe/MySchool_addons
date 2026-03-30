@@ -197,8 +197,8 @@
 
                     <!-- Tabs -->
                     <notebook invisible="not activity_type">
-                        <!-- Uitnodigingen tab -->
-                        <page string="Uitnodigingen">
+                        <!-- Begeleiders tab -->
+                        <page string="Begeleiders">
                             <field name="can_manage_invites" invisible="1"/>
                             <button name="action_send_invites"
                                     string="Uitnodigingen versturen"
@@ -219,7 +219,7 @@
                                 </list>
                             </field>
                         </page>
-                        <page string="Beschrijving">
+                        <page string="Opmerkingen">
                             <field name="description"
                                    placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>

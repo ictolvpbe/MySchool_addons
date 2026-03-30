@@ -1,7 +1,12 @@
+import base64
+import io
+import logging
 from datetime import timedelta
 
 from odoo import models, fields, api
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
+
+_logger = logging.getLogger(__name__)
 
 
 class DrukwerkRecord(models.Model):
@@ -54,16 +59,39 @@ class DrukwerkRecord(models.Model):
         'record_id', 'person_id',
         string='Leerlingen',
     )
-    line_ids = fields.One2many(
-        'drukwerk.line', 'drukwerk_id',
-        string='Drukwerk items',
+    # --- Document fields ---
+    document_file = fields.Binary(string='Document', attachment=True)
+    document_filename = fields.Char(string='Bestandsnaam')
+    aantal_paginas = fields.Integer(string="Pagina's", default=1)
+    aantal_kopies = fields.Integer(
+        string='Kopieën',
+        compute='_compute_aantal_kopies',
+        store=True,
     )
+    kleur = fields.Selection([
+        ('zw', 'Zwart-wit'),
+        ('kleur', 'Kleur'),
+    ], string='Kleur', default='zw', required=True)
+    formaat = fields.Selection([
+        ('a4', 'A4'),
+        ('a3', 'A3'),
+    ], string='Formaat', default='a4', required=True)
+    kopie_leerkracht = fields.Boolean(string='Kopie leerkracht', default=False)
+    papier_kleur = fields.Selection([
+        ('geen', 'Wit (standaard)'),
+        ('groen', 'Groen'),
+        ('geel', 'Geel'),
+        ('blauw', 'Blauw'),
+    ], string='Papierkleur', default='geen', required=True)
+    dik_papier = fields.Boolean(string='Dik papier', default=False)
+    opmerking = fields.Char(string='Opmerking')
+
     student_count = fields.Integer(
         string='Aantal leerlingen',
         compute='_compute_student_count',
     )
     total_pages = fields.Integer(
-        string='Totaal pagina\'s',
+        string="Totaal pagina's",
         compute='_compute_totals',
         store=True,
     )
@@ -78,6 +106,21 @@ class DrukwerkRecord(models.Model):
         string='Valuta',
         default=lambda self: self.env.company.currency_id,
     )
+
+    # --- Print options ---
+    dubbelzijdig = fields.Boolean(string='Dubbelzijdig', default=True)
+    nieten = fields.Boolean(string='Nieten', default=False)
+    perforeren = fields.Boolean(string='Perforeren', default=False)
+    gekleurd_papier = fields.Selection([
+        ('gl4', 'Gekleurd papier optie 4'),
+        ('gl5', 'Gekleurd papier optie 5'),
+    ], string='Gekleurd papier')
+    printer_code = fields.Char(
+        string='Printercode',
+        compute='_compute_printer_code',
+        store=True,
+    )
+
     state = fields.Selection([
         ('draft', 'Concept'),
         ('form_invullen', 'Formulier invullen'),
@@ -86,6 +129,22 @@ class DrukwerkRecord(models.Model):
         ('done', 'Afgerond'),
     ], string='Status', default='draft', required=True, tracking=True)
     is_owner = fields.Boolean(compute='_compute_is_owner')
+
+    @api.depends('dubbelzijdig', 'nieten', 'perforeren', 'gekleurd_papier')
+    def _compute_printer_code(self):
+        for record in self:
+            codes = []
+            if record.dubbelzijdig:
+                codes.append('DZ')
+            if record.nieten:
+                codes.append('NT')
+            if record.perforeren:
+                codes.append('PF')
+            if record.gekleurd_papier == 'gl4':
+                codes.append('GL4')
+            elif record.gekleurd_papier == 'gl5':
+                codes.append('GL5')
+            record.printer_code = '-'.join(codes) if codes else ''
 
     @api.depends_context('uid')
     def _compute_is_owner(self):
@@ -122,6 +181,14 @@ class DrukwerkRecord(models.Model):
                 ('id_org', '!=', False),
             ])
             record.available_klas_ids = klas_rels.mapped('id_org')
+
+    @api.depends('kopie_leerkracht', 'student_ids')
+    def _compute_aantal_kopies(self):
+        for record in self:
+            count = len(record.student_ids)
+            if record.kopie_leerkracht:
+                count += 1
+            record.aantal_kopies = count
 
     @api.depends('student_ids')
     def _compute_student_count(self):
@@ -161,17 +228,24 @@ class DrukwerkRecord(models.Model):
         for record in self:
             record.student_ids = [(5, 0, 0)]
 
-    @api.depends('line_ids.aantal_paginas', 'line_ids.aantal_kopies', 'line_ids.prijs_per_pagina')
+    @api.depends('aantal_paginas', 'aantal_kopies', 'kleur', 'formaat', 'dik_papier')
     def _compute_totals(self):
+        param = self.env['ir.config_parameter'].sudo()
+        prijs_per_pagina = float(param.get_param('drukwerk.prijs_per_pagina', '0.03'))
+        prijs_kleur = float(param.get_param('drukwerk.prijs_kleur', '0.05'))
+        prijs_a3 = float(param.get_param('drukwerk.prijs_a3', '0.02'))
+        prijs_dik = float(param.get_param('drukwerk.prijs_dik_papier', '0.04'))
         for record in self:
-            total_pages = 0
-            total_cost = 0.0
-            for line in record.line_ids:
-                pages = (line.aantal_paginas or 0) * (line.aantal_kopies or 0)
-                total_pages += pages
-                total_cost += pages * (line.prijs_per_pagina or 0)
-            record.total_pages = total_pages
-            record.total_cost = total_cost
+            pages = (record.aantal_paginas or 0) * (record.aantal_kopies or 0)
+            price = prijs_per_pagina
+            if record.kleur == 'kleur':
+                price += prijs_kleur
+            if record.formaat == 'a3':
+                price += prijs_a3
+            if record.dik_papier:
+                price += prijs_dik
+            record.total_pages = pages
+            record.total_cost = pages * price
 
     @api.depends('name', 'titel')
     def _compute_display_name(self):
@@ -182,6 +256,55 @@ class DrukwerkRecord(models.Model):
                 record.display_name = record.name or ''
 
     _rec_names_search = ['name', 'titel']
+
+    def action_open_config(self):
+        config = self.env['drukwerk.config']._get_defaults()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Prijsinstellingen',
+            'res_model': 'drukwerk.config',
+            'view_mode': 'form',
+            'res_id': config.id,
+            'target': 'new',
+        }
+
+    @api.constrains('document_filename')
+    def _check_pdf_only(self):
+        for record in self:
+            if record.document_filename and not record.document_filename.lower().endswith('.pdf'):
+                raise ValidationError("Alleen PDF-bestanden zijn toegestaan. Upload een .pdf bestand.")
+
+    @api.onchange('document_file', 'document_filename')
+    def _onchange_document_file(self):
+        if not self.document_file or not self.document_filename:
+            return
+        if not self.document_filename.lower().endswith('.pdf'):
+            return
+        try:
+            pdf_data = base64.b64decode(self.document_file)
+            page_count = self._count_pdf_pages(pdf_data)
+            if page_count > 0:
+                self.aantal_paginas = page_count
+        except Exception:
+            _logger.warning('Could not count pages for %s', self.document_filename, exc_info=True)
+
+    @staticmethod
+    def _count_pdf_pages(pdf_bytes):
+        try:
+            from PyPDF2 import PdfReader
+            return len(PdfReader(io.BytesIO(pdf_bytes)).pages)
+        except (ImportError, Exception):
+            pass
+        try:
+            import pikepdf
+            pdf = pikepdf.open(io.BytesIO(pdf_bytes))
+            count = len(pdf.pages)
+            pdf.close()
+            return count
+        except (ImportError, Exception):
+            pass
+        import re
+        return len(re.findall(rb'/Type\s*/Page[^s]', pdf_bytes))
 
     @api.onchange('drukwerk_type')
     def _onchange_drukwerk_type(self):
@@ -211,8 +334,8 @@ class DrukwerkRecord(models.Model):
                 raise UserError("Vul een omschrijving in.")
             if not record.klas_ids:
                 raise UserError("Selecteer minstens één klas.")
-            if not record.line_ids:
-                raise UserError("Voeg minstens één drukwerk item toe.")
+            if not record.document_file:
+                raise UserError("Upload een document.")
             record.state = 'afdrukken'
         self._notify_drukwerk_team()
 
@@ -240,24 +363,13 @@ class DrukwerkRecord(models.Model):
 
     # --- Print actions ---
 
-    def action_print_all(self):
-        """Open all PDF lines for printing in new tabs."""
+    def action_download_pdf(self):
         self.ensure_one()
-        if not self.line_ids:
-            raise UserError("Er zijn geen drukwerk items om af te drukken.")
-        urls = [f'/drukwerk/print/{line.id}' for line in self.line_ids if line.document_file]
-        if not urls:
-            raise UserError("Er zijn geen documenten beschikbaar om af te drukken.")
-        if len(urls) == 1:
-            return {
-                'type': 'ir.actions.act_url',
-                'url': urls[0],
-                'target': 'new',
-            }
-        # Open multiple tabs via a small HTML page
+        if not self.document_file:
+            raise UserError("Geen document beschikbaar om af te drukken.")
         return {
             'type': 'ir.actions.act_url',
-            'url': f'/drukwerk/print_all/{self.id}',
+            'url': f'/drukwerk/print/{self.id}',
             'target': 'new',
         }
 

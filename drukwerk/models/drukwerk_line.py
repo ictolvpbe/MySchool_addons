@@ -53,9 +53,6 @@ class DrukwerkLine(models.Model):
             self.env['ir.config_parameter'].sudo().get_param(
                 'drukwerk.prijs_a3', '0.02')),
     )
-    dubbelzijdig = fields.Boolean(string='Dubbelzijdig', default=True)
-    nieten = fields.Boolean(string='Nieten', default=False)
-    perforeren = fields.Boolean(string='Perforeren', default=False)
     kopie_leerkracht = fields.Boolean(string='Kopie leerkracht', default=False)
     opmerking = fields.Char(string='Opmerking')
     currency_id = fields.Many2one(related='drukwerk_id.currency_id')

@@ -21,6 +21,11 @@ class DrukwerkConfig(models.Model):
         digits=(10, 4),
         default=0.02,
     )
+    prijs_dik_papier = fields.Float(
+        string='Toeslag dik papier (per pagina)',
+        digits=(10, 4),
+        default=0.04,
+    )
 
     @api.model
     def _get_defaults(self):
@@ -40,4 +45,6 @@ class DrukwerkConfig(models.Model):
             param.set_param('drukwerk.prijs_kleur', str(vals['prijs_kleur']))
         if 'prijs_a3' in vals:
             param.set_param('drukwerk.prijs_a3', str(vals['prijs_a3']))
+        if 'prijs_dik_papier' in vals:
+            param.set_param('drukwerk.prijs_dik_papier', str(vals['prijs_dik_papier']))
         return res
