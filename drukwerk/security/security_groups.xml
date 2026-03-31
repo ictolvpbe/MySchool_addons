@@ -28,11 +28,35 @@
         <field name="implied_ids" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
     </record>
 
+    <!-- Aankoop -->
+    <record id="group_drukwerk_aankoop" model="res.groups">
+        <field name="name">Aankoop</field>
+        <field name="privilege_id" ref="privilege_drukwerk"/>
+        <field name="sequence">30</field>
+        <field name="implied_ids" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
+    </record>
+
     <!-- Boekhouding -->
     <record id="group_drukwerk_boekhouding" model="res.groups">
         <field name="name">Boekhouding</field>
         <field name="privilege_id" ref="privilege_drukwerk"/>
-        <field name="sequence">30</field>
+        <field name="sequence">40</field>
+        <field name="implied_ids" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
+    </record>
+
+    <!-- Vervangingen -->
+    <record id="group_drukwerk_vervangingen" model="res.groups">
+        <field name="name">Vervangingen</field>
+        <field name="privilege_id" ref="privilege_drukwerk"/>
+        <field name="sequence">50</field>
+        <field name="implied_ids" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
+    </record>
+
+    <!-- Directie -->
+    <record id="group_drukwerk_directie" model="res.groups">
+        <field name="name">Directie</field>
+        <field name="privilege_id" ref="privilege_drukwerk"/>
+        <field name="sequence">60</field>
         <field name="implied_ids" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
     </record>
 
@@ -40,10 +64,11 @@
     <record id="group_drukwerk_admin" model="res.groups">
         <field name="name">Beheerder</field>
         <field name="privilege_id" ref="privilege_drukwerk"/>
-        <field name="sequence">40</field>
+        <field name="sequence">70</field>
         <field name="implied_ids" eval="[
-            (4, ref('group_drukwerk_drukwerk')),
+            (4, ref('group_drukwerk_directie')),
             (4, ref('group_drukwerk_boekhouding')),
+            (4, ref('group_drukwerk_drukwerk')),
         ]"/>
     </record>
 

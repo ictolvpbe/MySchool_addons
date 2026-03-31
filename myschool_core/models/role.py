@@ -138,27 +138,36 @@ class Role(models.Model):
     # =========================================================================
     
     has_odoo_group = fields.Boolean(
-        string='Has Odoo Group',
+        string='Has Odoo Groups',
         default=False,
-        help='If enabled, employees with this role will be added to the linked Odoo security group'
+        help='If enabled, employees with this role will be added to the linked Odoo security groups'
     )
-    
-    odoo_group_id = fields.Many2one(
+
+    odoo_group_ids = fields.Many2many(
         'res.groups',
-        string='Odoo Group',
-        ondelete='set null',
-        index=True,
-        help='Odoo security group linked to this role. '
-             'Employees with this role will be added to this group.'
+        'myschool_role_odoo_groups_rel',
+        'role_id', 'group_id',
+        string='Odoo Groups',
+        domain="[('privilege_id', '!=', False)]",
+        help='Odoo security groups linked to this role. '
+             'Employees with this role will be added to all these groups.'
     )
-    
-    odoo_group_name = fields.Char(
-        string='Odoo Group Name',
-        related='odoo_group_id.full_name',
-        readonly=True,
-        store=True,
-        help='Full name of the linked Odoo security group'
+    odoo_group_display = fields.Char(
+        string='Toegewezen groepen',
+        compute='_compute_odoo_group_display',
     )
+
+    @api.depends('odoo_group_ids')
+    def _compute_odoo_group_display(self):
+        for record in self:
+            if not record.odoo_group_ids:
+                record.odoo_group_display = ''
+                continue
+            parts = []
+            for group in record.odoo_group_ids:
+                category = group.privilege_id.category_id.name if group.privilege_id and group.privilege_id.category_id else ''
+                parts.append(f"{category} → {group.name}" if category else group.name)
+            record.odoo_group_display = ', '.join(parts)
 
     # =========================================================================
     # Constraints
@@ -166,13 +175,13 @@ class Role(models.Model):
 
     _shortname_unique = models.Constraint('UNIQUE(shortname)', 'Role short name must be unique!')
 
-    @api.constrains('has_odoo_group', 'odoo_group_id')
+    @api.constrains('has_odoo_group', 'odoo_group_ids')
     def _check_odoo_group_consistency(self):
-        """Warn if has_odoo_group is True but no group is set."""
+        """Warn if has_odoo_group is True but no groups are set."""
         for record in self:
-            if record.has_odoo_group and not record.odoo_group_id:
+            if record.has_odoo_group and not record.odoo_group_ids:
                 _logger.warning(
-                    f'Role {record.name} has has_odoo_group=True but no odoo_group_id set'
+                    f'Role {record.name} has has_odoo_group=True but no odoo_group_ids set'
                 )
 
     # =========================================================================
@@ -181,14 +190,14 @@ class Role(models.Model):
     
     @api.onchange('has_odoo_group')
     def _onchange_has_odoo_group(self):
-        """Clear odoo_group_id when has_odoo_group is disabled."""
+        """Clear odoo_group_ids when has_odoo_group is disabled."""
         if not self.has_odoo_group:
-            self.odoo_group_id = False
-    
-    @api.onchange('odoo_group_id')
-    def _onchange_odoo_group_id(self):
-        """Set has_odoo_group when a group is selected."""
-        if self.odoo_group_id:
+            self.odoo_group_ids = [(5, 0, 0)]
+
+    @api.onchange('odoo_group_ids')
+    def _onchange_odoo_group_ids(self):
+        """Set has_odoo_group when groups are selected."""
+        if self.odoo_group_ids:
             self.has_odoo_group = True
 
     # =========================================================================
@@ -310,13 +319,13 @@ class Role(models.Model):
     @api.model
     def find_all_with_odoo_group(self) -> 'Role':
         """
-        Find all Roles that have an Odoo group configured.
-        
+        Find all Roles that have Odoo groups configured.
+
         @return: Recordset of Roles with Odoo groups
         """
         return self.search([
             ('has_odoo_group', '=', True),
-            ('odoo_group_id', '!=', False),
+            ('odoo_group_ids', '!=', False),
             ('is_active', '=', True)
         ])
 
@@ -365,28 +374,27 @@ class Role(models.Model):
 
     def action_sync_group_members(self):
         """
-        Manual action to sync all employees with this role to the Odoo group.
+        Manual action to sync all employees with this role to the Odoo groups.
         Can be called from a button in the form view.
         """
         self.ensure_one()
-        
-        if not self.has_odoo_group or not self.odoo_group_id:
+
+        if not self.has_odoo_group or not self.odoo_group_ids:
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
                     'title': 'Info',
-                    'message': 'Deze rol heeft geen Odoo groep geconfigureerd.',
+                    'message': 'Deze rol heeft geen Odoo groepen geconfigureerd.',
                     'type': 'info',
                 }
             }
-        
+
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        
-        # Find PPSBR type
+
         ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
-        
+
         if not ppsbr_type:
             return {
                 'type': 'ir.actions.client',
@@ -397,92 +405,92 @@ class Role(models.Model):
                     'type': 'danger',
                 }
             }
-        
-        # Find all active PPSBR with this role
+
         ppsbr_records = PropRelation.search([
             ('id_role', '=', self.id),
             ('proprelation_type_id', '=', ppsbr_type.id),
             ('is_active', '=', True),
             ('id_person', '!=', False)
         ])
-        
+
         added_count = 0
         for ppsbr in ppsbr_records:
             person = ppsbr.id_person
             if person and person.odoo_user_id:
                 user = person.odoo_user_id
-                if self.odoo_group_id not in user.groups_id:
-                    user.write({'groups_id': [(4, self.odoo_group_id.id)]})
-                    added_count += 1
-        
+                for group in self.odoo_group_ids:
+                    if group not in user.group_ids:
+                        user.write({'group_ids': [(4, group.id)]})
+                        added_count += 1
+
+        group_names = ', '.join(self.odoo_group_ids.mapped('full_name'))
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': 'Succes',
-                'message': f'{added_count} gebruikers toegevoegd aan groep {self.odoo_group_id.full_name}.',
+                'message': f'{added_count} groepstoewijzingen toegevoegd ({group_names}).',
                 'type': 'success',
             }
         }
     
     def action_view_group_members(self):
-        """Action to view all users in the linked Odoo group."""
+        """Action to view all users in the linked Odoo groups."""
         self.ensure_one()
-        
-        if not self.odoo_group_id:
+
+        if not self.odoo_group_ids:
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
                     'title': 'Info',
-                    'message': 'Geen Odoo groep gekoppeld aan deze rol.',
+                    'message': 'Geen Odoo groepen gekoppeld aan deze rol.',
                     'type': 'info',
                 }
             }
-        
+
         return {
             'type': 'ir.actions.act_window',
-            'name': f'Gebruikers in {self.odoo_group_id.full_name}',
+            'name': f'Gebruikers met rol {self.name}',
             'res_model': 'res.users',
             'view_mode': 'tree,form',
-            'domain': [('groups_id', 'in', [self.odoo_group_id.id])],
+            'domain': [('group_ids', 'in', self.odoo_group_ids.ids)],
             'target': 'current',
         }
 
     def action_remove_all_group_members(self):
         """
-        Remove all users from this role's Odoo group.
+        Remove all users from this role's Odoo groups.
         Use with caution!
         """
         self.ensure_one()
-        
-        if not self.has_odoo_group or not self.odoo_group_id:
+
+        if not self.has_odoo_group or not self.odoo_group_ids:
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
                     'title': 'Info',
-                    'message': 'Deze rol heeft geen Odoo groep geconfigureerd.',
+                    'message': 'Deze rol heeft geen Odoo groepen geconfigureerd.',
                     'type': 'info',
                 }
             }
-        
-        # Find all users in this group
-        users_in_group = self.env['res.users'].search([
-            ('groups_id', 'in', [self.odoo_group_id.id])
-        ])
-        
+
         removed_count = 0
-        for user in users_in_group:
-            user.write({'groups_id': [(3, self.odoo_group_id.id)]})
-            removed_count += 1
-        
+        for group in self.odoo_group_ids:
+            users_in_group = self.env['res.users'].search([
+                ('group_ids', 'in', [group.id])
+            ])
+            for user in users_in_group:
+                user.write({'group_ids': [(3, group.id)]})
+                removed_count += 1
+
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': 'Succes',
-                'message': f'{removed_count} gebruikers verwijderd uit groep {self.odoo_group_id.full_name}.',
+                'message': f'{removed_count} groepstoewijzingen verwijderd.',
                 'type': 'success',
             }
         }
@@ -684,7 +692,7 @@ class Role(models.Model):
                 'role_shortname': role.shortname,
                 'role_type': role.role_type_id.name if role.role_type_id else None,
                 'has_odoo_group': role.has_odoo_group,
-                'odoo_group_name': role.odoo_group_name,
+                'odoo_group_names': role.odoo_group_ids.mapped('full_name') if role.odoo_group_ids else [],
                 'org_id': org_id,
                 'org_name': org.name if org else None,
                 'org_short_name': org.name_short if org and hasattr(org, 'name_short') else None,
