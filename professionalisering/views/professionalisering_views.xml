@@ -9,6 +9,8 @@
                 <header>
                     <field name="is_owner" invisible="1"/>
                     <field name="is_admin" invisible="1"/>
+                    <field name="needs_approval" invisible="1"/>
+                    <field name="needs_payment" invisible="1"/>
                     <field name="current_user_invited" invisible="1"/>
                     <field name="current_user_invite_state" invisible="1"/>
                     <!-- Invited teacher: Accept/Reject -->
@@ -41,27 +43,27 @@
                             class="btn-secondary"
                             groups="professionalisering.group_professionalisering_admin"
                             invisible="state != 'weigering' or is_owner"/>
-                    <!-- Directie: Approve -->
+                    <!-- Directie: Approve (only for types that need approval) -->
                     <button name="action_approve"
                             string="Goedkeuren"
                             type="object"
                             class="btn-primary"
                             groups="professionalisering.group_professionalisering_directie"
-                            invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')"/>
-                    <!-- Directie: Reject -->
+                            invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren') or not needs_approval"/>
+                    <!-- Directie: Reject (only for types that need approval) -->
                     <button name="action_reject"
                             string="Afkeuren"
                             type="object"
                             class="btn-danger"
                             groups="professionalisering.group_professionalisering_directie"
-                            invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')"/>
-                    <!-- Boekhouding: Confirm payment / S-Code -->
+                            invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren') or not needs_approval"/>
+                    <!-- Boekhouding: Confirm payment / S-Code (only for types that need payment) -->
                     <button name="action_confirm_payment"
                             string="S-Code bevestigen"
                             type="object"
                             class="btn-primary"
                             groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"
-                            invisible="state != 'bevestiging' or payment_done == True"/>
+                            invisible="state != 'bevestiging' or payment_done == True or not needs_payment"/>
                     <!-- Owner: Submit proof -->
                     <button name="action_submit_bewijs"
                             string="Bewijs indienen"
@@ -132,41 +134,42 @@
                                    placeholder="bv. 150.00"/>
 
                             <separator string="Planning"/>
+                            <field name="duur" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
                             <field name="start_date" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
                             <field name="end_date" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
-                                   invisible="verschillende_dagen == True"/>
-                            <field name="verschillende_dagen" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                                   invisible="duur != 'meerdere_dagen'"/>
+                            <field name="verschillende_dagen" invisible="1"/>
                         </group>
 
                         <!-- RIGHT COLUMN: Beoordeling + Financieel -->
                         <group>
                             <separator string="Beoordeling"
-                                       invisible="state == 'selection_of_form'"/>
+                                       invisible="state == 'selection_of_form' or not needs_approval"/>
                             <field name="assigned_to"
-                                   invisible="state == 'selection_of_form'"
+                                   invisible="state == 'selection_of_form' or not needs_approval"
                                    readonly="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren', 'bevestiging')"
                                    groups="professionalisering.group_professionalisering_directie"/>
                             <field name="directie_id"
-                                   invisible="state not in ('bevestiging', 'weigering', 'done')"/>
+                                   invisible="state not in ('bevestiging', 'weigering', 'done') or not needs_approval"/>
 
-                            <!-- Financieel section -->
+                            <!-- Financieel section (only for types that need payment) -->
                             <separator string="Financieel"
-                                       invisible="state not in ('bevestiging', 'done')"/>
+                                       invisible="state not in ('bevestiging', 'done') or not needs_payment"/>
                             <field name="s_code_name"
                                    placeholder="bv. S-1234"
-                                   invisible="state not in ('bevestiging', 'done')"
+                                   invisible="state not in ('bevestiging', 'done') or not needs_payment"
                                    readonly="state != 'bevestiging'"
                                    groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
                             <field name="s_code_price"
                                    placeholder="bv. 500.00"
-                                   invisible="state not in ('bevestiging', 'done')"
+                                   invisible="state not in ('bevestiging', 'done') or not needs_payment"
                                    readonly="state != 'bevestiging'"
                                    groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
                             <field name="totale_kost"
-                                   invisible="state not in ('bevestiging', 'done')"
+                                   invisible="state not in ('bevestiging', 'done') or not needs_payment"
                                    groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
                             <field name="payment_done" readonly="1"
-                                   invisible="state not in ('bevestiging', 'done')"/>
+                                   invisible="state not in ('bevestiging', 'done') or not needs_payment"/>
                         </group>
                     </group>
 
@@ -181,6 +184,7 @@
                             <field name="invite_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
                                 <list editable="bottom">
                                     <field name="employee_id"/>
+                                    <field name="employee_school_names" readonly="1"/>
                                     <field name="notified" column_invisible="1"/>
                                     <field name="state" readonly="1" widget="badge"
                                            decoration-info="state == 'pending'"
@@ -203,7 +207,7 @@
                                    readonly="(state != 'selection_of_form' or (not is_owner and not is_admin)) and not (current_user_invited and current_user_invite_state == 'pending')"/>
                         </page>
                         <page string="Kosten"
-                              invisible="state not in ('bevestiging', 'done')"
+                              invisible="state not in ('bevestiging', 'done') or not needs_payment"
                               groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin">
                             <field name="kosten_ids" readonly="state != 'bevestiging'">
                                 <list editable="bottom" create="1" delete="1">
@@ -297,7 +301,8 @@
                 <field name="name"/>
                 <field name="priority" widget="priority" optional="show"
                        groups="professionalisering.group_professionalisering_directie"/>
-                <field name="type"/>
+                <field name="type" optional="hide"/>
+                <field name="vorm_display" string="Vorm"/>
                 <field name="titel"/>
                 <field name="employee_id"/>
                 <field name="school_id"/>

@@ -25,7 +25,7 @@ class IrActionsActWindow(models.Model):
                 elif user.has_group('activiteiten.group_activiteiten_boekhouding'):
                     ctx['search_default_s_code_pending'] = 1
                 elif user.has_group('activiteiten.group_activiteiten_directie'):
-                    ctx['search_default_to_approve'] = 1
+                    pass  # directie sees all records
                 elif user.has_group('activiteiten.group_activiteiten_aankoop'):
                     ctx['search_default_bus_check'] = 1
                 elif user.has_group('activiteiten.group_activiteiten_vervangingen'):

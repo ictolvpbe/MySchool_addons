@@ -242,29 +242,25 @@ class MySchoolDashboard(models.Model):
         return False
 
     def _get_base_domain(self, model_name):
-        """Admin sees all, directie sees unassigned + assigned-to-them, medewerker only their own.
-        When the current company has a school_id set, filter by that school."""
+        """Admin/directie sees all schools, managers see current school, medewerker only their own."""
+        # Filter by active company's school, or all user's schools if in parent company
         domain = []
-        # Filter by current company's school if set
         school = self.env.company.school_id
         if school:
             domain.append(('school_id', '=', school.id))
-        if self._is_admin(model_name):
+        elif self.env.user.school_ids:
+            domain.append(('school_id', 'in', self.env.user.school_ids.ids))
+        # Admin and directie see all their schools
+        if self._is_admin(model_name) or self._is_directie_or_admin(model_name):
             return domain
         if model_name == 'drukwerk.record':
             if self._is_manager(model_name):
                 return domain
             return domain + [('create_uid', '=', self.env.uid)]
         if model_name == 'activiteiten.record':
-            if self._is_directie_or_admin(model_name) or self._is_manager(model_name):
+            if self._is_manager(model_name):
                 return domain
             return domain + [('create_uid', '=', self.env.uid)]
-        if self._is_directie_or_admin(model_name):
-            return domain + [
-                '|',
-                ('assigned_to', '=', False),
-                ('assigned_to.user_id', '=', self.env.uid),
-            ]
         return domain + [('employee_id.user_id', '=', self.env.uid)]
 
     @api.depends_context('uid')
@@ -575,22 +571,14 @@ class MySchoolDashboard(models.Model):
         if self._is_admin(model):
             pass  # no filter for admin
         elif self._is_manager(model):
-            visible_states = set()
-            search_default = None
-            role_checks = {
-                'directie': ('professionalisering.group_professionalisering_directie', 'search_default_to_approve'),
-                'boekhouding': ('professionalisering.group_professionalisering_boekhouding', 'search_default_payment_pending'),
-                'vervangingen': ('professionalisering.group_professionalisering_vervangingen', 'search_default_replacement_pending'),
-            }
-            for role, (group, sd) in role_checks.items():
-                if self._safe_has_group(group):
-                    visible_states.update(self._PROF_ROLE_STATES.get(role, []))
-                    if not search_default:
-                        search_default = sd
-            if visible_states:
-                action['domain'] = [('state', 'in', list(visible_states))]
-            if search_default:
-                action['context'] = {search_default: 1}
+            # Managers see all records (filtered by record rules per school)
+            # No domain filter, just a search default for convenience
+            if self._safe_has_group('professionalisering.group_professionalisering_directie'):
+                pass  # directie sees all records from their school
+            elif self._safe_has_group('professionalisering.group_professionalisering_boekhouding'):
+                action['context'] = {'search_default_payment_pending': 1}
+            elif self._safe_has_group('professionalisering.group_professionalisering_vervangingen'):
+                action['context'] = {'search_default_replacement_pending': 1}
         else:
             action['context'] = {'search_default_my_requests': 1}
         return action
@@ -620,33 +608,21 @@ class MySchoolDashboard(models.Model):
             'name': 'Activiteiten',
             'res_model': 'activiteiten.record',
             'view_mode': 'list,form',
+            'context': {},
         }
         model = 'activiteiten.record'
         if self._is_admin(model):
-            pass  # no filter for admin
+            pass
         elif self._is_manager(model):
-            visible_states = set()
-            search_default = None
-            role_checks = {
-                'directie': ('activiteiten.group_activiteiten_directie', 'search_default_to_approve'),
-                'aankoop': ('activiteiten.group_activiteiten_aankoop', 'search_default_bus_check'),
-                'boekhouding': ('activiteiten.group_activiteiten_boekhouding', 'search_default_s_code_pending'),
-                'vervangingen': ('activiteiten.group_activiteiten_vervangingen', 'search_default_replacement_pending'),
-            }
-            for role, (group, sd) in role_checks.items():
-                if self._safe_has_group(group):
-                    visible_states.update(self._ROLE_STATES[role])
-                    if not search_default:
-                        search_default = sd
-            if visible_states:
-                action['domain'] = [('state', 'in', list(visible_states))]
-            if search_default:
-                action['context'] = {search_default: 1}
+            if self._safe_has_group('activiteiten.group_activiteiten_directie'):
+                pass  # directie sees all records from their schools
+            elif self._safe_has_group('activiteiten.group_activiteiten_aankoop'):
+                action['context'] = {'search_default_bus_check': 1}
+            elif self._safe_has_group('activiteiten.group_activiteiten_boekhouding'):
+                action['context'] = {'search_default_s_code_pending': 1}
+            elif self._safe_has_group('activiteiten.group_activiteiten_vervangingen'):
+                action['context'] = {'search_default_replacement_pending': 1}
         else:
-            action['domain'] = [
-                ('create_uid', '=', self.env.uid),
-                ('state', 'in', self._ROLE_STATES['medewerker']),
-            ]
             action['context'] = {'search_default_my_requests': 1}
         return action
 
@@ -680,6 +656,7 @@ class MySchoolDashboard(models.Model):
             'name': 'Drukwerk',
             'res_model': 'drukwerk.record',
             'view_mode': 'list,form',
+            'context': {},
         }
         model = 'drukwerk.record'
         if self._is_admin(model):
@@ -690,7 +667,6 @@ class MySchoolDashboard(models.Model):
             elif self._safe_has_group('drukwerk.group_drukwerk_boekhouding'):
                 action['context'] = {'search_default_to_invoice': 1}
         else:
-            action['domain'] = [('create_uid', '=', self.env.uid)]
             action['context'] = {'search_default_my_requests': 1}
         return action
 

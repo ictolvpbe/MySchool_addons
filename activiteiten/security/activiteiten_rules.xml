@@ -1,50 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <!-- Personeelslid: own records, filtered by current company's school -->
+    <!-- Personeelslid: own records, filtered by active company school -->
     <record id="rule_activiteiten_personeelslid" model="ir.rule">
-        <field name="name">Activiteiten: personeelslid ziet eigen aanvragen van huidige school</field>
+        <field name="name">Activiteiten: personeelslid ziet eigen aanvragen van actieve school</field>
         <field name="model_id" ref="model_activiteiten_record"/>
-        <field name="domain_force">[('create_uid', '=', user.id)] + ([('school_id', 'in', [user.company_id.school_id.id, False])] if user.company_id.school_id else [(1, '=', 1)])</field>
+        <field name="domain_force">['&amp;', ('create_uid', '=', user.id), '|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
     </record>
 
-    <!-- Directie: current company's school (all records if no school on company) -->
+    <!-- Directie -->
     <record id="rule_activiteiten_directie" model="ir.rule">
-        <field name="name">Activiteiten: directie ziet school van huidig bedrijf</field>
+        <field name="name">Activiteiten: directie ziet actieve school</field>
         <field name="model_id" ref="model_activiteiten_record"/>
-        <field name="domain_force">[('school_id', 'in', [user.company_id.school_id.id, False])] if user.company_id.school_id else [(1, '=', 1)]</field>
+        <field name="domain_force">['|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_activiteiten_directie'))]"/>
     </record>
 
-    <!-- Aankoop: current company's school -->
+    <!-- Aankoop -->
     <record id="rule_activiteiten_aankoop" model="ir.rule">
-        <field name="name">Activiteiten: aankoop ziet school van huidig bedrijf</field>
+        <field name="name">Activiteiten: aankoop ziet actieve school</field>
         <field name="model_id" ref="model_activiteiten_record"/>
-        <field name="domain_force">[('school_id', 'in', [user.company_id.school_id.id, False])] if user.company_id.school_id else [(1, '=', 1)]</field>
+        <field name="domain_force">['|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_activiteiten_aankoop'))]"/>
     </record>
 
-    <!-- Boekhouding: current company's school -->
+    <!-- Boekhouding -->
     <record id="rule_activiteiten_boekhouding" model="ir.rule">
-        <field name="name">Activiteiten: boekhouding ziet school van huidig bedrijf</field>
+        <field name="name">Activiteiten: boekhouding ziet actieve school</field>
         <field name="model_id" ref="model_activiteiten_record"/>
-        <field name="domain_force">[('school_id', 'in', [user.company_id.school_id.id, False])] if user.company_id.school_id else [(1, '=', 1)]</field>
+        <field name="domain_force">['|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_activiteiten_boekhouding'))]"/>
     </record>
 
-    <!-- Vervangingen: current company's school -->
+    <!-- Vervangingen -->
     <record id="rule_activiteiten_vervangingen" model="ir.rule">
-        <field name="name">Activiteiten: vervangingen ziet school van huidig bedrijf</field>
+        <field name="name">Activiteiten: vervangingen ziet actieve school</field>
         <field name="model_id" ref="model_activiteiten_record"/>
-        <field name="domain_force">[('school_id', 'in', [user.company_id.school_id.id, False])] if user.company_id.school_id else [(1, '=', 1)]</field>
+        <field name="domain_force">['|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_activiteiten_vervangingen'))]"/>
     </record>
 
-    <!-- Admin: see all records -->
+    <!-- Admin -->
     <record id="rule_activiteiten_admin" model="ir.rule">
-        <field name="name">Activiteiten: beheerder ziet alles</field>
+        <field name="name">Activiteiten: beheerder ziet actieve school</field>
         <field name="model_id" ref="model_activiteiten_record"/>
-        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="domain_force">['|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_activiteiten_admin'))]"/>
     </record>
 </odoo>

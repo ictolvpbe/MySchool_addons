@@ -13,6 +13,7 @@
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
+        'security/drukwerk_rules.xml',
         'data/sequence.xml',
         'data/cron.xml',
         'views/drukwerk_views.xml',

@@ -25,7 +25,7 @@ class IrActionsActWindow(models.Model):
                 elif user.has_group('professionalisering.group_professionalisering_boekhouding'):
                     ctx['search_default_payment_pending'] = 1
                 elif user.has_group('professionalisering.group_professionalisering_directie'):
-                    ctx['search_default_to_approve'] = 1
+                    pass
                 elif user.has_group('professionalisering.group_professionalisering_vervangingen'):
                     ctx['search_default_replacement_pending'] = 1
                 else:
@@ -88,6 +88,10 @@ class ProfessionaliseringRecord(models.Model):
         default=lambda self: self.env.company.school_id or self.env.user.school_ids[:1],
         domain="[('id', 'in', allowed_school_json)]",
     )
+    school_company_id = fields.Many2one(
+        'res.company', string='Bedrijf (school)',
+        compute='_compute_school_company_id', store=True,
+    )
     allowed_school_json = fields.Json(
         compute='_compute_allowed_school_json',
     )
@@ -95,7 +99,13 @@ class ProfessionaliseringRecord(models.Model):
     is_admin = fields.Boolean(compute='_compute_is_admin')
     start_date = fields.Date(string='Startdatum', required=True)
     end_date = fields.Date(string='Einddatum')
-    verschillende_dagen = fields.Boolean(string='Verschillende dagen', default=False)
+    duur = fields.Selection([
+        ('hele_dag', 'Hele dag'),
+        ('voormiddag', 'Voormiddag'),
+        ('namiddag', 'Namiddag'),
+        ('meerdere_dagen', 'Meerdere dagen'),
+    ], string='Duur', default='hele_dag', required=True)
+    verschillende_dagen = fields.Boolean(string='Verschillende dagen', compute='_compute_verschillende_dagen', store=True)
     date_line_ids = fields.One2many('professionalisering.date.line', 'professionalisering_id', string='Datums')
     dates_display = fields.Html(string='Datums', compute='_compute_dates_display', sanitize=False)
     cost = fields.Monetary(string='Geschatte kost', currency_field='currency_id')
@@ -135,8 +145,8 @@ class ProfessionaliseringRecord(models.Model):
     ], string='Vak')
     state = fields.Selection([
         ('selection_of_form', 'Formulier kiezen'),
-        ('fill_in_form_individueel', 'Ingediend'),
-        ('fill_in_form_teamleren', 'Ingediend'),
+        ('fill_in_form_individueel', 'Goedkeuring'),
+        ('fill_in_form_teamleren', 'Goedkeuring'),
         ('bevestiging', 'Bevestigd'),
         ('weigering', 'Geweigerd'),
         ('done', 'Afgerond'),
@@ -163,12 +173,22 @@ class ProfessionaliseringRecord(models.Model):
         help='Upload een attest, certificaat of ander bewijs.',
     )
     bewijs_ingediend = fields.Boolean(string='Bewijs ingediend', default=False)
+    needs_approval = fields.Boolean(compute='_compute_needs_approval')
+    needs_payment = fields.Boolean(compute='_compute_needs_payment')
+    vorm_display = fields.Char(string='Vorm', compute='_compute_vorm_display')
     priority = fields.Selection([
         ('0', 'Normaal'),
         ('1', 'Laag'),
         ('2', 'Hoog'),
         ('3', 'Urgent'),
     ], string='Prioriteit', default='0')
+
+    @api.depends('school_id')
+    def _compute_school_company_id(self):
+        companies = self.env['res.company'].sudo().search([('school_id', '!=', False)])
+        school_to_company = {c.school_id.id: c.id for c in companies}
+        for record in self:
+            record.school_company_id = school_to_company.get(record.school_id.id, False)
 
     @api.depends_context('uid', 'company')
     def _compute_allowed_school_json(self):
@@ -202,6 +222,44 @@ class ProfessionaliseringRecord(models.Model):
                 or (record.type == 'individueel'
                     and record.subtype_individueel in ('cursus', 'workshop'))
             )
+
+    # Subtypes that skip directie approval and go straight to done
+    _NO_APPROVAL_SUBTYPES = ('lezen', 'video', 'podcast', 'interne_opvolging')
+    # Subtypes that require S-Code / payment confirmation
+    _PAYMENT_SUBTYPES = ('cursus', 'workshop')
+
+    @api.depends('type', 'subtype_individueel')
+    def _compute_needs_approval(self):
+        for record in self:
+            record.needs_approval = not (
+                record.type == 'individueel'
+                and record.subtype_individueel in self._NO_APPROVAL_SUBTYPES
+            )
+
+    @api.depends('type', 'subtype_individueel')
+    def _compute_needs_payment(self):
+        for record in self:
+            record.needs_payment = (
+                record.type == 'individueel'
+                and record.subtype_individueel in self._PAYMENT_SUBTYPES
+            )
+
+    @api.depends('type', 'subtype_individueel', 'subtype_teamleren')
+    def _compute_vorm_display(self):
+        ind_labels = dict(self._fields['subtype_individueel'].selection)
+        team_labels = dict(self._fields['subtype_teamleren'].selection)
+        for record in self:
+            if record.type == 'individueel' and record.subtype_individueel:
+                record.vorm_display = ind_labels.get(record.subtype_individueel, '')
+            elif record.type == 'teamleren' and record.subtype_teamleren:
+                record.vorm_display = team_labels.get(record.subtype_teamleren, '')
+            else:
+                record.vorm_display = ''
+
+    @api.depends('duur')
+    def _compute_verschillende_dagen(self):
+        for record in self:
+            record.verschillende_dagen = record.duur == 'meerdere_dagen'
 
     @api.onchange('type')
     def _onchange_type(self):
@@ -278,24 +336,38 @@ class ProfessionaliseringRecord(models.Model):
             'individueel': 'fill_in_form_individueel',
             'teamleren': 'fill_in_form_teamleren',
         }
+        needs_notification = self.env['professionalisering.record']
         for record in self:
             if record.state != 'selection_of_form':
                 raise UserError("Alleen conceptaanvragen kunnen ingediend worden.")
             if record.has_pending_invites:
                 raise UserError("Niet alle uitnodigingen zijn beantwoord. Wacht tot alle collega's hebben gereageerd.")
-            new_state = type_state_map.get(record.type)
-            if not new_state:
+            if not record.type:
                 raise UserError("Selecteer eerst een type professionalisering.")
-            record.state = new_state
-        self._send_notification('professionalisering.email_template_notify_directie')
+            # Types that skip approval go straight to done
+            if not record.needs_approval:
+                record.state = 'done'
+                record._schedule_bewijs_activity_single()
+            else:
+                new_state = type_state_map.get(record.type)
+                record.state = new_state
+                needs_notification |= record
+        if needs_notification:
+            needs_notification._send_notification('professionalisering.email_template_notify_directie')
+            needs_notification._notify_directie_popup()
 
     def action_approve(self):
         submitted_states = self._get_submitted_states()
         for record in self:
             if record.state not in submitted_states:
                 raise UserError("Alleen ingediende aanvragen kunnen goedgekeurd worden.")
-            record.state = 'bevestiging'
             record.directie_id = self.env.user.employee_ids[:1]
+            # Types that need payment go to bevestiging, others go straight to done
+            if record.needs_payment:
+                record.state = 'bevestiging'
+            else:
+                record.state = 'done'
+                record._schedule_bewijs_activity_single()
         self._send_notification('professionalisering.email_template_notify_employee_approved')
         self._schedule_vervangingen_activity()
 
@@ -344,17 +416,22 @@ class ProfessionaliseringRecord(models.Model):
 
     def _schedule_bewijs_activity(self):
         """Notify the owner to upload proof after completion."""
-        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
         for record in self:
-            if not record.employee_id.user_id:
-                continue
-            record.activity_schedule(
-                activity_type_id=activity_type.id if activity_type else False,
-                summary='Bewijs uploaden: %s' % record.titel,
-                note='Uw professionalisering "%s" is afgerond. '
-                     'Gelieve een bewijs te uploaden (attest, link naar video/podcast, ...).' % record.titel,
-                user_id=record.employee_id.user_id.id,
-            )
+            record._schedule_bewijs_activity_single()
+
+    def _schedule_bewijs_activity_single(self):
+        """Schedule bewijs activity for a single record."""
+        self.ensure_one()
+        if not self.employee_id.user_id:
+            return
+        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        self.activity_schedule(
+            activity_type_id=activity_type.id if activity_type else False,
+            summary='Bewijs uploaden: %s' % self.titel,
+            note='Uw professionalisering "%s" is afgerond. '
+                 'Gelieve een bewijs te uploaden (attest, link naar video/podcast, ...).' % self.titel,
+            user_id=self.employee_id.user_id.id,
+        )
 
     def action_submit_bewijs(self):
         for record in self:
@@ -445,6 +522,37 @@ class ProfessionaliseringRecord(models.Model):
             for record in self:
                 template.send_mail(record.id, force_send=True)
 
+    def _notify_directie_popup(self):
+        """Send a popup notification to directie users of the same school."""
+        directie_group = self.env.ref(
+            'professionalisering.group_professionalisering_directie', raise_if_not_found=False)
+        if not directie_group:
+            return
+        for record in self:
+            directie_users = directie_group.user_ids.filtered(
+                lambda u: record.school_id in u.school_ids
+            )
+            for user in directie_users:
+                record.activity_schedule(
+                    'mail.mail_activity_data_todo',
+                    user_id=user.id,
+                    summary='Nieuwe aanvraag professionalisering',
+                    note='%s heeft een aanvraag ingediend: "%s". Gelieve deze te beoordelen.' % (
+                        record.employee_id.name, record.titel),
+                )
+                # Send bus notification for instant popup
+                self.env['bus.bus']._sendone(
+                    user.partner_id,
+                    'simple_notification',
+                    {
+                        'title': 'Nieuwe professionalisering aanvraag',
+                        'message': '%s heeft "%s" ingediend ter goedkeuring.' % (
+                            record.employee_id.name, record.titel),
+                        'type': 'warning',
+                        'sticky': True,
+                    },
+                )
+
 
 class ProfessionaliseringInvite(models.Model):
     _name = 'professionalisering.invite'
@@ -467,12 +575,27 @@ class ProfessionaliseringInvite(models.Model):
     employee_id = fields.Many2one(
         'hr.employee', string='Collega', required=True,
     )
+    employee_school_names = fields.Char(
+        string='School', compute='_compute_employee_school_names',
+    )
     state = fields.Selection([
         ('pending', 'In afwachting'),
         ('accepted', 'Geaccepteerd'),
         ('rejected', 'Geweigerd'),
     ], string='Status', default='pending', tracking=True)
     notified = fields.Boolean(default=False)
+
+    @api.depends('employee_id.user_id.school_ids')
+    def _compute_employee_school_names(self):
+        for invite in self:
+            schools = invite.employee_id.user_id.school_ids
+            names = []
+            for s in schools:
+                name = s.name or ''
+                if ',' in name:
+                    name = name.split(',', 1)[1].strip()
+                names.append(name)
+            invite.employee_school_names = ', '.join(n for n in names if n)
 
     def _notify_invited_employee(self):
         """Send an Odoo notification for the invited employee."""
