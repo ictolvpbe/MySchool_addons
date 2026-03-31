@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Klasrooster View -->
+    <record id="view_lessenrooster_klas_form" model="ir.ui.view">
+        <field name="name">lessenrooster.klas.view.form</field>
+        <field name="model">lessenrooster.klas.view</field>
+        <field name="arch" type="xml">
+            <form string="Klasrooster">
+                <sheet>
+                    <field name="available_klas_ids" invisible="1"/>
+                    <field name="available_leerkracht_ids" invisible="1"/>
+                    <field name="available_lokaal_ids" invisible="1"/>
+                    <group>
+                        <group>
+                            <field name="schooljaar"/>
+                            <field name="view_type" widget="radio" options="{'horizontal': True}"/>
+                        </group>
+                        <group>
+                            <field name="klas_id" options="{'no_open': True}"
+                                   invisible="view_type != 'klas'"/>
+                            <field name="leerkracht_id" options="{'no_open': True}"
+                                   invisible="view_type != 'leerkracht'"/>
+                            <field name="lokaal_filter_id" options="{'no_open': True}"
+                                   invisible="view_type != 'lokaal'"/>
+                        </group>
+                    </group>
+                    <field name="rooster_html" nolabel="1" readonly="1"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_lessenrooster_klas_view" model="ir.actions.act_window">
+        <field name="name">Klasrooster</field>
+        <field name="res_model">lessenrooster.klas.view</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+    </record>
+
+    <!-- List View -->
+    <record id="view_lessenrooster_list" model="ir.ui.view">
+        <field name="name">lessenrooster.line.list</field>
+        <field name="model">lessenrooster.line</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="schooljaar"/>
+                <field name="klas_name" string="Klas"/>
+                <field name="leerkracht_afkorting" string="Leerkracht"/>
+                <field name="vak"/>
+                <field name="lokaal_name" string="Lokaal"/>
+                <field name="dag"/>
+                <field name="lesuur"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="view_lessenrooster_form" model="ir.ui.view">
+        <field name="name">lessenrooster.line.form</field>
+        <field name="model">lessenrooster.line</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="schooljaar"/>
+                            <field name="klas_id"/>
+                            <field name="leerkracht_id"/>
+                            <field name="vak"/>
+                        </group>
+                        <group>
+                            <field name="lokaal_id"/>
+                            <field name="dag"/>
+                            <field name="lesuur"/>
+                            <field name="external_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_lessenrooster_search" model="ir.ui.view">
+        <field name="name">lessenrooster.line.search</field>
+        <field name="model">lessenrooster.line</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="klas_name" string="Klas"/>
+                <field name="leerkracht_afkorting" string="Leerkracht"/>
+                <field name="vak"/>
+                <field name="lokaal_name" string="Lokaal"/>
+                <field name="schooljaar"/>
+                <separator/>
+                <filter string="Maandag" name="maandag" domain="[('dag', '=', '1')]"/>
+                <filter string="Dinsdag" name="dinsdag" domain="[('dag', '=', '2')]"/>
+                <filter string="Woensdag" name="woensdag" domain="[('dag', '=', '3')]"/>
+                <filter string="Donderdag" name="donderdag" domain="[('dag', '=', '4')]"/>
+                <filter string="Vrijdag" name="vrijdag" domain="[('dag', '=', '5')]"/>
+                <separator/>
+                <filter string="Klas" name="group_klas" context="{'group_by': 'klas_id'}"/>
+                <filter string="Leerkracht" name="group_leerkracht" context="{'group_by': 'leerkracht_id'}"/>
+                <filter string="Vak" name="group_vak" context="{'group_by': 'vak'}"/>
+                <filter string="Dag" name="group_dag" context="{'group_by': 'dag'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Pivot View -->
+    <record id="view_lessenrooster_pivot" model="ir.ui.view">
+        <field name="name">lessenrooster.line.pivot</field>
+        <field name="model">lessenrooster.line</field>
+        <field name="arch" type="xml">
+            <pivot>
+                <field name="dag" type="col"/>
+                <field name="klas_name" type="row"/>
+                <field name="lesuur" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+</odoo>
