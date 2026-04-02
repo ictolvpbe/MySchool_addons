@@ -72,4 +72,18 @@
     <record id="myschool_core.group_myschool_employee" model="res.groups">
         <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
     </record>
+
+    <!-- Combined roles → per-module groups -->
+    <record id="myschool_core.group_combined_boekhouding" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_boekhouding'))]"/>
+    </record>
+    <record id="myschool_core.group_combined_vervangingen" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_vervangingen'))]"/>
+    </record>
+    <record id="myschool_core.group_combined_directie" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_directie'))]"/>
+    </record>
+    <record id="myschool_core.group_combined_beheerder" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_admin'))]"/>
+    </record>
 </odoo>

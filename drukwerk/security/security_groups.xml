@@ -81,4 +81,15 @@
     <record id="myschool_core.group_myschool_employee" model="res.groups">
         <field name="implied_ids" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
     </record>
+
+    <!-- Combined roles → per-module groups -->
+    <record id="myschool_core.group_combined_boekhouding" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_drukwerk_boekhouding'))]"/>
+    </record>
+    <record id="myschool_core.group_combined_directie" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_drukwerk_directie'))]"/>
+    </record>
+    <record id="myschool_core.group_combined_beheerder" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_drukwerk_admin'))]"/>
+    </record>
 </odoo>

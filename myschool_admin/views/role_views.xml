@@ -84,7 +84,7 @@
                         <field name="odoo_group_ids"
                                widget="many2many_tags"
                                options="{'no_create': True}"
-                               domain="[('privilege_id.category_id.name', 'in', ['Professionalisering', 'Activiteiten', 'Drukwerk', 'Planner'])]"
+                               domain="[('privilege_id.category_id.name', 'in', ['Alle modules', 'Professionalisering', 'Activiteiten', 'Drukwerk', 'Planner'])]"
                                context="{'tree_view_ref': 'myschool_admin.view_res_groups_list_for_role'}"
                                nolabel="1" colspan="2"/>
                         <field name="odoo_group_display" nolabel="1" colspan="2" readonly="1"
