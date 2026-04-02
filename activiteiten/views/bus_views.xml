@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo><data>
+
+    <!-- Bus Form View (standalone, opened from button) -->
+    <record id="view_bus_form" model="ir.ui.view">
+        <field name="name">activiteiten.bus.form</field>
+        <field name="model">activiteiten.bus</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Bus <field name="bus_nummer" class="d-inline"/></h1>
+                    </div>
+                    <field name="activiteit_id" invisible="context.get('default_activiteit_id')"/>
+                    <group>
+                        <group string="Busbezetting">
+                            <field name="klas_ids" widget="many2many_tags"
+                                   domain="[('id', 'in', context.get('allowed_klas_ids', []))]"/>
+                            <field name="aantal_klassen"/>
+                            <field name="student_count"/>
+                            <field name="aantal_leerkrachten"/>
+                        </group>
+                        <group string="Verantwoordelijke">
+                            <field name="busverantwoordelijke_id"
+                                   domain="[('id', 'in', context.get('allowed_leerkracht_ids', []))]"/>
+                            <field name="busverantwoordelijke_telefoon"/>
+                            <field name="leerkracht_bus_id"
+                                   domain="[('id', 'in', context.get('allowed_leerkracht_ids', []))]"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Busmaatschappij">
+                            <field name="busmaatschappij"/>
+                            <field name="nummerplaat"/>
+                            <field name="telefoon_chauffeur"/>
+                        </group>
+                        <group string="Afwezigen">
+                            <field name="afwezigen" placeholder="Naam + klas..."/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Bus List View (standalone, opened from button) -->
+    <record id="view_bus_list" model="ir.ui.view">
+        <field name="name">activiteiten.bus.list</field>
+        <field name="model">activiteiten.bus</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="bus_nummer"/>
+                <field name="klas_ids" widget="many2many_tags"/>
+                <field name="aantal_klassen"/>
+                <field name="student_count"/>
+                <field name="aantal_leerkrachten"/>
+                <field name="busverantwoordelijke_id"/>
+                <field name="busverantwoordelijke_telefoon"/>
+                <field name="leerkracht_bus_id"/>
+                <field name="busmaatschappij"/>
+                <field name="nummerplaat"/>
+                <field name="telefoon_chauffeur"/>
+            </list>
+        </field>
+    </record>
+
+</data></odoo>

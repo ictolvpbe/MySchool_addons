@@ -403,6 +403,30 @@ def _shape_printer(d, m, a, dk):
     d.ellipse([42, 45, 58, 58], fill=a)
 
 
+def _shape_bus(d, m, a, dk):
+    """Transport / bus — school bus shape with windows."""
+    # Bus body
+    d.rounded_rectangle([8, 25, 92, 72], radius=8, fill=m)
+    # Roof
+    d.rounded_rectangle([12, 18, 88, 35], radius=6, fill=dk)
+    # Windows
+    for x in range(18, 70, 17):
+        d.rectangle([x, 30, x + 12, 48], fill=WHITE)
+    # Windshield
+    d.rectangle([76, 30, 88, 52], fill=a)
+    # Door
+    d.rectangle([18, 50, 30, 68], fill=a)
+    # Bumper
+    d.rectangle([8, 68, 92, 72], fill=dk)
+    # Wheels
+    d.ellipse([18, 65, 36, 83], fill=dk)
+    d.ellipse([22, 69, 32, 79], fill=WHITE)
+    d.ellipse([62, 65, 80, 83], fill=dk)
+    d.ellipse([66, 69, 76, 79], fill=WHITE)
+    # Headlight
+    d.rectangle([86, 52, 92, 60], fill=a)
+
+
 def _shape_generic(d, m, a, dk):
     """Generic fallback — abstract overlapping shapes."""
     d.ellipse([5, 18, 55, 68], fill=m)
@@ -432,6 +456,7 @@ MODULE_SHAPES = {
     'kosten_dashboard': _shape_euro,
     'security_phishing': _shape_shield,
     'drukwerk': _shape_printer,
+    'myschool_bus_seater': _shape_bus,
     'hr': _shape_users,
     'project': _shape_sitemap,
     'sale': _shape_cart,
@@ -479,6 +504,7 @@ KEYWORD_SHAPES = {
     'approval': _shape_request,
     'druk': _shape_printer, 'print': _shape_printer,
     'kopie': _shape_printer,
+    'bus': _shape_bus, 'seater': _shape_bus, 'transport': _shape_bus,
 }
 
 

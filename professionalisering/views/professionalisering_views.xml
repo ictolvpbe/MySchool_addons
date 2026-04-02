@@ -252,18 +252,25 @@
                                            invisible="type != 'teamleren'"/>
                                 </group>
                                 <group>
-                                    <field name="bewijs_ingediend" readonly="1"/>
                                 </group>
                             </group>
                             <!-- Cursus/Workshop: attest upload -->
-                            <separator string="Attest / Certificaat"
-                                       invisible="subtype_individueel not in ('cursus', 'workshop')"/>
+                            <div class="d-flex align-items-center justify-content-between"
+                                 invisible="subtype_individueel not in ('cursus', 'workshop')">
+                                <h3 class="mb-0">Attest / Certificaat</h3>
+                                <field name="bewijs_ingediend" readonly="1"/>
+                            </div>
+                            <hr invisible="subtype_individueel not in ('cursus', 'workshop')"/>
                             <field name="bewijs_document_ids" widget="many2many_binary"
                                    readonly="bewijs_ingediend and not is_admin"
                                    invisible="subtype_individueel not in ('cursus', 'workshop')"/>
                             <!-- Teamleren: document upload -->
-                            <separator string="Documenten"
-                                       invisible="type != 'teamleren'"/>
+                            <div class="d-flex align-items-center justify-content-between"
+                                 invisible="type != 'teamleren'">
+                                <h3 class="mb-0">Documenten</h3>
+                                <field name="bewijs_ingediend" readonly="1"/>
+                            </div>
+                            <hr invisible="type != 'teamleren'"/>
                             <field name="bewijs_document_ids" widget="many2many_binary"
                                    readonly="bewijs_ingediend and not is_admin"
                                    invisible="type != 'teamleren'"/>

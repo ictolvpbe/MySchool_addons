@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo><data>
+
+    <!-- Bus Form View -->
+    <record id="view_bus_form" model="ir.ui.view">
+        <field name="name">bus_seater.bus.form</field>
+        <field name="model">bus_seater.bus</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Bus Name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="license_plate"/>
+                            <field name="is_active"/>
+                        </group>
+                        <group>
+                            <field name="rows"/>
+                            <field name="seats_per_row"/>
+                            <field name="capacity"/>
+                        </group>
+                    </group>
+                    <div class="mb-3">
+                        <button name="action_generate_seats"
+                                type="object"
+                                string="Generate Seats"
+                                class="btn-primary"
+                                confirm="This will regenerate all seats and remove existing ones. Continue?"
+                                groups="myschool_bus_seater.group_bus_seater_admin"/>
+                        <span class="ms-2 text-muted">
+                            <field name="seat_count" class="d-inline"/> seats generated
+                        </span>
+                    </div>
+                    <field name="note" placeholder="Notes..."/>
+                    <notebook>
+                        <page string="Seats" name="seats">
+                            <field name="seat_ids">
+                                <list editable="bottom">
+                                    <field name="name"/>
+                                    <field name="row_number"/>
+                                    <field name="column_number"/>
+                                    <field name="state" widget="badge"
+                                           decoration-success="state == 'available'"
+                                           decoration-danger="state == 'unavailable'"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Bus List View -->
+    <record id="view_bus_list" model="ir.ui.view">
+        <field name="name">bus_seater.bus.list</field>
+        <field name="model">bus_seater.bus</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="license_plate"/>
+                <field name="capacity"/>
+                <field name="seat_count" string="Seats"/>
+                <field name="is_active"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Bus Search View -->
+    <record id="view_bus_search" model="ir.ui.view">
+        <field name="name">bus_seater.bus.search</field>
+        <field name="model">bus_seater.bus</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="license_plate"/>
+                <filter name="active" string="Active" domain="[('is_active', '=', True)]"/>
+                <filter name="inactive" string="Inactive" domain="[('is_active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Bus Action -->
+    <record id="action_bus" model="ir.actions.act_window">
+        <field name="name">Buses</field>
+        <field name="res_model">bus_seater.bus</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+</data></odoo>
