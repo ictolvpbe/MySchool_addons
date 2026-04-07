@@ -38,7 +38,7 @@ import random
 import string
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional, Any, List
 
 _logger = logging.getLogger(__name__)
@@ -496,6 +496,86 @@ class BeTaskProcessor(models.AbstractModel):
         return vals
 
     # =========================================================================
+    # ASSIGNMENT CHECK METHODS
+    # =========================================================================
+
+    def _has_active_assignments(self, employee_json: dict) -> bool:
+        """
+        Check if an employee has active assignments.
+
+        An assignment is active if:
+        - end_date is None/empty, OR
+        - end_date is in the future (after today)
+
+        Args:
+            employee_json: Employee data dict containing 'assignments' key
+
+        Returns:
+            True if at least one active assignment exists, False otherwise
+        """
+        assignments = employee_json.get('assignments')
+        if not assignments:
+            return False
+
+        # assignments can be a JSON string or already a list
+        if isinstance(assignments, str):
+            try:
+                assignments = json.loads(assignments)
+            except (json.JSONDecodeError, TypeError):
+                _logger.warning(f"Could not parse assignments JSON")
+                return False
+
+        if not isinstance(assignments, list):
+            return False
+
+        today = datetime.now().date()
+
+        for assignment in assignments:
+            if not isinstance(assignment, dict):
+                continue
+            end_date_str = assignment.get('endDate') or assignment.get('eindDatum') or assignment.get('end_date')
+            if not end_date_str:
+                # No end date = still active
+                return True
+            parsed_date = self._parse_date_safe(end_date_str)
+            if parsed_date:
+                if isinstance(parsed_date, datetime):
+                    parsed_date = parsed_date.date()
+                if parsed_date > today:
+                    return True
+
+        return False
+
+    def _person_has_active_assignments(self, person) -> bool:
+        """
+        Check if a person has active assignments based on their stored
+        person_details records.
+
+        An assignment is active if:
+        - end_date is None/empty, OR
+        - end_date is in the future (after today)
+
+        Args:
+            person: myschool.person record
+
+        Returns:
+            True if at least one active assignment exists, False otherwise
+        """
+        PersonDetails = self.env['myschool.person.details']
+        details = PersonDetails.search([
+            ('person_id', '=', person.id),
+            ('is_active', '=', True),
+        ])
+
+        for detail in details:
+            if detail.assignments:
+                fake_json = {'assignments': detail.assignments}
+                if self._has_active_assignments(fake_json):
+                    return True
+
+        return False
+
+    # =========================================================================
     # EMPLOYEE CRUD METHODS
     # =========================================================================
 
@@ -529,24 +609,48 @@ class BeTaskProcessor(models.AbstractModel):
         PersonDetails.create(details_vals)
 
         _logger.info(f"Created employee {new_person.name} (ID: {new_person.id})")
-        
-        # Trigger ODOO-PERSON-ADD task to create Odoo User and HR Employee
-        odoo_task_data = {
-            'person_id': new_person.id,
-            'personId': employee_json.get('personId'),
-            'name': new_person.name,
-            'first_name': employee_json.get('voornaam', ''),
-            'email': new_person.email_cloud or new_person.email_private,
-        }
-        self._create_betask_internal(
-            'ODOO', 'PERSON', 'ADD',
-            json.dumps(odoo_task_data),
-            None
-        )
-        _logger.info(f'Created ODOO-PERSON-ADD task for {new_person.name}')
 
-        # Create PPSBR PropRelation between person, school org and role
-        self._create_ppsbr_for_new_employee(new_person, employee_json, inst_nr)
+        # Check if employee has active assignments before creating account
+        if self._has_active_assignments(employee_json):
+            # Trigger ODOO-PERSON-ADD task to create Odoo User and HR Employee
+            odoo_task_data = {
+                'person_id': new_person.id,
+                'personId': employee_json.get('personId'),
+                'name': new_person.name,
+                'first_name': employee_json.get('voornaam', ''),
+                'email': new_person.email_cloud or new_person.email_private,
+            }
+            self._create_betask_internal(
+                'ODOO', 'PERSON', 'ADD',
+                json.dumps(odoo_task_data),
+                None
+            )
+            _logger.info(f'Created ODOO-PERSON-ADD task for {new_person.name}')
+        else:
+            # No active assignments — skip account creation, set deactivation_date
+            new_person.write({
+                'deactivation_date': fields.Date.context_today(self),
+            })
+            # Deactivate any proprelations for this person
+            PropRelation = self.env['myschool.proprelation']
+            active_proprels = PropRelation.search([
+                '|', '|',
+                ('id_person', '=', new_person.id),
+                ('id_person_parent', '=', new_person.id),
+                ('id_person_child', '=', new_person.id),
+                ('is_active', '=', True),
+            ])
+            if active_proprels:
+                active_proprels.write({'is_active': False})
+            _logger.info(
+                f'No active assignments for {new_person.name} — '
+                f'skipping account creation, deactivation_date set, '
+                f'{len(active_proprels)} proprelation(s) deactivated'
+            )
+
+        # Only create PPSBR if employee has active assignments
+        if self._has_active_assignments(employee_json):
+            self._create_ppsbr_for_new_employee(new_person, employee_json, inst_nr)
 
         return new_person
 
@@ -739,24 +843,66 @@ class BeTaskProcessor(models.AbstractModel):
             field_changes.append(f"Created first PersonDetails version for instNr {inst_nr}")
             _logger.info(f"Created first PersonDetails for {person.name}, instNr {inst_nr}")
 
-        # Trigger ODOO-PERSON-UPD task if person has Odoo user
-        if person.odoo_user_id:
-            odoo_task_data = {
-                'person_id': person.id,
-                'personId': employee_json.get('personId'),
-                'name': person.name,
-                'email': person.email_cloud or person.email_private,
-            }
-            self._create_betask_internal(
-                'ODOO', 'PERSON', 'UPD',
-                json.dumps(odoo_task_data),
-                None
-            )
-            _logger.info(f'Created ODOO-PERSON-UPD task for {person.name}')
+        # Check assignment status for account lifecycle
+        has_assignments = self._has_active_assignments(employee_json)
 
-        # Check if PPSBR exists for this person at this school with EMPLOYEE role
-        # If not, create a task to create it
-        self._ensure_ppsbr_exists_for_employee(person, inst_nr, field_changes)
+        if has_assignments:
+            # Active assignments exist — clear deactivation_date if it was set
+            if person.deactivation_date:
+                person.write({'deactivation_date': False})
+                field_changes.append(f"Cleared deactivation_date — active assignments found")
+                _logger.info(f'Cleared deactivation_date for {person.name} — active assignments found')
+
+            # Trigger ODOO-PERSON-UPD task if person has Odoo user
+            if person.odoo_user_id:
+                odoo_task_data = {
+                    'person_id': person.id,
+                    'personId': employee_json.get('personId'),
+                    'name': person.name,
+                    'email': person.email_cloud or person.email_private,
+                }
+                self._create_betask_internal(
+                    'ODOO', 'PERSON', 'UPD',
+                    json.dumps(odoo_task_data),
+                    None
+                )
+                _logger.info(f'Created ODOO-PERSON-UPD task for {person.name}')
+        else:
+            # No active assignments — set deactivation_date if not already set
+            if not person.deactivation_date:
+                person.write({
+                    'deactivation_date': fields.Date.context_today(self),
+                })
+                field_changes.append(
+                    f"Set deactivation_date — no active assignments remaining"
+                )
+                _logger.info(
+                    f'Set deactivation_date for {person.name} — '
+                    f'no active assignments remaining'
+                )
+            # Deactivate proprelations for this person
+            PropRelation = self.env['myschool.proprelation']
+            active_proprels = PropRelation.search([
+                '|', '|',
+                ('id_person', '=', person.id),
+                ('id_person_parent', '=', person.id),
+                ('id_person_child', '=', person.id),
+                ('is_active', '=', True),
+            ])
+            if active_proprels:
+                active_proprels.write({'is_active': False})
+                field_changes.append(
+                    f"Deactivated {len(active_proprels)} proprelation(s) — "
+                    f"no active assignments"
+                )
+                _logger.info(
+                    f'Deactivated {len(active_proprels)} proprelation(s) '
+                    f'for {person.name}'
+                )
+
+        # Only ensure PPSBR exists if employee has active assignments
+        if has_assignments:
+            self._ensure_ppsbr_exists_for_employee(person, inst_nr, field_changes)
 
         return {'success': True, 'field_changes': field_changes}
 
@@ -2194,6 +2340,11 @@ class BeTaskProcessor(models.AbstractModel):
         sec_group_name = 'bgrp-' + '-'.join(name_parts)
         org_update['com_group_name'] = com_group_name
         org_update['sec_group_name'] = sec_group_name
+
+        # --- Com group email ---
+        domain_ext = org_update.get('domain_external') or (parent_school.domain_external if parent_school else '')
+        if com_group_name and domain_ext:
+            org_update['com_group_email'] = f"{com_group_name}@{domain_ext}"
 
         # --- Group FQDN fields ---
         # Format: cn={group_name},ou={OuForGroups},{parent_ou_fqdn}
@@ -3807,6 +3958,7 @@ class BeTaskProcessor(models.AbstractModel):
         Expected data structure:
         {
             "group_dn": "CN=MyGroup,OU=Groups,DC=school,DC=local",
+            OR "group_name": "grp-employee-bawa", "org_id": 123,
             "member_dn": "CN=JohnDoe,OU=Users,DC=school,DC=local",
             OR
             "person_id": 123,
@@ -3822,15 +3974,28 @@ class BeTaskProcessor(models.AbstractModel):
                 raise ValidationError(_('Task data is missing or invalid'))
 
             group_dn = data.get('group_dn')
+            group_name = data.get('group_name')
             member_dn = data.get('member_dn')
             person_id = data.get('person_id')
             dry_run = data.get('dry_run', False)
 
-            if not group_dn:
-                raise ValidationError(_('group_dn is required in task data'))
-
             # Get LDAP configuration
             config = self._get_ldap_config_for_task(task, data.get('org_id'))
+
+            # Resolve group_dn from group_name if not provided
+            if not group_dn and group_name:
+                org = None
+                org_id = data.get('org_id')
+                if org_id:
+                    org = self.env['myschool.org'].browse(org_id)
+                    if not org.exists():
+                        org = None
+                ldap_service = self.env['myschool.ldap.service']
+                group_dn = ldap_service.build_group_dn(group_name, org, config)
+                changes.append(f"Resolved group DN: {group_dn}")
+
+            if not group_dn:
+                raise ValidationError(_('group_dn or group_name is required in task data'))
             changes.append(f"Using LDAP server: {config.name}")
 
             ldap_service = self.env['myschool.ldap.service']
@@ -3872,6 +4037,7 @@ class BeTaskProcessor(models.AbstractModel):
         Expected data structure:
         {
             "group_dn": "CN=MyGroup,OU=Groups,DC=school,DC=local",
+            OR "group_name": "grp-employee-bawa", "org_id": 123,
             "member_dn": "CN=JohnDoe,OU=Users,DC=school,DC=local",
             OR
             "person_id": 123,
@@ -3887,15 +4053,29 @@ class BeTaskProcessor(models.AbstractModel):
                 raise ValidationError(_('Task data is missing or invalid'))
 
             group_dn = data.get('group_dn')
+            group_name = data.get('group_name')
             member_dn = data.get('member_dn')
             person_id = data.get('person_id')
             dry_run = data.get('dry_run', False)
 
-            if not group_dn:
-                raise ValidationError(_('group_dn is required in task data'))
-
             # Get LDAP configuration
             config = self._get_ldap_config_for_task(task, data.get('org_id'))
+
+            # Resolve group_dn from group_name if not provided
+            if not group_dn and group_name:
+                org = None
+                org_id = data.get('org_id')
+                if org_id:
+                    org = self.env['myschool.org'].browse(org_id)
+                    if not org.exists():
+                        org = None
+                ldap_service = self.env['myschool.ldap.service']
+                group_dn = ldap_service.build_group_dn(group_name, org, config)
+                changes.append(f"Resolved group DN: {group_dn}")
+
+            if not group_dn:
+                raise ValidationError(_('group_dn or group_name is required in task data'))
+
             changes.append(f"Using LDAP server: {config.name}")
 
             ldap_service = self.env['myschool.ldap.service']
@@ -5037,18 +5217,33 @@ class BeTaskProcessor(models.AbstractModel):
             _logger.warning(f'[PG-SYNC] OuForGroups org "{ou_value}" not found under {school_org.name_short}')
         return ou_value, ou_org
 
-    def _find_or_create_persongroup(self, name, name_short, school_org, source_label='auto'):
+    def _find_or_create_persongroup(self, name, name_short, school_org,
+                                     source_label='auto', group_name_override=None):
         """Find existing or create new PERSONGROUP org under OuForGroups.
 
         Creation goes through the MANUAL/ORG/ADD betask pipeline, same as
         the CreatePersongroupWizard.
 
+        Args:
+            name: Display name for the persongroup.
+            name_short: Short name (used for search and OU path).
+            school_org: The school org record.
+            source_label: Label for logging.
+            group_name_override: If set, use this as com_group_name instead of
+                                 the default grp-{name_short}-{school_short}.
+
         Returns (persongroup_org, created) or (None, False) on failure.
         """
+        _logger.info(f'[PG-SYNC] _find_or_create_persongroup called: name={name}, '
+                     f'name_short={name_short}, school={school_org.name}, '
+                     f'group_name_override={group_name_override}, source={source_label}')
+
         ou_value, ou_org = self._resolve_ou_for_groups_org(school_org)
         if not ou_org:
             _logger.warning(f'[PG-SYNC] Cannot create persongroup "{name_short}" - no OuForGroups org')
             return None, False
+
+        _logger.info(f'[PG-SYNC] OuForGroups resolved: ou_value={ou_value}, ou_org={ou_org.name} (ID:{ou_org.id})')
 
         Org = self.env['myschool.org']
         OrgType = self.env['myschool.org.type']
@@ -5070,6 +5265,8 @@ class BeTaskProcessor(models.AbstractModel):
                 ('is_active', '=', True),
             ])
             child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+            _logger.info(f'[PG-SYNC] Searching {len(child_org_ids)} children of {ou_org.name} '
+                         f'for name_short={name_short_lower}')
             if child_org_ids:
                 existing = Org.search([
                     ('id', 'in', child_org_ids),
@@ -5078,12 +5275,19 @@ class BeTaskProcessor(models.AbstractModel):
                     ('is_active', '=', True),
                 ], limit=1)
                 if existing:
-                    _logger.info(f'[PG-SYNC] Found existing persongroup: {existing.name} (source={source_label})')
+                    _logger.info(f'[PG-SYNC] Found existing persongroup: {existing.name} '
+                                 f'(ID:{existing.id}, name_short={existing.name_short}) (source={source_label})')
                     return existing, False
 
         # Build task data (same structure as CreatePersongroupWizard._build_persongroup_task_data)
         school_short = (school_org.name_short or '').lower()
-        com_group_name = f"grp-{name_short_lower}-{school_short}"
+        if group_name_override:
+            com_group_name = group_name_override
+        else:
+            com_group_name = f"grp-{name_short_lower}-{school_short}"
+
+        _logger.info(f'[PG-SYNC] Creating persongroup: name={name}, name_short={name_short_lower}, '
+                     f'com_group_name={com_group_name}, parent={ou_org.name}')
 
         task_data = {
             'parent_org_id': ou_org.id,
@@ -5140,10 +5344,13 @@ class BeTaskProcessor(models.AbstractModel):
             if parts:
                 task_data['name_tree'] = '.'.join(parts)
 
+        _logger.info(f'[PG-SYNC] task_data for persongroup: {task_data}')
+
         # Create via MANUAL/ORG/ADD betask
         service = self.env['myschool.manual.task.service']
         task = service.create_manual_task('ORG', 'ADD', task_data)
-        _logger.info(f'[PG-SYNC] Created MANUAL/ORG/ADD betask for persongroup "{name}" (source={source_label})')
+        _logger.info(f'[PG-SYNC] Created MANUAL/ORG/ADD betask for persongroup "{name}" '
+                     f'(source={source_label}), task.changes={task.changes}')
 
         # Find the created org from the task result
         import re
@@ -5390,7 +5597,7 @@ class BeTaskProcessor(models.AbstractModel):
     def cron_process_tasks(self):
         """Entry point for scheduled task processing."""
         _logger.info('Cron job started: Processing backend tasks')
-        
+
         try:
             results = self.process_all_pending()
             _logger.info(f'Cron job completed: {results}')
@@ -5399,3 +5606,140 @@ class BeTaskProcessor(models.AbstractModel):
             _logger.exception('Cron job failed')
             self._log_error('BETASK-999', f'Cron job failed: {str(e)}', blocking=True)
             return False
+
+    @api.model
+    def cron_employee_account_lifecycle(self):
+        """
+        Daily cron job for employee account lifecycle management.
+
+        Phase 0: Scan active employees without deactivation_date — check their
+                 stored assignments in person_details. If no active assignments
+                 remain, set deactivation_date and deactivate their proprelations.
+        Phase 1: After EmployeeAccountDeactivationDays: deactivate the account
+        Phase 2: After EmployeeAccountRemovalDays: remove the Odoo user/employee records
+        """
+        _logger.info('Cron job started: Employee Account Lifecycle')
+
+        ConfigItem = self.env['myschool.config.item']
+        Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
+        PropRelation = self.env['myschool.proprelation']
+
+        # Get config values with defaults
+        deact_ci = ConfigItem.find_by_name('EmployeeAccountDeactivationDays')
+        removal_ci = ConfigItem.find_by_name('EmployeeAccountRemovalDays')
+        deactivation_days = deact_ci.integer_value if deact_ci else 30
+        removal_days = removal_ci.integer_value if removal_ci else 90
+
+        today = fields.Date.context_today(self)
+        deact_cutoff = today - timedelta(days=deactivation_days)
+        removal_cutoff = today - timedelta(days=removal_days)
+
+        # --- Phase 0: Scan active employees for missing assignments ---
+        # Find active employees who don't yet have a deactivation_date
+        # Skip employees with automatic_sync=False (manually managed)
+        active_employees = Person.search([
+            ('is_active', '=', True),
+            ('deactivation_date', '=', False),
+            ('automatic_sync', '=', True),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+        ])
+
+        flagged_count = 0
+        for person in active_employees:
+            try:
+                if not self._person_has_active_assignments(person):
+                    person.write({
+                        'deactivation_date': today,
+                    })
+                    # Deactivate proprelations immediately
+                    active_proprels = PropRelation.search([
+                        '|', '|',
+                        ('id_person', '=', person.id),
+                        ('id_person_parent', '=', person.id),
+                        ('id_person_child', '=', person.id),
+                        ('is_active', '=', True),
+                    ])
+                    if active_proprels:
+                        active_proprels.write({'is_active': False})
+                        _logger.info(
+                            f'Deactivated {len(active_proprels)} proprelation(s) '
+                            f'for {person.name}'
+                        )
+                    flagged_count += 1
+                    _logger.info(
+                        f'Flagged {person.name} — no active assignments, '
+                        f'deactivation_date set to {today}'
+                    )
+            except Exception as e:
+                _logger.error(
+                    f'Error scanning assignments for {person.name}: {e}'
+                )
+
+        # --- Phase 1: Deactivate accounts ---
+        persons_to_deactivate = Person.search([
+            ('deactivation_date', '<=', deact_cutoff),
+            ('deactivation_date', '!=', False),
+            ('is_active', '=', True),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+        ])
+
+        deactivated_count = 0
+        for person in persons_to_deactivate:
+            try:
+                _logger.info(
+                    f'Deactivating account for {person.name} '
+                    f'(deactivation_date: {person.deactivation_date})'
+                )
+                # is_active=False triggers _on_deactivate cascade
+                # (user, employee, remaining proprelations)
+                person.write({'is_active': False})
+                deactivated_count += 1
+            except Exception as e:
+                _logger.error(f'Error deactivating account for {person.name}: {e}')
+
+        # --- Phase 2: Remove Odoo accounts (not the Person record) ---
+        persons_to_remove = Person.with_context(active_test=False).search([
+            ('deactivation_date', '<=', removal_cutoff),
+            ('deactivation_date', '!=', False),
+            ('is_active', '=', False),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+            '|',
+            ('odoo_user_id', '!=', False),
+            ('odoo_employee_id', '!=', False),
+        ])
+
+        removed_count = 0
+        for person in persons_to_remove:
+            try:
+                _logger.info(
+                    f'Removing Odoo account for {person.name} '
+                    f'(deactivation_date: {person.deactivation_date})'
+                )
+                # Remove HR employee record
+                if person.odoo_employee_id:
+                    employee = person.odoo_employee_id.with_context(active_test=False)
+                    person.write({'odoo_employee_id': False})
+                    employee.unlink()
+                    _logger.info(f'Removed HR employee for {person.name}')
+
+                # Remove Odoo user record
+                if person.odoo_user_id:
+                    user = person.odoo_user_id.with_context(active_test=False)
+                    person.write({'odoo_user_id': False})
+                    user.unlink()
+                    _logger.info(f'Removed Odoo user for {person.name}')
+
+                removed_count += 1
+            except Exception as e:
+                _logger.error(f'Error removing account for {person.name}: {e}')
+
+        _logger.info(
+            f'Cron job completed: Employee Account Lifecycle — '
+            f'{flagged_count} flagged, {deactivated_count} deactivated, '
+            f'{removed_count} removed'
+        )
+        return {
+            'flagged': flagged_count,
+            'deactivated': deactivated_count,
+            'removed': removed_count,
+        }

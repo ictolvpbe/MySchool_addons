@@ -34,6 +34,25 @@ from . import ldap_service
 from . import res_company
 from . import res_users
 
+# Process models
+from . import process
+from . import process_lane
+from . import process_lane_preset
+from . import process_step
+from . import process_connection
+from . import process_version
+from . import process_field
+from . import process_instance
+from . import process_task
+
+# Asset models
+from . import asset_type_category
+from . import asset_type
+from . import asset
+from . import asset_license
+from . import asset_checkout
+from . import access_policy
+
 
 # Base/independent models first
 # BeTask models (be_task_type must come before be_task)

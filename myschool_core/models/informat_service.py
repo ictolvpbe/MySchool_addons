@@ -1093,11 +1093,13 @@ class InformatService(models.AbstractModel):
                 # -----------------------------------------------------
                 # SCENARIO 2b: Should REACTIVATE
                 # Only reactivate if pension_date is not more than 1 month in the past
+                # Skip if automatic_sync is disabled (manually deactivated)
                 # -----------------------------------------------------
                 should_reactivate = (
                         not person_is_active_db and
                         is_active_import and
                         not is_overleden and
+                        person_in_db.automatic_sync and
                         (pension_date is None or pension_date >= one_month_ago)
                 )
 
@@ -1109,6 +1111,11 @@ class InformatService(models.AbstractModel):
                         json.dumps(data2)
                     )
                     self._create_sys_event("BETASK-001", f"REACTIVATE task created for: {person_uuid}")
+                    continue
+
+                if not person_is_active_db and not person_in_db.automatic_sync:
+                    self._create_sys_event("BETASK-001",
+                        f"Skipping reactivation for {person_uuid} — automatic_sync disabled (manual deactivation)")
                     continue
 
                 # -----------------------------------------------------
@@ -1426,11 +1433,12 @@ class InformatService(models.AbstractModel):
             active_employees = Person.search([
                 ('is_active', '=', True),
                 ('automatic_sync', '=', True),
-                ('person_type_id.name', '=', 'EMPLOYEE')
+                ('person_type_id.name', '=', 'EMPLOYEE'),
+                ('deactivation_date', '=', False),
             ])
 
             self._create_sys_event("BETASK-001",
-                                   f"Processing {len(active_employees)} active employees")
+                                   f"Processing {len(active_employees)} active employees (excluding flagged for deactivation)")
 
             for person in active_employees:
                 person_uuid = person.sap_person_uuid

@@ -290,7 +290,21 @@
                 <div class="ob-details-body">
                     <!-- Quick Actions Bar -->
                     <div class="ob-quick-actions-bar">
-                        <t t-if="props.node.type === 'org'">
+                        <t t-if="props.node.type === 'org' and props.node.org_type_name === 'PERSONGROUP'">
+                            <button class="ob-qa-btn" t-on-click="onManageMembersClick">
+                                <i class="fa fa-users"/> Members
+                            </button>
+                            <button class="ob-qa-btn" t-on-click="onConfigurationClick">
+                                <i class="fa fa-sliders"/> Configuration
+                            </button>
+                            <button class="ob-qa-btn" t-on-click="onMoveOrgClick">
+                                <i class="fa fa-arrows"/> Move
+                            </button>
+                            <button class="ob-qa-btn ob-qa-btn-danger" t-on-click="onDeleteOrgClick">
+                                <i class="fa fa-trash"/> Delete
+                            </button>
+                        </t>
+                        <t t-elif="props.node.type === 'org'">
                             <button class="ob-qa-btn" t-on-click="onCreatePersonClick">
                                 <i class="fa fa-user-plus"/> Create Person
                             </button>
@@ -434,6 +448,49 @@
                                         <i class="fa fa-eye"/> View
                                     </button>
                                 </div>
+                            </div>
+                        </t>
+                    </t>
+
+                    <!-- Members Section (for PERSONGROUP orgs) -->
+                    <t t-if="isPersongroup">
+                        <div class="ob-section-title">
+                            Members
+                            <span class="ob-panel-count" style="margin-left: 6px;"><t t-esc="pgpMembers.length"/></span>
+                            <button class="ob-btn ob-btn-sm" style="margin-left: 8px;" t-on-click="onManageMembersClick">
+                                <i class="fa fa-pencil"/> Manage
+                            </button>
+                        </div>
+                        <t t-if="pgpMembers.length">
+                            <table class="ob-ci-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>E-mail</th>
+                                        <th style="width: 60px;">Active</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="pgpMembers" t-as="member" t-key="member.id">
+                                        <tr t-att-class="{ 'text-muted': !member.is_active }">
+                                            <td><t t-esc="member.name"/></td>
+                                            <td class="ob-info-mono"><t t-esc="member.email or ''"/></td>
+                                            <td>
+                                                <t t-if="member.is_active">
+                                                    <span class="ob-badge ob-badge-role">Yes</span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="ob-badge ob-badge-admin">No</span>
+                                                </t>
+                                            </td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </t>
+                        <t t-else="">
+                            <div class="ob-members-none" style="padding: 12px; color: #888;">
+                                No members in this group
                             </div>
                         </t>
                     </t>
@@ -598,6 +655,7 @@
                 
                 <!-- Details Panel -->
                 <DetailsPanel node="state.activeNode"
+                              members="state.membersData"
                               onAction="onDetailsAction"
                               onOpenRecord="openActiveRecord"
                               onEditCi="openEditCiWizard"

@@ -70,10 +70,12 @@ class DataExchange(models.TransientModel):
         proprelations = self._export_proprelations()
         config_items = self._export_config_items()
         ci_relations = self._export_ci_relations()
+        betask_types = self._export_betask_types()
+        betasks = self._export_betasks()
 
         return {
             'metadata': {
-                'version': '1.1',
+                'version': '1.2',
                 'export_date': datetime.now().isoformat(),
                 'source_database': self.env.cr.dbname,
                 'exported_by': self.env.user.name,
@@ -89,6 +91,8 @@ class DataExchange(models.TransientModel):
                     'proprelations': len(proprelations),
                     'config_items': len(config_items),
                     'ci_relations': len(ci_relations),
+                    'betask_types': len(betask_types),
+                    'betasks': len(betasks),
                 },
             },
             'org_types': org_types,
@@ -102,6 +106,8 @@ class DataExchange(models.TransientModel):
             'proprelations': proprelations,
             'config_items': config_items,
             'ci_relations': ci_relations,
+            'betask_types': betask_types,
+            'betasks': betasks,
         }
 
     # --- type exports ---
@@ -181,6 +187,7 @@ class DataExchange(models.TransientModel):
         for r in records:
             result.append({
                 'name': r.name,
+                'label': r.label or '',
                 'shortname': r.shortname if r.shortname and r.shortname != '0' else '',
                 'role_type': r.role_type_id.name if r.role_type_id else '',
                 'has_ui_access': r.has_ui_access,
@@ -316,6 +323,38 @@ class DataExchange(models.TransientModel):
             result.append(entry)
         return result
 
+    def _export_betask_types(self):
+        records = self.env['myschool.betask.type'].search([])
+        return [{
+            'name': r.name,
+            'target': r.target,
+            'object': r.object,
+            'action': r.action,
+            'description': r.description or '',
+            'active': r.active,
+            'processor_method': r.processor_method or '',
+            'requires_confirmation': r.requires_confirmation,
+            'auto_process': r.auto_process,
+            'priority': r.priority,
+        } for r in records]
+
+    def _export_betasks(self):
+        records = self.env['myschool.betask'].search([])
+        return [{
+            'name': r.name,
+            'betask_type_name': r.betasktype_id.name if r.betasktype_id else '',
+            'status': r.status,
+            'automatic_sync': r.automatic_sync,
+            'data': r.data or '',
+            'data2': r.data2 or '',
+            'changes': r.changes or '',
+            'lastrun': fields.Datetime.to_string(r.lastrun) if r.lastrun else '',
+            'error_description': r.error_description or '',
+            'active': r.active,
+            'retry_count': r.retry_count,
+            'max_retries': r.max_retries,
+        } for r in records]
+
     # ------------------------------------------------------------------
     # IMPORT
     # ------------------------------------------------------------------
@@ -349,6 +388,8 @@ class DataExchange(models.TransientModel):
         stats['periods'] = sudo_self._import_periods(data.get('periods', []), errors)
         stats['proprelations'] = sudo_self._import_proprelations(data.get('proprelations', []), errors)
         stats['ci_relations'] = sudo_self._import_ci_relations(data.get('ci_relations', []), errors)
+        stats['betask_types'] = sudo_self._import_betask_types(data.get('betask_types', []), errors)
+        stats['betasks'] = sudo_self._import_betasks(data.get('betasks', []), errors)
 
         meta = data.get('metadata', {})
         lines = [
@@ -513,6 +554,7 @@ class DataExchange(models.TransientModel):
                 role_type = RoleType.search([('name', '=', item.get('role_type', ''))], limit=1)
                 vals = {
                     'name': name,
+                    'label': item.get('label') or False,
                     'role_type_id': role_type.id if role_type else False,
                     'has_ui_access': item.get('has_ui_access', True),
                     'has_group': item.get('has_group', False),
@@ -720,6 +762,85 @@ class DataExchange(models.TransientModel):
                 errors.append(f"ci_relation '{ci_name}': {e}")
                 skipped += 1
 
+        return (created, updated, skipped)
+
+    def _import_betask_types(self, items, errors):
+        Model = self.env['myschool.betask.type']
+        created = updated = skipped = 0
+        for item in items:
+            name = item.get('name')
+            if not name:
+                skipped += 1
+                continue
+            try:
+                vals = {
+                    'name': name,
+                    'target': item.get('target'),
+                    'object': item.get('object'),
+                    'action': item.get('action'),
+                    'description': item.get('description') or False,
+                    'active': item.get('active', True),
+                    'processor_method': item.get('processor_method') or False,
+                    'requires_confirmation': item.get('requires_confirmation', False),
+                    'auto_process': item.get('auto_process', True),
+                    'priority': item.get('priority', 10),
+                }
+                existing = Model.search([('name', '=', name)], limit=1)
+                if existing:
+                    existing.write(vals)
+                    updated += 1
+                else:
+                    Model.create(vals)
+                    created += 1
+            except Exception as e:
+                self.env.cr.rollback()
+                errors.append(f"betask_type '{name}': {e}")
+                skipped += 1
+        return (created, updated, skipped)
+
+    def _import_betasks(self, items, errors):
+        Task = self.env['myschool.betask']
+        TaskType = self.env['myschool.betask.type']
+        created = updated = skipped = 0
+        for item in items:
+            name = item.get('name')
+            type_name = item.get('betask_type_name', '')
+            if not name:
+                skipped += 1
+                continue
+            try:
+                task_type = TaskType.search([('name', '=', type_name)], limit=1) if type_name else None
+                if not task_type:
+                    _logger.warning(f"[IMPORT] BeTask type '{type_name}' not found for task '{name}', skipping")
+                    errors.append(f"betask '{name}': type '{type_name}' not found")
+                    skipped += 1
+                    continue
+
+                vals = {
+                    'name': name,
+                    'betasktype_id': task_type.id,
+                    'status': item.get('status', 'new'),
+                    'automatic_sync': item.get('automatic_sync', True),
+                    'data': item.get('data') or False,
+                    'data2': item.get('data2') or False,
+                    'changes': item.get('changes') or False,
+                    'lastrun': item.get('lastrun') or False,
+                    'error_description': item.get('error_description') or False,
+                    'active': item.get('active', True),
+                    'retry_count': item.get('retry_count', 0),
+                    'max_retries': item.get('max_retries', 3),
+                }
+                existing = Task.search([('name', '=', name)], limit=1)
+                if existing:
+                    existing.write(vals)
+                    updated += 1
+                else:
+                    Task.create(vals)
+                    created += 1
+            except Exception as e:
+                self.env.cr.rollback()
+                errors.append(f"betask '{name}': {e}")
+                skipped += 1
         return (created, updated, skipped)
 
     # ------------------------------------------------------------------

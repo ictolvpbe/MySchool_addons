@@ -7,6 +7,7 @@
         <field name="model">myschool.create.person.wizard</field>
         <field name="arch" type="xml">
             <form string="Create Person">
+                <div class="text-muted small mb-2"><em>Create Person</em></div>
                 <field name="external_domain" invisible="1"/>
                 <group>
                     <group string="Organization">
@@ -61,6 +62,7 @@
         <field name="model">myschool.add.child.org.wizard</field>
         <field name="arch" type="xml">
             <form string="Add Child Organization">
+                <div class="text-muted small mb-2"><em>Add Child Organization</em></div>
                 <group>
                     <field name="parent_org_name" readonly="1" string="Parent"/>
                     <field name="parent_org_id" invisible="1"/>
@@ -83,32 +85,34 @@
                     <group string="Required Fields">
                         <field name="new_org_name" required="not use_existing"/>
                         <field name="new_org_name_short" required="not use_existing"
-                               help="Short code/abbreviation shown in tree view"/>
+                               help="Short code/abbreviation (saved lowercase)"/>
                         <field name="new_org_inst_nr" required="not use_existing"
                                help="Official institution number"/>
+                        <field name="new_org_type_id" options="{'no_create': True}"/>
                     </group>
                     <group string="Options">
                         <field name="new_org_has_ou"/>
-                        <field name="new_org_has_role"/>
-                        <field name="new_org_has_comgroup"/>
-                        <field name="new_org_has_secgroup"/>
+                    </group>
+                    <group string="Domains (inherited)">
+                        <field name="new_org_domain_internal" readonly="1" force_save="1"/>
+                        <field name="new_org_domain_external" readonly="1" force_save="1"/>
                     </group>
                     <group string="LDAP Settings (auto-generated)">
-                        <field name="new_org_ou_fqdn_intern"/>
-                        <field name="new_org_ou_fqdn_extern"/>
+                        <field name="new_org_ou_fqdn_intern" readonly="1" force_save="1"/>
+                        <field name="new_org_ou_fqdn_extern" readonly="1" force_save="1"/>
                     </group>
-                    <group string="Communication Group (auto-generated)" invisible="not new_org_has_comgroup">
-                        <field name="new_org_com_group_name"/>
-                        <field name="new_org_com_group_fqdn_internal"/>
-                        <field name="new_org_com_group_fqdn_external"/>
+                    <group string="Communication Group (auto-generated)">
+                        <field name="new_org_com_group_name" readonly="1" force_save="1"/>
+                        <field name="new_org_com_group_email" readonly="1" force_save="1"/>
+                        <field name="new_org_com_group_fqdn_internal" readonly="1" force_save="1"/>
+                        <field name="new_org_com_group_fqdn_external" readonly="1" force_save="1"/>
                     </group>
-                    <group string="Security Group (auto-generated)" invisible="not new_org_has_secgroup">
-                        <field name="new_org_sec_group_name"/>
-                        <field name="new_org_sec_group_fqdn_internal"/>
-                        <field name="new_org_sec_group_fqdn_external"/>
+                    <group string="Security Group (auto-generated)">
+                        <field name="new_org_sec_group_name" readonly="1" force_save="1"/>
+                        <field name="new_org_sec_group_fqdn_internal" readonly="1" force_save="1"/>
+                        <field name="new_org_sec_group_fqdn_external" readonly="1" force_save="1"/>
                     </group>
-                    <group string="Optional Fields">
-                        <field name="new_org_type_id" options="{'no_create': True}"/>
+                    <group string="Optional">
                         <field name="new_org_description"/>
                     </group>
                 </group>
@@ -130,6 +134,7 @@
         <field name="model">myschool.move.org.wizard</field>
         <field name="arch" type="xml">
             <form string="Move Organization">
+                <div class="text-muted small mb-2"><em>Move Organization</em></div>
                 <group>
                     <field name="org_name" readonly="1"/>
                     <field name="org_id" invisible="1"/>
@@ -154,6 +159,7 @@
         <field name="model">myschool.move.person.wizard</field>
         <field name="arch" type="xml">
             <form string="Move Person">
+                <div class="text-muted small mb-2"><em>Move Person</em></div>
                 <group>
                     <field name="person_name" readonly="1"/>
                     <field name="person_id" invisible="1"/>
@@ -174,6 +180,7 @@
         <field name="model">myschool.assign.role.wizard</field>
         <field name="arch" type="xml">
             <form string="Assign Role">
+                <div class="text-muted small mb-2"><em>Assign Role</em></div>
                 <group>
                     <group string="Assignment">
                         <field name="person_name" readonly="1"/>
@@ -200,6 +207,7 @@
         <field name="model">myschool.bulk.assign.role.wizard</field>
         <field name="arch" type="xml">
             <form string="Bulk Assign Role">
+                <div class="text-muted small mb-2"><em>Bulk Assign Role</em></div>
                 <group>
                     <group string="Assignment">
                         <field name="person_count" readonly="1"/>
@@ -225,6 +233,7 @@
         <field name="model">myschool.bulk.move.wizard</field>
         <field name="arch" type="xml">
             <form string="Bulk Move Persons">
+                <div class="text-muted small mb-2"><em>Bulk Move Persons</em></div>
                 <group>
                     <field name="person_count" readonly="1"/>
                     <field name="org_id" options="{'no_create': True}"/>
@@ -247,6 +256,7 @@
         <field name="model">myschool.manage.ci.relations.wizard</field>
         <field name="arch" type="xml">
             <form string="Configuration Items">
+                <div class="text-muted small mb-2"><em>Configuration Items</em></div>
                 <group>
                     <field name="org_id" invisible="1"/>
                     <field name="org_name" string="Organization" readonly="1"/>
@@ -272,6 +282,7 @@
         <field name="model">myschool.add.ci.relation.wizard</field>
         <field name="arch" type="xml">
             <form string="Add Configuration Item">
+                <div class="text-muted small mb-2"><em>Add Configuration Item</em></div>
                 <group>
                     <field name="org_id" invisible="1"/>
                     <field name="org_name" string="Organization" readonly="1"/>
@@ -322,6 +333,7 @@
         <field name="model">myschool.edit.ci.relation.wizard</field>
         <field name="arch" type="xml">
             <form string="Edit Configuration Item">
+                <div class="text-muted small mb-2"><em>Edit Configuration Item</em></div>
                 <group>
                     <field name="ci_relation_id" invisible="1"/>
                     <field name="ci_name" string="Config Item" readonly="1"/>
@@ -348,6 +360,7 @@
         <field name="model">myschool.remove.ci.relation.wizard</field>
         <field name="arch" type="xml">
             <form string="Remove Configuration Item">
+                <div class="text-muted small mb-2"><em>Remove Configuration Item</em></div>
                 <group>
                     <field name="ci_relation_id" invisible="1"/>
                     <field name="ci_name" string="Config Item" readonly="1"/>
@@ -375,6 +388,7 @@
         <field name="model">myschool.role.relations.manager</field>
         <field name="arch" type="xml">
             <form string="Role Relations Manager">
+                <div class="text-muted small mb-2"><em>Role Relations Manager</em></div>
                 <sheet>
                     <div class="oe_title">
                         <h1>Role Relations Manager</h1>
@@ -431,6 +445,7 @@
         <field name="model">myschool.add.srbr.wizard</field>
         <field name="arch" type="xml">
             <form string="Add SAP-Role to Backend-Role Relation">
+                <div class="text-muted small mb-2"><em>Add SAP-Role to Backend-Role Relation</em></div>
                 <group>
                     <div class="alert alert-info" role="alert">
                         Link a <strong>SAP Role</strong> to a <strong>Backend Role</strong>.
@@ -459,6 +474,7 @@
         <field name="model">myschool.add.brso.wizard</field>
         <field name="arch" type="xml">
             <form string="Add Backend-Role to School/Department Relation">
+                <div class="text-muted small mb-2"><em>Add Backend-Role to School/Department Relation</em></div>
                 <group>
                     <div class="alert alert-info" role="alert">
                         Link a <strong>Backend Role</strong> to a <strong>School</strong> and <strong>Department</strong>.
@@ -491,6 +507,7 @@
         <field name="model">myschool.link.role.org.wizard</field>
         <field name="arch" type="xml">
             <form string="Link Role to Organization">
+                <div class="text-muted small mb-2"><em>Link Role to Organization</em></div>
                 <group>
                     <div class="alert alert-info" role="alert">
                         Link a <strong>Backend Role</strong> to this organization.
@@ -533,6 +550,7 @@
         <field name="model">myschool.password.wizard</field>
         <field name="arch" type="xml">
             <form string="Manage Password">
+                <div class="text-muted small mb-2"><em>Manage Password</em></div>
                 <group>
                     <field name="person_id" invisible="1"/>
                     <field name="person_name" string="Person" readonly="1"/>
@@ -560,6 +578,7 @@
         <field name="model">myschool.add.brso.role.wizard</field>
         <field name="arch" type="xml">
             <form string="Add Role to Organization">
+                <div class="text-muted small mb-2"><em>Add Role to Organization</em></div>
                 <group>
                     <div class="alert alert-info" role="alert">
                         Add a <strong>Backend Role</strong> to this organization.
@@ -594,6 +613,7 @@
         <field name="model">myschool.betask.rollback.wizard</field>
         <field name="arch" type="xml">
             <form string="Backend Task Rollback">
+                <div class="text-muted small mb-2"><em>Backend Task Rollback</em></div>
                 <group invisible="not preview_mode">
                     <div class="alert alert-warning" role="alert">
                         <strong>Warning:</strong> This will rollback changes made by backend tasks.
@@ -660,6 +680,7 @@
         <field name="model">myschool.init.schoolyear.wizard</field>
         <field name="arch" type="xml">
             <form string="Init Schooljaar">
+                <div class="text-muted small mb-2"><em>Init Schooljaar</em></div>
                 <group>
                     <div class="alert alert-info" role="alert">
                         <strong>Init Schooljaar</strong> creates PPSBR relations for all students
@@ -693,6 +714,7 @@
         <field name="model">myschool.update.student.relations.wizard</field>
         <field name="arch" type="xml">
             <form string="Update Student Relations">
+                <div class="text-muted small mb-2"><em>Update Student Relations</em></div>
                 <group>
                     <div class="alert alert-info" role="alert">
                         <strong>Update Student Relations</strong> fixes existing student
@@ -724,6 +746,7 @@
         <field name="model">myschool.create.persongroup.wizard</field>
         <field name="arch" type="xml">
             <form string="Create Persongroup">
+                <div class="text-muted small mb-2"><em>Create Persongroup</em></div>
                 <group>
                     <group string="Parent Organization">
                         <field name="parent_org_id" invisible="1"/>
@@ -774,6 +797,7 @@
         <field name="model">myschool.manage.persongroup.members.wizard</field>
         <field name="arch" type="xml">
             <form string="Manage Persongroup Members">
+                <div class="text-muted small mb-2"><em>Manage Persongroup Members</em></div>
                 <group>
                     <field name="persongroup_id" invisible="1"/>
                     <field name="persongroup_name" string="Persongroup" readonly="1"/>
@@ -804,6 +828,7 @@
         <field name="model">myschool.recalc.employee.roles.wizard</field>
         <field name="arch" type="xml">
             <form string="Recalculate Employee Roles">
+                <div class="text-muted small mb-2"><em>Recalculate Employee Roles</em></div>
                 <group invisible="state != 'confirm'">
                     <div class="alert alert-info" role="alert">
                         <strong>Recalculate Employee Roles</strong> reads each employee's
@@ -838,6 +863,7 @@
         <field name="model">myschool.cleanup.wizard</field>
         <field name="arch" type="xml">
             <form string="Cleanup Old Records">
+                <div class="text-muted small mb-2"><em>Cleanup Old Records</em></div>
                 <group>
                     <field name="cleanup_target"/>
                     <field name="cleanup_action" widget="radio" options="{'horizontal': true}"/>
@@ -878,6 +904,7 @@
         <field name="model">myschool.create.filialen.wizard</field>
         <field name="arch" type="xml">
             <form string="Filialen aanmaken vanuit scholen">
+                <div class="text-muted small mb-2"><em>Filialen aanmaken vanuit scholen</em></div>
                 <group>
                     <field name="parent_company_id"/>
                     <field name="school_count"/>

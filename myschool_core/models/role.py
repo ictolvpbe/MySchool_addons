@@ -57,7 +57,12 @@ class Role(models.Model):
         string='Name',
         required=True,
         index=True,
-        help='Full name of the role'
+        help='System name of the role (e.g. EMPLOYEE, STUDENT)'
+    )
+
+    label = fields.Char(
+        string='Label',
+        help='UI-friendly display name for the role (e.g. Medewerker, Leerling)'
     )
 
     shortname = fields.Char(
@@ -704,21 +709,31 @@ class Role(models.Model):
         """Deactivate this role."""
         self.write({'is_active': False})
 
-    def name_get(self):
-        """Custom name display including role type."""
-        result = []
+    @api.depends('name', 'label', 'shortname', 'role_type_id', 'has_odoo_group', 'is_active')
+    def _compute_display_name(self):
+        """Custom display name: prefer label over system name."""
         for record in self:
-            name = record.name
-            if record.shortname and record.shortname != record.name:
-                name = f"{record.name} ({record.shortname})"
-            if record.role_type_id:
-                name = f"[{record.role_type_id.name}] {name}"
+            display = record.label or record.name
+            if record.label:
+                display = f"{record.label} ({record.name})"
+            elif record.shortname and record.shortname != record.name:
+                display = f"{record.name} ({record.shortname})"
             if record.has_odoo_group:
-                name = f"{name} 🔐"
+                display = f"{display} 🔐"
             if not record.is_active:
-                name = f"{name} [Inactive]"
-            result.append((record.id, name))
-        return result
+                display = f"{display} [Inactive]"
+            record.display_name = display
+
+    @api.model
+    def _name_search(self, name='', domain=None, operator='ilike', limit=100, order=None):
+        """Allow searching by label in Many2one dropdowns."""
+        domain = domain or []
+        if name:
+            domain = ['|', '|',
+                       ('name', operator, name),
+                       ('label', operator, name),
+                       ('shortname', operator, name)] + domain
+        return self._search(domain, limit=limit, order=order)
 
     @api.model
     def get_exclude_roles_for_employee(self) -> 'Role':

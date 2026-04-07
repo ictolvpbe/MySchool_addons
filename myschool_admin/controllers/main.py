@@ -12,7 +12,27 @@ import json
 
 
 class MySchoolAdminController(http.Controller):
-    
+
+    # =========================================================================
+    # Benchmark Endpoint
+    # =========================================================================
+
+    @http.route('/myschool/benchmark/ping', type='http', auth='public',
+                csrf=False, methods=['GET'])
+    def benchmark_ping(self):
+        """Lightweight ping endpoint for cross-server network benchmarking."""
+        from datetime import datetime
+        data = {
+            'status': 'ok',
+            'timestamp': datetime.now().isoformat(),
+            'database': request.env.cr.dbname,
+            'server': 'myschool',
+        }
+        return request.make_response(
+            json.dumps(data),
+            headers={'Content-Type': 'application/json'},
+        )
+
     # =========================================================================
     # Log Viewer Endpoints
     # =========================================================================

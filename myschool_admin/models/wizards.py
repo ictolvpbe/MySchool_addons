@@ -793,6 +793,34 @@ class CreatePersonWizard(models.TransientModel):
 
         return data
 
+    def _assign_org_roles_to_person(self, person_id):
+        """Auto-assign roles linked to the org (via BRSO) to the newly created person."""
+        if not person_id or not self.org_id:
+            return
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+        if not brso_type:
+            return
+
+        # Find all active BRSO relations for this org
+        brso_rels = PropRelation.search([
+            ('proprelation_type_id', '=', brso_type.id),
+            ('id_org', '=', self.org_id.id),
+            ('id_role', '!=', False),
+            ('is_active', '=', True),
+        ])
+
+        service = self.env['myschool.manual.task.service']
+        for brso in brso_rels:
+            service.create_manual_task('PROPRELATION', 'ADD', {
+                'type': 'PPSBR',
+                'person_id': person_id,
+                'role_id': brso.id_role.id,
+                'org_parent_id': brso.id_org_parent.id if brso.id_org_parent else False,
+            })
+
     def action_create(self):
         """Create the person via betask and open the person form."""
         self.ensure_one()
@@ -800,10 +828,11 @@ class CreatePersonWizard(models.TransientModel):
         service = self.env['myschool.manual.task.service']
         task = service.create_manual_task('PERSON', 'ADD', self._build_person_task_data())
 
-        # In immediate mode the person was created; find it from the task data
-        # The task changes field contains the person ID
         person_id = self._extract_person_id_from_task(task)
         if person_id:
+            # Auto-assign roles from org's BRSO relations
+            self._assign_org_roles_to_person(person_id)
+
             return {
                 'type': 'ir.actions.act_window',
                 'res_model': 'myschool.person',
@@ -813,7 +842,6 @@ class CreatePersonWizard(models.TransientModel):
                 'context': {'form_view_initial_mode': 'edit'},
             }
 
-        # Queued mode or couldn't extract ID — just close
         return {'type': 'ir.actions.act_window_close'}
 
     def action_create_and_close(self):
@@ -821,7 +849,11 @@ class CreatePersonWizard(models.TransientModel):
         self.ensure_one()
 
         service = self.env['myschool.manual.task.service']
-        service.create_manual_task('PERSON', 'ADD', self._build_person_task_data())
+        task = service.create_manual_task('PERSON', 'ADD', self._build_person_task_data())
+
+        person_id = self._extract_person_id_from_task(task)
+        if person_id:
+            self._assign_org_roles_to_person(person_id)
 
         return {'type': 'ir.actions.act_window_close'}
 
@@ -870,64 +902,72 @@ class AddChildOrgWizard(models.TransientModel):
     new_org_com_group_fqdn_external = fields.Char(string='Com Group FQDN External',
         help='CN=com_group_name,ou_fqdn_external')
     
-    # Security group name - populated by onchange when has_secgroup is True
+    # Security group name
     new_org_sec_group_name = fields.Char(string='Security Group Name',
         help='Auto-generated from organization hierarchy (bgrp-parent1-parent2-...)')
     new_org_sec_group_fqdn_internal = fields.Char(string='Sec Group FQDN Internal',
         help='CN=sec_group_name,ou_fqdn_internal')
     new_org_sec_group_fqdn_external = fields.Char(string='Sec Group FQDN External',
         help='CN=sec_group_name,ou_fqdn_external')
-    
+
+    # Communication group email
+    new_org_com_group_email = fields.Char(string='Com Group Email',
+        help='Auto-generated: com_group_name@external_domain')
+
+    # Domain fields (inherited from school)
+    new_org_domain_internal = fields.Char(string='Internal Domain')
+    new_org_domain_external = fields.Char(string='External Domain')
+
     # Boolean flags
     new_org_has_ou = fields.Boolean(string='Heeft OU', default=False)
-    new_org_has_role = fields.Boolean(string='Heeft Role', default=False)
-    new_org_has_comgroup = fields.Boolean(string='Heeft Communicatiegroep', default=False)
-    new_org_has_secgroup = fields.Boolean(string='Heeft Securitygroep', default=False)
     
     @api.model
     def default_get(self, fields_list):
-        """Set default values including parent_org_name and OU FQDN fields."""
+        """Set default values including parent_org_name, OU FQDN, and domain fields."""
         res = super().default_get(fields_list)
         if 'parent_org_id' in res and res['parent_org_id']:
             parent = self.env['myschool.org'].browse(res['parent_org_id'])
             if parent.exists():
                 res['parent_org_name'] = parent.name_tree or parent.name
-                
+
                 # Initialize OU FQDN fields with placeholder (lowercase)
                 ou_prefix = "ou=new,"
-                
-                if hasattr(parent, 'ou_fqdn_internal') and parent.ou_fqdn_internal:
+                if parent.ou_fqdn_internal:
                     res['new_org_ou_fqdn_intern'] = ou_prefix + parent.ou_fqdn_internal.lower()
                 else:
                     res['new_org_ou_fqdn_intern'] = ou_prefix
-                
-                if hasattr(parent, 'ou_fqdn_external') and parent.ou_fqdn_external:
+                if parent.ou_fqdn_external:
                     res['new_org_ou_fqdn_extern'] = ou_prefix + parent.ou_fqdn_external.lower()
                 else:
                     res['new_org_ou_fqdn_extern'] = ou_prefix
+
+                # Inherit domain from school org
+                processor = self.env['myschool.betask.processor']
+                school = processor._resolve_parent_school_from_org(parent)
+                if school:
+                    res['new_org_domain_internal'] = school.domain_internal or parent.domain_internal or ''
+                    res['new_org_domain_external'] = school.domain_external or parent.domain_external or ''
+                else:
+                    res['new_org_domain_internal'] = parent.domain_internal or ''
+                    res['new_org_domain_external'] = parent.domain_external or ''
         return res
     
     # Optional fields
     new_org_type_id = fields.Many2one('myschool.org.type', string='Organization Type')
     new_org_description = fields.Text(string='Description')
 
+    def _find_school_org(self):
+        """Walk up ORG-TREE from parent_org to find the school org."""
+        processor = self.env['myschool.betask.processor']
+        return processor._resolve_parent_school_from_org(self.parent_org_id) if self.parent_org_id else None
+
     @api.depends('parent_org_id')
     def _compute_inherited_fields(self):
-        """Auto-inherit fields from parent organization."""
+        """Auto-inherit inst_nr from parent organization."""
         for wizard in self:
             if wizard.parent_org_id:
-                parent = wizard.parent_org_id
-                
-                # Set parent name for display (use name_tree)
-                wizard.parent_org_name = parent.name_tree or parent.name
-                
-                # Inherit inst_nr
-                if hasattr(parent, 'inst_nr') and parent.inst_nr:
-                    wizard.new_org_inst_nr = parent.inst_nr
-                else:
-                    wizard.new_org_inst_nr = False
+                wizard.new_org_inst_nr = wizard.parent_org_id.inst_nr or False
             else:
-                wizard.parent_org_name = False
                 wizard.new_org_inst_nr = False
     
     @api.onchange('parent_org_id')
@@ -1020,58 +1060,44 @@ class AddChildOrgWizard(models.TransientModel):
 
     @api.onchange('new_org_name_short')
     def _onchange_name_short_update_fqdn(self):
-        """Update OU FQDN and group names when short name changes."""
+        """Update all auto-generated fields when short name changes."""
         if self.parent_org_id and self.new_org_name_short:
+            # Force lowercase
+            self.new_org_name_short = self.new_org_name_short.lower()
+            short_lower = self.new_org_name_short
+
             parent = self.parent_org_id
-            # Make OU prefix lowercase
-            ou_prefix = f"ou={self.new_org_name_short.lower()},"
-            
-            # Always update OU FQDN fields (regardless of has_ou flag)
-            # OU FQDN Internal - all lowercase
-            if hasattr(parent, 'ou_fqdn_internal') and parent.ou_fqdn_internal:
+            ou_prefix = f"ou={short_lower},"
+
+            # OU FQDN fields
+            if parent.ou_fqdn_internal:
                 self.new_org_ou_fqdn_intern = ou_prefix + parent.ou_fqdn_internal.lower()
             else:
                 self.new_org_ou_fqdn_intern = ou_prefix
-            
-            # OU FQDN External - all lowercase
-            if hasattr(parent, 'ou_fqdn_external') and parent.ou_fqdn_external:
+            if parent.ou_fqdn_external:
                 self.new_org_ou_fqdn_extern = ou_prefix + parent.ou_fqdn_external.lower()
             else:
                 self.new_org_ou_fqdn_extern = ou_prefix
-            
-            # Update com_group_name and FQDNs only if has_comgroup is True
-            if self.new_org_has_comgroup:
-                self.new_org_com_group_name = self._build_group_name('grp-')
-                self._update_com_group_fqdns()
-            
-            # Update sec_group_name and FQDNs only if has_secgroup is True
-            if self.new_org_has_secgroup:
-                self.new_org_sec_group_name = self._build_group_name('bgrp-')
-                self._update_sec_group_fqdns()
+
+            # Always auto-complete group names
+            self.new_org_com_group_name = self._build_group_name('grp-')
+            self.new_org_sec_group_name = self._build_group_name('bgrp-')
+            self._update_com_group_fqdns()
+            self._update_sec_group_fqdns()
+
+            # Com group email
+            domain_ext = self.new_org_domain_external or ''
+            if self.new_org_com_group_name and domain_ext:
+                self.new_org_com_group_email = f"{self.new_org_com_group_name}@{domain_ext}"
+            else:
+                self.new_org_com_group_email = False
     
     @api.onchange('new_org_has_ou')
     def _onchange_has_ou(self):
         """Recalculate group FQDNs when has_ou checkbox changes."""
-        # OU FQDN fields are always calculated, but group FQDNs depend on them
         if self.new_org_has_ou:
-            # Recalculate group FQDNs if groups are enabled
-            if self.new_org_has_comgroup:
-                self._update_com_group_fqdns()
-            if self.new_org_has_secgroup:
-                self._update_sec_group_fqdns()
-    
-    @api.onchange('new_org_has_comgroup')
-    def _onchange_has_comgroup(self):
-        """Update com_group_name and FQDNs when has_comgroup checkbox changes."""
-        if self.new_org_has_comgroup and self.parent_org_id:
-            # First calculate the group name
-            self.new_org_com_group_name = self._build_group_name('grp-')
-            # Then calculate FQDNs based on group name and OU paths
             self._update_com_group_fqdns()
-        else:
-            self.new_org_com_group_name = False
-            self.new_org_com_group_fqdn_internal = False
-            self.new_org_com_group_fqdn_external = False
+            self._update_sec_group_fqdns()
     
     def _get_ou_for_groups(self):
         """Get the OuForGroups CI value from the organization hierarchy.
@@ -1180,19 +1206,6 @@ class AddChildOrgWizard(models.TransientModel):
             self.new_org_com_group_fqdn_internal = False
             self.new_org_com_group_fqdn_external = False
     
-    @api.onchange('new_org_has_secgroup')
-    def _onchange_has_secgroup(self):
-        """Update sec_group_name and FQDNs when has_secgroup checkbox changes."""
-        if self.new_org_has_secgroup and self.parent_org_id:
-            # First calculate the group name
-            self.new_org_sec_group_name = self._build_group_name('bgrp-')
-            # Then calculate FQDNs based on group name and OU paths
-            self._update_sec_group_fqdns()
-        else:
-            self.new_org_sec_group_name = False
-            self.new_org_sec_group_fqdn_internal = False
-            self.new_org_sec_group_fqdn_external = False
-    
     def _update_sec_group_fqdns(self):
         """Update security group FQDNs based on group name and OU paths.
         
@@ -1237,14 +1250,13 @@ class AddChildOrgWizard(models.TransientModel):
 
     @api.onchange('new_org_name')
     def _onchange_new_org_name(self):
-        """Suggest name_short from name."""
+        """Suggest name_short from name (lowercase)."""
         if self.new_org_name and not self.new_org_name_short:
-            # Create abbreviation from first letters of words
             words = self.new_org_name.split()
             if len(words) > 1:
-                self.new_org_name_short = ''.join(w[0].upper() for w in words if w)
+                self.new_org_name_short = ''.join(w[0] for w in words if w).lower()
             else:
-                self.new_org_name_short = self.new_org_name[:10].upper()
+                self.new_org_name_short = self.new_org_name[:10].lower()
 
     def _build_org_task_data(self):
         """Build the data dict for a MANUAL/ORG/ADD betask from wizard fields."""
@@ -1267,8 +1279,14 @@ class AddChildOrgWizard(models.TransientModel):
                 raise UserError("Please enter an institution number")
 
             data['name'] = self.new_org_name
-            data['name_short'] = self.new_org_name_short
+            data['name_short'] = self.new_org_name_short.lower()
             data['inst_nr'] = self.new_org_inst_nr
+
+            # Domain fields (inherited from school)
+            if self.new_org_domain_internal:
+                data['domain_internal'] = self.new_org_domain_internal
+            if self.new_org_domain_external:
+                data['domain_external'] = self.new_org_domain_external
 
             # OU FQDN fields
             if self.new_org_ou_fqdn_intern:
@@ -1276,15 +1294,17 @@ class AddChildOrgWizard(models.TransientModel):
             if self.new_org_ou_fqdn_extern:
                 data['ou_fqdn_external'] = self.new_org_ou_fqdn_extern
 
-            # Com group fields
+            # Com group fields (always set)
             if self.new_org_com_group_name:
                 data['com_group_name'] = self.new_org_com_group_name
+            if self.new_org_com_group_email:
+                data['com_group_email'] = self.new_org_com_group_email
             if self.new_org_com_group_fqdn_internal:
                 data['com_group_fqdn_internal'] = self.new_org_com_group_fqdn_internal
             if self.new_org_com_group_fqdn_external:
                 data['com_group_fqdn_external'] = self.new_org_com_group_fqdn_external
 
-            # Sec group fields
+            # Sec group fields (always set)
             if self.new_org_sec_group_name:
                 data['sec_group_name'] = self.new_org_sec_group_name
             if self.new_org_sec_group_fqdn_internal:
@@ -1292,11 +1312,11 @@ class AddChildOrgWizard(models.TransientModel):
             if self.new_org_sec_group_fqdn_external:
                 data['sec_group_fqdn_external'] = self.new_org_sec_group_fqdn_external
 
-            # Boolean flags
+            # Boolean flags — always enable comgroup and secgroup
             data['has_ou'] = self.new_org_has_ou
-            data['has_role'] = self.new_org_has_role
-            data['has_comgroup'] = self.new_org_has_comgroup
-            data['has_secgroup'] = self.new_org_has_secgroup
+            data['has_role'] = True
+            data['has_comgroup'] = True
+            data['has_secgroup'] = True
 
             # name_tree
             if self.new_org_ou_fqdn_intern:
@@ -2286,6 +2306,10 @@ class ManageOrgRolesWizard(models.TransientModel):
         string='Add Role',
         domain="[('role_type_id.name', '=', 'BACKEND')]",
     )
+    new_has_accounts = fields.Boolean(string='Accounts', default=False)
+    new_has_ldap_com_group = fields.Boolean(string='LDAP COM Group', default=False)
+    new_has_ldap_sec_group = fields.Boolean(string='LDAP SEC Group', default=False)
+    new_has_odoo_group = fields.Boolean(string='Odoo Group', default=False)
 
     @api.model
     def action_open(self, org_id, org_name):
@@ -2335,12 +2359,18 @@ class ManageOrgRolesWizard(models.TransientModel):
                 ('is_active', '=', True),
             ])
             for rel in relations:
+                role = rel.id_role
                 lines.append((0, 0, {
                     'proprelation_id': rel.id,
-                    'role_name': rel.id_role.name if rel.id_role else '',
+                    'role_name': role.name if role else '',
+                    'role_label': role.label or role.name if role else '',
                     'is_active': rel.is_active,
                     'is_master': rel.is_master,
                     'automatic_sync': rel.automatic_sync,
+                    'has_accounts': rel.has_accounts,
+                    'has_ldap_com_group': rel.has_ldap_com_group,
+                    'has_ldap_sec_group': rel.has_ldap_sec_group,
+                    'has_odoo_group': rel.has_odoo_group,
                 }))
 
         wizard_vals = {
@@ -2358,6 +2388,7 @@ class ManageOrgRolesWizard(models.TransientModel):
             'res_id': wizard.id,
             'views': [(False, 'form')],
             'target': 'new',
+            'context': {'dialog_size': 'extra-large'},
         }
 
     def action_add_role(self):
@@ -2369,16 +2400,92 @@ class ManageOrgRolesWizard(models.TransientModel):
         if not self.school_id:
             raise UserError("Please select a school organization.")
 
+        # Check: has_accounts role may only be linked to one org per school
+        if self.new_has_accounts:
+            PropRelation = self.env['myschool.proprelation']
+            PropRelationType = self.env['myschool.proprelation.type']
+            Org = self.env['myschool.org']
+            brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+            if brso_type:
+                # Match all school variants (admin + non-admin) by inst_nr
+                school_org_ids = {self.school_id.id}
+                if self.school_id.inst_nr:
+                    same_inst = Org.search([
+                        ('inst_nr', '=', self.school_id.inst_nr),
+                        ('is_active', '=', True),
+                    ])
+                    school_org_ids.update(same_inst.ids)
+
+                existing = PropRelation.search([
+                    ('proprelation_type_id', '=', brso_type.id),
+                    ('id_role', '=', self.new_role_id.id),
+                    ('id_org_parent', 'in', list(school_org_ids)),
+                    ('id_org', '!=', self.org_id.id),
+                    ('has_accounts', '=', True),
+                    ('is_active', '=', True),
+                ], limit=1)
+                if existing:
+                    org_name = existing.id_org.name if existing.id_org else '?'
+                    role_label = self.new_role_id.label or self.new_role_id.name
+                    raise UserError(
+                        f"Rol '{role_label}' is al gekoppeld aan '{org_name}' "
+                        f"met Has Accounts binnen school '{self.school_id.name}'. "
+                        f"Per school mag een rol met Has Accounts maar aan één organisatie gekoppeld zijn."
+                    )
+
         service = self.env['myschool.manual.task.service']
         service.create_manual_task('PROPRELATION', 'ADD', {
             'type': 'BRSO',
             'role_id': self.new_role_id.id,
             'org_id': self.org_id.id,
             'org_parent_id': self.school_id.id,
+            'has_accounts': self.new_has_accounts,
+            'has_ldap_com_group': self.new_has_ldap_com_group,
+            'has_ldap_sec_group': self.new_has_ldap_sec_group,
+            'has_odoo_group': self.new_has_odoo_group,
         })
 
         # Reopen wizard with saved records
         return self.action_open(self.org_id.id, self.org_name)
+
+    def action_save(self):
+        """Save changes and reopen the wizard."""
+        self.ensure_one()
+        return self.action_open(self.org_id.id, self.org_name)
+
+    def action_update_all_groups(self):
+        """Update groups for all attached roles based on their boolean flags."""
+        self.ensure_one()
+        processor = self.env['myschool.betask.processor']
+
+        school_org = self.school_id
+        if not school_org:
+            raise UserError("Please select a school organization first.")
+
+        count = 0
+        for line in self.line_ids:
+            rel = line.proprelation_id
+            if not rel or not rel.id_role:
+                continue
+            data = {
+                'has_ldap_com_group': rel.has_ldap_com_group,
+                'has_ldap_sec_group': rel.has_ldap_sec_group,
+                'has_odoo_group': rel.has_odoo_group,
+            }
+            if any(data.values()):
+                processor._process_brso_groups(rel, data)
+                count += 1
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Update All',
+                'message': f'Updated groups for {count} role(s).',
+                'type': 'success',
+                'next': self.action_open(self.org_id.id, self.org_name),
+            },
+        }
 
     def action_close(self):
         """Close the wizard."""

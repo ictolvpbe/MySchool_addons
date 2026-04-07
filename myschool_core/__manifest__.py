@@ -1,6 +1,6 @@
 {
     'name': 'MySchool Core Module',
-    'version': '0.1',
+    'version': '0.2',
     'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, and periods',
     'description': """
@@ -56,6 +56,8 @@
         #demo data
         'data/sequence.xml',
         'data/sys_event_data.xml',
+        'data/config_item_data.xml',
+        #'data/users_data.xml',
         # 'data/ldap_task_types.xml',
 
         #Services

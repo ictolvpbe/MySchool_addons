@@ -174,11 +174,20 @@ export class DetailsPanel extends Component {
     static template = "myschool_admin.DetailsPanel";
     static props = {
         node: { type: [Object, { value: null }], optional: true },
+        members: { type: Object, optional: true },
         onAction: { type: Function, optional: true },
         onOpenRecord: { type: Function, optional: true },
         onEditCi: { type: Function, optional: true },
         onRemoveCi: { type: Function, optional: true },
     };
+
+    get isPersongroup() {
+        return this.props.node?.type === 'org' && this.props.node?.org_type_name === 'PERSONGROUP';
+    }
+
+    get pgpMembers() {
+        return this.props.members?.persons || [];
+    }
     
     openRecord() {
         if (this.props.onOpenRecord) {
@@ -257,6 +266,12 @@ export class DetailsPanel extends Component {
     onDeletePersonClick() {
         if (this.props.onAction) {
             this.props.onAction('delete_person');
+        }
+    }
+
+    onManageMembersClick() {
+        if (this.props.onAction) {
+            this.props.onAction('manage_members');
         }
     }
 }
@@ -388,7 +403,16 @@ export class ContextMenu extends Component {
         const items = [];
         const node = this.props.node;
         
-        if (node.type === 'org') {
+        if (node.type === 'org' && node.org_type_name === 'PERSONGROUP') {
+            items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
+            items.push({ divider: true });
+            items.push({ action: 'manage_members', label: 'Manage Members', iconClass: 'fa fa-users' });
+            items.push({ action: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders' });
+            items.push({ divider: true });
+            items.push({ action: 'move_org', label: 'Move Organization', iconClass: 'fa fa-arrows' });
+            items.push({ divider: true });
+            items.push({ action: 'delete', label: 'Delete', iconClass: 'fa fa-trash', danger: true });
+        } else if (node.type === 'org') {
             items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
             items.push({ divider: true });
             items.push({ action: 'create_person', label: 'Create Person', iconClass: 'fa fa-user-plus' });

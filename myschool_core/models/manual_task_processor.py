@@ -289,8 +289,9 @@ class ManualTaskProcessor(models.AbstractModel):
         changes = []
         person_name = f"{person.first_name} {person.name}" if person.first_name else person.name
 
-        person.write({'is_active': False})
+        person.write({'is_active': False, 'automatic_sync': False})
         changes.append(f"Deactivated person: {person_name}")
+        changes.append("Set automatic_sync=False (manual deactivation)")
 
         # Deactivate related proprelations
         PropRelation = self.env['myschool.proprelation']
@@ -693,11 +694,24 @@ class ManualTaskProcessor(models.AbstractModel):
                 return {'success': True, 'changes': f"Reactivated {rel_type_name} relation (ID: {inactive.id})"}
             return {'success': False, 'error': f'{rel_type_name} relation already exists'}
 
+        # Set group flags from data (BRSO only)
+        for bool_field in ('has_accounts', 'has_ldap_com_group', 'has_ldap_sec_group', 'has_odoo_group'):
+            if data.get(bool_field):
+                proprel_vals[bool_field] = True
+
         # Build name
         proprel_vals['name'] = _build_proprelation_name(rel_type_name, **name_kwargs)
 
-        PropRelation.create(proprel_vals)
-        return {'success': True, 'changes': f"Created {rel_type_name} relation: {proprel_vals['name']}"}
+        new_rel = PropRelation.create(proprel_vals)
+        changes = [f"Created {rel_type_name} relation: {proprel_vals['name']}"]
+
+        # Create groups and sync members for BRSO with group flags
+        if rel_type_name == 'BRSO':
+            group_changes = self._process_brso_groups(new_rel, data)
+            if group_changes:
+                changes.extend(group_changes)
+
+        return {'success': True, 'changes': '\n'.join(changes)}
 
     @api.model
     @api.model
@@ -743,11 +757,17 @@ class ManualTaskProcessor(models.AbstractModel):
         PropRelation = self.env['myschool.proprelation']
         changes = []
 
+        # Collect affected org IDs for flag update
+        affected_org_ids = set()
+
         # Mode 1: explicit IDs
         proprelation_ids = data.get('proprelation_ids')
         if proprelation_ids:
             rels = PropRelation.browse(proprelation_ids).exists()
             if rels:
+                for r in rels:
+                    if r.id_org:
+                        affected_org_ids.add(r.id_org.id)
                 rels.write({'is_active': False})
                 changes.append(f"Deactivated {len(rels)} proprelation(s) by ID")
 
@@ -765,9 +785,640 @@ class ManualTaskProcessor(models.AbstractModel):
             ])
             if rels:
                 rels.write({'is_active': False})
+                affected_org_ids.add(org_id)
                 changes.append(f"Deactivated {len(rels)} {rel_type_name} relation(s) for person {person_id} in org {org_id}")
 
         if not changes:
             return {'success': False, 'error': 'No proprelations found to deactivate'}
 
+        # Update org feature flags after BRSO deactivation
+        if affected_org_ids:
+            orgs = self.env['myschool.org'].browse(list(affected_org_ids)).exists()
+            orgs.update_org_flags()
+
         return {'success': True, 'changes': '\n'.join(changes)}
+
+    # =========================================================================
+    # BRSO GROUP HELPERS
+    # =========================================================================
+
+    @api.model
+    def _build_org_tree_group_names(self, org, school_org=None):
+        """Build COM and SEC group names from the org's name_tree.
+
+        Uses the name_tree field (e.g. 'test.olvp.baple.pers.adm') to derive
+        the group name following the existing convention:
+          grp-{org}-{parent}-...-{school}  /  bgrp-{org}-{parent}-...-{school}
+
+        Example:
+          org.name_tree  = 'test.olvp.baple.pers.adm'
+          school name_tree = 'test.olvp.baple'
+          → grp-adm-pers-baple / bgrp-adm-pers-baple
+
+        Returns:
+            Tuple (com_name, sec_name) or (None, None) on failure.
+        """
+        _logger.info('[BRSO-GRP] Building group names for org=%s (id=%s, name_tree=%s), school=%s (name_tree=%s)',
+                     org.name, org.id, org.name_tree,
+                     school_org.name if school_org else None,
+                     school_org.name_tree if school_org else None)
+
+        if not org.name_tree:
+            _logger.warning('[BRSO-GRP] Org %s has no name_tree', org.name)
+            return None, None
+
+        # Resolve school name_tree prefix
+        school_tree = ''
+        if school_org and school_org.name_tree:
+            school_tree = school_org.name_tree
+
+        org_tree = org.name_tree
+
+        if school_tree and org_tree.startswith(school_tree):
+            # Strip school prefix, get sub-path parts
+            sub_path = org_tree[len(school_tree):].strip('.')
+            school_short = school_tree.split('.')[-1]
+            if sub_path:
+                sub_parts = sub_path.split('.')
+                name_parts = list(reversed(sub_parts)) + [school_short]
+            else:
+                # Org IS the school
+                name_parts = [school_short]
+        else:
+            # No school prefix match: extract OU parts from name_tree
+            # name_tree = 'dc1.dc2.school.parent.org' → take from school onwards
+            # Find the school short in the parts to split correctly
+            org_parts = org_tree.split('.')
+            school_short = None
+            if school_org:
+                school_short = (school_org.name_short or '').lower()
+            if school_short and school_short in org_parts:
+                idx = org_parts.index(school_short)
+                ou_parts = org_parts[idx:]  # from school to org
+                name_parts = list(reversed(ou_parts))
+            else:
+                # Last resort: skip first 2 parts (domain) and reverse
+                ou_parts = org_parts[2:] if len(org_parts) > 2 else org_parts
+                name_parts = list(reversed(ou_parts))
+
+        if not name_parts:
+            return None, None
+
+        joined = '-'.join(name_parts)
+        _logger.info('[BRSO-GRP] Built group names: grp-%s / bgrp-%s', joined, joined)
+        return f'grp-{joined}', f'bgrp-{joined}'
+
+    @api.model
+    def _find_persons_in_ou(self, org):
+        """Find all person IDs placed in the given org via PERSON-TREE."""
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        pt_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        if not pt_type:
+            return []
+
+        rels = PropRelation.search([
+            ('proprelation_type_id', '=', pt_type.id),
+            ('id_org', '=', org.id),
+            ('is_active', '=', True),
+            ('id_person', '!=', False),
+        ])
+        return list(set(r.id_person.id for r in rels))
+
+    @api.model
+    def _find_role_persons_at_school(self, role, school_org):
+        """Find all person IDs with a given role at a school (via active PPSBR)."""
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if not ppsbr_type:
+            return []
+
+        school_org_ids = {school_org.id}
+        if school_org.inst_nr:
+            same_inst = Org.search([
+                ('inst_nr', '=', school_org.inst_nr),
+                ('is_active', '=', True),
+            ])
+            school_org_ids.update(same_inst.ids)
+
+        ppsbr_rels = PropRelation.search([
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('id_role', '=', role.id),
+            ('id_org_parent', 'in', list(school_org_ids)),
+            ('is_active', '=', True),
+            ('id_person', '!=', False),
+        ])
+        return list(set(r.id_person.id for r in ppsbr_rels))
+
+    @api.model
+    def _get_brso_member_ids(self, brso_rel):
+        """Get the person IDs for a BRSO based on has_accounts flag.
+
+        has_accounts=True:  persons in the OU ∩ persons with role
+                            (accounts live in this org, so OU-scoped)
+        has_accounts=False: all persons with the role in school-context
+                            (role-based membership, not OU-scoped)
+        """
+        org = brso_rel.id_org
+        role = brso_rel.id_role
+        school_org = brso_rel.id_org_parent
+        if not org or not role or not school_org:
+            return []
+
+        processor = self.env['myschool.betask.processor']
+        school_org = processor._resolve_school_org(school_org)
+
+        if brso_rel.has_accounts:
+            # OU-scoped: persons in this org WITH the role
+            persons_in_ou = set(self._find_persons_in_ou(org))
+            persons_with_role = set(self._find_role_persons_at_school(role, school_org))
+            return list(persons_in_ou & persons_with_role)
+        else:
+            # School-context: all persons with the role at the school
+            return self._find_role_persons_at_school(role, school_org)
+
+    @api.model
+    def _process_brso_groups(self, brso_rel, data):
+        """Create LDAP/Odoo groups for a BRSO and add members.
+
+        Uses org.com_group_name and org.sec_group_name for naming.
+        Uses com_group_name as Odoo group name.
+
+        Membership strategy (from brso_rel.has_accounts):
+          True:  persons in the OU with the role (PERSON-TREE ∩ PPSBR)
+          False: persons with the role in school-context (PPSBR)
+
+        Args:
+            brso_rel: The BRSO proprelation record.
+            data: Dict with flags being enabled (has_ldap_com_group, etc.).
+
+        Returns:
+            List of change description strings.
+        """
+        changes = []
+
+        has_accounts = data.get('has_accounts', False)
+        has_ldap_com = data.get('has_ldap_com_group', False)
+        has_ldap_sec = data.get('has_ldap_sec_group', False)
+        has_odoo = data.get('has_odoo_group', False)
+
+        if not (has_accounts or has_ldap_com or has_ldap_sec or has_odoo):
+            return changes
+
+        org = brso_rel.id_org
+        role = brso_rel.id_role
+        school_org = brso_rel.id_org_parent
+        if not org or not role:
+            _logger.warning('[BRSO-GRP] Missing org or role on BRSO %s', brso_rel.name)
+            return changes
+
+        # Resolve school
+        processor = self.env['myschool.betask.processor']
+        if school_org:
+            school_org = processor._resolve_school_org(school_org)
+
+        # Use org's group name fields; fallback to name_tree-based if not set
+        com_name = org.com_group_name
+        sec_name = org.sec_group_name
+        if not com_name or not sec_name:
+            built_com, built_sec = self._build_org_tree_group_names(org, school_org)
+            if not com_name:
+                com_name = built_com
+            if not sec_name:
+                sec_name = built_sec
+            if not com_name:
+                _logger.warning('[BRSO-GRP] No group name for org %s', org.name)
+                return changes
+            # Persist the computed names
+            org.write({'com_group_name': com_name, 'sec_group_name': sec_name})
+            changes.append(f'Set org group names: {com_name} / {sec_name}')
+
+        service = self.env['myschool.betask.service']
+
+        # --- Create accounts and update tree positions when has_accounts enabled ---
+        if has_accounts:
+            person_ids = self._get_brso_member_ids(brso_rel)
+            for person_id in person_ids:
+                # LDAP account
+                service.create_task('LDAP', 'USER', 'ADD', data={
+                    'person_id': person_id,
+                    'org_id': org.id,
+                })
+                # Odoo account
+                service.create_task('ODOO', 'PERSON', 'ADD', data={
+                    'person_id': person_id,
+                })
+            if person_ids:
+                changes.append(f'Queued account creation (LDAP+Odoo) for {len(person_ids)} person(s)')
+
+            # Update PERSON-TREE positions and FQDN fields
+            self._update_tree_positions_for_brso(brso_rel)
+            changes.append(f'Updated tree positions for persons in {org.name}')
+
+        # --- Create LDAP COM group + persongroup ---
+        if has_ldap_com:
+            service.create_task('LDAP', 'GROUP', 'ADD', data={
+                'group_name': com_name,
+                'org_id': org.id,
+                'description': f'COM group for role {role.name} at {org.name}',
+            })
+            changes.append(f'Queued LDAP COM group: {com_name}')
+
+            # Create persongroup with COM naming convention
+            pg, pg_created = processor._find_or_create_persongroup(
+                com_name, com_name, school_org,
+                source_label=f'brso-com:{role.name}',
+                group_name_override=com_name)
+            if pg:
+                pg.write({
+                    'has_comgroup': True,
+                    'com_group_name': com_name,
+                })
+                action = 'Created' if pg_created else 'Found'
+                changes.append(f'{action} COM persongroup: {pg.name} (ID: {pg.id})')
+
+                # Sync PG-P members
+                person_ids = self._get_brso_member_ids(brso_rel)
+                if person_ids:
+                    result = processor._sync_pg_p_members(pg, person_ids,
+                                                          source_label=f'brso-com:{role.name}')
+                    changes.append(f'PG-P sync: +{result.get("added", 0)} -{result.get("removed", 0)} members')
+            else:
+                changes.append(f'WARNING: Could not create COM persongroup for {com_name}')
+
+        # --- Create LDAP SEC group + persongroup ---
+        if has_ldap_sec:
+            service.create_task('LDAP', 'GROUP', 'ADD', data={
+                'group_name': sec_name,
+                'org_id': org.id,
+                'description': f'SEC group for role {role.name} at {org.name}',
+            })
+            changes.append(f'Queued LDAP SEC group: {sec_name}')
+
+            # Create persongroup with SEC naming convention
+            _logger.info(f'[BRSO-GRP] Creating SEC persongroup: name={sec_name}, school={school_org.name}')
+            pg, pg_created = processor._find_or_create_persongroup(
+                sec_name, sec_name, school_org,
+                source_label=f'brso-sec:{role.name}',
+                group_name_override=sec_name)
+            _logger.info(f'[BRSO-GRP] _find_or_create_persongroup returned: pg={pg}, created={pg_created}')
+            if pg:
+                # Ensure correct group fields on persongroup
+                pg.write({
+                    'has_secgroup': True,
+                    'sec_group_name': sec_name,
+                    'com_group_name': sec_name,
+                })
+                _logger.info(f'[BRSO-GRP] Updated persongroup {pg.id}: name={pg.name}, '
+                             f'name_short={pg.name_short}, com_group_name={pg.com_group_name}, '
+                             f'sec_group_name={pg.sec_group_name}')
+                action = 'Created' if pg_created else 'Found'
+                changes.append(f'{action} persongroup: {pg.name} (ID: {pg.id})')
+
+                # Sync PG-P members for the persongroup
+                person_ids = self._get_brso_member_ids(brso_rel)
+                if person_ids:
+                    result = processor._sync_pg_p_members(pg, person_ids,
+                                                          source_label=f'brso-sec:{role.name}')
+                    changes.append(f'PG-P sync: +{result.get("added", 0)} -{result.get("removed", 0)} members')
+            else:
+                changes.append(f'WARNING: Could not create persongroup for {sec_name}')
+
+        # --- Create Odoo group (using COM naming convention) + persongroup ---
+        odoo_group = None
+        if has_odoo:
+            ResGroups = self.env['res.groups']
+            odoo_group = ResGroups.search([('name', '=', com_name)], limit=1)
+            if not odoo_group:
+                odoo_group = ResGroups.create({'name': com_name})
+                changes.append(f'Created Odoo group: {com_name}')
+            else:
+                changes.append(f'Odoo group already exists: {com_name}')
+
+            # Create persongroup with COM naming convention
+            pg, pg_created = processor._find_or_create_persongroup(
+                com_name, com_name, school_org,
+                source_label=f'brso-odoo:{role.name}',
+                group_name_override=com_name)
+            if pg:
+                pg.write({'has_comgroup': True, 'com_group_name': com_name})
+                action = 'Created' if pg_created else 'Found'
+                changes.append(f'{action} Odoo persongroup: {pg.name} (ID: {pg.id})')
+
+                person_ids = self._get_brso_member_ids(brso_rel)
+                if person_ids:
+                    result = processor._sync_pg_p_members(pg, person_ids,
+                                                          source_label=f'brso-odoo:{role.name}')
+                    changes.append(f'PG-P sync: +{result.get("added", 0)} -{result.get("removed", 0)} members')
+            else:
+                changes.append(f'WARNING: Could not create Odoo persongroup for {com_name}')
+
+        # --- Add members to groups ---
+        person_ids = self._get_brso_member_ids(brso_rel)
+        strategy = 'OU-based' if brso_rel.has_accounts else 'role-based'
+        if person_ids:
+            changes.append(f'Found {len(person_ids)} person(s) ({strategy}) for {org.name}')
+            for person_id in person_ids:
+                if has_ldap_com:
+                    service.create_task('LDAP', 'GROUPMEMBER', 'ADD', data={
+                        'group_name': com_name,
+                        'person_id': person_id,
+                        'org_id': org.id,
+                    })
+                if has_ldap_sec:
+                    service.create_task('LDAP', 'GROUPMEMBER', 'ADD', data={
+                        'group_name': sec_name,
+                        'person_id': person_id,
+                        'org_id': org.id,
+                    })
+                if has_odoo and odoo_group:
+                    task = service.create_task('ODOO', 'GROUPMEMBER', 'ADD', data={
+                        'person_id': person_id,
+                        'group_id': odoo_group.id,
+                    })
+                    # Execute immediately and mark completed
+                    person = self.env['myschool.person'].browse(person_id)
+                    if person.exists() and person.odoo_user_id:
+                        person.odoo_user_id.write({'groups_id': [(4, odoo_group.id)]})
+                        task.write({'status': 'completed_ok', 'changes': f'Added {person.odoo_user_id.login} to {odoo_group.name}'})
+        else:
+            changes.append(f'No persons found ({strategy}) for {org.name}')
+
+        # Update org feature flags
+        org.update_org_flags()
+
+        return changes
+
+    @api.model
+    def _remove_brso_groups(self, brso_rel, flags):
+        """Delete groups entirely when has_* flags become false on a BRSO.
+
+        Deletes: persongroup org, LDAP group, Odoo res.groups.
+        All via betasks, executed immediately and marked completed.
+
+        Args:
+            brso_rel: The BRSO proprelation record.
+            flags: Dict of flag names being disabled (e.g. {'has_ldap_com_group': True}).
+
+        Returns:
+            List of change description strings.
+        """
+        changes = []
+
+        org = brso_rel.id_org
+        role = brso_rel.id_role
+        school_org = brso_rel.id_org_parent
+        if not org or not role:
+            return changes
+
+        processor = self.env['myschool.betask.processor']
+        if school_org:
+            school_org = processor._resolve_school_org(school_org)
+
+        com_name = org.com_group_name
+        sec_name = org.sec_group_name
+        if not com_name and not sec_name:
+            return changes
+
+        service = self.env['myschool.betask.service']
+        Org = self.env['myschool.org']
+
+        # --- Delete COM group (LDAP + persongroup) ---
+        if flags.get('has_ldap_com_group') and com_name:
+            # Delete LDAP group
+            service.create_task('LDAP', 'GROUP', 'DEL', data={
+                'group_name': com_name,
+                'org_id': org.id,
+            })
+            changes.append(f'Queued LDAP COM group deletion: {com_name}')
+
+            # Delete persongroup org
+            self._delete_persongroup_by_name(com_name, school_org, changes)
+
+        # --- Delete SEC group (LDAP + persongroup) ---
+        if flags.get('has_ldap_sec_group') and sec_name:
+            service.create_task('LDAP', 'GROUP', 'DEL', data={
+                'group_name': sec_name,
+                'org_id': org.id,
+            })
+            changes.append(f'Queued LDAP SEC group deletion: {sec_name}')
+
+            self._delete_persongroup_by_name(sec_name, school_org, changes)
+
+        # --- Delete Odoo group ---
+        if flags.get('has_odoo_group') and com_name:
+            odoo_group = self.env['res.groups'].search([('name', '=', com_name)], limit=1)
+            if odoo_group:
+                # Remove all users from group first
+                for user in self.env['res.users'].search([('groups_id', 'in', [odoo_group.id])]):
+                    user.write({'groups_id': [(3, odoo_group.id)]})
+                task = service.create_task('ODOO', 'GROUP', 'DEL', data={
+                    'group_name': com_name,
+                    'group_id': odoo_group.id,
+                })
+                odoo_group.unlink()
+                task.write({'status': 'completed_ok', 'changes': f'Deleted Odoo group: {com_name}'})
+                changes.append(f'Deleted Odoo group: {com_name}')
+
+            # Also delete the Odoo persongroup if different from COM
+            self._delete_persongroup_by_name(com_name, school_org, changes)
+
+        # Update org feature flags
+        org.update_org_flags()
+
+        return changes
+
+    @api.model
+    def _delete_persongroup_by_name(self, group_name, school_org, changes):
+        """Find and delete a persongroup org by name under the school's OuForGroups."""
+        if not school_org:
+            return
+
+        processor = self.env['myschool.betask.processor']
+        ou_value, ou_org = processor._resolve_ou_for_groups_org(school_org)
+        if not ou_org:
+            return
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+        OrgType = self.env['myschool.org.type']
+
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+        if not org_tree_type or not pg_type:
+            return
+
+        # Find children of OuForGroups
+        child_rels = PropRelation.search([
+            ('proprelation_type_id', '=', org_tree_type.id),
+            ('id_org_parent', '=', ou_org.id),
+            ('is_active', '=', True),
+        ])
+        child_org_ids = [r.id_org.id for r in child_rels if r.id_org]
+        if not child_org_ids:
+            return
+
+        pg = Org.search([
+            ('id', 'in', child_org_ids),
+            ('name_short', '=ilike', group_name.lower()),
+            ('org_type_id', '=', pg_type.id),
+        ], limit=1)
+
+        if pg:
+            # Deactivate PG-P members
+            pg_p_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
+            if pg_p_type:
+                pg_p_rels = PropRelation.search([
+                    ('proprelation_type_id', '=', pg_p_type.id),
+                    ('id_org', '=', pg.id),
+                    ('is_active', '=', True),
+                ])
+                if pg_p_rels:
+                    pg_p_rels.write({'is_active': False})
+
+            # Deactivate ORG-TREE for this persongroup
+            tree_rels = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org', '=', pg.id),
+                ('is_active', '=', True),
+            ])
+            if tree_rels:
+                tree_rels.write({'is_active': False})
+
+            # Deactivate the persongroup org
+            pg.write({'is_active': False})
+            changes.append(f'Deactivated persongroup: {pg.name} (ID: {pg.id})')
+
+    # =========================================================================
+    # PERSON TREE POSITION
+    # =========================================================================
+
+    @api.model
+    def _resolve_person_target_org(self, person):
+        """Determine the target org for a person's PERSON-TREE based on roles.
+
+        Logic:
+        1. Find all active PPSBR for this person
+        2. For each PPSBR, find the BRSO with has_accounts=True for that role
+        3. If PPSBR.is_master=True → that role's org wins
+        4. Otherwise → use role with highest priority
+        5. Return the target org (from BRSO.id_org)
+        """
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+        if not ppsbr_type or not brso_type:
+            return None
+
+        # Find all active PPSBR for this person
+        ppsbr_rels = PropRelation.search([
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('id_person', '=', person.id),
+            ('is_active', '=', True),
+            ('id_role', '!=', False),
+        ])
+        if not ppsbr_rels:
+            return None
+
+        best_org = None
+        best_priority = -1
+
+        for ppsbr in ppsbr_rels:
+            role = ppsbr.id_role
+            school_org = ppsbr.id_org_parent
+
+            # Find BRSO with has_accounts=True for this role+school
+            brso = PropRelation.search([
+                ('proprelation_type_id', '=', brso_type.id),
+                ('id_role', '=', role.id),
+                ('id_org_parent', '=', school_org.id) if school_org else ('id_org_parent', '!=', False),
+                ('has_accounts', '=', True),
+                ('is_active', '=', True),
+            ], limit=1)
+            if not brso:
+                continue
+
+            # IsMaster wins immediately
+            if ppsbr.is_master:
+                return brso.id_org
+
+            # Otherwise track by role priority
+            role_priority = role.priority or 0
+            if role_priority > best_priority:
+                best_priority = role_priority
+                best_org = brso.id_org
+
+        return best_org
+
+    @api.model
+    def _update_person_tree_position(self, person):
+        """Update a person's PERSON-TREE and FQDN fields based on role assignments.
+
+        Determines target org via _resolve_person_target_org, then:
+        - Creates/updates PERSON-TREE proprelation
+        - Updates person_fqdn_internal/external
+        """
+        target_org = self._resolve_person_target_org(person)
+        if not target_org:
+            return
+
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        pt_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        if not pt_type:
+            return
+
+        # Find existing active PERSON-TREE
+        existing_pt = PropRelation.search([
+            ('proprelation_type_id', '=', pt_type.id),
+            ('id_person', '=', person.id),
+            ('is_active', '=', True),
+        ], limit=1)
+
+        if existing_pt and existing_pt.id_org.id == target_org.id:
+            # Already in correct position
+            pass
+        elif existing_pt:
+            # Move to new org
+            existing_pt.write({'id_org': target_org.id})
+            _logger.info(f'[TREE] Moved {person.name} to {target_org.name}')
+        else:
+            # Create new PERSON-TREE
+            service = self.env['myschool.manual.task.service']
+            service.create_manual_task('PROPRELATION', 'ADD', {
+                'type': 'PERSON-TREE',
+                'person_id': person.id,
+                'org_id': target_org.id,
+            })
+            _logger.info(f'[TREE] Created PERSON-TREE for {person.name} at {target_org.name}')
+
+        # Update FQDN fields
+        email_account = person.email_cloud.split('@')[0] if person.email_cloud and '@' in person.email_cloud else ''
+        person_vals = {}
+        if email_account and target_org.ou_fqdn_internal:
+            person_vals['person_fqdn_internal'] = f"cn={email_account},{target_org.ou_fqdn_internal}".lower()
+        if email_account and target_org.ou_fqdn_external:
+            person_vals['person_fqdn_external'] = f"cn={email_account},{target_org.ou_fqdn_external}".lower()
+        if person_vals:
+            person.write(person_vals)
+            _logger.info(f'[TREE] Updated FQDN for {person.name}: {person_vals}')
+
+    @api.model
+    def _update_tree_positions_for_brso(self, brso_rel):
+        """Update PERSON-TREE for all persons affected by a BRSO with has_accounts=True."""
+        if not brso_rel.has_accounts:
+            return
+
+        person_ids = self._get_brso_member_ids(brso_rel)
+        Person = self.env['myschool.person']
+        for pid in person_ids:
+            person = Person.browse(pid)
+            if person.exists():
+                self._update_person_tree_position(person)

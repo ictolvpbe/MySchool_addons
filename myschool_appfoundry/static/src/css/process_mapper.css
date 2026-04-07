@@ -134,11 +134,51 @@
 
 .pm-canvas-info {
     position: absolute;
-    bottom: 8px;
+    bottom: 18px;
     left: 8px;
     font-size: 11px;
     color: #999;
     pointer-events: none;
+}
+
+/* --- Scrollbars --- */
+.pm-scrollbar {
+    position: absolute;
+    z-index: 5;
+    opacity: 0.45;
+    transition: opacity 0.15s;
+}
+.pm-scrollbar:hover, .pm-scrollbar.pm-scrollbar-active {
+    opacity: 0.8;
+}
+.pm-scrollbar-h {
+    left: 0;
+    right: 10px;
+    bottom: 0;
+    height: 10px;
+}
+.pm-scrollbar-v {
+    top: 0;
+    right: 0;
+    bottom: 10px;
+    width: 10px;
+}
+.pm-scrollbar-thumb {
+    position: absolute;
+    background: #888;
+    border-radius: 5px;
+    cursor: pointer;
+}
+.pm-scrollbar-h .pm-scrollbar-thumb {
+    height: 100%;
+    min-width: 30px;
+}
+.pm-scrollbar-v .pm-scrollbar-thumb {
+    width: 100%;
+    min-height: 30px;
+}
+.pm-scrollbar-thumb:hover, .pm-scrollbar-thumb:active {
+    background: #555;
 }
 
 /* --- SVG Elements --- */
@@ -263,6 +303,25 @@
 }
 
 /* --- Properties panel --- */
+.pm-properties-toggle {
+    width: 20px;
+    flex-shrink: 0;
+    border: none;
+    border-left: 1px solid #dee2e6;
+    background: #f8f9fa;
+    color: #714B67;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 11px;
+    transition: background 0.15s;
+}
+.pm-properties-toggle:hover {
+    background: #e9ecef;
+}
+
 .pm-properties {
     width: 300px;
     min-width: 300px;

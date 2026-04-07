@@ -109,6 +109,8 @@
                         <group string="Status &amp; Type">
                             <field name="person_type_id"/>
                             <field name="is_active" widget="boolean_toggle"/>
+                            <field name="automatic_sync" widget="boolean_toggle"/>
+                            <field name="deactivation_date" readonly="1"/>
                         </group>
                         <group string="Linked Accounts">
                             <field name="odoo_user_id" readonly="1"/>

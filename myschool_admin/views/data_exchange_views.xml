@@ -19,8 +19,8 @@
                         <br/>Includes: organization types, person types, role types, period types,
                         relation types, organizations (excl. classgroups/persongroups),
                         roles, periods, proprelations (ORG-TREE, BRSO, SR-BR),
-                        config items (excl. encrypted), and CI relations.
-                        <br/>Excludes: persons, classgroups, persongroups, betasks, system events, encrypted credentials.
+                        config items (excl. encrypted), CI relations, betask types, and betasks.
+                        <br/>Excludes: persons, classgroups, persongroups, system events, encrypted credentials.
                     </div>
                 </div>
 

@@ -18,11 +18,14 @@
                             invisible="is_active"/>
                     <div class="oe_title">
                         <h1>
-                            <field name="name" placeholder="Role Name"/>
+                            <field name="label" placeholder="Display Name (e.g. Medewerker)"/>
                         </h1>
                         <h3>
-                            <field name="shortname" placeholder="Short Name (Code)"/>
+                            <field name="name" placeholder="System Name (e.g. EMPLOYEE)"/>
                         </h3>
+                        <h4>
+                            <field name="shortname" placeholder="Short Name (Code)"/>
+                        </h4>
                     </div>
                     
                     <group>
@@ -72,6 +75,7 @@
             <list string="Roles" multi_edit="1"
                   decoration-muted="not is_active"
                   default_order="priority desc, name">
+                <field name="label" optional="show"/>
                 <field name="name"/>
                 <field name="shortname" widget="badge"/>
                 <field name="role_type_id" widget="badge" optional="show"
@@ -95,6 +99,7 @@
         <field name="arch" type="xml">
             <search string="Search Roles">
                 <field name="name"/>
+                <field name="label"/>
                 <field name="shortname"/>
                 <field name="role_type_id"/>
                 <separator/>
@@ -139,6 +144,7 @@
         <field name="priority">100</field>
         <field name="arch" type="xml">
             <list string="Select Role">
+                <field name="label"/>
                 <field name="name"/>
                 <field name="shortname"/>
                 <field name="role_type_id"/>

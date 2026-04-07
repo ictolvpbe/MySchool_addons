@@ -62,6 +62,28 @@ class Org(models.Model):
     orggroup_working_period = fields.Char(string='Werktijd Periode', size=30)
     richting = fields.Char(string='Richting', size=30)
 
+    def update_org_flags(self):
+        """Recalculate has_role, has_accounts, has_comgroup, has_secgroup from BRSO state."""
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+        if not brso_type:
+            return
+
+        for org in self:
+            brso_rels = PropRelation.search([
+                ('proprelation_type_id', '=', brso_type.id),
+                ('id_org', '=', org.id),
+                ('is_active', '=', True),
+            ])
+            vals = {
+                'has_role': bool(brso_rels),
+                'has_accounts': any(r.has_accounts for r in brso_rels),
+                'has_comgroup': any(r.has_ldap_com_group or r.has_odoo_group for r in brso_rels) or bool(org.com_group_name),
+                'has_secgroup': any(r.has_ldap_sec_group for r in brso_rels) or bool(org.sec_group_name),
+            }
+            org.with_context(skip_pg_flag_handling=True).write(vals)
+
     # =========================================================================
     # Audit Trail - Create backend tasks for manual changes
     # =========================================================================

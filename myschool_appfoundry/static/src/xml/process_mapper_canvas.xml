@@ -498,6 +498,20 @@
                 Zoom: <t t-esc="Math.round(props.zoom * 100)"/>% |
                 Pan: <t t-esc="Math.round(props.panX)"/>, <t t-esc="Math.round(props.panY)"/>
             </div>
+
+            <!-- Scrollbars -->
+            <div class="pm-scrollbar pm-scrollbar-h"
+                 t-on-mousedown.stop.prevent="onHTrackMouseDown">
+                <div class="pm-scrollbar-thumb"
+                     t-attf-style="left:#{this.getHScrollLeft()}%;width:#{this.getHScrollWidth()}%"
+                     t-on-mousedown.stop.prevent="onHThumbMouseDown"/>
+            </div>
+            <div class="pm-scrollbar pm-scrollbar-v"
+                 t-on-mousedown.stop.prevent="onVTrackMouseDown">
+                <div class="pm-scrollbar-thumb"
+                     t-attf-style="top:#{this.getVScrollTop()}%;height:#{this.getVScrollHeight()}%"
+                     t-on-mousedown.stop.prevent="onVThumbMouseDown"/>
+            </div>
         </div>
     </t>
 
@@ -1658,22 +1672,30 @@
                         snapIndicators="state.snapIndicators"
                         onStepContextMenu="(id, cx, cy) => this.onStepContextMenu(id, cx, cy)"/>
 
-                    <ProcessMapperProperties
-                        selectedElement="this.getSelectedElement()"
-                        selectedType="state.selectedType || ''"
-                        selectedCount="state.selectedIds.length"
-                        lanes="state.lanes"
-                        roles="state.roles"
-                        orgs="state.orgs"
-                        availableMaps="state.availableMaps"
-                        lanePresets="state.lanePresets"
-                        onPropertyChange="(f, v) => this.onPropertyChange(f, v)"
-                        onFieldRecordsSave="(stepId, result) => this.onFieldRecordsSave(stepId, result)"
-                        onCreatePreset="(name, color) => this.onCreatePreset(name, color)"
-                        onUpdatePresetColor="(id, color) => this.onUpdatePresetColor(id, color)"
-                        onDelete="() => this.onDelete()"
-                        requestFieldBuilder="state.requestFieldBuilder"
-                        onFieldBuilderOpened="() => this.onFieldBuilderOpened()"/>
+                    <!-- Properties toggle + panel -->
+                    <button class="pm-properties-toggle"
+                            t-on-click="() => { this.state.showProperties = !this.state.showProperties; }"
+                            t-att-title="state.showProperties ? 'Eigenschappen inklappen' : 'Eigenschappen uitklappen'">
+                        <i t-attf-class="fa #{state.showProperties ? 'fa-chevron-right' : 'fa-chevron-left'}"/>
+                    </button>
+                    <t t-if="state.showProperties">
+                        <ProcessMapperProperties
+                            selectedElement="this.getSelectedElement()"
+                            selectedType="state.selectedType || ''"
+                            selectedCount="state.selectedIds.length"
+                            lanes="state.lanes"
+                            roles="state.roles"
+                            orgs="state.orgs"
+                            availableMaps="state.availableMaps"
+                            lanePresets="state.lanePresets"
+                            onPropertyChange="(f, v) => this.onPropertyChange(f, v)"
+                            onFieldRecordsSave="(stepId, result) => this.onFieldRecordsSave(stepId, result)"
+                            onCreatePreset="(name, color) => this.onCreatePreset(name, color)"
+                            onUpdatePresetColor="(id, color) => this.onUpdatePresetColor(id, color)"
+                            onDelete="() => this.onDelete()"
+                            requestFieldBuilder="state.requestFieldBuilder"
+                            onFieldBuilderOpened="() => this.onFieldBuilderOpened()"/>
+                    </t>
 
                     <!-- Context Menu overlay -->
                     <t t-if="state.contextMenu.visible">

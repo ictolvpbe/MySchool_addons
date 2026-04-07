@@ -827,6 +827,7 @@ class ObjectBrowser(models.TransientModel):
                     'email': email,
                     'person_type': person_type,
                     'sap_ref': sap_ref,
+                    'is_active': person.is_active if hasattr(person, 'is_active') else True,
                     'model': 'myschool.person',
                     'roles': [],
                 }
@@ -921,6 +922,45 @@ class ObjectBrowser(models.TransientModel):
             _logger.warning("myschool.org.type or myschool.org model not found")
         
         _logger.info(f"Returning {len(result['persongroups'])} persongroups")
+
+        # For PERSONGROUP orgs: also load PG-P members (persons linked via PG-P proprelation)
+        if 'myschool.org' in self.env:
+            Org = self.env['myschool.org']
+            org = Org.browse(org_id)
+            if org.exists() and org.org_type_id and org.org_type_id.name == 'PERSONGROUP':
+                pgp_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
+                if pgp_type:
+                    pgp_rels = PropRelation.search([
+                        ('id_org', '=', org_id),
+                        ('proprelation_type_id', '=', pgp_type.id),
+                        ('is_active', '=', True),
+                        ('id_person', '!=', False),
+                    ])
+                    for rel in pgp_rels:
+                        person = rel.id_person
+                        if not person:
+                            continue
+                        pid = person.id
+                        if pid not in person_dict:
+                            name = person.name or 'Unknown'
+                            if hasattr(person, 'first_name') and person.first_name:
+                                name = f"{person.first_name} {person.name}"
+                            email = ''
+                            if hasattr(person, 'email_cloud') and person.email_cloud:
+                                email = person.email_cloud
+                            person_dict[pid] = {
+                                'id': pid,
+                                'name': name,
+                                'email': email,
+                                'person_type': person.person_type_id.name if person.person_type_id else '',
+                                'sap_ref': person.sap_ref or '',
+                                'model': 'myschool.person',
+                                'is_active': person.is_active,
+                                'roles': [],
+                            }
+                    result['persons'] = list(person_dict.values())
+                    _logger.info(f"Added {len(pgp_rels)} PG-P members for persongroup {org.name}")
+
         return result
     
     @api.model

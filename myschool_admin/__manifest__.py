@@ -53,6 +53,9 @@
         # Data Exchange
         'views/data_exchange_views.xml',
 
+        # Server Benchmark
+        'views/server_benchmark_views.xml',
+
         # Wizards (must load before menus that reference wizard actions)
         'views/wizard_views.xml',
 

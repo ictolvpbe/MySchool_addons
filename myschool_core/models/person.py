@@ -214,10 +214,16 @@ class Person(models.Model):
         help='Geeft aan of de persoon actief is in het systeem'
     )
     automatic_sync = fields.Boolean(
-        string='Auto Sync', 
-        default=True, 
+        string='Auto Sync',
+        default=True,
         required=True,
         help='Automatisch synchroniseren met externe systemen'
+    )
+    deactivation_date = fields.Date(
+        string='Deactivatiedatum',
+        index=True,
+        help='Datum waarop alle actieve assignments wegvielen. '
+             'Gebruikt voor account lifecycle management.'
     )
 
     # =========================================================================
@@ -747,14 +753,15 @@ class Person(models.Model):
             }
 
         # Deactivate - this will trigger _on_deactivate via write()
-        self.write({'is_active': False})
+        # Set automatic_sync=False to prevent auto-reactivation by sync
+        self.write({'is_active': False, 'automatic_sync': False})
 
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': 'Succes',
-                'message': f'{self.name} is gedeactiveerd. Odoo gebruiker, HR medewerker en relaties zijn ook gedeactiveerd.',
+                'message': f'{self.name} is gedeactiveerd. Auto-sync is uitgeschakeld om automatische heractivatie te voorkomen.',
                 'type': 'success',
             }
         }

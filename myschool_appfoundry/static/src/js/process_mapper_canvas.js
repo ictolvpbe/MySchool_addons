@@ -2983,6 +2983,150 @@ class ProcessMapperCanvas extends Component {
         }
         return null;
     }
+
+    // --- Scrollbars ---
+
+    _getDiagramBounds() {
+        let minX = 0, minY = 0, maxX = 800, maxY = 400;
+        for (const lane of this.props.lanes) {
+            minY = Math.min(minY, lane.y_position);
+            maxY = Math.max(maxY, lane.y_position + lane.height);
+        }
+        for (const step of this.props.steps) {
+            const ds = defaultSize(step.step_type);
+            const w = step.width || ds.w;
+            const h = step.height || ds.h;
+            minX = Math.min(minX, step.x_position);
+            minY = Math.min(minY, step.y_position);
+            maxX = Math.max(maxX, step.x_position + w);
+            maxY = Math.max(maxY, step.y_position + h);
+        }
+        return { minX: minX - 100, minY: minY - 100, maxX: maxX + 100, maxY: maxY + 100 };
+    }
+
+    _getScrollState() {
+        const svg = this.svgRef.el;
+        if (!svg) return null;
+        const rect = svg.getBoundingClientRect();
+        const zoom = this.props.zoom;
+        const viewW = rect.width / zoom;
+        const viewH = rect.height / zoom;
+        const viewLeft = -this.props.panX / zoom;
+        const viewTop = -this.props.panY / zoom;
+        const bounds = this._getDiagramBounds();
+        const totalLeft = Math.min(bounds.minX, viewLeft);
+        const totalTop = Math.min(bounds.minY, viewTop);
+        const totalRight = Math.max(bounds.maxX, viewLeft + viewW);
+        const totalBottom = Math.max(bounds.maxY, viewTop + viewH);
+        const totalW = totalRight - totalLeft;
+        const totalH = totalBottom - totalTop;
+        return { viewLeft, viewTop, viewW, viewH, totalLeft, totalTop, totalW, totalH, zoom, domW: rect.width, domH: rect.height };
+    }
+
+    getHScrollWidth() {
+        const s = this._getScrollState();
+        if (!s) return 100;
+        return Math.max(5, (s.viewW / s.totalW) * 100);
+    }
+    getHScrollLeft() {
+        const s = this._getScrollState();
+        if (!s) return 0;
+        const range = s.totalW - s.viewW;
+        if (range <= 0) return 0;
+        return ((s.viewLeft - s.totalLeft) / range) * (100 - this.getHScrollWidth());
+    }
+    getVScrollHeight() {
+        const s = this._getScrollState();
+        if (!s) return 100;
+        return Math.max(5, (s.viewH / s.totalH) * 100);
+    }
+    getVScrollTop() {
+        const s = this._getScrollState();
+        if (!s) return 0;
+        const range = s.totalH - s.viewH;
+        if (range <= 0) return 0;
+        return ((s.viewTop - s.totalTop) / range) * (100 - this.getVScrollHeight());
+    }
+
+    onHThumbMouseDown(ev) {
+        const track = ev.target.parentElement;
+        const trackRect = track.getBoundingClientRect();
+        const startX = ev.clientX;
+        const startLeft = this.getHScrollLeft();
+        const thumbWidth = this.getHScrollWidth();
+        const s = this._getScrollState();
+        if (!s) return;
+
+        const onMove = (e) => {
+            const dx = e.clientX - startX;
+            const pct = dx / trackRect.width * 100;
+            const newLeft = Math.max(0, Math.min(100 - thumbWidth, startLeft + pct));
+            const range = s.totalW - s.viewW;
+            const newViewLeft = s.totalLeft + (newLeft / (100 - thumbWidth)) * range;
+            this.props.onPan(-newViewLeft * s.zoom, this.props.panY);
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }
+
+    onVThumbMouseDown(ev) {
+        const track = ev.target.parentElement;
+        const trackRect = track.getBoundingClientRect();
+        const startY = ev.clientY;
+        const startTop = this.getVScrollTop();
+        const thumbHeight = this.getVScrollHeight();
+        const s = this._getScrollState();
+        if (!s) return;
+
+        const onMove = (e) => {
+            const dy = e.clientY - startY;
+            const pct = dy / trackRect.height * 100;
+            const newTop = Math.max(0, Math.min(100 - thumbHeight, startTop + pct));
+            const range = s.totalH - s.viewH;
+            const newViewTop = s.totalTop + (newTop / (100 - thumbHeight)) * range;
+            this.props.onPan(this.props.panX, -newViewTop * s.zoom);
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }
+
+    onHTrackMouseDown(ev) {
+        if (ev.target.classList.contains('pm-scrollbar-thumb')) return;
+        const track = ev.currentTarget;
+        const trackRect = track.getBoundingClientRect();
+        const clickPct = (ev.clientX - trackRect.left) / trackRect.width * 100;
+        const thumbWidth = this.getHScrollWidth();
+        const s = this._getScrollState();
+        if (!s) return;
+        const newLeft = Math.max(0, Math.min(100 - thumbWidth, clickPct - thumbWidth / 2));
+        const range = s.totalW - s.viewW;
+        if (range <= 0) return;
+        const newViewLeft = s.totalLeft + (newLeft / (100 - thumbWidth)) * range;
+        this.props.onPan(-newViewLeft * s.zoom, this.props.panY);
+    }
+
+    onVTrackMouseDown(ev) {
+        if (ev.target.classList.contains('pm-scrollbar-thumb')) return;
+        const track = ev.currentTarget;
+        const trackRect = track.getBoundingClientRect();
+        const clickPct = (ev.clientY - trackRect.top) / trackRect.height * 100;
+        const thumbHeight = this.getVScrollHeight();
+        const s = this._getScrollState();
+        if (!s) return;
+        const newTop = Math.max(0, Math.min(100 - thumbHeight, clickPct - thumbHeight / 2));
+        const range = s.totalH - s.viewH;
+        if (range <= 0) return;
+        const newViewTop = s.totalTop + (newTop / (100 - thumbHeight)) * range;
+        this.props.onPan(this.props.panX, -newViewTop * s.zoom);
+    }
 }
 
 // ============================================================
@@ -3039,6 +3183,7 @@ class ProcessMapperClient extends Component {
             rolePopover: { visible: false, x: 0, y: 0, stepId: null },
             rolePopoverQuery: '',
             requestFieldBuilder: false,
+            showProperties: true,
         });
 
         this._onKeydown = this._onKeydown.bind(this);
@@ -4208,24 +4353,6 @@ class ProcessMapperClient extends Component {
     }
 
     onPan(x, y) {
-        const margin = 20;
-        const zoom = this.state.zoom;
-
-        // Don't pan past the left edge of lanes (x=0 in SVG)
-        // Screen left edge in SVG coords: -panX / zoom
-        // Constraint: -panX / zoom >= -margin  →  panX <= margin * zoom
-        x = Math.min(x, margin * zoom);
-
-        // Don't pan past the top of the first lane
-        // Screen top edge in SVG coords: -panY / zoom
-        // Constraint: -panY / zoom >= minLaneY - margin  →  panY <= -(minLaneY - margin) * zoom
-        if (this.state.lanes.length > 0) {
-            const minY = Math.min(...this.state.lanes.map(l => l.y_position));
-            y = Math.min(y, -(minY - margin) * zoom);
-        } else {
-            y = Math.min(y, margin * zoom);
-        }
-
         this.state.panX = x;
         this.state.panY = y;
     }

@@ -47,6 +47,11 @@ class PropRelation(models.Model):
     end_date = fields.Datetime(string='Einddatum')
     automatic_sync = fields.Boolean(string='Auto Sync', default=True, required=True)
 
+    has_accounts = fields.Boolean(string='Has Accounts', default=False)
+    has_ldap_com_group = fields.Boolean(string='Has LDAP COM Group', default=False)
+    has_ldap_sec_group = fields.Boolean(string='Has LDAP SEC Group', default=False)
+    has_odoo_group = fields.Boolean(string='Has Odoo Group', default=False)
+
     # -------------------------------------------------------------------------
     # Constraints
     # -------------------------------------------------------------------------
