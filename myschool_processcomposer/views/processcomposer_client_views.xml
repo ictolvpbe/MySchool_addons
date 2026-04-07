@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="action_processcomposer_client" model="ir.actions.client">
+        <field name="name">Process Composer Canvas</field>
+        <field name="tag">processcomposer_canvas</field>
+    </record>
+
+</odoo>

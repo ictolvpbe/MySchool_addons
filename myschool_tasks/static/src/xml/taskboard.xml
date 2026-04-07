@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_tasks.TaskBoard" owl="1">
+        <div class="tb-container">
+            <!-- Loading -->
+            <t t-if="state.loading">
+                <div class="tb-loading">
+                    <i class="fa fa-spinner fa-spin fa-2x"/>
+                    <p>Takenbord laden...</p>
+                </div>
+            </t>
+            <t t-else="">
+                <div class="tb-page">
+
+                    <!-- ═══════════════════════════════════════════ -->
+                    <!-- Header Bar                                  -->
+                    <!-- ═══════════════════════════════════════════ -->
+                    <div class="tb-header">
+                        <div class="tb-header-left">
+                            <h1 class="tb-title">Takenbord</h1>
+                        </div>
+                        <div class="tb-header-actions">
+                            <button class="tb-btn tb-btn-primary" t-on-click="openNewProcessDialog">
+                                <i class="fa fa-plus"/> Nieuw proces
+                            </button>
+                            <t t-if="state.hasComposerAccess">
+                                <button class="tb-btn tb-btn-secondary" t-on-click="openProcessComposer">
+                                    <i class="fa fa-cogs"/> Processtemplates
+                                </button>
+                            </t>
+                            <button class="tb-btn tb-btn-ghost" t-on-click="onRefresh">
+                                <i class="fa fa-refresh"/>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ═══════════════════════════════════════════ -->
+                    <!-- KPI Row                                     -->
+                    <!-- ═══════════════════════════════════════════ -->
+                    <div class="tb-kpi-row">
+                        <div class="tb-kpi-card tb-kpi-c1" t-on-click="() => this.setFilter('mine')">
+                            <div class="tb-kpi-icon"><i class="fa fa-user"/></div>
+                            <div class="tb-kpi-data">
+                                <div class="tb-kpi-value"><t t-esc="state.kpis.my_tasks || 0"/></div>
+                                <div class="tb-kpi-label">Mijn taken</div>
+                            </div>
+                        </div>
+                        <div class="tb-kpi-card tb-kpi-c2" t-on-click="() => this.setFilter('group')">
+                            <div class="tb-kpi-icon"><i class="fa fa-users"/></div>
+                            <div class="tb-kpi-data">
+                                <div class="tb-kpi-value"><t t-esc="state.kpis.group_tasks || 0"/></div>
+                                <div class="tb-kpi-label">Groepstaken</div>
+                            </div>
+                        </div>
+                        <div class="tb-kpi-card tb-kpi-c3">
+                            <div class="tb-kpi-icon"><i class="fa fa-clock-o"/></div>
+                            <div class="tb-kpi-data">
+                                <div class="tb-kpi-value tb-kpi-danger"><t t-esc="state.kpis.overdue || 0"/></div>
+                                <div class="tb-kpi-label">Verlopen</div>
+                            </div>
+                        </div>
+                        <div class="tb-kpi-card tb-kpi-c4">
+                            <div class="tb-kpi-icon"><i class="fa fa-check-circle"/></div>
+                            <div class="tb-kpi-data">
+                                <div class="tb-kpi-value tb-kpi-success"><t t-esc="state.kpis.done_today || 0"/></div>
+                                <div class="tb-kpi-label">Vandaag voltooid</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ═══════════════════════════════════════════ -->
+                    <!-- Filter Tabs                                 -->
+                    <!-- ═══════════════════════════════════════════ -->
+                    <div class="tb-filter-row">
+                        <button t-att-class="'tb-filter-tab ' + (state.activeFilter === 'all' ? 'active' : '')"
+                                t-on-click="() => this.setFilter('all')">
+                            Alle taken
+                        </button>
+                        <button t-att-class="'tb-filter-tab ' + (state.activeFilter === 'mine' ? 'active' : '')"
+                                t-on-click="() => this.setFilter('mine')">
+                            Mijn taken
+                        </button>
+                        <button t-att-class="'tb-filter-tab ' + (state.activeFilter === 'group' ? 'active' : '')"
+                                t-on-click="() => this.setFilter('group')">
+                            Groepstaken
+                        </button>
+                    </div>
+
+                    <!-- ═══════════════════════════════════════════ -->
+                    <!-- Kanban Board                                -->
+                    <!-- ═══════════════════════════════════════════ -->
+                    <div class="tb-kanban">
+
+                        <!-- Column: Te doen -->
+                        <div class="tb-kanban-col"
+                             t-on-dragover="(ev) => this.onDragOver(ev)"
+                             t-on-dragleave="(ev) => this.onDragLeave(ev)"
+                             t-on-drop="(ev) => this.onDrop(ev, 'todo')">
+                            <div class="tb-col-header tb-col-todo">
+                                <span class="tb-col-dot tb-dot-todo"/>
+                                <span>Te doen</span>
+                                <span class="tb-col-count"><t t-esc="filteredTodo.length"/></span>
+                            </div>
+                            <div class="tb-col-body">
+                                <t t-foreach="filteredTodo" t-as="task" t-key="task.id">
+                                    <t t-call="myschool_tasks.TaskCard"/>
+                                </t>
+                                <t t-if="!filteredTodo.length">
+                                    <div class="tb-empty">Geen taken</div>
+                                </t>
+                            </div>
+                        </div>
+
+                        <!-- Column: Bezig -->
+                        <div class="tb-kanban-col"
+                             t-on-dragover="(ev) => this.onDragOver(ev)"
+                             t-on-dragleave="(ev) => this.onDragLeave(ev)"
+                             t-on-drop="(ev) => this.onDrop(ev, 'in_progress')">
+                            <div class="tb-col-header tb-col-progress">
+                                <span class="tb-col-dot tb-dot-progress"/>
+                                <span>Bezig</span>
+                                <span class="tb-col-count"><t t-esc="filteredInProgress.length"/></span>
+                            </div>
+                            <div class="tb-col-body">
+                                <t t-foreach="filteredInProgress" t-as="task" t-key="task.id">
+                                    <t t-call="myschool_tasks.TaskCard"/>
+                                </t>
+                                <t t-if="!filteredInProgress.length">
+                                    <div class="tb-empty">Geen taken</div>
+                                </t>
+                            </div>
+                        </div>
+
+                        <!-- Column: Geblokkeerd -->
+                        <div class="tb-kanban-col"
+                             t-on-dragover="(ev) => this.onDragOver(ev)"
+                             t-on-dragleave="(ev) => this.onDragLeave(ev)"
+                             t-on-drop="(ev) => this.onDrop(ev, 'blocked')">
+                            <div class="tb-col-header tb-col-blocked">
+                                <span class="tb-col-dot tb-dot-blocked"/>
+                                <span>Geblokkeerd</span>
+                                <span class="tb-col-count"><t t-esc="filteredBlocked.length"/></span>
+                            </div>
+                            <div class="tb-col-body">
+                                <t t-foreach="filteredBlocked" t-as="task" t-key="task.id">
+                                    <t t-call="myschool_tasks.TaskCard"/>
+                                </t>
+                                <t t-if="!filteredBlocked.length">
+                                    <div class="tb-empty">Geen taken</div>
+                                </t>
+                            </div>
+                        </div>
+
+                        <!-- Column: Voltooid -->
+                        <div class="tb-kanban-col"
+                             t-on-dragover="(ev) => this.onDragOver(ev)"
+                             t-on-dragleave="(ev) => this.onDragLeave(ev)"
+                             t-on-drop="(ev) => this.onDrop(ev, 'done')">
+                            <div class="tb-col-header tb-col-done">
+                                <span class="tb-col-dot tb-dot-done"/>
+                                <span>Voltooid</span>
+                                <span class="tb-col-count"><t t-esc="filteredDone.length"/></span>
+                            </div>
+                            <div class="tb-col-body">
+                                <t t-foreach="filteredDone" t-as="task" t-key="task.id">
+                                    <t t-call="myschool_tasks.TaskCard"/>
+                                </t>
+                                <t t-if="!filteredDone.length">
+                                    <div class="tb-empty">Geen taken</div>
+                                </t>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- ═══════════════════════════════════════════ -->
+                    <!-- Active Processes Section                    -->
+                    <!-- ═══════════════════════════════════════════ -->
+                    <t t-if="state.instances.length">
+                        <div class="tb-section">
+                            <div class="tb-section-header">
+                                <h2>Actieve processen</h2>
+                                <a class="tb-link" t-on-click="openInstances">Alles bekijken</a>
+                            </div>
+                            <div class="tb-instance-grid">
+                                <t t-foreach="state.instances" t-as="inst" t-key="inst.id">
+                                    <div class="tb-instance-card" t-on-click="() => this.openInstanceForm(inst.id)">
+                                        <div class="tb-inst-header">
+                                            <span class="tb-inst-name"><t t-esc="inst.name"/></span>
+                                            <span t-att-class="'tb-badge ' + instanceStateClass(inst.state)">
+                                                <t t-esc="instanceStateLabel(inst.state)"/>
+                                            </span>
+                                        </div>
+                                        <div class="tb-inst-process"><t t-esc="inst.process_name"/></div>
+                                        <div class="tb-inst-footer">
+                                            <div class="tb-progress-bar">
+                                                <div class="tb-progress-fill" t-attf-style="width: {{ Math.round(inst.progress) }}%"/>
+                                            </div>
+                                            <span class="tb-inst-meta">
+                                                <t t-esc="Math.round(inst.progress)"/>% ·
+                                                <t t-esc="inst.task_count"/> taken
+                                            </span>
+                                        </div>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+
+                </div><!-- /tb-page -->
+
+                <!-- ═══════════════════════════════════════════ -->
+                <!-- New Process Dialog (overlay)                -->
+                <!-- ═══════════════════════════════════════════ -->
+                <t t-if="state.showNewProcessDialog">
+                    <div class="tb-overlay" t-on-click="closeNewProcessDialog">
+                        <div class="tb-dialog" t-on-click.stop="">
+                            <div class="tb-dialog-header">
+                                <h3>Nieuw proces starten</h3>
+                                <button class="tb-dialog-close" t-on-click="closeNewProcessDialog">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <div class="tb-dialog-body">
+                                <t t-if="!state.templates.length">
+                                    <div class="tb-dialog-empty">
+                                        <i class="fa fa-info-circle"/>
+                                        <p>Er zijn nog geen goedgekeurde processtemplates beschikbaar.</p>
+                                        <t t-if="state.hasComposerAccess">
+                                            <button class="tb-btn tb-btn-secondary" t-on-click="openProcessComposer">
+                                                <i class="fa fa-cogs"/> Processtemplates beheren
+                                            </button>
+                                        </t>
+                                    </div>
+                                </t>
+                                <t t-else="">
+                                    <label class="tb-dialog-label">Kies een procestemplate:</label>
+                                    <div class="tb-template-list">
+                                        <t t-foreach="state.templates" t-as="tpl" t-key="tpl.id">
+                                            <div t-att-class="'tb-template-item ' + (state.selectedTemplateId === tpl.id ? 'selected' : '')"
+                                                 t-on-click="() => this.selectTemplate(tpl.id)">
+                                                <div class="tb-tpl-icon">
+                                                    <i class="fa fa-sitemap"/>
+                                                </div>
+                                                <div class="tb-tpl-info">
+                                                    <div class="tb-tpl-name"><t t-esc="tpl.name"/></div>
+                                                    <div class="tb-tpl-meta">
+                                                        <t t-esc="tpl.step_count"/> taken
+                                                        <t t-if="tpl.description"> · <t t-esc="tpl.description.substring(0, 80)"/></t>
+                                                    </div>
+                                                </div>
+                                                <div class="tb-tpl-check">
+                                                    <i t-if="state.selectedTemplateId === tpl.id"
+                                                       class="fa fa-check-circle"/>
+                                                </div>
+                                            </div>
+                                        </t>
+                                    </div>
+                                    <label class="tb-dialog-label">Beschrijving (optioneel):</label>
+                                    <textarea class="tb-dialog-textarea"
+                                              t-att-value="state.newProcessDescription"
+                                              t-on-input="onDescriptionInput"
+                                              placeholder="Voeg een beschrijving toe..."/>
+                                </t>
+                            </div>
+                            <div class="tb-dialog-footer">
+                                <button class="tb-btn tb-btn-ghost" t-on-click="closeNewProcessDialog">
+                                    Annuleren
+                                </button>
+                                <button class="tb-btn tb-btn-primary"
+                                        t-on-click="startNewProcess"
+                                        t-att-disabled="!state.selectedTemplateId">
+                                    <i class="fa fa-play"/> Proces starten
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </t>
+
+            </t>
+        </div>
+    </t>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- Task Card Sub-template                                  -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <t t-name="myschool_tasks.TaskCard" owl="1">
+        <div t-att-class="'tb-task-card ' + priorityClass(task.priority) + (task.is_overdue ? ' tb-overdue' : '')"
+             draggable="true"
+             t-on-dragstart="(ev) => this.onDragStart(ev, task.id)"
+             t-on-dragend="(ev) => this.onDragEnd(ev)">
+            <div class="tb-card-top">
+                <span class="tb-card-process"><t t-esc="task.process_name"/></span>
+                <t t-if="task.priority !== '0'">
+                    <span t-att-class="'tb-card-prio ' + priorityClass(task.priority)"
+                          t-att-title="priorityLabel(task.priority)">
+                        <i t-att-class="'fa ' + priorityIcon(task.priority)"/>
+                    </span>
+                </t>
+            </div>
+            <div class="tb-card-name" t-on-click="() => this.openTaskForm(task.id)">
+                <t t-esc="task.name"/>
+            </div>
+            <t t-if="task.description">
+                <div class="tb-card-desc"><t t-esc="task.description.substring(0, 100)"/></div>
+            </t>
+            <div class="tb-card-footer">
+                <div class="tb-card-meta">
+                    <t t-if="task.assigned_user">
+                        <span class="tb-card-user" title="Toegewezen aan">
+                            <i class="fa fa-user"/> <t t-esc="task.assigned_user"/>
+                        </span>
+                    </t>
+                    <t t-elif="task.assigned_group">
+                        <span class="tb-card-group" title="Groepstaak">
+                            <i class="fa fa-users"/> <t t-esc="task.assigned_group"/>
+                        </span>
+                    </t>
+                    <t t-if="task.deadline">
+                        <span t-att-class="'tb-card-deadline' + (task.is_overdue ? ' tb-text-danger' : '')">
+                            <i class="fa fa-calendar"/> <t t-esc="formatDate(task.deadline)"/>
+                        </span>
+                    </t>
+                </div>
+                <div class="tb-card-actions">
+                    <t t-if="!task.is_mine and !task.assigned_user_id">
+                        <button class="tb-card-btn" title="Aan mij toewijzen"
+                                t-on-click.stop="() => this.onAssignToMe(task.id)">
+                            <i class="fa fa-hand-paper-o"/>
+                        </button>
+                    </t>
+                    <t t-if="task.state === 'todo'">
+                        <button class="tb-card-btn" title="Starten"
+                                t-on-click.stop="() => this.onChangeState(task.id, 'in_progress')">
+                            <i class="fa fa-play"/>
+                        </button>
+                    </t>
+                    <t t-if="task.state === 'in_progress'">
+                        <button class="tb-card-btn tb-btn-done" title="Voltooien"
+                                t-on-click.stop="() => this.onChangeState(task.id, 'done')">
+                            <i class="fa fa-check"/>
+                        </button>
+                    </t>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>

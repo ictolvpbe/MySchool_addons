@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Top-level categories -->
+        <record id="category_hardware" model="a_i.asset.type.category">
+            <field name="name">Hardware</field>
+        </record>
+
+        <record id="category_software" model="a_i.asset.type.category">
+            <field name="name">Software</field>
+        </record>
+
+        <record id="category_network" model="a_i.asset.type.category">
+            <field name="name">Network Equipment</field>
+        </record>
+
+        <record id="category_av_equipment" model="a_i.asset.type.category">
+            <field name="name">AV Equipment</field>
+        </record>
+
+        <record id="category_furniture" model="a_i.asset.type.category">
+            <field name="name">Furniture</field>
+        </record>
+
+        <record id="category_infrastructure" model="a_i.asset.type.category">
+            <field name="name">Infrastructure</field>
+        </record>
+
+        <!-- Hardware subcategories -->
+        <record id="category_computers" model="a_i.asset.type.category">
+            <field name="name">Computers</field>
+            <field name="parent_id" ref="category_hardware"/>
+        </record>
+
+        <record id="category_peripherals" model="a_i.asset.type.category">
+            <field name="name">Peripherals</field>
+            <field name="parent_id" ref="category_hardware"/>
+        </record>
+
+        <record id="category_mobile" model="a_i.asset.type.category">
+            <field name="name">Mobile Devices</field>
+            <field name="parent_id" ref="category_hardware"/>
+        </record>
+
+        <!-- Infrastructure subcategories -->
+        <record id="category_rooms" model="a_i.asset.type.category">
+            <field name="name">Rooms</field>
+            <field name="parent_id" ref="category_infrastructure"/>
+        </record>
+
+        <!-- Asset Types -->
+        <record id="type_laptop" model="a_i.asset.type">
+            <field name="name">Laptop</field>
+            <field name="category_id" ref="category_computers"/>
+        </record>
+
+        <record id="type_desktop" model="a_i.asset.type">
+            <field name="name">Desktop</field>
+            <field name="category_id" ref="category_computers"/>
+        </record>
+
+        <record id="type_server" model="a_i.asset.type">
+            <field name="name">Server</field>
+            <field name="category_id" ref="category_computers"/>
+        </record>
+
+        <record id="type_tablet" model="a_i.asset.type">
+            <field name="name">Tablet</field>
+            <field name="category_id" ref="category_mobile"/>
+        </record>
+
+        <record id="type_phone" model="a_i.asset.type">
+            <field name="name">Phone</field>
+            <field name="category_id" ref="category_mobile"/>
+        </record>
+
+        <record id="type_monitor" model="a_i.asset.type">
+            <field name="name">Monitor</field>
+            <field name="category_id" ref="category_peripherals"/>
+        </record>
+
+        <record id="type_printer" model="a_i.asset.type">
+            <field name="name">Printer</field>
+            <field name="category_id" ref="category_peripherals"/>
+        </record>
+
+        <record id="type_router" model="a_i.asset.type">
+            <field name="name">Router</field>
+            <field name="category_id" ref="category_network"/>
+        </record>
+
+        <record id="type_switch" model="a_i.asset.type">
+            <field name="name">Switch</field>
+            <field name="category_id" ref="category_network"/>
+        </record>
+
+        <record id="type_access_point" model="a_i.asset.type">
+            <field name="name">Access Point</field>
+            <field name="category_id" ref="category_network"/>
+        </record>
+
+        <record id="type_projector" model="a_i.asset.type">
+            <field name="name">Projector</field>
+            <field name="category_id" ref="category_av_equipment"/>
+        </record>
+
+        <record id="type_interactive_whiteboard" model="a_i.asset.type">
+            <field name="name">Interactive Whiteboard</field>
+            <field name="category_id" ref="category_av_equipment"/>
+        </record>
+
+        <record id="type_camera" model="a_i.asset.type">
+            <field name="name">Camera</field>
+            <field name="category_id" ref="category_av_equipment"/>
+        </record>
+
+        <record id="type_desk" model="a_i.asset.type">
+            <field name="name">Desk</field>
+            <field name="category_id" ref="category_furniture"/>
+        </record>
+
+        <record id="type_chair" model="a_i.asset.type">
+            <field name="name">Chair</field>
+            <field name="category_id" ref="category_furniture"/>
+        </record>
+
+        <!-- Room types (is_room = True) -->
+        <record id="type_classroom" model="a_i.asset.type">
+            <field name="name">Classroom</field>
+            <field name="category_id" ref="category_rooms"/>
+            <field name="is_room" eval="True"/>
+        </record>
+
+        <record id="type_server_room" model="a_i.asset.type">
+            <field name="name">Server Room</field>
+            <field name="category_id" ref="category_rooms"/>
+            <field name="is_room" eval="True"/>
+        </record>
+
+        <record id="type_office" model="a_i.asset.type">
+            <field name="name">Office</field>
+            <field name="category_id" ref="category_rooms"/>
+            <field name="is_room" eval="True"/>
+        </record>
+
+        <record id="type_lab" model="a_i.asset.type">
+            <field name="name">Lab</field>
+            <field name="category_id" ref="category_rooms"/>
+            <field name="is_room" eval="True"/>
+        </record>
+
+        <record id="type_software_license" model="a_i.asset.type">
+            <field name="name">Software License</field>
+            <field name="category_id" ref="category_software"/>
+        </record>
+
+        <record id="type_saas" model="a_i.asset.type">
+            <field name="name">SaaS Application</field>
+            <field name="category_id" ref="category_software"/>
+        </record>
+
+    </data>
+</odoo>

@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Root Menu -->
+    <menuitem id="menu_ai_root"
+              name="Asset en Inventory Management"
+              web_icon="myschool_assets,static/description/icon.png"
+              sequence="30"/>
+
+    <!-- ========== Assets ========== -->
+    <menuitem id="menu_ai_assets"
+              name="Assets"
+              parent="menu_ai_root"
+              sequence="10"/>
+
+    <record id="action_ai_asset" model="ir.actions.act_window">
+        <field name="name">Assets</field>
+        <field name="res_model">myschool.asset</field>
+        <field name="view_mode">list,form,kanban</field>
+        <field name="search_view_id" ref="ai_asset_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first asset
+            </p>
+            <p>
+                Track hardware, software, and other assets across your organization.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_ai_asset_list"
+              name="All Assets"
+              parent="menu_ai_assets"
+              action="action_ai_asset"
+              sequence="10"/>
+
+    <!-- Licenses -->
+    <record id="action_ai_license" model="ir.actions.act_window">
+        <field name="name">Licenses</field>
+        <field name="res_model">myschool.asset.license</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ai_asset_license_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first license
+            </p>
+            <p>
+                Manage software licenses, subscriptions, and seat allocations.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_ai_license_list"
+              name="Licenses"
+              parent="menu_ai_assets"
+              action="action_ai_license"
+              sequence="20"/>
+
+    <!-- Checkouts -->
+    <record id="action_ai_checkout" model="ir.actions.act_window">
+        <field name="name">Checkouts</field>
+        <field name="res_model">myschool.asset.checkout</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ai_asset_checkout_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No checkouts yet
+            </p>
+            <p>
+                Track asset checkouts and returns for people in your organization.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_ai_checkout_list"
+              name="Checkouts"
+              parent="menu_ai_assets"
+              action="action_ai_checkout"
+              sequence="30"/>
+
+    <!-- Asset Types (under Assets menu) -->
+    <menuitem id="menu_ai_asset_type_list"
+              name="Asset Types"
+              parent="menu_ai_assets"
+              action="action_ai_asset_type"
+              sequence="40"/>
+
+    <!-- ========== Configuration ========== -->
+    <menuitem id="menu_ai_config"
+              name="Configuration"
+              parent="menu_ai_root"
+              sequence="90"
+              groups="myschool_assets.group_ai_admin"/>
+
+    <!-- Asset Type Categories -->
+    <record id="action_ai_asset_type_category" model="ir.actions.act_window">
+        <field name="name">Asset Type Categories</field>
+        <field name="res_model">myschool.asset.type.category</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ai_asset_type_category_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first asset type category
+            </p>
+            <p>
+                Organize asset types into hierarchical categories.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_ai_category_config"
+              name="Type Categories"
+              parent="menu_ai_config"
+              action="action_ai_asset_type_category"
+              sequence="10"/>
+
+    <!-- Asset Types -->
+    <record id="action_ai_asset_type" model="ir.actions.act_window">
+        <field name="name">Asset Types</field>
+        <field name="res_model">myschool.asset.type</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ai_asset_type_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first asset type
+            </p>
+            <p>
+                Define the types of assets in your inventory.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_ai_type_config"
+              name="Asset Types"
+              parent="menu_ai_config"
+              action="action_ai_asset_type"
+              sequence="20"/>
+
+    <!-- Access Policies -->
+    <record id="action_ai_access_policy" model="ir.actions.act_window">
+        <field name="name">Access Policies</field>
+        <field name="res_model">myschool.access.policy</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ai_access_policy_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first access policy
+            </p>
+            <p>
+                Define which groups have read or write access to assets
+                based on asset type, category, and organization.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_ai_access_policy_config"
+              name="Access Policies"
+              parent="menu_ai_config"
+              action="action_ai_access_policy"
+              sequence="30"/>
+
+</odoo>

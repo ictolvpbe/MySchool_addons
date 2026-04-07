@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Root menu -->
+    <menuitem id="menu_processcomposer_root"
+              name="Myschool Process Composer"
+              web_icon="myschool_processcomposer,static/description/icon.png"
+              sequence="15"
+              groups="myschool_processcomposer.group_processcomposer_user"/>
+
+    <!-- Process Maps list -->
+    <menuitem id="menu_process_compositions"
+              name="Process Maps"
+              parent="menu_processcomposer_root"
+              action="action_myschool_process_list"
+              sequence="10"/>
+
+    <!-- Canvas Editor direct entry -->
+    <menuitem id="menu_processcomposer_canvas"
+              name="Canvas Editor"
+              parent="menu_processcomposer_root"
+              action="action_processcomposer_client"
+              sequence="20"/>
+
+</odoo>

@@ -1,0 +1,991 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo><data noupdate="1">
+
+<!-- ================================================================ -->
+<!-- PROCESS MAP 1: SAP Sync — Employee &amp; Role Creation           -->
+<!-- ================================================================ -->
+
+<record id="pm_sap_employee_sync" model="myschool.process">
+    <field name="name">SAP Sync: Employee &amp; Role Creation</field>
+    <field name="description">Automatic synchronization of employees and roles from SAP Informat.
+
+Phase 1a: Fetch employee assignment data → create/update backend roles.
+Phase 1b: Fetch employee master data → create person, Odoo user, HR employee, and PPSBR proprelation.
+
+Entry point: informat_service.execute_sync()
+Runs automatically via cron or manually from the Informat Service configuration.</field>
+    <field name="state">approved</field>
+</record>
+
+<!-- Lanes -->
+
+<record id="pm_emp_lane_sap" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="name">SAP / Informat</field>
+    <field name="sequence">10</field>
+    <field name="color">#FFF3E0</field>
+    <field name="y_position">0</field>
+    <field name="height">100</field>
+</record>
+
+<record id="pm_emp_lane_sync" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="name">Sync Engine</field>
+    <field name="sequence">20</field>
+    <field name="color">#E3F2FD</field>
+    <field name="y_position">100</field>
+    <field name="height">110</field>
+</record>
+
+<record id="pm_emp_lane_betask" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="name">Betask Processor</field>
+    <field name="sequence">30</field>
+    <field name="color">#E8F5E9</field>
+    <field name="y_position">210</field>
+    <field name="height">200</field>
+</record>
+
+<!-- Steps -->
+
+<record id="pm_emp_start" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_sap"/>
+    <field name="name">Start</field>
+    <field name="step_type">start</field>
+    <field name="x_position">60</field>
+    <field name="y_position">30</field>
+    <field name="width">40</field>
+    <field name="height">40</field>
+    <field name="annotation">Triggered by cron job or manual execution from Informat Service config.</field>
+</record>
+
+<record id="pm_emp_fetch_assign" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_sync"/>
+    <field name="name">Fetch Employee Assignments</field>
+    <field name="step_type">task</field>
+    <field name="x_position">180</field>
+    <field name="y_position">125</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">Phase 1a: Call SAP Informat API to retrieve employee role assignment data.
+
+Returns JSON with assignment records containing role codes, institution numbers, and activity flags.</field>
+    <field name="system_action">informat_service._get_employee_assignments_from_informat()</field>
+    <field name="icon">fa-cloud-download</field>
+</record>
+
+<record id="pm_emp_process_roles" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_betask"/>
+    <field name="name">Create &amp; Process Roles</field>
+    <field name="step_type">task</field>
+    <field name="x_position">180</field>
+    <field name="y_position">260</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">Analyze assignment data and create DB-ROLE-ADD betasks.
+Process: create myschool.role records (role_type=BACKEND).
+
+Roles are matched by shortname (SAP role code). New roles are created, existing roles are updated.</field>
+    <field name="system_action">DB-ROLE-ADD → process_db_role_add()</field>
+    <field name="icon">fa-cogs</field>
+</record>
+
+<record id="pm_emp_fetch_employees" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_sync"/>
+    <field name="name">Fetch Employees</field>
+    <field name="step_type">task</field>
+    <field name="x_position">440</field>
+    <field name="y_position">125</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">Phase 1b: Call SAP Informat API to retrieve employee master data.
+
+JSON fields: pPersoon (SAP ref), personId (UUID), naam, voornaam, email, instNr, isActive, hoofdAmbt, pensioendatum.</field>
+    <field name="system_action">informat_service._get_employees_from_informat()</field>
+    <field name="icon">fa-cloud-download</field>
+</record>
+
+<record id="pm_emp_process_employee" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_betask"/>
+    <field name="name">Create Person Record</field>
+    <field name="step_type">task</field>
+    <field name="x_position">440</field>
+    <field name="y_position">260</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">DB-EMPLOYEE-ADD betask: create myschool.person with:
+- sap_person_uuid, sap_ref, name, first_name
+- person_type = EMPLOYEE, is_active = True
+- Generate random 8-char password
+
+Also creates myschool.person.details snapshot with full SAP JSON data.
+
+Existing persons (matched by sap_person_uuid) are updated instead of created.</field>
+    <field name="system_action">DB-EMPLOYEE-ADD → _create_person_from_employee_json()</field>
+    <field name="icon">fa-user-plus</field>
+</record>
+
+<record id="pm_emp_has_email" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_betask"/>
+    <field name="name">Has email?</field>
+    <field name="step_type">condition</field>
+    <field name="x_position">700</field>
+    <field name="y_position">275</field>
+    <field name="width">50</field>
+    <field name="height">50</field>
+    <field name="description">Check if the employee has an email address. If yes, create an Odoo user and HR employee. If no, skip user creation but still create PPSBR link.</field>
+</record>
+
+<record id="pm_emp_create_user" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_betask"/>
+    <field name="name">Create Odoo User &amp; HR Employee</field>
+    <field name="step_type">task</field>
+    <field name="x_position">830</field>
+    <field name="y_position">245</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">ODOO-PERSON-ADD betask: create res.users and hr.employee.
+- Login = email_cloud
+- Link user to person (odoo_user_id)
+- Link employee to person (odoo_employee_id)
+- Assign myschool security groups</field>
+    <field name="system_action">ODOO-PERSON-ADD → process_odoo_person_add()</field>
+    <field name="icon">fa-key</field>
+</record>
+
+<record id="pm_emp_create_ppsbr" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_betask"/>
+    <field name="name">Create PPSBR PropRelation</field>
+    <field name="step_type">task</field>
+    <field name="x_position">830</field>
+    <field name="y_position">340</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">DB-PROPRELATION-ADD betask: create PPSBR proprelation.
+
+Links: person → school org → backend role → active period.
+PPSBR = Person-Period-School-BackendRole.
+
+Role is resolved via SRBR (SAP-Role → Backend-Role) lookup.</field>
+    <field name="system_action">DB-PROPRELATION-ADD → process_db_proprelation_add()</field>
+    <field name="icon">fa-link</field>
+</record>
+
+<record id="pm_emp_end" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="lane_id" ref="pm_emp_lane_sap"/>
+    <field name="name">End</field>
+    <field name="step_type">end</field>
+    <field name="x_position">1100</field>
+    <field name="y_position">30</field>
+    <field name="width">40</field>
+    <field name="height">40</field>
+    <field name="annotation">Employee fully provisioned: person + Odoo user + HR employee + PPSBR role link.</field>
+</record>
+
+<!-- Connections -->
+
+<record id="pm_emp_c01" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_start"/>
+    <field name="target_step_id" ref="pm_emp_fetch_assign"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_emp_c02" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_fetch_assign"/>
+    <field name="target_step_id" ref="pm_emp_process_roles"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_emp_c03" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_process_roles"/>
+    <field name="target_step_id" ref="pm_emp_fetch_employees"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_emp_c04" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_fetch_employees"/>
+    <field name="target_step_id" ref="pm_emp_process_employee"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_emp_c05" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_process_employee"/>
+    <field name="target_step_id" ref="pm_emp_has_email"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_emp_c06" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_has_email"/>
+    <field name="target_step_id" ref="pm_emp_create_user"/>
+    <field name="label">Yes</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_emp_c07" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_has_email"/>
+    <field name="target_step_id" ref="pm_emp_create_ppsbr"/>
+    <field name="label">No</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_emp_c08" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_create_user"/>
+    <field name="target_step_id" ref="pm_emp_create_ppsbr"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_emp_c09" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_employee_sync"/>
+    <field name="source_step_id" ref="pm_emp_create_ppsbr"/>
+    <field name="target_step_id" ref="pm_emp_end"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">right</field>
+</record>
+
+
+<!-- ================================================================ -->
+<!-- PROCESS MAP 2: SAP Sync — Student &amp; Class Creation           -->
+<!-- ================================================================ -->
+
+<record id="pm_sap_student_sync" model="myschool.process">
+    <field name="name">SAP Sync: Student &amp; Class Creation</field>
+    <field name="description">Automatic synchronization of students and class organizations from SAP Informat.
+
+Phase 2a: Fetch student registrations → create class orgs (CLASSGROUP type) + backend roles + ORG-TREE.
+Phase 2b: Fetch student details → create student person records + person_details.
+
+Entry point: informat_service.execute_sync() (phases 2a and 2b)
+Runs after employee sync phases are complete.</field>
+    <field name="state">approved</field>
+</record>
+
+<!-- Lanes -->
+
+<record id="pm_stu_lane_sap" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="name">SAP / Informat</field>
+    <field name="sequence">10</field>
+    <field name="color">#FFF3E0</field>
+    <field name="y_position">0</field>
+    <field name="height">100</field>
+</record>
+
+<record id="pm_stu_lane_sync" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="name">Sync Engine</field>
+    <field name="sequence">20</field>
+    <field name="color">#E3F2FD</field>
+    <field name="y_position">100</field>
+    <field name="height">110</field>
+</record>
+
+<record id="pm_stu_lane_betask" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="name">Betask Processor</field>
+    <field name="sequence">30</field>
+    <field name="color">#E8F5E9</field>
+    <field name="y_position">210</field>
+    <field name="height">200</field>
+</record>
+
+<!-- Steps -->
+
+<record id="pm_stu_start" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="lane_id" ref="pm_stu_lane_sap"/>
+    <field name="name">Start</field>
+    <field name="step_type">start</field>
+    <field name="x_position">60</field>
+    <field name="y_position">30</field>
+    <field name="width">40</field>
+    <field name="height">40</field>
+    <field name="annotation">Triggered after employee sync phases (1a/1b) complete.</field>
+</record>
+
+<record id="pm_stu_fetch_regs" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="lane_id" ref="pm_stu_lane_sync"/>
+    <field name="name">Fetch Student Registrations</field>
+    <field name="step_type">task</field>
+    <field name="x_position">180</field>
+    <field name="y_position">125</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">Phase 2a: Fetch registration data from SAP.
+
+Contains class codes (klasCode), enrollment dates, institution numbers. This data is used to derive class organizations.</field>
+    <field name="system_action">informat_service._get_registrations_from_informat()</field>
+    <field name="icon">fa-cloud-download</field>
+</record>
+
+<record id="pm_stu_create_orgs" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="lane_id" ref="pm_stu_lane_betask"/>
+    <field name="name">Create Class Organizations</field>
+    <field name="step_type">task</field>
+    <field name="x_position">180</field>
+    <field name="y_position">260</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">DB-ORG-ADD betask: create myschool.org with org_type=CLASSGROUP.
+
+Each unique class code becomes an organization. Matched by name_short + inst_nr to avoid duplicates.</field>
+    <field name="system_action">DB-ORG-ADD → process_db_org_add()</field>
+    <field name="icon">fa-building</field>
+</record>
+
+<record id="pm_stu_create_role" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="lane_id" ref="pm_stu_lane_betask"/>
+    <field name="name">Create Backend Role for Class</field>
+    <field name="step_type">task</field>
+    <field name="x_position">440</field>
+    <field name="y_position">260</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">Automatically create a backend role matching the class name.
+
+Role name = class short name (e.g., "4A").
+Role type = BACKEND.
+Used for PPSBR assignments linking students to their class.</field>
+    <field name="system_action">Auto-created during org processing</field>
+    <field name="icon">fa-id-badge</field>
+</record>
+
+<record id="pm_stu_create_orgtree" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="lane_id" ref="pm_stu_lane_betask"/>
+    <field name="name">Create ORG-TREE Relation</field>
+    <field name="step_type">task</field>
+    <field name="x_position">440</field>
+    <field name="y_position">345</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">Create ORG-TREE proprelation linking the new class org under its school.
+
+Parent school is found by matching inst_nr. Old parent relations are deactivated if the class is re-parented.</field>
+    <field name="system_action">PropRelation type=ORG-TREE</field>
+    <field name="icon">fa-sitemap</field>
+</record>
+
+<record id="pm_stu_fetch_students" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="lane_id" ref="pm_stu_lane_sync"/>
+    <field name="name">Fetch Student Details</field>
+    <field name="step_type">task</field>
+    <field name="x_position">700</field>
+    <field name="y_position">125</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">Phase 2b: Fetch detailed student data from SAP.
+
+JSON fields: persoonId (UUID), voornaam, naam, address data, parent contacts.</field>
+    <field name="system_action">informat_service._get_students_from_informat()</field>
+    <field name="icon">fa-cloud-download</field>
+</record>
+
+<record id="pm_stu_create_student" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="lane_id" ref="pm_stu_lane_betask"/>
+    <field name="name">Create Student Person</field>
+    <field name="step_type">task</field>
+    <field name="x_position">700</field>
+    <field name="y_position">260</field>
+    <field name="width">200</field>
+    <field name="height">60</field>
+    <field name="description">DB-STUDENT-ADD betask: create myschool.person with person_type=STUDENT.
+
+Records reg_group_code, reg_start_date, reg_end_date, reg_inst_nr on person.
+Creates myschool.person.details snapshot.
+
+No Odoo user is created for students (unlike employees).</field>
+    <field name="system_action">DB-STUDENT-ADD → _create_person_from_student_json()</field>
+    <field name="icon">fa-graduation-cap</field>
+</record>
+
+<record id="pm_stu_end" model="myschool.process.step">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="lane_id" ref="pm_stu_lane_sap"/>
+    <field name="name">End</field>
+    <field name="step_type">end</field>
+    <field name="x_position">960</field>
+    <field name="y_position">30</field>
+    <field name="width">40</field>
+    <field name="height">40</field>
+    <field name="annotation">Student + class org fully provisioned.</field>
+</record>
+
+<!-- Connections -->
+
+<record id="pm_stu_c01" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="source_step_id" ref="pm_stu_start"/>
+    <field name="target_step_id" ref="pm_stu_fetch_regs"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_stu_c02" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="source_step_id" ref="pm_stu_fetch_regs"/>
+    <field name="target_step_id" ref="pm_stu_create_orgs"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_stu_c03" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="source_step_id" ref="pm_stu_create_orgs"/>
+    <field name="target_step_id" ref="pm_stu_create_role"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_stu_c04" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="source_step_id" ref="pm_stu_create_role"/>
+    <field name="target_step_id" ref="pm_stu_create_orgtree"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_stu_c05" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="source_step_id" ref="pm_stu_create_orgtree"/>
+    <field name="target_step_id" ref="pm_stu_fetch_students"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_stu_c06" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="source_step_id" ref="pm_stu_fetch_students"/>
+    <field name="target_step_id" ref="pm_stu_create_student"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_stu_c07" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sap_student_sync"/>
+    <field name="source_step_id" ref="pm_stu_create_student"/>
+    <field name="target_step_id" ref="pm_stu_end"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">right</field>
+</record>
+
+
+<!-- ================================================================ -->
+<!-- PROCESS MAP 3: Manual Entity Management                          -->
+<!-- ================================================================ -->
+
+<record id="pm_manual_management" model="myschool.process">
+    <field name="name">Manual: Organization, Person &amp; Role Management</field>
+    <field name="description">Manual creation and management of organizations, persons, roles, and persongroups via the admin UI.
+
+All mutations are routed through the betask pipeline (manual_task_service → manual_task_processor).
+
+Entry points:
+- Create Person Wizard (CreatePersonWizard)
+- Object Browser right-click actions (add, move, delete)
+- Org form flag toggles (has_comgroup, has_secgroup)
+- PPSBR wizard for role assignments</field>
+    <field name="state">approved</field>
+</record>
+
+<!-- Lanes -->
+
+<record id="pm_man_lane_ui" model="myschool.process.lane">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="name">Admin User Interface</field>
+    <field name="sequence">10</field>
+    <field name="color">#FFF9C4</field>
+    <field name="y_position">0</field>
+    <field name="height">110</field>
+</record>
+
+<record id="pm_man_lane_module" model="myschool.process.lane">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="name">Admin Module</field>
+    <field name="sequence">20</field>
+    <field name="color">#E3F2FD</field>
+    <field name="y_position">110</field>
+    <field name="height">110</field>
+</record>
+
+<record id="pm_man_lane_betask" model="myschool.process.lane">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="name">Manual Task Pipeline</field>
+    <field name="sequence">30</field>
+    <field name="color">#E8F5E9</field>
+    <field name="y_position">220</field>
+    <field name="height">130</field>
+</record>
+
+<!-- Steps -->
+
+<record id="pm_man_start" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_ui"/>
+    <field name="name">Start</field>
+    <field name="step_type">start</field>
+    <field name="x_position">30</field>
+    <field name="y_position">35</field>
+    <field name="width">40</field>
+    <field name="height">40</field>
+</record>
+
+<record id="pm_man_gateway" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_ui"/>
+    <field name="name">Action?</field>
+    <field name="step_type">gateway_exclusive</field>
+    <field name="x_position">110</field>
+    <field name="y_position">30</field>
+    <field name="width">50</field>
+    <field name="height">50</field>
+    <field name="description">Admin chooses what entity to create or manage.</field>
+</record>
+
+<!-- Column A: Create Person -->
+
+<record id="pm_man_person_ui" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_ui"/>
+    <field name="name">Create Person Wizard</field>
+    <field name="step_type">subprocess</field>
+    <field name="x_position">240</field>
+    <field name="y_position">15</field>
+    <field name="width">180</field>
+    <field name="height">70</field>
+    <field name="description">CreatePersonWizard: admin fills in name, email, person type, target org.
+
+Options: create Odoo user, create HR employee, auto-generate login.
+
+Can also create persons via Object Browser drag-and-drop.</field>
+    <field name="icon">fa-user-plus</field>
+    <field name="responsible">Admin</field>
+</record>
+
+<record id="pm_man_person_task" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_module"/>
+    <field name="name">MANUAL / PERSON / ADD</field>
+    <field name="step_type">task</field>
+    <field name="x_position">240</field>
+    <field name="y_position">135</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">Create betask via manual_task_service.create_manual_task('PERSON', 'ADD', data).
+
+Also supports: PERSON/UPD (move org, update fields), PERSON/DEACT (deactivate + all proprelations), PERSON/DEL (hard delete).</field>
+    <field name="system_action">manual_task_service.create_manual_task()</field>
+    <field name="icon">fa-tasks</field>
+</record>
+
+<record id="pm_man_person_result" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_betask"/>
+    <field name="name">Person + User + PERSON-TREE</field>
+    <field name="step_type">task</field>
+    <field name="x_position">240</field>
+    <field name="y_position">255</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">process_manual_person_add():
+- Create myschool.person record
+- Optional: create res.users + hr.employee
+- Create PERSON-TREE proprelation (person → org)
+- Compute tree_org_id on person</field>
+    <field name="system_action">process_manual_person_add()</field>
+    <field name="icon">fa-check</field>
+</record>
+
+<!-- Column B: Create Organization -->
+
+<record id="pm_man_org_ui" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_ui"/>
+    <field name="name">Object Browser: Add Org</field>
+    <field name="step_type">subprocess</field>
+    <field name="x_position">490</field>
+    <field name="y_position">15</field>
+    <field name="width">180</field>
+    <field name="height">70</field>
+    <field name="description">Right-click parent org in Object Browser → "Add child organization".
+
+Admin specifies: name, name_short, org_type (SCHOOL, DEPARTMENT, CLASSGROUP, etc.), parent org.</field>
+    <field name="icon">fa-building</field>
+    <field name="responsible">Admin</field>
+</record>
+
+<record id="pm_man_org_task" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_module"/>
+    <field name="name">MANUAL / ORG / ADD</field>
+    <field name="step_type">task</field>
+    <field name="x_position">490</field>
+    <field name="y_position">135</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">Create betask via manual_task_service.create_manual_task('ORG', 'ADD', data).
+
+Also supports: ORG/UPD (move parent, update fields, build FQDN), ORG/DEL (delete org + all proprelations).</field>
+    <field name="system_action">manual_task_service.create_manual_task()</field>
+    <field name="icon">fa-tasks</field>
+</record>
+
+<record id="pm_man_org_result" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_betask"/>
+    <field name="name">Org + ORG-TREE + name_tree</field>
+    <field name="step_type">task</field>
+    <field name="x_position">490</field>
+    <field name="y_position">255</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">process_manual_org_add():
+- Create myschool.org record
+- Create ORG-TREE proprelation (child → parent)
+- Compute ou_fqdn_internal from parent
+- Compute name_tree from FQDN (e.g., "int.olvp.dept")</field>
+    <field name="system_action">process_manual_org_add()</field>
+    <field name="icon">fa-check</field>
+</record>
+
+<!-- Column C: Create Persongroup -->
+
+<record id="pm_man_pg_ui" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_ui"/>
+    <field name="name">Toggle has_comgroup / has_secgroup</field>
+    <field name="step_type">subprocess</field>
+    <field name="x_position">740</field>
+    <field name="y_position">15</field>
+    <field name="width">180</field>
+    <field name="height">70</field>
+    <field name="description">Admin toggles has_comgroup or has_secgroup flag on org form.
+
+Requires: has_accounts=True OR has_role=True.
+Otherwise: warning logged + non-critical SysEvent, no group created.
+
+When flag turns OFF: group is deleted + fields are cleared.</field>
+    <field name="icon">fa-toggle-on</field>
+    <field name="responsible">Admin</field>
+</record>
+
+<record id="pm_man_pg_task" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_module"/>
+    <field name="name">Compute Names, FQDNs &amp; Email</field>
+    <field name="step_type">task</field>
+    <field name="x_position">740</field>
+    <field name="y_position">135</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">org.write() → _handle_persongroup_flags():
+
+1. Walk ORG-TREE to build group name (grp-org-parent1-parent2)
+2. Compute FQDN (cn=grp,ou=OuForGroups,parent_fqdn)
+3. Compute group email (for com groups)
+4. Write computed fields back to org</field>
+    <field name="system_action">org._compute_and_write_group_fields()</field>
+    <field name="icon">fa-calculator</field>
+</record>
+
+<record id="pm_man_pg_result" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_betask"/>
+    <field name="name">PG Org + PG-P Members</field>
+    <field name="step_type">task</field>
+    <field name="x_position">740</field>
+    <field name="y_position">255</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">_find_or_create_persongroup():
+- Create PERSONGROUP org under OuForGroups
+- Create ORG-TREE relation
+
+_sync_persongroup_members():
+- has_accounts: add PERSON-TREE persons as PG-P members
+- has_role only: add BRSO/PPSBR role persons as PG-P members</field>
+    <field name="system_action">_find_or_create_persongroup() + _sync_persongroup_members()</field>
+    <field name="icon">fa-users</field>
+</record>
+
+<!-- Column D: Assign Role (PPSBR) -->
+
+<record id="pm_man_role_ui" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_ui"/>
+    <field name="name">Add PPSBR via Wizard</field>
+    <field name="step_type">subprocess</field>
+    <field name="x_position">990</field>
+    <field name="y_position">15</field>
+    <field name="width">180</field>
+    <field name="height">70</field>
+    <field name="description">Admin uses PPSBR wizard or Object Browser to assign a role.
+
+Select: person, backend role, school org, active period.
+Also supports: bulk role assignment via Object Browser.</field>
+    <field name="icon">fa-id-badge</field>
+    <field name="responsible">Admin</field>
+</record>
+
+<record id="pm_man_role_task" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_module"/>
+    <field name="name">MANUAL / PROPRELATION / ADD</field>
+    <field name="step_type">task</field>
+    <field name="x_position">990</field>
+    <field name="y_position">135</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">Create betask via manual_task_service.create_manual_task('PROPRELATION', 'ADD', data).
+
+Also supports: PROPRELATION/UPD (update fields, rename), PROPRELATION/DEACT (deactivate relation).</field>
+    <field name="system_action">manual_task_service.create_manual_task()</field>
+    <field name="icon">fa-tasks</field>
+</record>
+
+<record id="pm_man_role_result" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_betask"/>
+    <field name="name">PPSBR PropRelation</field>
+    <field name="step_type">task</field>
+    <field name="x_position">990</field>
+    <field name="y_position">255</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">process_manual_proprelation_add():
+- Create myschool.proprelation (type=PPSBR)
+- Links: person → school org → backend role → period
+- Build standardized name: PPSBR:Ro=...,Or=...,Pn=...
+- Check for duplicates, reactivate if inactive exists</field>
+    <field name="system_action">process_manual_proprelation_add()</field>
+    <field name="icon">fa-link</field>
+</record>
+
+<record id="pm_man_end" model="myschool.process.step">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="lane_id" ref="pm_man_lane_betask"/>
+    <field name="name">End</field>
+    <field name="step_type">end</field>
+    <field name="x_position">1240</field>
+    <field name="y_position">270</field>
+    <field name="width">40</field>
+    <field name="height">40</field>
+    <field name="annotation">Entity created/updated. Changes are audited via betask pipeline.</field>
+</record>
+
+<!-- Connections -->
+
+<record id="pm_man_c01" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_start"/>
+    <field name="target_step_id" ref="pm_man_gateway"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<!-- Gateway to 4 paths -->
+
+<record id="pm_man_c02" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_gateway"/>
+    <field name="target_step_id" ref="pm_man_person_ui"/>
+    <field name="label">Person</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_man_c03" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_gateway"/>
+    <field name="target_step_id" ref="pm_man_org_ui"/>
+    <field name="label">Org</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_man_c04" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_gateway"/>
+    <field name="target_step_id" ref="pm_man_pg_ui"/>
+    <field name="label">Persongroup</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_man_c05" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_gateway"/>
+    <field name="target_step_id" ref="pm_man_role_ui"/>
+    <field name="label">Role</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<!-- Column A vertical flow -->
+
+<record id="pm_man_c06" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_person_ui"/>
+    <field name="target_step_id" ref="pm_man_person_task"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_man_c07" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_person_task"/>
+    <field name="target_step_id" ref="pm_man_person_result"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<!-- Column B vertical flow -->
+
+<record id="pm_man_c08" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_org_ui"/>
+    <field name="target_step_id" ref="pm_man_org_task"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_man_c09" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_org_task"/>
+    <field name="target_step_id" ref="pm_man_org_result"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<!-- Column C vertical flow -->
+
+<record id="pm_man_c10" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_pg_ui"/>
+    <field name="target_step_id" ref="pm_man_pg_task"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_man_c11" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_pg_task"/>
+    <field name="target_step_id" ref="pm_man_pg_result"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<!-- Column D vertical flow -->
+
+<record id="pm_man_c12" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_role_ui"/>
+    <field name="target_step_id" ref="pm_man_role_task"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_man_c13" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_role_task"/>
+    <field name="target_step_id" ref="pm_man_role_result"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<!-- All results converge to End -->
+
+<record id="pm_man_c14" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_person_result"/>
+    <field name="target_step_id" ref="pm_man_end"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_man_c15" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_org_result"/>
+    <field name="target_step_id" ref="pm_man_end"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_man_c16" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_pg_result"/>
+    <field name="target_step_id" ref="pm_man_end"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_man_c17" model="myschool.process.connection">
+    <field name="map_id" ref="pm_manual_management"/>
+    <field name="source_step_id" ref="pm_man_role_result"/>
+    <field name="target_step_id" ref="pm_man_end"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+</data></odoo>

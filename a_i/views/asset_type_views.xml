@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- List View -->
+    <record id="ai_asset_type_view_list" model="ir.ui.view">
+        <field name="name">a_i.asset.type.list</field>
+        <field name="model">a_i.asset.type</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="category_id"/>
+                <field name="is_room"/>
+                <field name="active" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View -->
+    <record id="ai_asset_type_view_form" model="ir.ui.view">
+        <field name="name">a_i.asset.type.form</field>
+        <field name="model">a_i.asset.type</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_safe_delete" string="Archive"
+                            type="object" class="btn-secondary"
+                            invisible="not active"
+                            confirm="This will archive the asset type. Continue?"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_assets" type="object"
+                                class="oe_stat_button" icon="fa-cubes">
+                            <field name="asset_count" widget="statinfo" string="Assets"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="Asset Type Name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="category_id"/>
+                            <field name="is_room"/>
+                        </group>
+                        <group>
+                            <field name="active"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="description" placeholder="Description..."/>
+                    </group>
+                    <notebook>
+                        <page string="Access Rights" name="access_rights">
+                            <field name="access_policy_ids">
+                                <list editable="bottom">
+                                    <field name="group_id"/>
+                                    <field name="org_id"/>
+                                    <field name="access_level"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="ai_asset_type_view_search" model="ir.ui.view">
+        <field name="name">a_i.asset.type.search</field>
+        <field name="model">a_i.asset.type</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="category_id"/>
+                <separator/>
+                <filter string="Room Types" name="rooms" domain="[('is_room', '=', True)]"/>
+                <separator/>
+                <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+</odoo>

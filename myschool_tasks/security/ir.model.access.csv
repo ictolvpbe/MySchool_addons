@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_process_instance_user,myschool.process.instance.user,myschool_core.model_myschool_process_instance,myschool_tasks.group_taskboard_user,1,1,1,0
+access_process_instance_manager,myschool.process.instance.manager,myschool_core.model_myschool_process_instance,myschool_tasks.group_taskboard_manager,1,1,1,1
+access_process_task_user,myschool.process.task.user,myschool_core.model_myschool_process_task,myschool_tasks.group_taskboard_user,1,1,1,0
+access_process_task_manager,myschool.process.task.manager,myschool_core.model_myschool_process_task,myschool_tasks.group_taskboard_manager,1,1,1,1
+access_taskboard_user,myschool.taskboard.user,model_myschool_taskboard,myschool_tasks.group_taskboard_user,1,1,1,0

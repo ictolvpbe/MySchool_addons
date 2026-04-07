@@ -1,0 +1,679 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo><data noupdate="1">
+
+<!-- ================================================================ -->
+<!-- SAP Sync — Overzicht execute_sync()                             -->
+<!-- Het volledige sync proces tot en met BeTasks aanmaak            -->
+<!-- ================================================================ -->
+
+<record id="pm_sapsync_overview" model="myschool.process">
+    <field name="name">SAP Sync: Overzicht execute_sync()</field>
+    <field name="description">Overzichtsproces van de complete SAP/Informat synchronisatie.
+
+Toont de orchestratie vanuit execute_sync(): trigger, configuratie, blokkade-check,
+en de vier sync-fasen (rollen, medewerkers, klassen, leerlingen) tot aan BeTasks aanmaak.
+
+Entry point: informat_service.execute_sync()
+Trigger: Cron (15 min) of handmatige uitvoering via Informat Service configuratie.</field>
+    <field name="state">draft</field>
+</record>
+
+<!-- ==================== Lanes ==================== -->
+
+<record id="pm_ov_lane_trigger" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="name">Trigger</field>
+    <field name="sequence">10</field>
+    <field name="color">#FFF9C4</field>
+    <field name="y_position">0</field>
+    <field name="height">100</field>
+</record>
+
+<record id="pm_ov_lane_api" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="name">Informat API</field>
+    <field name="sequence">20</field>
+    <field name="color">#FFF3E0</field>
+    <field name="y_position">100</field>
+    <field name="height">120</field>
+</record>
+
+<record id="pm_ov_lane_engine" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="name">Sync Engine</field>
+    <field name="sequence">30</field>
+    <field name="color">#E3F2FD</field>
+    <field name="y_position">220</field>
+    <field name="height">180</field>
+</record>
+
+<record id="pm_ov_lane_betasks" model="myschool.process.lane">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="name">BeTasks Pipeline</field>
+    <field name="sequence">40</field>
+    <field name="color">#E8F5E9</field>
+    <field name="y_position">400</field>
+    <field name="height">120</field>
+</record>
+
+<!-- ==================== Steps — Fase 0: Start &amp; Config ==================== -->
+
+<record id="pm_ov_start" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_trigger"/>
+    <field name="name">Start</field>
+    <field name="step_type">start</field>
+    <field name="x_position">40</field>
+    <field name="y_position">25</field>
+    <field name="width">50</field>
+    <field name="height">50</field>
+    <field name="annotation">Cron job (elke 15 min) of handmatige trigger vanuit Informat Service configuratie.</field>
+</record>
+
+<record id="pm_ov_trigger" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_trigger"/>
+    <field name="name">Cron / Handmatige Sync</field>
+    <field name="step_type">task</field>
+    <field name="x_position">140</field>
+    <field name="y_position">20</field>
+    <field name="width">160</field>
+    <field name="height">60</field>
+    <field name="description">De sync wordt getriggerd door een cron job (elke 15 min) of handmatig vanuit de Informat Service configuratie pagina.</field>
+    <field name="system_action">informat_service.execute_sync()</field>
+    <field name="icon">fa-clock-o</field>
+</record>
+
+<record id="pm_ov_config" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">Config &amp; Settings Laden</field>
+    <field name="step_type">task</field>
+    <field name="x_position">140</field>
+    <field name="y_position">260</field>
+    <field name="width">160</field>
+    <field name="height">60</field>
+    <field name="description">Lees informat.service.config:
+- dev_mode, sync_roles, sync_employees, sync_classes, sync_students
+- OAuth credentials (SapInformatJSONApiId / Password)
+- CurrentSchoolYear
+- Timestamp: standaard 15 dagen geleden voor incrementele sync</field>
+    <field name="system_action">config = self.env['myschool.informat.service.config']</field>
+    <field name="icon">fa-cog</field>
+</record>
+
+<record id="pm_ov_block_check" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">Blokkade?</field>
+    <field name="step_type">gateway_exclusive</field>
+    <field name="x_position">360</field>
+    <field name="y_position">260</field>
+    <field name="width">60</field>
+    <field name="height">60</field>
+    <field name="description">Controleer of er blokkerende sys_events bestaan (code SAPSYNC-900 of BETASK-900). Zo ja: sync stopt.</field>
+</record>
+
+<record id="pm_ov_end_blocked" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">Stop (geblokkeerd)</field>
+    <field name="step_type">end</field>
+    <field name="x_position">365</field>
+    <field name="y_position">360</field>
+    <field name="width">50</field>
+    <field name="height">50</field>
+    <field name="annotation">Sync gestopt: blokkerende sys_event gevonden. Handmatige actie vereist.</field>
+</record>
+
+<!-- ==================== Steps — Fase 1a: Rollen ==================== -->
+
+<record id="pm_ov_roles_gw" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">sync_roles?</field>
+    <field name="step_type">gateway_exclusive</field>
+    <field name="x_position">480</field>
+    <field name="y_position">260</field>
+    <field name="width">60</field>
+    <field name="height">60</field>
+    <field name="description">Configuratie-check: is sync_roles of sync_employees actief?</field>
+</record>
+
+<record id="pm_ov_fetch_assignments" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_api"/>
+    <field name="name">Fetch Employee Assignments</field>
+    <field name="step_type">task</field>
+    <field name="x_position">560</field>
+    <field name="y_position">130</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">API call naar personeelsapi.informatsoftware.be/employees/assignments.
+
+Retourneert per medewerker: ambtCode (functie), instelnr, begin/einddatum toewijzing.</field>
+    <field name="system_action">_get_employee_assignments_from_informat()</field>
+    <field name="icon">fa-cloud-download</field>
+</record>
+
+<record id="pm_ov_analyse_roles" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">Analyse Rollen</field>
+    <field name="step_type">task</field>
+    <field name="x_position">560</field>
+    <field name="y_position">260</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">Voor elke assignment: extract ambtCode + ambt (rolnaam).
+Vergelijk met bestaande myschool.role records (match op shortname).
+Nieuw? Maak DB_ROLE_ADD betask aan.</field>
+    <field name="system_action">_analyze_employee_assignments_and_create_roles()</field>
+    <field name="icon">fa-search</field>
+</record>
+
+<record id="pm_ov_role_betasks" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_betasks"/>
+    <field name="name">DB_ROLE_ADD BeTasks</field>
+    <field name="step_type">task</field>
+    <field name="x_position">560</field>
+    <field name="y_position">430</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">BeTasks aangemaakt met:
+- target: DB, object: ROLE, action: ADD
+- data: { shortname, name, role_type: BACKEND }
+
+Direct verwerkt via _process_betasks('DB','ROLE','ADD').</field>
+    <field name="icon">fa-tasks</field>
+</record>
+
+<!-- ==================== Steps — Fase 1b: Medewerkers ==================== -->
+
+<record id="pm_ov_emp_gw" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">sync_employees?</field>
+    <field name="step_type">gateway_exclusive</field>
+    <field name="x_position">800</field>
+    <field name="y_position">260</field>
+    <field name="width">60</field>
+    <field name="height">60</field>
+    <field name="description">Configuratie-check: is sync_employees actief?</field>
+</record>
+
+<record id="pm_ov_fetch_employees" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_api"/>
+    <field name="name">Fetch Employee Data</field>
+    <field name="step_type">task</field>
+    <field name="x_position">880</field>
+    <field name="y_position">130</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">API call naar personeelsapi.informatsoftware.be/employees.
+
+JSON: pPersoon, personId, naam, voornaam, geslacht, rijksregisternr, geboortedatum, emailadressen, instNr, isActive.</field>
+    <field name="system_action">_get_employees_from_informat()</field>
+    <field name="icon">fa-cloud-download</field>
+</record>
+
+<record id="pm_ov_compare_emp" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">Vergelijk Medewerkers</field>
+    <field name="step_type">task</field>
+    <field name="x_position">880</field>
+    <field name="y_position">240</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">_sync_employee_persons(): voor elke medewerker:
+- Match op sap_person_uuid in DB
+- _compare_person_fields() voor diff detectie
+- Nieuw: DB_PERSON_ADD
+- Gewijzigd: DB_PERSON_UPD (met diff_new / diff_original)
+- Inactief: DB_PERSON_DEACT</field>
+    <field name="system_action">_sync_employee_persons()</field>
+    <field name="icon">fa-exchange</field>
+</record>
+
+<record id="pm_ov_sync_proprel" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">Sync PropRelaties</field>
+    <field name="step_type">task</field>
+    <field name="x_position">880</field>
+    <field name="y_position">330</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">_sync_employee_proprelations(): voor elke assignment:
+- Map naar PPSBR (Person-Period-School-BackendRole)
+- Nieuw: DB_PROPRELATION_ADD
+- Inactief: DB_PROPRELATION_DEACT</field>
+    <field name="system_action">_sync_employee_proprelations()</field>
+    <field name="icon">fa-link</field>
+</record>
+
+<record id="pm_ov_emp_betasks" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_betasks"/>
+    <field name="name">PERSON &amp; PROPRELATION BeTasks</field>
+    <field name="step_type">task</field>
+    <field name="x_position">880</field>
+    <field name="y_position">430</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">BeTasks aangemaakt:
+- DB_PERSON_ADD / UPD / DEACT (medewerkers)
+- DB_PROPRELATION_ADD / DEACT (PPSBR links)
+
+Data: persoon-velden + diff_new/diff_original voor updates.</field>
+    <field name="icon">fa-tasks</field>
+</record>
+
+<!-- ==================== Steps — Fase 2a: Klassen ==================== -->
+
+<record id="pm_ov_class_gw" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">sync_classes?</field>
+    <field name="step_type">gateway_exclusive</field>
+    <field name="x_position">1120</field>
+    <field name="y_position">260</field>
+    <field name="width">60</field>
+    <field name="height">60</field>
+    <field name="description">Configuratie-check: is sync_classes actief?</field>
+</record>
+
+<record id="pm_ov_fetch_regs" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_api"/>
+    <field name="name">Fetch Registraties</field>
+    <field name="step_type">task</field>
+    <field name="x_position">1200</field>
+    <field name="y_position">130</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">API call naar leerlingenapi.informatsoftware.be.
+
+Haalt inschrijvingsdata op: klasCode, instelnr, begin/einddatum. Wordt gebruikt om klasgroepen (orgs) af te leiden.</field>
+    <field name="system_action">_get_registrations_from_informat()</field>
+    <field name="icon">fa-cloud-download</field>
+</record>
+
+<record id="pm_ov_analyse_classes" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">Analyse Klassen</field>
+    <field name="step_type">task</field>
+    <field name="x_position">1200</field>
+    <field name="y_position">260</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">Voor elke registratie: extract klasCode + instelnr.
+Maak fullname: "{klasCode}-{school_short}".
+Vergelijk met bestaande myschool.org (orgtype=CLASSGROUP).
+Nieuw: DB_ORG_ADD
+Niet meer in import: DB_ORG_DEACT</field>
+    <field name="system_action">_analyze_student_data_and_create_org_tasks()</field>
+    <field name="icon">fa-building</field>
+</record>
+
+<record id="pm_ov_org_betasks" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_betasks"/>
+    <field name="name">ORG BeTasks</field>
+    <field name="step_type">task</field>
+    <field name="x_position">1200</field>
+    <field name="y_position">430</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">BeTasks aangemaakt:
+- DB_ORG_ADD (nieuwe klasgroepen)
+- DB_ORG_DEACT (klassen niet meer in import)
+
+Data: { name, name_short, org_type: CLASSGROUP, inst_nr, school_id }</field>
+    <field name="icon">fa-tasks</field>
+</record>
+
+<!-- ==================== Steps — Fase 2b: Leerlingen ==================== -->
+
+<record id="pm_ov_stu_gw" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">sync_students?</field>
+    <field name="step_type">gateway_exclusive</field>
+    <field name="x_position">1440</field>
+    <field name="y_position">260</field>
+    <field name="width">60</field>
+    <field name="height">60</field>
+    <field name="description">Configuratie-check: is sync_students actief?</field>
+</record>
+
+<record id="pm_ov_fetch_students" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_api"/>
+    <field name="name">Fetch Leerlingen</field>
+    <field name="step_type">task</field>
+    <field name="x_position">1520</field>
+    <field name="y_position">130</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">API call naar leerlingenapi.informatsoftware.be/students.
+
+JSON: persoonId, naam, voornaam, geboortedatum, rijksregisternr, adressen, oudercontacten.</field>
+    <field name="system_action">_get_students_from_informat()</field>
+    <field name="icon">fa-cloud-download</field>
+</record>
+
+<record id="pm_ov_merge_compare" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_engine"/>
+    <field name="name">Merge &amp; Vergelijk Leerlingen</field>
+    <field name="step_type">task</field>
+    <field name="x_position">1520</field>
+    <field name="y_position">260</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">_merge_registration_and_student_data(): combineer registratie- en leerlingdata.
+_analyze_data_and_create_student_tasks():
+- Match op sap_person_uuid
+- _compare_person_fields() voor diff
+- Nieuw: DB_PERSON_ADD (type=STUDENT)
+- Gewijzigd: DB_PERSON_UPD
+- Uitgeschreven: DB_PERSON_DEACT</field>
+    <field name="system_action">_analyze_data_and_create_student_tasks()</field>
+    <field name="icon">fa-exchange</field>
+</record>
+
+<record id="pm_ov_stu_betasks" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_betasks"/>
+    <field name="name">PERSON BeTasks (Leerlingen)</field>
+    <field name="step_type">task</field>
+    <field name="x_position">1520</field>
+    <field name="y_position">430</field>
+    <field name="width">180</field>
+    <field name="height">60</field>
+    <field name="description">BeTasks aangemaakt:
+- DB_PERSON_ADD (nieuwe leerlingen, person_type=STUDENT)
+- DB_PERSON_UPD (gewijzigde velden)
+- DB_PERSON_DEACT (uitgeschreven leerlingen)
+
+Geen Odoo user aanmaak voor leerlingen (anders dan medewerkers).</field>
+    <field name="icon">fa-tasks</field>
+</record>
+
+<!-- ==================== End ==================== -->
+
+<record id="pm_ov_end" model="myschool.process.step">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="lane_id" ref="pm_ov_lane_betasks"/>
+    <field name="name">Einde</field>
+    <field name="step_type">end</field>
+    <field name="x_position">1760</field>
+    <field name="y_position">440</field>
+    <field name="width">50</field>
+    <field name="height">50</field>
+    <field name="annotation">Alle BeTasks zijn aangemaakt. Verwerking gebeurt via de BeTasks Processor cron (apart proces).</field>
+</record>
+
+<!-- ==================== Connections ==================== -->
+
+<!-- Fase 0: Start, Config, Blokkade check -->
+<record id="pm_ov_c01" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_start"/>
+    <field name="target_step_id" ref="pm_ov_trigger"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_ov_c02" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_trigger"/>
+    <field name="target_step_id" ref="pm_ov_config"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c03" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_config"/>
+    <field name="target_step_id" ref="pm_ov_block_check"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<!-- Blokkade: Ja naar Stop -->
+<record id="pm_ov_c04" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_block_check"/>
+    <field name="target_step_id" ref="pm_ov_end_blocked"/>
+    <field name="label">Ja</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<!-- Blokkade: Nee naar Rollen gateway -->
+<record id="pm_ov_c05" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_block_check"/>
+    <field name="target_step_id" ref="pm_ov_roles_gw"/>
+    <field name="label">Nee</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<!-- Fase 1a: Rollen -->
+<record id="pm_ov_c06" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_roles_gw"/>
+    <field name="target_step_id" ref="pm_ov_fetch_assignments"/>
+    <field name="label">Ja</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">top</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_ov_c07" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_fetch_assignments"/>
+    <field name="target_step_id" ref="pm_ov_analyse_roles"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c08" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_analyse_roles"/>
+    <field name="target_step_id" ref="pm_ov_role_betasks"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c09" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_role_betasks"/>
+    <field name="target_step_id" ref="pm_ov_emp_gw"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">bottom</field>
+</record>
+
+<!-- Rollen skip naar Medewerkers gateway -->
+<record id="pm_ov_c10" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_roles_gw"/>
+    <field name="target_step_id" ref="pm_ov_emp_gw"/>
+    <field name="label">Nee</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<!-- Fase 1b: Medewerkers -->
+<record id="pm_ov_c11" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_emp_gw"/>
+    <field name="target_step_id" ref="pm_ov_fetch_employees"/>
+    <field name="label">Ja</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">top</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_ov_c12" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_fetch_employees"/>
+    <field name="target_step_id" ref="pm_ov_compare_emp"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c13" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_compare_emp"/>
+    <field name="target_step_id" ref="pm_ov_sync_proprel"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c14" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_sync_proprel"/>
+    <field name="target_step_id" ref="pm_ov_emp_betasks"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c15" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_emp_betasks"/>
+    <field name="target_step_id" ref="pm_ov_class_gw"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">bottom</field>
+</record>
+
+<!-- Medewerkers skip naar Klassen gateway -->
+<record id="pm_ov_c16" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_emp_gw"/>
+    <field name="target_step_id" ref="pm_ov_class_gw"/>
+    <field name="label">Nee</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<!-- Fase 2a: Klassen -->
+<record id="pm_ov_c17" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_class_gw"/>
+    <field name="target_step_id" ref="pm_ov_fetch_regs"/>
+    <field name="label">Ja</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">top</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_ov_c18" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_fetch_regs"/>
+    <field name="target_step_id" ref="pm_ov_analyse_classes"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c19" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_analyse_classes"/>
+    <field name="target_step_id" ref="pm_ov_org_betasks"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c20" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_org_betasks"/>
+    <field name="target_step_id" ref="pm_ov_stu_gw"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">bottom</field>
+</record>
+
+<!-- Klassen skip naar Leerlingen gateway -->
+<record id="pm_ov_c21" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_class_gw"/>
+    <field name="target_step_id" ref="pm_ov_stu_gw"/>
+    <field name="label">Nee</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<!-- Fase 2b: Leerlingen -->
+<record id="pm_ov_c22" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_stu_gw"/>
+    <field name="target_step_id" ref="pm_ov_fetch_students"/>
+    <field name="label">Ja</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">top</field>
+    <field name="target_port">left</field>
+</record>
+
+<record id="pm_ov_c23" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_fetch_students"/>
+    <field name="target_step_id" ref="pm_ov_merge_compare"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c24" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_merge_compare"/>
+    <field name="target_step_id" ref="pm_ov_stu_betasks"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">bottom</field>
+    <field name="target_port">top</field>
+</record>
+
+<record id="pm_ov_c25" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_stu_betasks"/>
+    <field name="target_step_id" ref="pm_ov_end"/>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+<!-- Leerlingen skip naar Einde -->
+<record id="pm_ov_c26" model="myschool.process.connection">
+    <field name="map_id" ref="pm_sapsync_overview"/>
+    <field name="source_step_id" ref="pm_ov_stu_gw"/>
+    <field name="target_step_id" ref="pm_ov_end"/>
+    <field name="label">Nee</field>
+    <field name="connection_type">sequence</field>
+    <field name="source_port">right</field>
+    <field name="target_port">left</field>
+</record>
+
+</data></odoo>

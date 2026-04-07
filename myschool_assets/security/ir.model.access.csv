@@ -1,0 +1,16 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_ai_asset_type_category_user,myschool.asset.type.category.user,myschool_core.model_myschool_asset_type_category,myschool_assets.group_ai_user,1,0,0,0
+access_ai_asset_type_category_admin,myschool.asset.type.category.admin,myschool_core.model_myschool_asset_type_category,myschool_assets.group_ai_admin,1,1,1,1
+access_ai_asset_type_user,myschool.asset.type.user,myschool_core.model_myschool_asset_type,myschool_assets.group_ai_user,1,0,0,0
+access_ai_asset_type_manager,myschool.asset.type.manager,myschool_core.model_myschool_asset_type,myschool_assets.group_ai_manager,1,1,1,0
+access_ai_asset_type_admin,myschool.asset.type.admin,myschool_core.model_myschool_asset_type,myschool_assets.group_ai_admin,1,1,1,1
+access_ai_asset_user,myschool.asset.user,myschool_core.model_myschool_asset,myschool_assets.group_ai_user,1,0,0,0
+access_ai_asset_manager,myschool.asset.manager,myschool_core.model_myschool_asset,myschool_assets.group_ai_manager,1,1,1,0
+access_ai_asset_admin,myschool.asset.admin,myschool_core.model_myschool_asset,myschool_assets.group_ai_admin,1,1,1,1
+access_ai_asset_license_user,myschool.asset.license.user,myschool_core.model_myschool_asset_license,myschool_assets.group_ai_user,1,0,0,0
+access_ai_asset_license_manager,myschool.asset.license.manager,myschool_core.model_myschool_asset_license,myschool_assets.group_ai_manager,1,1,1,1
+access_ai_asset_checkout_user,myschool.asset.checkout.user,myschool_core.model_myschool_asset_checkout,myschool_assets.group_ai_user,1,1,1,0
+access_ai_asset_checkout_manager,myschool.asset.checkout.manager,myschool_core.model_myschool_asset_checkout,myschool_assets.group_ai_manager,1,1,1,1
+access_ai_access_policy_manager,myschool.access.policy.manager,myschool_core.model_myschool_access_policy,myschool_assets.group_ai_manager,1,1,1,1
+access_ai_access_policy_admin,myschool.access.policy.admin,myschool_core.model_myschool_access_policy,myschool_assets.group_ai_admin,1,1,1,1
+access_ai_access_policy_user,myschool.access.policy.user,myschool_core.model_myschool_access_policy,myschool_assets.group_ai_user,1,0,0,0

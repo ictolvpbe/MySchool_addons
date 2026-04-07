@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Root Menu -->
+    <menuitem id="menu_taskboard_root"
+              name="Takenbord"
+              web_icon="myschool_tasks,static/description/icon.png"
+              sequence="25"/>
+
+    <!-- Dashboard -->
+    <menuitem id="menu_taskboard_dashboard"
+              name="Dashboard"
+              parent="menu_taskboard_root"
+              action="action_taskboard_client"
+              sequence="1"/>
+
+    <!-- Tasks submenu -->
+    <menuitem id="menu_taskboard_tasks"
+              name="Taken"
+              parent="menu_taskboard_root"
+              sequence="10"/>
+
+    <menuitem id="menu_taskboard_my_tasks"
+              name="Mijn taken"
+              parent="menu_taskboard_tasks"
+              action="action_process_task_my"
+              sequence="1"/>
+
+    <menuitem id="menu_taskboard_all_tasks"
+              name="Alle taken"
+              parent="menu_taskboard_tasks"
+              action="action_process_task_all"
+              sequence="2"
+              groups="group_taskboard_manager"/>
+
+    <!-- Processes submenu -->
+    <menuitem id="menu_taskboard_processes"
+              name="Processen"
+              parent="menu_taskboard_root"
+              sequence="20"/>
+
+    <menuitem id="menu_taskboard_instances"
+              name="Procesinstanties"
+              parent="menu_taskboard_processes"
+              action="action_process_instance"
+              sequence="1"/>
+
+</odoo>

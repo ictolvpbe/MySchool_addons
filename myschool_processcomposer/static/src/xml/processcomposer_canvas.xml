@@ -1,0 +1,1828 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- ============================================================
+         Toolbar
+         ============================================================ -->
+    <t t-name="myschool_processcomposer.Toolbar">
+        <div class="pm-toolbar">
+            <span class="pm-toolbar-title">
+                <i class="fa fa-sitemap me-1"/>
+                <t t-esc="props.mapName || 'Process Composer'"/>
+            </span>
+
+            <span class="badge rounded-pill"
+                  t-attf-class="bg-#{props.mapState === 'approved' ? 'success' : props.mapState === 'review' ? 'warning' : 'info'}">
+                <t t-esc="props.mapState"/>
+            </span>
+
+            <div class="pm-toolbar-divider"/>
+
+            <!-- Palette items -->
+            <div class="pm-toolbar-section">
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'start')"
+                        title="Start Event">
+                    <i class="fa fa-play-circle text-success"/> Start
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'end')"
+                        title="End Event">
+                    <i class="fa fa-stop-circle text-danger"/> End
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'task')"
+                        title="Task">
+                    <i class="fa fa-square text-primary"/> Task
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'subprocess')"
+                        title="Sub-Process">
+                    <i class="fa fa-clone" style="color:#7E57C2"/> Sub
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'condition')"
+                        title="Condition (If/Else)">
+                    <i class="fa fa-question-circle text-info"/> If/Else
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'gateway_exclusive')"
+                        title="Exclusive Gateway (Decision)">
+                    <i class="fa fa-diamond text-warning"/> XOR
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'gateway_parallel')"
+                        title="Parallel Gateway">
+                    <i class="fa fa-diamond text-warning"/> AND
+                </button>
+                <button class="pm-toolbar-btn" draggable="true"
+                        t-on-dragstart="(ev) => this.onDragStart(ev, 'lane')"
+                        title="Add Swimlane">
+                    <i class="fa fa-bars text-muted"/> Lane
+                </button>
+            </div>
+
+            <div class="pm-toolbar-divider"/>
+
+            <!-- Action buttons -->
+            <div class="pm-toolbar-section">
+                <button class="pm-toolbar-btn" t-on-click="props.onUndo"
+                        t-att-disabled="!props.canUndo" title="Undo (Ctrl+Z)">
+                    <i class="fa fa-undo"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onRedo"
+                        t-att-disabled="!props.canRedo" title="Redo (Ctrl+Shift+Z)">
+                    <i class="fa fa-repeat"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onAutoLayout" title="Auto Layout">
+                    <i class="fa fa-magic"/>
+                </button>
+
+                <div class="pm-toolbar-divider"/>
+
+                <button class="pm-toolbar-btn pm-save-btn" t-on-click="props.onSave"
+                        title="Save (Ctrl+S)">
+                    <i class="fa fa-save"/> Save
+                    <t t-if="props.dirty"><span class="pm-dirty-dot"/></t>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onZoomIn" title="Zoom In">
+                    <i class="fa fa-search-plus"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onZoomOut" title="Zoom Out">
+                    <i class="fa fa-search-minus"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onFitView" title="Fit to View">
+                    <i class="fa fa-compress"/>
+                </button>
+                <button t-attf-class="pm-toolbar-btn #{props.gridEnabled ? 'pm-active' : ''}"
+                        t-on-click="props.onToggleGrid" title="Toggle Grid">
+                    <i class="fa fa-th"/>
+                </button>
+
+                <div class="pm-toolbar-divider"/>
+
+                <button class="pm-toolbar-btn" t-on-click="props.onToggleMinimap" title="Toggle Minimap">
+                    <i class="fa fa-map"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onToggleVersions" title="Version History">
+                    <i class="fa fa-history"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onExportPNG" title="Export PNG">
+                    <i class="fa fa-file-image-o"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onExportSVG" title="Export SVG">
+                    <i class="fa fa-download"/>
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onExportDrawio" title="Export draw.io XML">
+                    <i class="fa fa-share-square-o"/>
+                </button>
+
+                <div class="pm-toolbar-divider"/>
+
+                <button class="pm-toolbar-btn" t-on-click="props.onImportDrawio" title="Import draw.io (XML/SVG/HTML)">
+                    <i class="fa fa-upload"/> Import
+                </button>
+                <button class="pm-toolbar-btn" t-on-click="props.onPrint" title="Print">
+                    <i class="fa fa-print"/>
+                </button>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Canvas (SVG)
+         ============================================================ -->
+    <t t-name="myschool_processcomposer.Canvas">
+        <div t-att-class="'pm-canvas-wrapper' + (state.cursorGrab ? ' pm-grab-cursor' : '')"
+             t-on-dragover="onDragOver"
+             t-on-drop="onDrop"
+             t-on-auxclick.prevent="() => {}">
+            <svg t-ref="svgCanvas" class="pm-canvas"
+                 t-on-mousedown="onSvgMouseDown"
+                 t-on-mousemove="onSvgMouseMove"
+                 t-on-mouseup="onSvgMouseUp"
+                 t-on-wheel.prevent="onWheel"
+                 xmlns="http://www.w3.org/2000/svg">
+
+                <defs>
+                    <marker id="pm-arrowhead" markerWidth="10" markerHeight="7"
+                            refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
+                    </marker>
+                    <marker id="pm-arrowhead-blue" markerWidth="10" markerHeight="7"
+                            refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#1565C0"/>
+                    </marker>
+                    <pattern id="pm-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+                    </pattern>
+                </defs>
+
+                <!-- Background -->
+                <rect class="pm-canvas-bg" width="10000" height="10000" fill="#fafafa"
+                      x="-5000" y="-5000"/>
+
+                <!-- Transform group for pan/zoom -->
+                <g t-att-transform="getTransform()">
+
+                    <!-- Grid -->
+                    <t t-if="props.gridEnabled">
+                        <rect width="10000" height="10000" x="-2000" y="-500"
+                              fill="url(#pm-grid)" opacity="0.8"/>
+                    </t>
+
+                    <!-- Lanes -->
+                    <t t-foreach="props.lanes" t-as="lane" t-key="lane.id">
+                        <g t-on-click.stop="(ev) => this.onLaneClick(ev, lane)">
+                            <rect t-att-x="0" t-att-y="lane.y_position"
+                                  width="5000" t-att-height="lane.height"
+                                  t-att-fill="lane.color || '#E3F2FD'" fill-opacity="0.3"
+                                  stroke="#bbb" stroke-width="1" stroke-dasharray="4 2"/>
+                            <!-- Lane drag handle (top bar) -->
+                            <rect class="pm-lane-drag-handle"
+                                  t-att-x="0" t-att-y="lane.y_position"
+                                  width="5000" height="28"
+                                  t-on-mousedown.stop="(ev) => this.onLaneDragMouseDown(ev, lane)"/>
+                            <!-- Label rendered in sticky overlay group below -->
+                            <!-- Lane bottom resize handle -->
+                            <rect class="pm-lane-resize-handle"
+                                  t-att-x="0" t-att-y="lane.y_position + lane.height - 4"
+                                  width="5000" height="8"
+                                  t-on-mousedown.stop="(ev) => this.onLaneResizeMouseDown(ev, lane)"/>
+                        </g>
+                    </t>
+
+                    <!-- Steps -->
+                    <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                        <g t-att-class="getStepClass(step)"
+                           t-on-mousedown.stop="(ev) => this.onStepMouseDown(ev, step)"
+                           t-on-dblclick.stop="(ev) => this.onStepDblClick(ev, step)"
+                           t-on-contextmenu.stop.prevent="(ev) => this.onStepContextMenu(ev, step)">
+
+                            <!-- Start Event: circle -->
+                            <t t-if="step.step_type === 'start'">
+                                <circle class="pm-shape"
+                                        t-att-cx="step.x_position + (step.width || 50) / 2"
+                                        t-att-cy="step.y_position + (step.width || 50) / 2"
+                                        t-att-r="(step.width || 50) / 2" t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <t t-if="step.icon">
+                                        <foreignObject t-att-x="step.x_position + (step.width || 50) / 2 - 12" t-att-y="step.y_position + (step.width || 50) / 2 - 17"
+                                                       width="24" height="16">
+                                            <i xmlns="http://www.w3.org/1999/xhtml"
+                                               t-attf-class="fa #{step.icon}" style="color:#fff;font-size:14px"/>
+                                        </foreignObject>
+                                    </t>
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
+                                </t>
+                            </t>
+
+                            <!-- End Event: circle -->
+                            <t t-if="step.step_type === 'end'">
+                                <circle class="pm-shape"
+                                        t-att-cx="step.x_position + (step.width || 50) / 2"
+                                        t-att-cy="step.y_position + (step.width || 50) / 2"
+                                        t-att-r="(step.width || 50) / 2" t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="4"/>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text pm-shape-text-dark"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
+                                </t>
+                            </t>
+
+                            <!-- Task: rounded rectangle -->
+                            <t t-if="step.step_type === 'task'">
+                                <rect class="pm-shape"
+                                      t-att-x="step.x_position" t-att-y="step.y_position"
+                                      t-att-width="step.width || 140" t-att-height="step.height || 60"
+                                      rx="8" ry="8" t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <t t-if="step.icon">
+                                        <foreignObject t-att-x="step.x_position + (step.width || 140) / 2 - 10" t-att-y="step.y_position + 5"
+                                                       width="20" height="20">
+                                            <i xmlns="http://www.w3.org/1999/xhtml"
+                                               t-attf-class="fa #{step.icon}" style="color:#fff;font-size:16px"/>
+                                        </foreignObject>
+                                    </t>
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
+                                </t>
+                            </t>
+
+                            <!-- Sub-Process: double-bordered rectangle -->
+                            <t t-if="step.step_type === 'subprocess'">
+                                <rect class="pm-shape"
+                                      t-att-x="step.x_position" t-att-y="step.y_position"
+                                      t-att-width="step.width || 140" t-att-height="step.height || 60"
+                                      rx="8" ry="8" t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
+                                <!-- Inner border for subprocess -->
+                                <rect t-att-x="step.x_position + 4" t-att-y="step.y_position + 4"
+                                      t-att-width="(step.width || 140) - 8" t-att-height="(step.height || 60) - 8"
+                                      rx="6" ry="6" fill="none" t-att-stroke="getStepStroke(step)" stroke-width="1" opacity="0.5"/>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <t t-if="step.icon">
+                                        <foreignObject t-att-x="step.x_position + (step.width || 140) / 2 - 10" t-att-y="step.y_position + 8"
+                                                       width="20" height="20">
+                                            <i xmlns="http://www.w3.org/1999/xhtml"
+                                               t-attf-class="fa #{step.icon}" style="color:#fff;font-size:16px"/>
+                                        </foreignObject>
+                                    </t>
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
+                                    <!-- Sub-process indicator -->
+                                    <rect t-att-x="step.x_position + (step.width || 140) / 2 - 8"
+                                          t-att-y="step.y_position + (step.height || 60) - 14"
+                                          width="16" height="10" rx="2" fill="none" stroke="#fff" stroke-width="1" opacity="0.7"/>
+                                    <text t-att-x="step.x_position + (step.width || 140) / 2"
+                                          t-att-y="step.y_position + (step.height || 60) - 6"
+                                          fill="#fff" font-size="7" text-anchor="middle" dominant-baseline="central"
+                                          opacity="0.8">+</text>
+                                </t>
+                            </t>
+
+                            <!-- Condition (If/Else): diamond -->
+                            <t t-if="step.step_type === 'condition'">
+                                <polygon class="pm-shape"
+                                         t-att-points="(step.x_position + (step.width || 100) / 2) + ',' + step.y_position + ' ' + (step.x_position + (step.width || 100)) + ',' + (step.y_position + (step.height || 100) / 2) + ' ' + (step.x_position + (step.width || 100) / 2) + ',' + (step.y_position + (step.height || 100)) + ' ' + step.x_position + ',' + (step.y_position + (step.height || 100) / 2)"
+                                         t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
+                                <t t-if="state.editingStepId !== step.id">
+                                    <t t-foreach="getTextTspans(step)" t-as="ts" t-key="ts_index">
+                                        <text class="pm-shape-text"
+                                              t-att-x="ts.x" t-att-y="ts.y"
+                                              t-att-font-size="ts.fontSize">
+                                            <t t-esc="ts.text"/>
+                                        </text>
+                                    </t>
+                                    <text class="pm-shape-text" font-size="9" fill-opacity="0.8"
+                                          t-att-x="step.x_position + (step.width || 100) / 2"
+                                          t-att-y="step.y_position + (step.height || 100) / 2 + 16">
+                                        Yes / No
+                                    </text>
+                                </t>
+                            </t>
+
+                            <!-- Exclusive Gateway: diamond with X -->
+                            <t t-if="step.step_type === 'gateway_exclusive'">
+                                <polygon class="pm-shape"
+                                         t-att-points="(step.x_position + (step.width || 60) / 2) + ',' + step.y_position + ' ' + (step.x_position + (step.width || 60)) + ',' + (step.y_position + (step.height || 60) / 2) + ' ' + (step.x_position + (step.width || 60) / 2) + ',' + (step.y_position + (step.height || 60)) + ' ' + step.x_position + ',' + (step.y_position + (step.height || 60) / 2)"
+                                         t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
+                                <text class="pm-gateway-symbol"
+                                      t-att-x="step.x_position + (step.width || 60) / 2"
+                                      t-att-y="step.y_position + (step.height || 60) / 2 + 2">X</text>
+                            </t>
+
+                            <!-- Parallel Gateway: diamond with + -->
+                            <t t-if="step.step_type === 'gateway_parallel'">
+                                <polygon class="pm-shape"
+                                         t-att-points="(step.x_position + (step.width || 60) / 2) + ',' + step.y_position + ' ' + (step.x_position + (step.width || 60)) + ',' + (step.y_position + (step.height || 60) / 2) + ' ' + (step.x_position + (step.width || 60) / 2) + ',' + (step.y_position + (step.height || 60)) + ' ' + step.x_position + ',' + (step.y_position + (step.height || 60) / 2)"
+                                         t-att-fill="getStepFill(step)" t-att-stroke="getStepStroke(step)" stroke-width="2"/>
+                                <text class="pm-gateway-symbol"
+                                      t-att-x="step.x_position + (step.width || 60) / 2"
+                                      t-att-y="step.y_position + (step.height || 60) / 2 + 2">+</text>
+                            </t>
+
+                            <!-- Annotation indicator -->
+                            <t t-if="step.annotation">
+                                <t t-set="aPos" t-value="getAnnotationPos(step)"/>
+                                <circle t-att-cx="aPos.x" t-att-cy="aPos.y" r="7"
+                                        fill="#FFF9C4" stroke="#F9A825" stroke-width="1"/>
+                                <text t-att-x="aPos.x" t-att-y="aPos.y + 1"
+                                      font-size="9" fill="#F9A825" text-anchor="middle" dominant-baseline="central"
+                                      font-weight="bold" class="pm-annotation-icon">i</text>
+                                <title><t t-esc="step.annotation"/></title>
+                            </t>
+
+                            <!-- User story indicator (populated by myschool_appfoundry when installed) -->
+                            <t t-if="step.appfoundry_item_id and (step.step_type === 'task' or step.step_type === 'subprocess')">
+                                <g class="pm-story-indicator">
+                                    <circle t-att-cx="step.x_position + 12"
+                                            t-att-cy="step.y_position + (step.height || 60) - 12" r="7"
+                                            fill="#E8F5E9" stroke="#4CAF50" stroke-width="1"/>
+                                    <text t-att-x="step.x_position + 12"
+                                          t-att-y="step.y_position + (step.height || 60) - 11"
+                                          font-size="9" fill="#4CAF50" text-anchor="middle" dominant-baseline="central"
+                                          font-weight="bold">S</text>
+                                    <title><t t-esc="'Story: ' + (step.appfoundry_item_name || '')"/></title>
+                                </g>
+                            </t>
+
+                            <!-- Connector dots (visible on hover) -->
+                            <t t-foreach="getConnectorDots(step)" t-as="dot" t-key="dot.pos">
+                                <circle class="pm-connector-dot"
+                                        t-att-cx="dot.cx" t-att-cy="dot.cy" r="5"
+                                        t-on-mousedown.stop="(ev) => this.onConnectorMouseDown(ev, step, dot.pos)"/>
+                            </t>
+
+                            <!-- Resize handles (visible when selected) -->
+                            <t t-foreach="getResizeHandles(step)" t-as="rh" t-key="rh.handle">
+                                <rect class="pm-resize-handle"
+                                      t-att-x="rh.x - 4" t-att-y="rh.y - 4"
+                                      width="8" height="8"
+                                      t-att-style="'cursor:' + rh.cursor"
+                                      t-on-mousedown.stop="(ev) => this.onResizeHandleMouseDown(ev, step, rh.handle)"/>
+                            </t>
+
+                            <!-- Inline text editor (multi-line textarea) -->
+                            <t t-if="state.editingStepId === step.id">
+                                <foreignObject t-att-x="getEditBox(step).x"
+                                               t-att-y="getEditBox(step).y"
+                                               t-att-width="getEditBox(step).w"
+                                               t-att-height="getEditBox(step).h">
+                                    <textarea xmlns="http://www.w3.org/1999/xhtml"
+                                              class="pm-inline-edit"
+                                              t-ref="editInput"
+                                              t-on-input="onEditInput"
+                                              t-on-keydown="onEditKeydown"
+                                              t-on-blur="onEditBlur"><t t-esc="state.editingText"/></textarea>
+                                </foreignObject>
+                            </t>
+                        </g>
+                    </t>
+
+                    <!-- Connections (rendered after steps so arrowheads aren't hidden behind shapes) -->
+                    <t t-foreach="props.connections" t-as="conn" t-key="conn.id">
+                        <g>
+                            <!-- Invisible wider hit area for clicking + dragging -->
+                            <path t-att-d="getConnectionPath(conn)"
+                                  fill="none" stroke="transparent" stroke-width="14"
+                                  t-attf-class="#{this.isConnectionSelected(conn) ? 'pm-connection-hit-selected' : ''}"
+                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
+                                  t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
+                            <path t-att-d="getConnectionPath(conn)"
+                                  t-att-class="getConnectionClass(conn)"
+                                  marker-end="url(#pm-arrowhead)"
+                                  t-on-click.stop="(ev) => this.onConnectionClick(ev, conn)"
+                                  t-on-mousedown="(ev) => this.onConnectionPathMouseDown(ev, conn)"/>
+                            <!-- Visual dot on middle segments of selected connections -->
+                            <t t-foreach="getConnectionSegments(conn)" t-as="seg" t-key="seg.segmentIndex">
+                                <t t-if="seg.isMiddle">
+                                    <circle class="pm-segment-handle"
+                                            t-att-cx="seg.midX" t-att-cy="seg.midY" r="4"/>
+                                </t>
+                            </t>
+                            <!-- Route toggle button (L ↔ S/Z) when connection selected -->
+                            <t t-set="toggle" t-value="getRouteToggleInfo(conn)"/>
+                            <t t-if="toggle">
+                                <g class="pm-route-toggle" t-on-click.stop="(ev) => this.onRouteToggle(ev, conn)">
+                                    <circle t-att-cx="toggle.x" t-att-cy="toggle.y" r="9"
+                                            class="pm-route-toggle-bg"/>
+                                    <text t-att-x="toggle.x" t-att-y="toggle.y + 4"
+                                          class="pm-route-toggle-label">
+                                        <t t-if="toggle.isL">S</t>
+                                        <t t-else="">L</t>
+                                    </text>
+                                </g>
+                            </t>
+                        </g>
+                    </t>
+
+                    <!-- Connection labels (rendered on top of all lines, draggable) -->
+                    <t t-foreach="props.connections" t-as="conn" t-key="'label-' + conn.id">
+                        <t t-if="conn.label">
+                            <t t-set="labelPos" t-value="getConnectionLabelPos(conn)"/>
+                            <g class="pm-label-draggable"
+                               t-on-mousedown.stop.prevent="(ev) => this.onLabelMouseDown(ev, conn)">
+                                <rect t-att-x="labelPos.x - (conn.label.length * 4 + 8)"
+                                      t-att-y="labelPos.y - 10"
+                                      t-att-width="conn.label.length * 8 + 16"
+                                      height="20" rx="4"
+                                      fill="#fff" fill-opacity="0.92"
+                                      stroke="#90CAF9" stroke-width="1"/>
+                                <text t-att-x="labelPos.x" t-att-y="labelPos.y + 4"
+                                      class="pm-connection-label">
+                                    <t t-esc="conn.label"/>
+                                </text>
+                            </g>
+                        </t>
+                    </t>
+
+                    <!-- Crossing arcs (where connections cross) -->
+                    <t t-foreach="getCrossingArcs()" t-as="cross" t-key="cross_index">
+                        <path t-att-d="cross.d" class="pm-crossing-arc"/>
+                    </t>
+
+                    <!-- Rubber band for connection creation -->
+                    <t t-if="state.showRubberBand">
+                        <path t-att-d="getRubberBandPath()" class="pm-rubber-band"/>
+                    </t>
+
+                    <!-- Alignment guides -->
+                    <t t-foreach="props.alignGuides" t-as="guide" t-key="guide_index">
+                        <line t-att-x1="guide.x1" t-att-y1="guide.y1"
+                              t-att-x2="guide.x2" t-att-y2="guide.y2"
+                              class="pm-align-guide"/>
+                    </t>
+
+                    <!-- Snap-to-grid indicators -->
+                    <t t-foreach="props.snapIndicators" t-as="si" t-key="si_index">
+                        <line t-att-x1="si.x1" t-att-y1="si.y1"
+                              t-att-x2="si.x2" t-att-y2="si.y2"
+                              class="pm-snap-indicator"/>
+                    </t>
+
+                    <!-- Selection rectangle -->
+                    <t t-if="state.selectionRect">
+                        <rect t-att-x="state.selectionRect.x" t-att-y="state.selectionRect.y"
+                              t-att-width="state.selectionRect.w" t-att-height="state.selectionRect.h"
+                              class="pm-selection-rect"/>
+                    </t>
+
+                </g>
+
+                <!-- Sticky lane labels: follow vertical pan + zoom, stay at left edge -->
+                <g t-att-transform="getStickyLabelTransform()">
+                    <t t-foreach="props.lanes" t-as="lane" t-key="lane.id">
+                        <rect t-att-x="0" t-att-y="lane.y_position"
+                              width="28" t-att-height="lane.height"
+                              t-att-fill="lane.color || '#E3F2FD'" fill-opacity="0.85"
+                              style="pointer-events: none;"/>
+                        <text t-att-x="14" t-att-y="lane.y_position + 20"
+                              class="pm-lane-label" style="pointer-events: none;">
+                            <t t-esc="lane.name"/>
+                        </text>
+                    </t>
+                </g>
+            </svg>
+            <div class="pm-canvas-info">
+                Zoom: <t t-esc="Math.round(props.zoom * 100)"/>% |
+                Pan: <t t-esc="Math.round(props.panX)"/>, <t t-esc="Math.round(props.panY)"/>
+            </div>
+
+            <!-- Scrollbars -->
+            <div class="pm-scrollbar pm-scrollbar-h"
+                 t-on-mousedown.stop.prevent="onHTrackMouseDown">
+                <div class="pm-scrollbar-thumb"
+                     t-attf-style="left:#{this.getHScrollLeft()}%;width:#{this.getHScrollWidth()}%"
+                     t-on-mousedown.stop.prevent="onHThumbMouseDown"/>
+            </div>
+            <div class="pm-scrollbar pm-scrollbar-v"
+                 t-on-mousedown.stop.prevent="onVTrackMouseDown">
+                <div class="pm-scrollbar-thumb"
+                     t-attf-style="top:#{this.getVScrollTop()}%;height:#{this.getVScrollHeight()}%"
+                     t-on-mousedown.stop.prevent="onVThumbMouseDown"/>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Minimap
+         ============================================================ -->
+    <t t-name="myschool_processcomposer.Minimap">
+        <div class="pm-minimap" t-on-click="onMinimapClick">
+            <svg width="200" height="140" class="pm-minimap-svg">
+                <rect width="200" height="140" fill="#f8f9fa" stroke="#dee2e6" stroke-width="1"/>
+                <!-- Connection lines (orthogonal) -->
+                <t t-foreach="props.connections" t-as="conn" t-key="conn.id">
+                    <t t-set="cl" t-value="getConnectionLine(conn)"/>
+                    <t t-if="cl">
+                        <path t-att-d="cl" fill="none" stroke="#aaa" stroke-width="0.5"/>
+                    </t>
+                </t>
+                <!-- Step rectangles -->
+                <t t-foreach="props.steps" t-as="step" t-key="step.id">
+                    <t t-set="sr" t-value="getStepRect(step)"/>
+                    <rect t-att-x="sr.x" t-att-y="sr.y" t-att-width="Math.max(sr.w, 3)" t-att-height="Math.max(sr.h, 3)"
+                          rx="1" t-att-fill="getStepColor(step)" opacity="0.8"/>
+                </t>
+                <!-- Viewport rectangle -->
+                <t t-set="vr" t-value="viewportRect"/>
+                <rect t-att-x="vr.x" t-att-y="vr.y" t-att-width="vr.w" t-att-height="vr.h"
+                      fill="none" stroke="#1565C0" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.7"/>
+            </svg>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Version Panel
+         ============================================================ -->
+    <t t-name="myschool_processcomposer.VersionPanel">
+        <div class="pm-version-panel">
+            <div class="pm-version-header">
+                <h5><i class="fa fa-history me-1"/> Versions</h5>
+                <button class="pm-version-close" t-on-click="props.onClose">
+                    <i class="fa fa-times"/>
+                </button>
+            </div>
+            <div class="pm-version-list">
+                <t t-if="props.versions.length === 0">
+                    <div class="pm-version-empty">No versions saved yet.</div>
+                </t>
+                <t t-foreach="props.versions" t-as="v" t-key="v.id">
+                    <div class="pm-version-item">
+                        <div class="pm-version-info">
+                            <strong>v<t t-esc="v.version_number"/></strong>
+                            <small><t t-esc="v.create_date"/></small>
+                            <small class="text-muted"><t t-esc="v.create_uid_name"/></small>
+                        </div>
+                        <button class="pm-version-restore-btn"
+                                t-on-click="() => this.props.onRestore(v.id)"
+                                title="Restore this version">
+                            <i class="fa fa-undo"/> Restore
+                        </button>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Field Widget Preview — realistic mock input per type
+         ============================================================ -->
+    <t t-name="myschool_processcomposer.FieldWidgetPreview">
+        <!-- Char -->
+        <t t-if="props.field.type === 'Char'">
+            <input type="text" class="pm-fb-ff-mock-input" t-att-placeholder="props.field.name" disabled="disabled"/>
+        </t>
+        <!-- Text -->
+        <t t-elif="props.field.type === 'Text'">
+            <textarea class="pm-fb-ff-mock-textarea" t-att-placeholder="props.field.name" disabled="disabled" rows="2"/>
+        </t>
+        <!-- Html -->
+        <t t-elif="props.field.type === 'Html'">
+            <div class="pm-fb-ff-mock-html">
+                <div class="pm-fb-ff-mock-html-toolbar">
+                    <i class="fa fa-bold"/><i class="fa fa-italic"/><i class="fa fa-underline"/><i class="fa fa-list-ul"/>
+                </div>
+                <div class="pm-fb-ff-mock-html-body" t-att-data-placeholder="props.field.name"/>
+            </div>
+        </t>
+        <!-- Integer -->
+        <t t-elif="props.field.type === 'Integer'">
+            <input type="text" class="pm-fb-ff-mock-input pm-fb-ff-mock-number" placeholder="0" disabled="disabled"/>
+        </t>
+        <!-- Float -->
+        <t t-elif="props.field.type === 'Float'">
+            <input type="text" class="pm-fb-ff-mock-input pm-fb-ff-mock-number" placeholder="0.00" disabled="disabled"/>
+        </t>
+        <!-- Monetary -->
+        <t t-elif="props.field.type === 'Monetary'">
+            <div class="pm-fb-ff-mock-monetary">
+                <span class="pm-fb-ff-mock-currency">EUR</span>
+                <input type="text" class="pm-fb-ff-mock-input pm-fb-ff-mock-number" placeholder="0.00" disabled="disabled"/>
+            </div>
+        </t>
+        <!-- Boolean -->
+        <t t-elif="props.field.type === 'Boolean'">
+            <div class="pm-fb-ff-mock-boolean">
+                <input type="checkbox" disabled="disabled"/>
+            </div>
+        </t>
+        <!-- Date -->
+        <t t-elif="props.field.type === 'Date'">
+            <div class="pm-fb-ff-mock-date">
+                <input type="text" class="pm-fb-ff-mock-input" placeholder="MM/DD/YYYY" disabled="disabled"/>
+                <i class="fa fa-calendar pm-fb-ff-mock-icon"/>
+            </div>
+        </t>
+        <!-- Datetime -->
+        <t t-elif="props.field.type === 'Datetime'">
+            <div class="pm-fb-ff-mock-date">
+                <input type="text" class="pm-fb-ff-mock-input" placeholder="MM/DD/YYYY HH:MM:SS" disabled="disabled"/>
+                <i class="fa fa-calendar pm-fb-ff-mock-icon"/>
+            </div>
+        </t>
+        <!-- Selection -->
+        <t t-elif="props.field.type === 'Selection'">
+            <select class="pm-fb-ff-mock-select" disabled="disabled">
+                <option>-- Select --</option>
+            </select>
+        </t>
+        <!-- Many2one -->
+        <t t-elif="props.field.type === 'Many2one'">
+            <div class="pm-fb-ff-mock-m2o">
+                <input type="text" class="pm-fb-ff-mock-input" t-att-placeholder="props.field.relation || 'Search...'" disabled="disabled"/>
+                <i class="fa fa-search pm-fb-ff-mock-icon"/>
+            </div>
+        </t>
+        <!-- One2many -->
+        <t t-elif="props.field.type === 'One2many'">
+            <div class="pm-fb-ff-mock-x2m">
+                <div class="pm-fb-ff-mock-x2m-header">
+                    <span class="pm-fb-ff-mock-x2m-label"><t t-esc="props.field.relation || 'Records'"/></span>
+                    <button class="pm-fb-ff-mock-x2m-add" disabled="disabled"><i class="fa fa-plus"/> Add a line</button>
+                </div>
+                <div class="pm-fb-ff-mock-x2m-empty">No records</div>
+            </div>
+        </t>
+        <!-- Many2many -->
+        <t t-elif="props.field.type === 'Many2many'">
+            <div class="pm-fb-ff-mock-x2m">
+                <div class="pm-fb-ff-mock-x2m-header">
+                    <span class="pm-fb-ff-mock-x2m-label"><t t-esc="props.field.relation || 'Records'"/></span>
+                    <button class="pm-fb-ff-mock-x2m-add" disabled="disabled"><i class="fa fa-plus"/> Add a line</button>
+                </div>
+                <div class="pm-fb-ff-mock-x2m-empty">No records</div>
+            </div>
+        </t>
+        <!-- Binary -->
+        <t t-elif="props.field.type === 'Binary'">
+            <div class="pm-fb-ff-mock-binary">
+                <i class="fa fa-upload me-1"/>
+                <span>Upload a file</span>
+            </div>
+        </t>
+        <!-- Image -->
+        <t t-elif="props.field.type === 'Image'">
+            <div class="pm-fb-ff-mock-image">
+                <i class="fa fa-picture-o"/>
+                <span>Upload image</span>
+            </div>
+        </t>
+        <!-- Fallback -->
+        <t t-else="">
+            <input type="text" class="pm-fb-ff-mock-input" t-att-placeholder="props.field.name" disabled="disabled"/>
+        </t>
+    </t>
+
+    <!-- ============================================================
+         Field Builder (modal overlay) — Form Layout Grid
+         ============================================================ -->
+    <t t-name="myschool_processcomposer.FieldBuilder">
+        <div class="pm-fb-overlay" t-on-click.self="onClose">
+            <div class="pm-fb-modal">
+                <div class="pm-fb-header">
+                    <h4><i class="fa fa-database me-1"/> Field Builder</h4>
+                    <button class="pm-fb-close" t-on-click="onClose">
+                        <i class="fa fa-times"/>
+                    </button>
+                </div>
+
+                <div class="pm-fb-body">
+                    <!-- Left: palette with tabs -->
+                    <div class="pm-fb-palette">
+                        <div class="pm-fb-palette-tabs">
+                            <button t-attf-class="pm-fb-tab #{state.paletteTab === 'types' ? 'pm-fb-tab-active' : ''}"
+                                    t-on-click="() => this.switchTab('types')">
+                                <i class="fa fa-th-list me-1"/> Types
+                            </button>
+                            <button t-attf-class="pm-fb-tab #{state.paletteTab === 'model' ? 'pm-fb-tab-active' : ''}"
+                                    t-on-click="() => this.switchTab('model')">
+                                <i class="fa fa-cubes me-1"/> Model
+                            </button>
+                            <button t-attf-class="pm-fb-tab #{state.paletteTab === 'layout' ? 'pm-fb-tab-active' : ''}"
+                                    t-on-click="() => this.switchTab('layout')">
+                                <i class="fa fa-columns me-1"/> Layout
+                            </button>
+                        </div>
+
+                        <!-- Types tab -->
+                        <t t-if="state.paletteTab === 'types'">
+                            <div class="pm-fb-palette-title">Drag a field type</div>
+                            <t t-foreach="fieldTypes" t-as="ft" t-key="ft_index">
+                                <div class="pm-fb-palette-item"
+                                     draggable="true"
+                                     t-on-dragstart="(ev) => this.onPaletteDragStart(ev, ft)"
+                                     t-att-title="ft.hint">
+                                    <i t-attf-class="fa #{ft.icon} pm-fb-palette-icon"/>
+                                    <span class="pm-fb-palette-label"><t t-esc="ft.label"/></span>
+                                    <span class="pm-fb-palette-type"><t t-esc="ft.type"/></span>
+                                </div>
+                            </t>
+                        </t>
+
+                        <!-- Layout tab -->
+                        <t t-if="state.paletteTab === 'layout'">
+                            <div class="pm-fb-palette-title">Drag layout elements</div>
+                            <t t-foreach="layoutElements" t-as="le" t-key="le.type">
+                                <div class="pm-fb-palette-item"
+                                     draggable="true"
+                                     t-on-dragstart="(ev) => this.onLayoutElemDragStart(ev, le.type)"
+                                     t-att-title="le.hint">
+                                    <i t-attf-class="fa #{le.icon} pm-fb-palette-icon"/>
+                                    <span class="pm-fb-palette-label"><t t-esc="le.label"/></span>
+                                </div>
+                            </t>
+                        </t>
+
+                        <!-- Model tab -->
+                        <t t-if="state.paletteTab === 'model'">
+                            <t t-if="!state.selectedModel">
+                                <div class="pm-fb-palette-title">Search a model</div>
+                                <input type="text" class="pm-fb-model-search"
+                                       t-att-value="state.modelQuery"
+                                       t-on-input="onModelQueryInput"
+                                       placeholder="e.g. res.partner, sale.order"/>
+                                <t t-if="state.modelResults.length > 0">
+                                    <t t-foreach="state.modelResults" t-as="m" t-key="m.id">
+                                        <div class="pm-fb-model-item"
+                                             t-on-click="() => this.onSelectModel(m)">
+                                            <span class="pm-fb-model-name"><t t-esc="m.model"/></span>
+                                            <span class="pm-fb-model-label"><t t-esc="m.name"/></span>
+                                        </div>
+                                    </t>
+                                </t>
+                                <t t-elif="state.modelQuery.length >= 2">
+                                    <div class="pm-fb-model-empty">No models found</div>
+                                </t>
+                            </t>
+                            <t t-if="state.selectedModel">
+                                <div class="pm-fb-model-header">
+                                    <button class="pm-fb-model-back" t-on-click="onBackToModelList">
+                                        <i class="fa fa-arrow-left"/>
+                                    </button>
+                                    <div class="pm-fb-model-selected">
+                                        <strong><t t-esc="state.selectedModel.model"/></strong>
+                                        <small><t t-esc="state.selectedModel.name"/></small>
+                                    </div>
+                                </div>
+                                <div class="pm-fb-palette-title">Drag fields to add</div>
+                                <t t-if="state.modelFieldsLoading">
+                                    <div class="pm-fb-model-empty">
+                                        <i class="fa fa-spinner fa-spin"/> Loading...
+                                    </div>
+                                </t>
+                                <t t-if="!state.modelFieldsLoading">
+                                    <t t-foreach="state.modelFields" t-as="mf" t-key="mf.name">
+                                        <div class="pm-fb-palette-item pm-fb-model-field"
+                                             draggable="true"
+                                             t-on-dragstart="(ev) => this.onModelFieldDragStart(ev, mf)"
+                                             t-att-title="mf.label">
+                                            <span class="pm-fb-palette-label pm-fb-mf-name"><t t-esc="mf.name"/></span>
+                                            <span class="pm-fb-palette-type"><t t-esc="mf.type"/></span>
+                                            <t t-if="mf.required"><span class="pm-fb-mf-req">req</span></t>
+                                        </div>
+                                    </t>
+                                </t>
+                            </t>
+                        </t>
+                    </div>
+
+                    <!-- Right: Form preview grid -->
+                    <div class="pm-fb-form-preview">
+                        <div class="pm-fb-fields-title">
+                            Form Layout
+                            <span class="pm-fb-fields-count">(<t t-esc="state.fields.length"/> fields)</span>
+                        </div>
+
+                        <!-- Sheet container -->
+                        <div t-attf-class="pm-fb-sheet #{state.isDragging ? 'pm-fb-dragging' : ''}"
+                             t-on-dragend="() => this.onSheetDragEnd()">
+                            <!-- Empty state -->
+                            <t t-if="!state.layout.children || state.layout.children.length === 0">
+                                <!-- Top drop zone when empty -->
+                                <div t-attf-class="pm-fb-layout-dropzone pm-fb-layout-dropzone-big #{this.isDragOver(state.layout._nodeId, 0) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                     t-on-dragover="(ev) => this.onLayoutDragOver(ev, state.layout._nodeId, 0)"
+                                     t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                     t-on-drop="(ev) => this.onLayoutDrop(ev, state.layout._nodeId, 0)">
+                                    <span class="pm-fb-dropzone-text">
+                                        <i class="fa fa-plus-circle me-1"/>
+                                        Drop fields or layout elements here
+                                    </span>
+                                </div>
+                            </t>
+
+                            <t t-if="state.layout.children and state.layout.children.length > 0">
+                                <!-- Top drop zone -->
+                                <div t-attf-class="pm-fb-layout-dropzone #{this.isDragOver(state.layout._nodeId, 0) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                     t-on-dragover="(ev) => this.onLayoutDragOver(ev, state.layout._nodeId, 0)"
+                                     t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                     t-on-drop="(ev) => this.onLayoutDrop(ev, state.layout._nodeId, 0)"/>
+
+                                <!-- Sheet children -->
+                                <t t-foreach="state.layout.children" t-as="child" t-key="child._nodeId">
+
+                                    <!-- ======== GROUP ======== -->
+                                    <t t-if="child.type === 'group'">
+                                        <div class="pm-fb-group"
+                                             draggable="true"
+                                             t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, child._nodeId)">
+                                            <div class="pm-fb-group-header">
+                                                <i class="fa fa-columns me-1"/>Group
+                                                <span class="pm-fb-group-cols-ctrl" t-on-click.stop="">
+                                                    <button class="pm-fb-col-btn" t-on-click="() => this.onRemoveGroupColumn(child._nodeId)"
+                                                            t-att-disabled="(child.cols || 2) &lt;= 1" title="Remove column">
+                                                        <i class="fa fa-minus"/>
+                                                    </button>
+                                                    <span class="pm-fb-col-count"><t t-esc="child.cols || 2"/> col</span>
+                                                    <button class="pm-fb-col-btn" t-on-click="() => this.onAddGroupColumn(child._nodeId)"
+                                                            t-att-disabled="(child.cols || 2) >= 4" title="Add column">
+                                                        <i class="fa fa-plus"/>
+                                                    </button>
+                                                </span>
+                                                <button class="pm-fb-node-remove" t-on-click.stop="() => this.onRemoveNode(child._nodeId)"
+                                                        title="Remove group"><i class="fa fa-times"/></button>
+                                            </div>
+                                            <div class="pm-fb-group-columns" t-att-style="this.getGroupGridStyle(child)">
+                                                <t t-foreach="child.children" t-as="col" t-key="col._nodeId">
+                                                    <div class="pm-fb-group-col">
+                                                        <div class="pm-fb-col-label"><t t-esc="this.getColLabel(col_index, child.children.length)"/></div>
+
+                                                        <!-- Top drop zone in column -->
+                                                        <div t-attf-class="pm-fb-layout-dropzone #{this.isDragOver(col._nodeId, 0) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                                             t-on-dragover="(ev) => this.onLayoutDragOver(ev, col._nodeId, 0)"
+                                                             t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                                             t-on-drop="(ev) => this.onLayoutDrop(ev, col._nodeId, 0)"/>
+
+                                                        <t t-foreach="col.children" t-as="fnode" t-key="fnode._nodeId">
+                                                            <t t-if="fnode.type === 'field'">
+                                                                <t t-set="ff" t-value="this.getFieldById(fnode.fieldId)"/>
+                                                                <t t-if="ff">
+                                                                    <div t-attf-class="pm-fb-form-field #{state.selectedFieldId === ff._id ? 'pm-fb-form-field-selected' : ''}"
+                                                                         draggable="true"
+                                                                         t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, fnode._nodeId)"
+                                                                         t-on-click.stop="() => this.onSelectField(ff._id)">
+                                                                        <i class="fa fa-ellipsis-v pm-fb-ff-drag-handle" title="Drag to move"/>
+                                                                        <div class="pm-fb-ff-label">
+                                                                            <t t-esc="ff.field_description || ff.name"/>
+                                                                            <t t-if="ff.required"><span class="pm-fb-ff-req">*</span></t>
+                                                                        </div>
+                                                                        <div class="pm-fb-ff-widget">
+                                                                            <FieldWidgetPreview field="ff"/>
+                                                                            <span class="pm-fb-ff-type-badge"><t t-esc="ff.type"/></span>
+                                                                            <button class="pm-fb-ff-delete" t-on-click.stop="() => this.onDeleteField(ff._id)"
+                                                                                    title="Delete field"><i class="fa fa-trash"/></button>
+                                                                        </div>
+                                                                    </div>
+                                                                </t>
+                                                            </t>
+
+                                                            <!-- Drop zone after each field in column -->
+                                                            <div t-attf-class="pm-fb-layout-dropzone #{this.isDragOver(col._nodeId, fnode_index + 1) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                                                 t-on-dragover="(ev) => this.onLayoutDragOver(ev, col._nodeId, fnode_index + 1)"
+                                                                 t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                                                 t-on-drop="(ev) => this.onLayoutDrop(ev, col._nodeId, fnode_index + 1)"/>
+                                                        </t>
+
+                                                        <t t-if="!col.children || col.children.length === 0">
+                                                            <div class="pm-fb-col-empty">Drop fields here</div>
+                                                        </t>
+                                                    </div>
+                                                </t>
+                                            </div>
+                                        </div>
+                                    </t>
+
+                                    <!-- ======== SEPARATOR ======== -->
+                                    <t t-if="child.type === 'separator'">
+                                        <div class="pm-fb-separator"
+                                             draggable="true"
+                                             t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, child._nodeId)">
+                                            <input type="text" class="pm-fb-sep-label"
+                                                   t-att-value="child.label || ''"
+                                                   t-on-change="(ev) => this.onSeparatorLabelChange(child._nodeId, ev)"
+                                                   t-on-click.stop="" placeholder="Section title"/>
+                                            <hr class="pm-fb-sep-hr"/>
+                                            <button class="pm-fb-node-remove" t-on-click.stop="() => this.onRemoveNode(child._nodeId)"
+                                                    title="Remove separator"><i class="fa fa-times"/></button>
+                                        </div>
+                                    </t>
+
+                                    <!-- ======== NOTEBOOK ======== -->
+                                    <t t-if="child.type === 'notebook'">
+                                        <div class="pm-fb-notebook"
+                                             draggable="true"
+                                             t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, child._nodeId)">
+                                            <div class="pm-fb-nb-header">
+                                                <t t-foreach="child.children" t-as="pg" t-key="pg._nodeId">
+                                                    <button t-attf-class="pm-fb-nb-tab #{this.isActiveNotebookPage(child._nodeId, pg._nodeId) ? 'pm-fb-nb-tab-active' : ''}"
+                                                            t-on-click.stop="() => this.onSelectNotebookPage(child._nodeId, pg._nodeId)">
+                                                        <input type="text" class="pm-fb-nb-tab-input"
+                                                               t-att-value="pg.label || 'Page'"
+                                                               t-on-change="(ev) => this.onPageLabelChange(pg._nodeId, ev)"
+                                                               t-on-click.stop=""/>
+                                                        <span class="pm-fb-nb-tab-delete"
+                                                              t-on-click.stop="() => this.onRemovePage(child._nodeId, pg._nodeId)"
+                                                              title="Delete page"><i class="fa fa-times"/></span>
+                                                    </button>
+                                                </t>
+                                                <button class="pm-fb-nb-add" t-on-click.stop="() => this.onAddPage(child._nodeId)"
+                                                        title="Add page">
+                                                    <i class="fa fa-plus"/>
+                                                </button>
+                                                <button class="pm-fb-node-remove ms-auto" t-on-click.stop="() => this.onRemoveNode(child._nodeId)"
+                                                        title="Remove notebook"><i class="fa fa-times"/></button>
+                                            </div>
+                                            <t t-foreach="child.children" t-as="pg" t-key="pg._nodeId">
+                                                <t t-if="this.isActiveNotebookPage(child._nodeId, pg._nodeId)">
+                                                    <div class="pm-fb-nb-page">
+                                                        <!-- Page-level drop zone for layout elements -->
+                                                        <div t-attf-class="pm-fb-layout-dropzone #{this.isDragOver(pg._nodeId, 0) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                                             t-on-dragover="(ev) => this.onLayoutDragOver(ev, pg._nodeId, 0)"
+                                                             t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                                             t-on-drop="(ev) => this.onLayoutDrop(ev, pg._nodeId, 0)"/>
+
+                                                        <t t-foreach="pg.children" t-as="pgChild" t-key="pgChild._nodeId">
+                                                            <!-- Groups inside pages -->
+                                                            <t t-if="pgChild.type === 'group'">
+                                                                <div class="pm-fb-group"
+                                                                     draggable="true"
+                                                                     t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, pgChild._nodeId)">
+                                                                    <div class="pm-fb-group-header">
+                                                                        <i class="fa fa-columns me-1"/>Group
+                                                                        <span class="pm-fb-group-cols-ctrl" t-on-click.stop="">
+                                                                            <button class="pm-fb-col-btn" t-on-click="() => this.onRemoveGroupColumn(pgChild._nodeId)"
+                                                                                    t-att-disabled="(pgChild.cols || 2) &lt;= 1" title="Remove column">
+                                                                                <i class="fa fa-minus"/>
+                                                                            </button>
+                                                                            <span class="pm-fb-col-count"><t t-esc="pgChild.cols || 2"/> col</span>
+                                                                            <button class="pm-fb-col-btn" t-on-click="() => this.onAddGroupColumn(pgChild._nodeId)"
+                                                                                    t-att-disabled="(pgChild.cols || 2) >= 4" title="Add column">
+                                                                                <i class="fa fa-plus"/>
+                                                                            </button>
+                                                                        </span>
+                                                                        <button class="pm-fb-node-remove" t-on-click.stop="() => this.onRemoveNode(pgChild._nodeId)"
+                                                                                title="Remove group"><i class="fa fa-times"/></button>
+                                                                    </div>
+                                                                    <div class="pm-fb-group-columns" t-att-style="this.getGroupGridStyle(pgChild)">
+                                                                        <t t-foreach="pgChild.children" t-as="pcol" t-key="pcol._nodeId">
+                                                                            <div class="pm-fb-group-col">
+                                                                                <div class="pm-fb-col-label"><t t-esc="this.getColLabel(pcol_index, pgChild.children.length)"/></div>
+                                                                                <div t-attf-class="pm-fb-layout-dropzone #{this.isDragOver(pcol._nodeId, 0) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                                                                     t-on-dragover="(ev) => this.onLayoutDragOver(ev, pcol._nodeId, 0)"
+                                                                                     t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                                                                     t-on-drop="(ev) => this.onLayoutDrop(ev, pcol._nodeId, 0)"/>
+                                                                                <t t-foreach="pcol.children" t-as="pfn" t-key="pfn._nodeId">
+                                                                                    <t t-if="pfn.type === 'field'">
+                                                                                        <t t-set="pff" t-value="this.getFieldById(pfn.fieldId)"/>
+                                                                                        <t t-if="pff">
+                                                                                            <div t-attf-class="pm-fb-form-field #{state.selectedFieldId === pff._id ? 'pm-fb-form-field-selected' : ''}"
+                                                                                                 draggable="true"
+                                                                                                 t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, pfn._nodeId)"
+                                                                                                 t-on-click.stop="() => this.onSelectField(pff._id)">
+                                                                                                <i class="fa fa-ellipsis-v pm-fb-ff-drag-handle" title="Drag to move"/>
+                                                                                                <div class="pm-fb-ff-label">
+                                                                                                    <t t-esc="pff.field_description || pff.name"/>
+                                                                                                    <t t-if="pff.required"><span class="pm-fb-ff-req">*</span></t>
+                                                                                                </div>
+                                                                                                <div class="pm-fb-ff-widget">
+                                                                                                    <FieldWidgetPreview field="pff"/>
+                                                                                                    <span class="pm-fb-ff-type-badge"><t t-esc="pff.type"/></span>
+                                                                                                    <button class="pm-fb-ff-delete" t-on-click.stop="() => this.onDeleteField(pff._id)"
+                                                                                                            title="Delete field"><i class="fa fa-trash"/></button>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </t>
+                                                                                    </t>
+                                                                                    <div t-attf-class="pm-fb-layout-dropzone #{this.isDragOver(pcol._nodeId, pfn_index + 1) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                                                                         t-on-dragover="(ev) => this.onLayoutDragOver(ev, pcol._nodeId, pfn_index + 1)"
+                                                                                         t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                                                                         t-on-drop="(ev) => this.onLayoutDrop(ev, pcol._nodeId, pfn_index + 1)"/>
+                                                                                </t>
+                                                                                <t t-if="!pcol.children || pcol.children.length === 0">
+                                                                                    <div class="pm-fb-col-empty">Drop fields here</div>
+                                                                                </t>
+                                                                            </div>
+                                                                        </t>
+                                                                    </div>
+                                                                </div>
+                                                            </t>
+
+                                                            <!-- Fields directly in page (auto-wrapped) -->
+                                                            <t t-if="pgChild.type === 'field'">
+                                                                <t t-set="pgff" t-value="this.getFieldById(pgChild.fieldId)"/>
+                                                                <t t-if="pgff">
+                                                                    <div t-attf-class="pm-fb-form-field #{state.selectedFieldId === pgff._id ? 'pm-fb-form-field-selected' : ''}"
+                                                                         draggable="true"
+                                                                         t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, pgChild._nodeId)"
+                                                                         t-on-click.stop="() => this.onSelectField(pgff._id)">
+                                                                        <i class="fa fa-ellipsis-v pm-fb-ff-drag-handle" title="Drag to move"/>
+                                                                        <div class="pm-fb-ff-label">
+                                                                            <t t-esc="pgff.field_description || pgff.name"/>
+                                                                            <t t-if="pgff.required"><span class="pm-fb-ff-req">*</span></t>
+                                                                        </div>
+                                                                        <div class="pm-fb-ff-widget">
+                                                                            <FieldWidgetPreview field="pgff"/>
+                                                                            <span class="pm-fb-ff-type-badge"><t t-esc="pgff.type"/></span>
+                                                                            <button class="pm-fb-ff-delete" t-on-click.stop="() => this.onDeleteField(pgff._id)"
+                                                                                    title="Delete field"><i class="fa fa-trash"/></button>
+                                                                        </div>
+                                                                    </div>
+                                                                </t>
+                                                            </t>
+
+                                                            <!-- Separators in pages -->
+                                                            <t t-if="pgChild.type === 'separator'">
+                                                                <div class="pm-fb-separator"
+                                                                     draggable="true"
+                                                                     t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, pgChild._nodeId)">
+                                                                    <input type="text" class="pm-fb-sep-label"
+                                                                           t-att-value="pgChild.label || ''"
+                                                                           t-on-change="(ev) => this.onSeparatorLabelChange(pgChild._nodeId, ev)"
+                                                                           t-on-click.stop="" placeholder="Section title"/>
+                                                                    <hr class="pm-fb-sep-hr"/>
+                                                                    <button class="pm-fb-node-remove" t-on-click.stop="() => this.onRemoveNode(pgChild._nodeId)"
+                                                                            title="Remove"><i class="fa fa-times"/></button>
+                                                                </div>
+                                                            </t>
+
+                                                            <!-- Drop zone after each page child -->
+                                                            <div t-attf-class="pm-fb-layout-dropzone #{this.isDragOver(pg._nodeId, pgChild_index + 1) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                                                 t-on-dragover="(ev) => this.onLayoutDragOver(ev, pg._nodeId, pgChild_index + 1)"
+                                                                 t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                                                 t-on-drop="(ev) => this.onLayoutDrop(ev, pg._nodeId, pgChild_index + 1)"/>
+                                                        </t>
+
+                                                        <t t-if="!pg.children || pg.children.length === 0">
+                                                            <div class="pm-fb-col-empty" style="padding:16px; text-align:center;">
+                                                                Drop fields or groups into this page
+                                                            </div>
+                                                        </t>
+                                                    </div>
+                                                </t>
+                                            </t>
+                                        </div>
+                                    </t>
+
+                                    <!-- ======== FIELD directly on sheet (auto-wrapped) ======== -->
+                                    <t t-if="child.type === 'field'">
+                                        <t t-set="sf" t-value="this.getFieldById(child.fieldId)"/>
+                                        <t t-if="sf">
+                                            <div t-attf-class="pm-fb-form-field pm-fb-form-field-sheet #{state.selectedFieldId === sf._id ? 'pm-fb-form-field-selected' : ''}"
+                                                 draggable="true"
+                                                 t-on-dragstart.stop="(ev) => this.onLayoutNodeDragStart(ev, child._nodeId)"
+                                                 t-on-click.stop="() => this.onSelectField(sf._id)">
+                                                <i class="fa fa-ellipsis-v pm-fb-ff-drag-handle" title="Drag to move"/>
+                                                <div class="pm-fb-ff-label">
+                                                    <t t-esc="sf.field_description || sf.name"/>
+                                                    <t t-if="sf.required"><span class="pm-fb-ff-req">*</span></t>
+                                                </div>
+                                                <div class="pm-fb-ff-widget">
+                                                    <FieldWidgetPreview field="sf"/>
+                                                    <span class="pm-fb-ff-type-badge"><t t-esc="sf.type"/></span>
+                                                    <button class="pm-fb-ff-delete" t-on-click.stop="() => this.onDeleteField(sf._id)"
+                                                            title="Delete field"><i class="fa fa-trash"/></button>
+                                                </div>
+                                            </div>
+                                        </t>
+                                    </t>
+
+                                    <!-- Drop zone after each sheet child -->
+                                    <div t-attf-class="pm-fb-layout-dropzone #{this.isDragOver(state.layout._nodeId, child_index + 1) ? 'pm-fb-layout-dropzone-active' : ''}"
+                                         t-on-dragover="(ev) => this.onLayoutDragOver(ev, state.layout._nodeId, child_index + 1)"
+                                         t-on-dragleave="(ev) => this.onLayoutDragLeave(ev)"
+                                         t-on-drop="(ev) => this.onLayoutDrop(ev, state.layout._nodeId, child_index + 1)"/>
+                                </t>
+                            </t>
+                        </div>
+
+                        <!-- Unplaced fields -->
+                        <t t-if="this.unplacedFields.length > 0">
+                            <div class="pm-fb-unplaced">
+                                <div class="pm-fb-unplaced-title">
+                                    <i class="fa fa-exclamation-triangle me-1"/>
+                                    Unplaced fields (<t t-esc="this.unplacedFields.length"/>)
+                                </div>
+                                <div class="pm-fb-unplaced-list">
+                                    <t t-foreach="this.unplacedFields" t-as="uf" t-key="uf._id">
+                                        <div class="pm-fb-unplaced-item"
+                                             draggable="true"
+                                             t-on-dragstart="(ev) => this.onUnplacedFieldDragStart(ev, uf._id)">
+                                            <span class="pm-fb-unplaced-name"><t t-esc="uf.name"/></span>
+                                            <span class="pm-fb-ff-type-badge"><t t-esc="uf.type"/></span>
+                                            <button class="pm-fb-unplaced-remove" t-on-click.stop="() => this.onRemoveUnplacedField(uf._id)"
+                                                    title="Remove field"><i class="fa fa-trash"/></button>
+                                        </div>
+                                    </t>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- Field detail panel (when a field is selected) -->
+                        <t t-if="this.selectedField">
+                            <t t-set="field" t-value="this.selectedField"/>
+                            <t t-set="field_index" t-value="this.selectedFieldIndex"/>
+                            <div class="pm-fb-field-detail pm-fb-field-detail-bottom" t-on-click.stop="">
+                                <div class="pm-fb-detail-header">
+                                    <strong><t t-esc="field.name"/></strong>
+                                    <button class="pm-fb-node-remove" t-on-click.stop="() => this.state.selectedFieldId = null">
+                                        <i class="fa fa-times"/>
+                                    </button>
+                                </div>
+                                <div class="pm-fb-detail-grid">
+                                    <div class="pm-fb-detail-field">
+                                        <label>Name</label>
+                                        <input type="text" t-att-value="field.name"
+                                               t-on-change="(ev) => this.onFieldChange(field_index, 'name', ev)"/>
+                                    </div>
+                                    <div class="pm-fb-detail-field">
+                                        <label>Type</label>
+                                        <select t-on-change="(ev) => this.onFieldChange(field_index, 'type', ev)">
+                                            <t t-foreach="fieldTypes" t-as="ft" t-key="ft_index">
+                                                <option t-att-value="ft.type" t-att-selected="field.type === ft.type">
+                                                    <t t-esc="ft.type"/>
+                                                </option>
+                                            </t>
+                                        </select>
+                                    </div>
+                                    <div class="pm-fb-detail-field">
+                                        <label>Label (string)</label>
+                                        <input type="text" t-att-value="field.field_description || ''"
+                                               t-on-change="(ev) => this.onFieldChange(field_index, 'field_description', ev)"
+                                               placeholder="Human-readable label"/>
+                                    </div>
+                                    <div class="pm-fb-detail-field">
+                                        <label>Source Model</label>
+                                        <input type="text" t-att-value="field.source_model || ''"
+                                               readonly="1" class="pm-fb-readonly"/>
+                                    </div>
+                                    <t t-if="this.isRelational(field.type)">
+                                        <div class="pm-fb-detail-field">
+                                            <label>Related Model</label>
+                                            <input type="text" t-att-value="field.relation || ''"
+                                                   t-on-change="(ev) => this.onFieldChange(field_index, 'relation', ev)"
+                                                   placeholder="e.g. res.partner"/>
+                                        </div>
+                                        <div class="pm-fb-detail-field">
+                                            <label>Inverse Field</label>
+                                            <input type="text" t-att-value="field.relation_field || ''"
+                                                   t-on-change="(ev) => this.onFieldChange(field_index, 'relation_field', ev)"
+                                                   placeholder="e.g. order_id"/>
+                                        </div>
+                                        <div class="pm-fb-detail-field">
+                                            <label>Domain</label>
+                                            <input type="text" t-att-value="field.domain || '[]'"
+                                                   t-on-change="(ev) => this.onFieldChange(field_index, 'domain', ev)"
+                                                   placeholder="[]"/>
+                                        </div>
+                                        <div class="pm-fb-detail-field">
+                                            <label>On Delete</label>
+                                            <select t-on-change="(ev) => this.onFieldChange(field_index, 'on_delete', ev)">
+                                                <option value="set null" t-att-selected="field.on_delete === 'set null'">Set Null</option>
+                                                <option value="cascade" t-att-selected="field.on_delete === 'cascade'">Cascade</option>
+                                                <option value="restrict" t-att-selected="field.on_delete === 'restrict'">Restrict</option>
+                                            </select>
+                                        </div>
+                                    </t>
+                                    <div class="pm-fb-detail-field pm-fb-detail-full">
+                                        <div class="pm-fb-detail-toggles">
+                                            <label class="pm-fb-toggle">
+                                                <input type="checkbox" t-att-checked="field.required"
+                                                       t-on-click="() => this.onToggleAttr(field_index, 'required')"/>
+                                                Required
+                                            </label>
+                                            <label class="pm-fb-toggle">
+                                                <input type="checkbox" t-att-checked="field.readonly"
+                                                       t-on-click="() => this.onToggleAttr(field_index, 'readonly')"/>
+                                                Readonly
+                                            </label>
+                                            <label class="pm-fb-toggle">
+                                                <input type="checkbox" t-att-checked="field.store"
+                                                       t-on-click="() => this.onToggleAttr(field_index, 'store')"/>
+                                                Stored
+                                            </label>
+                                            <label class="pm-fb-toggle">
+                                                <input type="checkbox" t-att-checked="field.translate"
+                                                       t-on-click="() => this.onToggleAttr(field_index, 'translate')"/>
+                                                Translatable
+                                            </label>
+                                            <label class="pm-fb-toggle">
+                                                <input type="checkbox" t-att-checked="field.copy"
+                                                       t-on-click="() => this.onToggleAttr(field_index, 'copy')"/>
+                                                Copy on Dup
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="pm-fb-detail-field">
+                                        <label>Help Tooltip</label>
+                                        <textarea t-on-change="(ev) => this.onFieldChange(field_index, 'help_text', ev)"
+                                                  rows="2"><t t-esc="field.help_text || ''"/></textarea>
+                                    </div>
+                                    <div class="pm-fb-detail-field">
+                                        <label>Default Value</label>
+                                        <input type="text" t-att-value="field.default_value || ''"
+                                               t-on-change="(ev) => this.onFieldChange(field_index, 'default_value', ev)"
+                                               placeholder="e.g. True, 'draft'"/>
+                                    </div>
+                                    <t t-if="field.type === 'Selection'">
+                                        <div class="pm-fb-detail-field pm-fb-detail-full">
+                                            <label>Selection Options (JSON)</label>
+                                            <textarea t-on-change="(ev) => this.onFieldChange(field_index, 'selection_values', ev)"
+                                                      rows="3" placeholder='[["draft","Draft"],["done","Done"]]'><t t-esc="field.selection_values || ''"/></textarea>
+                                        </div>
+                                    </t>
+                                    <t t-if="field.type === 'Char'">
+                                        <div class="pm-fb-detail-field">
+                                            <label>Max Size</label>
+                                            <input type="number" t-att-value="field.size || ''"
+                                                   t-on-change="(ev) => this.onFieldChange(field_index, 'size', ev)"
+                                                   placeholder="0 = unlimited"/>
+                                        </div>
+                                    </t>
+                                    <t t-if="field.type === 'Float' || field.type === 'Monetary'">
+                                        <div class="pm-fb-detail-field">
+                                            <label>Digits</label>
+                                            <input type="text" t-att-value="field.digits || ''"
+                                                   t-on-change="(ev) => this.onFieldChange(field_index, 'digits', ev)"
+                                                   placeholder="e.g. (16,2)"/>
+                                        </div>
+                                    </t>
+                                    <div class="pm-fb-detail-field">
+                                        <label>Groups (XML IDs)</label>
+                                        <input type="text" t-att-value="field.groups || ''"
+                                               t-on-change="(ev) => this.onFieldChange(field_index, 'groups', ev)"
+                                               placeholder="base.group_user,base.group_system"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
+                </div>
+
+                <div class="pm-fb-footer">
+                    <button class="btn btn-primary btn-sm" t-on-click="onClose">
+                        <i class="fa fa-check me-1"/> Done
+                    </button>
+                </div>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Properties Panel
+         ============================================================ -->
+    <t t-name="myschool_processcomposer.PropertiesPanel">
+        <div class="pm-properties">
+            <h4><i class="fa fa-sliders me-1"/> Properties</h4>
+
+            <!-- Multi-select summary -->
+            <t t-if="props.selectedCount > 1">
+                <div class="pm-multi-select-info">
+                    <i class="fa fa-object-group fa-2x mb-2 d-block text-muted"/>
+                    <strong><t t-esc="props.selectedCount"/> elements selected</strong>
+                    <br/><small>Drag to move all. Press Delete to remove all.</small>
+                </div>
+                <button class="pm-delete-btn" t-on-click="props.onDelete">
+                    <i class="fa fa-trash me-1"/> Delete Selected (<t t-esc="props.selectedCount"/>)
+                </button>
+            </t>
+
+            <t t-if="!props.selectedElement and props.selectedCount &lt;= 1">
+                <div class="pm-no-selection">
+                    <i class="fa fa-mouse-pointer fa-2x mb-2 d-block text-muted"/>
+                    Select an element on the canvas to edit its properties.
+                    <br/><br/>
+                    <small>
+                        <b>Tip:</b> Drag items from the toolbar onto the canvas.
+                        Hover over a shape and drag from the connector dots to create connections.
+                        <b>Shift+click</b> to multi-select. <b>Ctrl+C/V</b> to copy/paste.
+                    </small>
+                </div>
+            </t>
+
+            <!-- Step properties -->
+            <t t-if="props.selectedElement and props.selectedType === 'step'">
+                <div class="pm-prop-group">
+                    <label>Name</label>
+                    <input type="text" t-att-value="props.selectedElement.name"
+                           t-on-change="(ev) => this.onInputChange('name', ev)"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Type</label>
+                    <select t-on-change="(ev) => this.onInputChange('step_type', ev)">
+                        <option value="start" t-att-selected="props.selectedElement.step_type === 'start'">Start Event</option>
+                        <option value="end" t-att-selected="props.selectedElement.step_type === 'end'">End Event</option>
+                        <option value="task" t-att-selected="props.selectedElement.step_type === 'task'">Task</option>
+                        <option value="subprocess" t-att-selected="props.selectedElement.step_type === 'subprocess'">Sub-Process</option>
+                        <option value="condition" t-att-selected="props.selectedElement.step_type === 'condition'">Condition (If/Else)</option>
+                        <option value="gateway_exclusive" t-att-selected="props.selectedElement.step_type === 'gateway_exclusive'">Exclusive Gateway</option>
+                        <option value="gateway_parallel" t-att-selected="props.selectedElement.step_type === 'gateway_parallel'">Parallel Gateway</option>
+                    </select>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Description</label>
+                    <textarea t-on-change="(ev) => this.onInputChange('description', ev)"
+                              t-att-value="props.selectedElement.description || ''"/>
+                </div>
+
+                <!-- Color picker -->
+                <div class="pm-prop-group">
+                    <label>Color</label>
+                    <div class="pm-color-row">
+                        <input type="color" t-att-value="props.selectedElement.color || '#42A5F5'"
+                               t-on-change="(ev) => this.onInputChange('color', ev)"/>
+                        <button class="pm-color-clear" t-on-click="() => this.props.onPropertyChange('color', '')"
+                                title="Reset to default">
+                            <i class="fa fa-times"/>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Icon picker -->
+                <div class="pm-prop-group">
+                    <label>Icon</label>
+                    <div class="pm-icon-row">
+                        <button class="pm-icon-trigger" t-on-click="() => this.toggleIconPicker()">
+                            <t t-if="props.selectedElement.icon">
+                                <i t-attf-class="fa #{props.selectedElement.icon} me-1"/>
+                                <t t-esc="props.selectedElement.icon"/>
+                            </t>
+                            <t t-else="">
+                                <i class="fa fa-plus-circle me-1"/> Choose icon
+                            </t>
+                        </button>
+                    </div>
+                    <t t-if="state.showIconPicker">
+                        <div class="pm-icon-picker">
+                            <button class="pm-icon-option pm-icon-none" t-on-click="() => this.clearIcon()">
+                                <i class="fa fa-ban"/> None
+                            </button>
+                            <t t-foreach="stepIcons" t-as="ic" t-key="ic">
+                                <button class="pm-icon-option" t-on-click="() => this.selectIcon(ic)"
+                                        t-att-title="ic">
+                                    <i t-attf-class="fa #{ic}"/>
+                                </button>
+                            </t>
+                        </div>
+                    </t>
+                </div>
+
+                <!-- Annotation -->
+                <div class="pm-prop-group">
+                    <label>Annotation / Business Rule</label>
+                    <textarea t-on-change="(ev) => this.onInputChange('annotation', ev)"
+                              t-att-value="props.selectedElement.annotation || ''"
+                              placeholder="Additional notes or business rules"
+                              rows="2"/>
+                </div>
+
+                <!-- Sub-process link (only for subprocess type) -->
+                <t t-if="props.selectedElement.step_type === 'subprocess'">
+                    <div class="pm-prop-group">
+                        <label>Linked Process Map</label>
+                        <select t-on-change="(ev) => this.onInputChange('sub_process_id', ev)">
+                            <option value="">-- No linked map --</option>
+                            <t t-foreach="props.availableMaps" t-as="map" t-key="map.id">
+                                <option t-att-value="map.id"
+                                        t-att-selected="props.selectedElement.sub_process_id === map.id">
+                                    <t t-esc="map.name"/>
+                                </option>
+                            </t>
+                        </select>
+                        <small class="text-muted">Double-click on canvas to navigate</small>
+                    </div>
+                </t>
+
+                <div class="pm-prop-group">
+                    <label>Lane</label>
+                    <select t-on-change="(ev) => this.onInputChange('lane_id', ev)">
+                        <option value="">-- No Lane --</option>
+                        <t t-foreach="props.lanes" t-as="lane" t-key="lane.id">
+                            <option t-att-value="lane.id"
+                                    t-att-selected="props.selectedElement.lane_id === lane.id">
+                                <t t-esc="lane.name"/>
+                            </option>
+                        </t>
+                    </select>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Role</label>
+                    <select t-on-change="(ev) => this.onInputChange('role_id', ev)">
+                        <option value="">-- No Role --</option>
+                        <t t-foreach="props.roles" t-as="role" t-key="role.id">
+                            <option t-att-value="role.id"
+                                    t-att-selected="props.selectedElement.role_id === role.id">
+                                <t t-esc="role.name"/>
+                            </option>
+                        </t>
+                    </select>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Responsible</label>
+                    <input type="text" t-att-value="props.selectedElement.responsible || ''"
+                           t-on-change="(ev) => this.onInputChange('responsible', ev)"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>System Action</label>
+                    <input type="text" t-att-value="props.selectedElement.system_action || ''"
+                           t-on-change="(ev) => this.onInputChange('system_action', ev)"
+                           placeholder="e.g., Send email, Create record"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Data Fields</label>
+                    <div class="pm-field-builder-trigger">
+                        <textarea t-on-change="(ev) => this.onInputChange('data_fields', ev)"
+                                  t-att-value="props.selectedElement.data_fields || ''"
+                                  placeholder="Use the Field Builder or type manually"
+                                  rows="3" readonly="1"/>
+                        <button class="pm-field-builder-btn" t-on-click="() => this.openFieldBuilder()"
+                                title="Open Field Builder">
+                            <i class="fa fa-wrench me-1"/> Field Builder
+                        </button>
+                    </div>
+                </div>
+
+                <t t-if="state.showFieldBuilder">
+                    <FieldBuilder
+                        dataFields="props.selectedElement.data_fields || ''"
+                        fieldRecords="props.selectedElement.field_records || []"
+                        formLayout="props.selectedElement.form_layout || ''"
+                        onSave="(val) => this.onFieldBuilderSave(val)"
+                        onClose="() => this.onFieldBuilderClose()"/>
+                </t>
+
+                <button class="pm-delete-btn" t-on-click="props.onDelete">
+                    <i class="fa fa-trash me-1"/> Delete Step
+                </button>
+            </t>
+
+            <!-- Connection properties -->
+            <t t-if="props.selectedElement and props.selectedType === 'connection'">
+                <div class="pm-prop-group">
+                    <label>Label</label>
+                    <input type="text" t-att-value="props.selectedElement.label || ''"
+                           t-on-change="(ev) => this.onInputChange('label', ev)"
+                           placeholder="e.g., Yes, No, Approved"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Type</label>
+                    <select t-on-change="(ev) => this.onInputChange('connection_type', ev)">
+                        <option value="sequence" t-att-selected="props.selectedElement.connection_type === 'sequence'">Sequence Flow</option>
+                        <option value="message" t-att-selected="props.selectedElement.connection_type === 'message'">Message Flow</option>
+                        <option value="association" t-att-selected="props.selectedElement.connection_type === 'association'">Association</option>
+                    </select>
+                </div>
+                <button class="pm-delete-btn" t-on-click="props.onDelete">
+                    <i class="fa fa-trash me-1"/> Delete Connection
+                </button>
+            </t>
+
+            <!-- Lane properties -->
+            <t t-if="props.selectedElement and props.selectedType === 'lane'">
+                <div class="pm-prop-group">
+                    <label>Lane Type</label>
+                    <select t-on-change="(ev) => this.onInputChange('preset', ev)">
+                        <option value="">-- Custom --</option>
+                        <t t-foreach="props.lanePresets" t-as="preset" t-key="preset.id">
+                            <option t-att-value="preset.id"
+                                    t-att-selected="props.selectedElement.name === preset.name">
+                                <t t-esc="preset.name"/>
+                            </option>
+                        </t>
+                        <option value="__new__">+ Create New Type...</option>
+                    </select>
+                </div>
+                <!-- Inline form to create a new lane preset -->
+                <t t-if="state.showNewPresetForm">
+                    <div class="pm-prop-group">
+                        <label>New Type Name</label>
+                        <input type="text" t-att-value="state.newPresetName"
+                               t-on-input="(ev) => this.onNewPresetNameChange(ev)"
+                               placeholder="e.g. Employee"/>
+                    </div>
+                    <div class="pm-prop-group">
+                        <label>New Type Color</label>
+                        <input type="color" t-att-value="state.newPresetColor"
+                               t-on-input="(ev) => this.onNewPresetColorChange(ev)"/>
+                    </div>
+                    <div class="pm-prop-group" style="display: flex; gap: 6px;">
+                        <button class="btn btn-sm btn-primary" t-on-click="() => this.onSaveNewPreset()">
+                            <i class="fa fa-check me-1"/>Save
+                        </button>
+                        <button class="btn btn-sm btn-secondary" t-on-click="() => this.onCancelNewPreset()">
+                            Cancel
+                        </button>
+                    </div>
+                </t>
+                <div class="pm-prop-group">
+                    <label>Name</label>
+                    <input type="text" t-att-value="props.selectedElement.name"
+                           t-on-change="(ev) => this.onInputChange('name', ev)"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Color</label>
+                    <input type="color" t-att-value="props.selectedElement.color || '#E3F2FD'"
+                           t-on-change="(ev) => this.onInputChange('color', ev)"/>
+                    <button t-if="this.presetColorChanged"
+                            class="btn btn-sm btn-outline-primary mt-1"
+                            t-on-click="() => this.onSavePresetColor()">
+                        <i class="fa fa-save me-1"/>Update preset color
+                    </button>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Height</label>
+                    <input type="number" t-att-value="props.selectedElement.height"
+                           t-on-change="(ev) => this.onInputChange('height', ev)" min="80" step="10"/>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Organization</label>
+                    <select t-on-change="(ev) => this.onInputChange('org_id', ev)">
+                        <option value="">-- No Organization --</option>
+                        <t t-foreach="props.orgs" t-as="org" t-key="org.id">
+                            <option t-att-value="org.id"
+                                    t-att-selected="props.selectedElement.org_id === org.id">
+                                <t t-esc="org.name"/>
+                            </option>
+                        </t>
+                    </select>
+                </div>
+                <div class="pm-prop-group">
+                    <label>Role</label>
+                    <select t-on-change="(ev) => this.onInputChange('role_id', ev)">
+                        <option value="">-- No Role --</option>
+                        <t t-foreach="props.roles" t-as="role" t-key="role.id">
+                            <option t-att-value="role.id"
+                                    t-att-selected="props.selectedElement.role_id === role.id">
+                                <t t-esc="role.name"/>
+                            </option>
+                        </t>
+                    </select>
+                </div>
+                <button class="pm-delete-btn" t-on-click="props.onDelete">
+                    <i class="fa fa-trash me-1"/> Delete Lane
+                </button>
+            </t>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Main Client Action
+         ============================================================ -->
+    <t t-name="myschool_processcomposer.ProcessMapperClient">
+        <div class="pm-container">
+            <t t-if="state.loading">
+                <div class="d-flex align-items-center justify-content-center h-100">
+                    <i class="fa fa-spinner fa-spin fa-2x text-muted"/>
+                </div>
+            </t>
+
+            <!-- Map Selector (when no map loaded) -->
+            <t t-elif="!state.mapId">
+                <div class="pm-map-selector">
+                    <h2><i class="fa fa-sitemap me-2"/>Select a Process Map</h2>
+                    <t t-if="state.availableMaps.length === 0">
+                        <p class="pm-empty-msg">
+                            No process maps found. Create one from the
+                            <a href="#" t-on-click.prevent="goBackToList">Process Maps list</a>.
+                        </p>
+                    </t>
+                    <ul class="pm-map-list" t-if="state.availableMaps.length > 0">
+                        <t t-foreach="state.availableMaps" t-as="map" t-key="map.id">
+                            <li class="pm-map-list-item" t-on-click="() => this.selectMap(map.id)">
+                                <span class="pm-map-name">
+                                    <i class="fa fa-sitemap me-1"/>
+                                    <t t-esc="map.name"/>
+                                </span>
+                                <span t-attf-class="pm-map-state #{map.state}">
+                                    <t t-esc="map.state"/>
+                                </span>
+                            </li>
+                        </t>
+                    </ul>
+                    <button class="btn btn-secondary mt-3" t-on-click="goBackToList">
+                        <i class="fa fa-list me-1"/> Go to Process Maps List
+                    </button>
+                </div>
+            </t>
+
+            <!-- Canvas Editor -->
+            <t t-else="">
+                <ProcessMapperToolbar
+                    onSave="() => this.saveDiagram()"
+                    onZoomIn="() => this.onZoomIn()"
+                    onZoomOut="() => this.onZoomOut()"
+                    onFitView="() => this.onFitView()"
+                    onToggleGrid="() => this.onToggleGrid()"
+                    onUndo="() => this.undo()"
+                    onRedo="() => this.redo()"
+                    onAutoLayout="() => this.autoLayout()"
+                    onToggleMinimap="() => this.onToggleMinimap()"
+                    onToggleVersions="() => this.onToggleVersions()"
+                    onExportPNG="() => this.onExportPNG()"
+                    onExportSVG="() => this.onExportSVG()"
+                    onExportDrawio="() => this.onExportDrawio()"
+                    onImportDrawio="() => this.onImportDrawio()"
+                    onPrint="() => this.onPrint()"
+                    gridEnabled="state.gridEnabled"
+                    dirty="state.dirty"
+                    canUndo="state.canUndo"
+                    canRedo="state.canRedo"
+                    mapName="state.mapName"
+                    mapState="state.mapState"/>
+
+                <div class="pm-main">
+                    <ProcessMapperCanvas
+                        steps="state.steps"
+                        connections="state.connections"
+                        lanes="state.lanes"
+                        selectedIds="state.selectedIds"
+                        selectedType="state.selectedType || ''"
+                        gridEnabled="state.gridEnabled"
+                        zoom="state.zoom"
+                        panX="state.panX"
+                        panY="state.panY"
+                        alignGuides="state.alignGuides"
+                        onSelectElement="(id, type) => this.onSelectElement(id, type)"
+                        onMultiSelect="(ids) => this.onMultiSelect(ids)"
+                        onMoveStep="(id, x, y) => this.onMoveStep(id, x, y)"
+                        onMoveSteps="(ids, dx, dy) => this.onMoveSteps(ids, dx, dy)"
+                        onCreateConnection="(s, t, sp, tp) => this.onCreateConnection(s, t, sp, tp)"
+                        onCanvasDrop="(type, x, y) => this.onCanvasDrop(type, x, y)"
+                        onPan="(x, y) => this.onPan(x, y)"
+                        onZoom="(delta) => this.onZoomDelta(delta)"
+                        onRenameStep="(id, name) => this.onRenameStep(id, name)"
+                        onDragStart="(id, x, y) => this.onDragStart(id, x, y)"
+                        onDragEnd="() => this.onDragEnd()"
+                        onOpenSubProcess="(id) => this.onOpenSubProcess(id)"
+                        onUpdateConnectionWaypoints="(id, wp, sp, tp) => this.onUpdateConnectionWaypoints(id, wp, sp, tp)"
+                        onResizeStep="(id, x, y, w, h) => this.onResizeStep(id, x, y, w, h)"
+                        onResizeLane="(id, h) => this.onResizeLane(id, h)"
+                        onMoveLane="(id, y) => this.onMoveLane(id, y)"
+                        onSnapStepToGrid="(id) => this.onSnapStepToGrid(id)"
+                        onSnapStepsToGrid="(ids) => this.onSnapStepsToGrid(ids)"
+                        onUpdateLabelOffset="(connId, t) => this.onUpdateLabelOffset(connId, t)"
+                        snapIndicators="state.snapIndicators"
+                        onStepContextMenu="(id, cx, cy) => this.onStepContextMenu(id, cx, cy)"/>
+
+                    <!-- Properties toggle + panel -->
+                    <button class="pm-properties-toggle"
+                            t-on-click="() => { this.state.showProperties = !this.state.showProperties; }"
+                            t-att-title="state.showProperties ? 'Eigenschappen inklappen' : 'Eigenschappen uitklappen'">
+                        <i t-attf-class="fa #{state.showProperties ? 'fa-chevron-right' : 'fa-chevron-left'}"/>
+                    </button>
+                    <t t-if="state.showProperties">
+                        <ProcessMapperProperties
+                            selectedElement="this.getSelectedElement()"
+                            selectedType="state.selectedType || ''"
+                            selectedCount="state.selectedIds.length"
+                            lanes="state.lanes"
+                            roles="state.roles"
+                            orgs="state.orgs"
+                            availableMaps="state.availableMaps"
+                            lanePresets="state.lanePresets"
+                            onPropertyChange="(f, v) => this.onPropertyChange(f, v)"
+                            onFieldRecordsSave="(stepId, result) => this.onFieldRecordsSave(stepId, result)"
+                            onCreatePreset="(name, color) => this.onCreatePreset(name, color)"
+                            onUpdatePresetColor="(id, color) => this.onUpdatePresetColor(id, color)"
+                            onDelete="() => this.onDelete()"
+                            requestFieldBuilder="state.requestFieldBuilder"
+                            onFieldBuilderOpened="() => this.onFieldBuilderOpened()"/>
+                    </t>
+
+                    <!-- Context Menu overlay -->
+                    <t t-if="state.contextMenu.visible">
+                        <div class="pm-ctx-backdrop" t-on-click="() => this.closeContextMenu()"
+                             t-on-contextmenu.prevent="() => this.closeContextMenu()"/>
+                        <div class="pm-ctx-menu"
+                             t-attf-style="left:#{state.contextMenu.x}px;top:#{state.contextMenu.y}px">
+                            <t t-foreach="getContextMenuItems()" t-as="item" t-key="item.id">
+                                <div t-attf-class="pm-ctx-item #{item.id === 'delete' ? 'pm-ctx-item-danger' : ''}"
+                                     t-on-click.stop="() => this.onContextMenuAction(item.id)">
+                                    <i t-attf-class="fa #{item.icon} pm-ctx-icon"/>
+                                    <span t-esc="item.label"/>
+                                </div>
+                            </t>
+                        </div>
+                    </t>
+
+                    <!-- Role Popover -->
+                    <t t-if="state.rolePopover.visible">
+                        <div class="pm-ctx-backdrop" t-on-click="() => this.closeRolePopover()"
+                             t-on-contextmenu.prevent="() => this.closeRolePopover()"/>
+                        <div class="pm-role-popover"
+                             t-attf-style="left:#{state.rolePopover.x}px;top:#{state.rolePopover.y}px">
+                            <div class="pm-role-popover-header">
+                                <span>Select Role</span>
+                                <button class="pm-role-popover-close"
+                                        t-on-click.stop="() => this.closeRolePopover()"
+                                        title="Close">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <div class="pm-role-popover-search">
+                                <input type="text" placeholder="Search roles..."
+                                       t-att-value="state.rolePopoverQuery"
+                                       t-on-input="(ev) => { this.state.rolePopoverQuery = ev.target.value; }"
+                                       t-on-click.stop="() => {}"/>
+                            </div>
+                            <!-- Current role -->
+                            <t t-set="popoverStep" t-value="state.rolePopover.stepId ? state.steps.find(s => s.id === state.rolePopover.stepId) : null"/>
+                            <t t-if="popoverStep and popoverStep.role_id">
+                                <div class="pm-role-popover-current">
+                                    <i class="fa fa-user text-success"/>
+                                    <span t-esc="popoverStep.role_name"/>
+                                    <button class="pm-role-popover-remove"
+                                            t-on-click.stop="() => this.onCtxSetRole(false)"
+                                            title="Remove role">
+                                        <i class="fa fa-times"/>
+                                    </button>
+                                </div>
+                            </t>
+                            <!-- Role list -->
+                            <div class="pm-role-popover-list">
+                                <t t-foreach="this.getFilteredRoles()" t-as="role" t-key="role.id">
+                                    <div class="pm-role-popover-item"
+                                         t-on-click.stop="() => this.onCtxSetRole(role.id)">
+                                        <i class="fa fa-user"/>
+                                        <span t-esc="role.name"/>
+                                    </div>
+                                </t>
+                                <t t-if="this.getFilteredRoles().length === 0">
+                                    <div class="pm-role-popover-empty">
+                                        <i class="fa fa-info-circle"/>
+                                        <span>No roles found</span>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+
+                <!-- Minimap overlay -->
+                <t t-if="state.showMinimap">
+                    <ProcessMapperMinimap
+                        steps="state.steps"
+                        connections="state.connections"
+                        zoom="state.zoom"
+                        panX="state.panX"
+                        panY="state.panY"
+                        canvasWidth="state.canvasWidth"
+                        canvasHeight="state.canvasHeight"
+                        onNavigate="(x, y) => this.onMinimapNavigate(x, y)"/>
+                </t>
+
+                <!-- Version panel sidebar -->
+                <t t-if="state.showVersionPanel">
+                    <ProcessMapperVersionPanel
+                        versions="state.versions"
+                        onRestore="(id) => this.onRestoreVersion(id)"
+                        onClose="() => this.onToggleVersions()"/>
+                </t>
+            </t>
+        </div>
+
+        <!-- Hidden file input for draw.io import -->
+        <input type="file" t-ref="drawioFileInput"
+               accept=".xml,.drawio,.svg,.html,.htm"
+               style="display:none"
+               t-on-change="(ev) => this._onDrawioFileSelected(ev)"/>
+
+        <!-- Print legend (hidden, shown only in print) -->
+        <div class="pm-print-legend">
+            <h3><t t-esc="state.mapName"/> - Process Map Legend</h3>
+            <table>
+                <thead><tr><th>Step</th><th>Type</th><th>Description</th><th>Responsible</th></tr></thead>
+                <tbody>
+                    <t t-foreach="state.steps" t-as="step" t-key="step.id">
+                        <tr>
+                            <td><t t-esc="step.name"/></td>
+                            <td><t t-esc="step.step_type"/></td>
+                            <td><t t-esc="step.description || '-'"/></td>
+                            <td><t t-esc="step.responsible || '-'"/></td>
+                        </tr>
+                    </t>
+                </tbody>
+            </table>
+        </div>
+    </t>
+
+</templates>

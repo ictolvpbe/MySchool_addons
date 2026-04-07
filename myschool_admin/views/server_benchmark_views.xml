@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ========================================= -->
+    <!-- SERVER BENCHMARK FORM VIEW -->
+    <!-- ========================================= -->
+
+    <record id="view_server_benchmark_form" model="ir.ui.view">
+        <field name="name">myschool.server.benchmark.form</field>
+        <field name="model">myschool.server.benchmark</field>
+        <field name="arch" type="xml">
+            <form string="Server Benchmark">
+
+                <div class="alert alert-info mb-3" role="alert">
+                    <strong>Server Performance Benchmark</strong>
+                    <br/>Runs local diagnostics: database speed (INSERT/SELECT/UPDATE/DELETE),
+                    CPU load, memory utilisation, disk I/O throughput, and ORM performance.
+                    <br/>Optionally enter a target server URL below to include a network latency test.
+                </div>
+
+                <group>
+                    <field name="target_url"
+                           placeholder="https://other-server.example.com (optional, for network test)"/>
+                </group>
+
+                <!-- RESULTS -->
+                <div invisible="not result_summary">
+                    <field name="result_summary" widget="text" readonly="1" nolabel="1"
+                           class="w-100"
+                           style="min-height: 400px; font-family: monospace; font-size: 13px;
+                                  background-color: #1e1e1e; color: #d4d4d4; padding: 16px;
+                                  border-radius: 6px; white-space: pre;"/>
+                </div>
+
+                <footer>
+                    <button name="action_run_benchmark" string="Run Benchmark" type="object"
+                            class="btn-primary" icon="fa-tachometer"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ========================================= -->
+    <!-- ACTION -->
+    <!-- ========================================= -->
+
+    <record id="action_server_benchmark" model="ir.actions.act_window">
+        <field name="name">Server Benchmark</field>
+        <field name="res_model">myschool.server.benchmark</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

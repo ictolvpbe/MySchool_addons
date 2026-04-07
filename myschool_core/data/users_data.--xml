@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- 1) employee.so — EMPLOYEE -->
+        <record id="user_employee_so" model="res.users">
+            <field name="name">Employee SO</field>
+            <field name="login">employee.so</field>
+            <field name="password">olvpolvp</field>
+            <field name="groups_id" eval="[
+                (4, ref('base.group_user')),
+                (4, ref('group_myschool_employee')),
+            ]"/>
+        </record>
+
+        <!-- 2) teacher.son — TEACHER -->
+        <record id="user_teacher_so" model="res.users">
+            <field name="name">Teacher SON</field>
+            <field name="login">teacher.son</field>
+            <field name="password">olvpolvp</field>
+            <field name="groups_id" eval="[
+                (4, ref('base.group_user')),
+                (4, ref('group_myschool_teacher')),
+            ]"/>
+        </record>
+
+        <!-- 3) ict — ICT -->
+        <record id="user_ict" model="res.users">
+            <field name="name">ICT</field>
+            <field name="login">ict</field>
+            <field name="password">olvpolvp</field>
+            <field name="groups_id" eval="[
+                (4, ref('base.group_user')),
+                (4, ref('group_myschool_ict')),
+            ]"/>
+        </record>
+
+        <!-- 4) boekhouding.so — ACCOUNTING -->
+        <record id="user_boekhouding_so" model="res.users">
+            <field name="name">Boekhouding SO</field>
+            <field name="login">boekhouding.so</field>
+            <field name="password">olvpolvp</field>
+            <field name="groups_id" eval="[
+                (4, ref('base.group_user')),
+                (4, ref('group_myschool_accounting')),
+            ]"/>
+        </record>
+
+    </data>
+</odoo>

@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Process Instance: List View -->
+    <record id="view_process_instance_list" model="ir.ui.view">
+        <field name="name">myschool.process.instance.list</field>
+        <field name="model">myschool.process.instance</field>
+        <field name="arch" type="xml">
+            <list decoration-muted="state == 'cancelled'"
+                  decoration-success="state == 'completed'">
+                <field name="name"/>
+                <field name="process_map_id"/>
+                <field name="started_by_id" widget="many2one_avatar_user"/>
+                <field name="start_date"/>
+                <field name="progress" widget="progressbar"/>
+                <field name="task_count"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-success="state == 'completed'"
+                       decoration-warning="state == 'running'"
+                       decoration-danger="state == 'cancelled'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Process Instance: Form View -->
+    <record id="view_process_instance_form" model="ir.ui.view">
+        <field name="name">myschool.process.instance.form</field>
+        <field name="model">myschool.process.instance</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_start" type="object" string="Starten"
+                            class="oe_highlight"
+                            invisible="state != 'draft'"/>
+                    <button name="action_complete" type="object" string="Voltooien"
+                            class="oe_highlight"
+                            invisible="state != 'running'"/>
+                    <button name="action_cancel" type="object" string="Annuleren"
+                            invisible="state in ('completed', 'cancelled')"
+                            confirm="Weet u zeker dat u dit proces wilt annuleren?"/>
+                    <button name="action_reset_to_draft" type="object" string="Terug naar concept"
+                            invisible="state not in ('cancelled',)"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,running,completed"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="process_map_id"/>
+                            <field name="started_by_id" widget="many2one_avatar_user"/>
+                        </group>
+                        <group>
+                            <field name="start_date"/>
+                            <field name="end_date"/>
+                            <field name="progress" widget="progressbar"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="description"/>
+                    </group>
+                    <notebook>
+                        <page string="Taken" name="tasks">
+                            <field name="task_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="assigned_user_id" widget="many2one_avatar_user"/>
+                                    <field name="assigned_group_id"/>
+                                    <field name="deadline"/>
+                                    <field name="priority" widget="priority"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state == 'todo'"
+                                           decoration-warning="state == 'in_progress'"
+                                           decoration-success="state == 'done'"
+                                           decoration-danger="state in ('cancelled', 'blocked')"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Process Instance: Search View -->
+    <record id="view_process_instance_search" model="ir.ui.view">
+        <field name="name">myschool.process.instance.search</field>
+        <field name="model">myschool.process.instance</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="process_map_id"/>
+                <field name="started_by_id"/>
+                <filter name="filter_draft" string="Concept" domain="[('state', '=', 'draft')]"/>
+                <filter name="filter_running" string="Actief" domain="[('state', '=', 'running')]"/>
+                <filter name="filter_completed" string="Voltooid" domain="[('state', '=', 'completed')]"/>
+                <separator/>
+                <filter name="filter_my_processes" string="Mijn processen"
+                        domain="[('started_by_id', '=', uid)]"/>
+                <separator/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_template" string="Template" context="{'group_by': 'process_map_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_process_instance" model="ir.actions.act_window">
+        <field name="name">Procesinstanties</field>
+        <field name="res_model">myschool.process.instance</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_process_instance_search"/>
+        <field name="context">{'search_default_filter_my_processes': 1}</field>
+    </record>
+
+</odoo>

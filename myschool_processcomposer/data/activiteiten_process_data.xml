@@ -1,0 +1,627 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- ============================================================ -->
+        <!-- Process Map: Activiteiten Claude                             -->
+        <!-- ============================================================ -->
+        <record id="process_composer_activiteiten_claude" model="myschool.process">
+            <field name="name">Activiteiten Claude</field>
+            <field name="description">Volledig procesverloop voor het aanvragen en verwerken van schoolactiviteiten (binnenschools en buitenschools). Dit proces toont alle stappen, rollen en beslissingsmomenten.</field>
+            <field name="state">draft</field>
+            <field name="version">1</field>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Lanes (Swimlanes per rol)                                    -->
+        <!-- ============================================================ -->
+        <record id="lane_personeelslid" model="myschool.process.lane">
+            <field name="name">Personeelslid</field>
+            <field name="sequence">10</field>
+            <field name="color">#E3F2FD</field>
+            <field name="y_position">0</field>
+            <field name="height">200</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <record id="lane_aankoop" model="myschool.process.lane">
+            <field name="name">Aankoop</field>
+            <field name="sequence">20</field>
+            <field name="color">#FFF3E0</field>
+            <field name="y_position">200</field>
+            <field name="height">150</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <record id="lane_directie" model="myschool.process.lane">
+            <field name="name">Directie</field>
+            <field name="sequence">30</field>
+            <field name="color">#F3E5F5</field>
+            <field name="y_position">350</field>
+            <field name="height">150</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <record id="lane_boekhouding" model="myschool.process.lane">
+            <field name="name">Boekhouding</field>
+            <field name="sequence">40</field>
+            <field name="color">#E8F5E9</field>
+            <field name="y_position">500</field>
+            <field name="height">150</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <record id="lane_vervangingen" model="myschool.process.lane">
+            <field name="name">Vervangingen</field>
+            <field name="sequence">50</field>
+            <field name="color">#FBE9E7</field>
+            <field name="y_position">650</field>
+            <field name="height">150</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Steps                                                        -->
+        <!-- ============================================================ -->
+
+        <!-- === Personeelslid lane === -->
+        <record id="step_start" model="myschool.process.step">
+            <field name="name">Start</field>
+            <field name="step_type">start</field>
+            <field name="x_position">50</field>
+            <field name="y_position">80</field>
+            <field name="lane_id" ref="lane_personeelslid"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <record id="step_kies_type" model="myschool.process.step">
+            <field name="name">Kies type activiteit</field>
+            <field name="description">Personeelslid kiest tussen binnenschoolse of buitenschoolse activiteit. Status: draft</field>
+            <field name="step_type">task</field>
+            <field name="x_position">180</field>
+            <field name="y_position">60</field>
+            <field name="width">160</field>
+            <field name="height">60</field>
+            <field name="responsible">Personeelslid</field>
+            <field name="lane_id" ref="lane_personeelslid"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">State: draft. Twee knoppen: Binnenschools / Buitenschools</field>
+        </record>
+
+        <record id="step_formulier" model="myschool.process.step">
+            <field name="name">Formulier invullen</field>
+            <field name="description">Personeelslid vult het aanvraagformulier in met titel, datum, school, klassen, geschatte kost, beschrijving en of er een bus nodig is. Bij binnenschools ook het lokaal.</field>
+            <field name="step_type">task</field>
+            <field name="x_position">400</field>
+            <field name="y_position">60</field>
+            <field name="width">160</field>
+            <field name="height">60</field>
+            <field name="responsible">Personeelslid</field>
+            <field name="lane_id" ref="lane_personeelslid"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">State: form_invullen. Validatie: titel en datum verplicht. Knop: Indienen</field>
+        </record>
+
+        <record id="step_gw_bus_nodig" model="myschool.process.step">
+            <field name="name">Bus nodig?</field>
+            <field name="step_type">gateway_exclusive</field>
+            <field name="x_position">620</field>
+            <field name="y_position">70</field>
+            <field name="width">50</field>
+            <field name="height">50</field>
+            <field name="lane_id" ref="lane_personeelslid"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- === Aankoop lane === -->
+        <record id="step_bus_controle" model="myschool.process.step">
+            <field name="name">Bus controle</field>
+            <field name="description">Aankoop controleert of er een bus beschikbaar is en vult de busprijs in.</field>
+            <field name="step_type">task</field>
+            <field name="x_position">580</field>
+            <field name="y_position">250</field>
+            <field name="width">160</field>
+            <field name="height">60</field>
+            <field name="responsible">Aankoop</field>
+            <field name="lane_id" ref="lane_aankoop"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">State: bus_check. Knoppen: Bus beschikbaar / Bus niet beschikbaar</field>
+        </record>
+
+        <record id="step_gw_bus_beschikbaar" model="myschool.process.step">
+            <field name="name">Bus beschikbaar?</field>
+            <field name="step_type">gateway_exclusive</field>
+            <field name="x_position">800</field>
+            <field name="y_position">260</field>
+            <field name="width">50</field>
+            <field name="height">50</field>
+            <field name="lane_id" ref="lane_aankoop"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- === Directie lane === -->
+        <record id="step_goedkeuring" model="myschool.process.step">
+            <field name="name">Beoordeling directie</field>
+            <field name="description">Directie beoordeelt de aanvraag en keurt goed of af. Bij afkeuring wordt een reden opgegeven.</field>
+            <field name="step_type">task</field>
+            <field name="x_position">580</field>
+            <field name="y_position">390</field>
+            <field name="width">160</field>
+            <field name="height">60</field>
+            <field name="responsible">Directie</field>
+            <field name="lane_id" ref="lane_directie"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">State: pending_approval. Knoppen: Goedkeuren / Afkeuren. E-mail naar aanvrager.</field>
+        </record>
+
+        <record id="step_gw_goedgekeurd" model="myschool.process.step">
+            <field name="name">Goedgekeurd?</field>
+            <field name="step_type">gateway_exclusive</field>
+            <field name="x_position">800</field>
+            <field name="y_position">400</field>
+            <field name="width">50</field>
+            <field name="height">50</field>
+            <field name="lane_id" ref="lane_directie"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <record id="step_afgekeurd" model="myschool.process.step">
+            <field name="name">Afgekeurd</field>
+            <field name="description">Aanvraag is afgekeurd. Personeelslid kan opnieuw indienen na aanpassing.</field>
+            <field name="step_type">task</field>
+            <field name="x_position">1000</field>
+            <field name="y_position">390</field>
+            <field name="width">140</field>
+            <field name="height">60</field>
+            <field name="responsible">Personeelslid</field>
+            <field name="lane_id" ref="lane_directie"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">State: rejected. Knop: Opnieuw indienen (reset naar form_invullen)</field>
+            <field name="color">#EF5350</field>
+        </record>
+
+        <record id="step_gw_type" model="myschool.process.step">
+            <field name="name">Type activiteit?</field>
+            <field name="step_type">gateway_exclusive</field>
+            <field name="x_position">800</field>
+            <field name="y_position">540</field>
+            <field name="width">50</field>
+            <field name="height">50</field>
+            <field name="lane_id" ref="lane_boekhouding"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- === Boekhouding lane === -->
+        <record id="step_s_code" model="myschool.process.step">
+            <field name="name">S-Code controle</field>
+            <field name="description">Boekhouding vult S-Code en bedrag in. Bij bevestiging worden automatisch kostenlijnen aangemaakt: busprijs (indien van toepassing) en verzekering (2% van s_code_price + bus_price).</field>
+            <field name="step_type">task</field>
+            <field name="x_position">580</field>
+            <field name="y_position">530</field>
+            <field name="width">160</field>
+            <field name="height">60</field>
+            <field name="responsible">Boekhouding</field>
+            <field name="lane_id" ref="lane_boekhouding"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">State: s_code. Velden: s_code_name, s_code_price. Automatische kostenlijnen bij bevestiging.</field>
+        </record>
+
+        <record id="step_verzekering" model="myschool.process.step">
+            <field name="name">Verzekering regelen</field>
+            <field name="description">Boekhouding regelt de verzekering voor de activiteit.</field>
+            <field name="step_type">task</field>
+            <field name="x_position">1000</field>
+            <field name="y_position">530</field>
+            <field name="width">160</field>
+            <field name="height">60</field>
+            <field name="responsible">Boekhouding</field>
+            <field name="lane_id" ref="lane_boekhouding"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">Veld: verzekering_done. Kan parallel met vervanging.</field>
+        </record>
+
+        <!-- === Vervangingen lane === -->
+        <record id="step_vervanging" model="myschool.process.step">
+            <field name="name">Vervanging inplannen</field>
+            <field name="description">Team vervangingen plant een vervanger in voor de afwezige leerkracht tijdens de activiteit.</field>
+            <field name="step_type">task</field>
+            <field name="x_position">580</field>
+            <field name="y_position">700</field>
+            <field name="width">160</field>
+            <field name="height">60</field>
+            <field name="responsible">Vervangingen</field>
+            <field name="lane_id" ref="lane_vervangingen"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">State: vervanging. Velden: vervanger_id, vervanging_done. Mail activity wordt aangemaakt.</field>
+        </record>
+
+        <record id="step_gw_done_check" model="myschool.process.step">
+            <field name="name">Alles afgerond?</field>
+            <field name="description">Controle of zowel verzekering als vervanging zijn afgerond.</field>
+            <field name="step_type">gateway_parallel</field>
+            <field name="x_position">1000</field>
+            <field name="y_position">710</field>
+            <field name="width">50</field>
+            <field name="height">50</field>
+            <field name="lane_id" ref="lane_vervangingen"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <record id="step_done" model="myschool.process.step">
+            <field name="name">Afgerond</field>
+            <field name="description">Activiteit is volledig verwerkt. Zowel verzekering als vervanging zijn geregeld.</field>
+            <field name="step_type">task</field>
+            <field name="x_position">1120</field>
+            <field name="y_position">700</field>
+            <field name="width">140</field>
+            <field name="height">60</field>
+            <field name="lane_id" ref="lane_vervangingen"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+            <field name="annotation">State: done. Automatisch als verzekering_done AND vervanging_done.</field>
+            <field name="color">#4CAF50</field>
+        </record>
+
+        <record id="step_end" model="myschool.process.step">
+            <field name="name">Einde</field>
+            <field name="step_type">end</field>
+            <field name="x_position">1320</field>
+            <field name="y_position">720</field>
+            <field name="lane_id" ref="lane_vervangingen"/>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Connections                                                  -->
+        <!-- ============================================================ -->
+
+        <!-- Start → Kies type -->
+        <record id="conn_start_kies" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_start"/>
+            <field name="target_step_id" ref="step_kies_type"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Kies type → Formulier invullen -->
+        <record id="conn_kies_formulier" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_kies_type"/>
+            <field name="target_step_id" ref="step_formulier"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Formulier → Bus nodig? -->
+        <record id="conn_formulier_gwbus" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_formulier"/>
+            <field name="target_step_id" ref="step_gw_bus_nodig"/>
+            <field name="label">Indienen</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Bus nodig? → Ja → Bus controle -->
+        <record id="conn_gwbus_buscontrole" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_bus_nodig"/>
+            <field name="target_step_id" ref="step_bus_controle"/>
+            <field name="label">Ja</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Bus nodig? → Nee → Goedkeuring -->
+        <record id="conn_gwbus_goedkeuring" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_bus_nodig"/>
+            <field name="target_step_id" ref="step_goedkeuring"/>
+            <field name="label">Nee</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Bus controle → Bus beschikbaar? -->
+        <record id="conn_bus_gwbeschikbaar" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_bus_controle"/>
+            <field name="target_step_id" ref="step_gw_bus_beschikbaar"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Bus beschikbaar? → Ja → Goedkeuring -->
+        <record id="conn_gwbeschikbaar_goedkeuring" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_bus_beschikbaar"/>
+            <field name="target_step_id" ref="step_goedkeuring"/>
+            <field name="label">Ja</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Bus beschikbaar? → Nee → Formulier (bus_refused) -->
+        <record id="conn_gwbeschikbaar_formulier" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_bus_beschikbaar"/>
+            <field name="target_step_id" ref="step_formulier"/>
+            <field name="label">Nee (bus geweigerd)</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Goedkeuring → Goedgekeurd? -->
+        <record id="conn_goedkeuring_gw" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_goedkeuring"/>
+            <field name="target_step_id" ref="step_gw_goedgekeurd"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Goedgekeurd? → Nee → Afgekeurd -->
+        <record id="conn_gw_afgekeurd" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_goedgekeurd"/>
+            <field name="target_step_id" ref="step_afgekeurd"/>
+            <field name="label">Nee</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Afgekeurd → Formulier (opnieuw indienen) -->
+        <record id="conn_afgekeurd_formulier" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_afgekeurd"/>
+            <field name="target_step_id" ref="step_formulier"/>
+            <field name="label">Opnieuw indienen</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Goedgekeurd? → Ja → Type activiteit? -->
+        <record id="conn_gw_type" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_goedgekeurd"/>
+            <field name="target_step_id" ref="step_gw_type"/>
+            <field name="label">Ja</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Type? → Buitenschools → S-Code -->
+        <record id="conn_type_scode" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_type"/>
+            <field name="target_step_id" ref="step_s_code"/>
+            <field name="label">Buitenschools</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Type? → Binnenschools → Vervanging -->
+        <record id="conn_type_vervanging" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_type"/>
+            <field name="target_step_id" ref="step_vervanging"/>
+            <field name="label">Binnenschools</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- S-Code → Vervanging -->
+        <record id="conn_scode_vervanging" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_s_code"/>
+            <field name="target_step_id" ref="step_vervanging"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- S-Code → Verzekering (parallel) -->
+        <record id="conn_scode_verzekering" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_s_code"/>
+            <field name="target_step_id" ref="step_verzekering"/>
+            <field name="label">Parallel</field>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Vervanging → Alles afgerond? -->
+        <record id="conn_vervanging_gwdone" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_vervanging"/>
+            <field name="target_step_id" ref="step_gw_done_check"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Verzekering → Alles afgerond? -->
+        <record id="conn_verzekering_gwdone" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_verzekering"/>
+            <field name="target_step_id" ref="step_gw_done_check"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Alles afgerond? → Done -->
+        <record id="conn_gwdone_done" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_gw_done_check"/>
+            <field name="target_step_id" ref="step_done"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- Done → End -->
+        <record id="conn_done_end" model="myschool.process.connection">
+            <field name="source_step_id" ref="step_done"/>
+            <field name="target_step_id" ref="step_end"/>
+            <field name="connection_type">sequence</field>
+            <field name="map_id" ref="process_composer_activiteiten_claude"/>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Fields per step                                              -->
+        <!-- ============================================================ -->
+
+        <!-- Kies type: activity_type -->
+        <record id="field_kies_activity_type" model="myschool.process.field">
+            <field name="step_id" ref="step_kies_type"/>
+            <field name="sequence">10</field>
+            <field name="name">activity_type</field>
+            <field name="field_description">Type activiteit</field>
+            <field name="ttype">selection</field>
+            <field name="required" eval="True"/>
+            <field name="selection_values">[["binnenschools","Binnenschoolse activiteit"],["buitenschools","Buitenschoolse activiteit"]]</field>
+        </record>
+
+        <!-- Formulier invullen: alle velden -->
+        <record id="field_form_titel" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">10</field>
+            <field name="name">titel</field>
+            <field name="field_description">Titel activiteit</field>
+            <field name="ttype">char</field>
+            <field name="required" eval="True"/>
+        </record>
+
+        <record id="field_form_school" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">20</field>
+            <field name="name">school_id</field>
+            <field name="field_description">School</field>
+            <field name="ttype">many2one</field>
+            <field name="relation">myschool.org</field>
+        </record>
+
+        <record id="field_form_klas" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">30</field>
+            <field name="name">klas_ids</field>
+            <field name="field_description">Klassen</field>
+            <field name="ttype">many2many</field>
+            <field name="relation">myschool.org</field>
+        </record>
+
+        <record id="field_form_datetime" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">40</field>
+            <field name="name">datetime</field>
+            <field name="field_description">Startdatum en tijdstip</field>
+            <field name="ttype">datetime</field>
+            <field name="required" eval="True"/>
+        </record>
+
+        <record id="field_form_datetime_end" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">50</field>
+            <field name="name">datetime_end</field>
+            <field name="field_description">Einddatum en tijdstip</field>
+            <field name="ttype">datetime</field>
+        </record>
+
+        <record id="field_form_price" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">60</field>
+            <field name="name">price</field>
+            <field name="field_description">Geschatte kost</field>
+            <field name="ttype">monetary</field>
+        </record>
+
+        <record id="field_form_lokaal" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">70</field>
+            <field name="name">lokaal</field>
+            <field name="field_description">Lokaal</field>
+            <field name="ttype">char</field>
+            <field name="help_text">Alleen zichtbaar bij binnenschoolse activiteiten</field>
+        </record>
+
+        <record id="field_form_bus_nodig" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">80</field>
+            <field name="name">bus_nodig</field>
+            <field name="field_description">Bus nodig</field>
+            <field name="ttype">boolean</field>
+            <field name="help_text">Alleen zichtbaar bij buitenschoolse activiteiten</field>
+        </record>
+
+        <record id="field_form_description" model="myschool.process.field">
+            <field name="step_id" ref="step_formulier"/>
+            <field name="sequence">90</field>
+            <field name="name">description</field>
+            <field name="field_description">Beschrijving</field>
+            <field name="ttype">text</field>
+        </record>
+
+        <!-- Bus controle -->
+        <record id="field_bus_price" model="myschool.process.field">
+            <field name="step_id" ref="step_bus_controle"/>
+            <field name="sequence">10</field>
+            <field name="name">bus_price</field>
+            <field name="field_description">Prijs van bus</field>
+            <field name="ttype">monetary</field>
+        </record>
+
+        <record id="field_bus_available" model="myschool.process.field">
+            <field name="step_id" ref="step_bus_controle"/>
+            <field name="sequence">20</field>
+            <field name="name">bus_available</field>
+            <field name="field_description">Bus beschikbaar</field>
+            <field name="ttype">boolean</field>
+        </record>
+
+        <!-- Goedkeuring -->
+        <record id="field_rejection_reason" model="myschool.process.field">
+            <field name="step_id" ref="step_goedkeuring"/>
+            <field name="sequence">10</field>
+            <field name="name">rejection_reason</field>
+            <field name="field_description">Reden voor afkeuring</field>
+            <field name="ttype">text</field>
+            <field name="help_text">Alleen ingevuld bij afkeuring</field>
+        </record>
+
+        <!-- S-Code -->
+        <record id="field_s_code_name" model="myschool.process.field">
+            <field name="step_id" ref="step_s_code"/>
+            <field name="sequence">10</field>
+            <field name="name">s_code_name</field>
+            <field name="field_description">S-Code</field>
+            <field name="ttype">char</field>
+            <field name="required" eval="True"/>
+        </record>
+
+        <record id="field_s_code_price" model="myschool.process.field">
+            <field name="step_id" ref="step_s_code"/>
+            <field name="sequence">20</field>
+            <field name="name">s_code_price</field>
+            <field name="field_description">S-Code bedrag</field>
+            <field name="ttype">monetary</field>
+            <field name="required" eval="True"/>
+        </record>
+
+        <record id="field_kosten_ids" model="myschool.process.field">
+            <field name="step_id" ref="step_s_code"/>
+            <field name="sequence">30</field>
+            <field name="name">kosten_ids</field>
+            <field name="field_description">Kosten</field>
+            <field name="ttype">one2many</field>
+            <field name="relation">activiteiten.kosten.line</field>
+            <field name="relation_field">activiteit_id</field>
+            <field name="help_text">Automatische lijnen: Bus (indien van toepassing) en Verzekering (2% van s_code_price + bus_price)</field>
+        </record>
+
+        <!-- Verzekering -->
+        <record id="field_verzekering_done" model="myschool.process.field">
+            <field name="step_id" ref="step_verzekering"/>
+            <field name="sequence">10</field>
+            <field name="name">verzekering_done</field>
+            <field name="field_description">Verzekering geregeld</field>
+            <field name="ttype">boolean</field>
+        </record>
+
+        <!-- Vervanging -->
+        <record id="field_vervanger" model="myschool.process.field">
+            <field name="step_id" ref="step_vervanging"/>
+            <field name="sequence">10</field>
+            <field name="name">vervanger_id</field>
+            <field name="field_description">Vervanger</field>
+            <field name="ttype">many2one</field>
+            <field name="relation">res.users</field>
+        </record>
+
+        <record id="field_vervanging_done" model="myschool.process.field">
+            <field name="step_id" ref="step_vervanging"/>
+            <field name="sequence">20</field>
+            <field name="name">vervanging_done</field>
+            <field name="field_description">Vervanging ingepland</field>
+            <field name="ttype">boolean</field>
+        </record>
+
+    </data>
+</odoo>
