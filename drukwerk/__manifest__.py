@@ -9,7 +9,7 @@
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
-    'depends': ['base', 'mail', 'myschool_core'],
+    'depends': ['base', 'mail', 'myschool_core', 'myschool_admin'],
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',

@@ -253,13 +253,9 @@ class MySchoolDashboard(models.Model):
         # Admin and directie see all their schools
         if self._is_admin(model_name) or self._is_directie_or_admin(model_name):
             return domain
-        if model_name == 'drukwerk.record':
-            if self._is_manager(model_name):
-                return domain
-            return domain + [('create_uid', '=', self.env.uid)]
-        if model_name == 'activiteiten.record':
-            if self._is_manager(model_name):
-                return domain
+        if self._is_manager(model_name):
+            return domain
+        if model_name in ('drukwerk.record', 'activiteiten.record'):
             return domain + [('create_uid', '=', self.env.uid)]
         return domain + [('employee_id.user_id', '=', self.env.uid)]
 
@@ -312,28 +308,28 @@ class MySchoolDashboard(models.Model):
         act_raw = self._get_state_counts('activiteiten.record')
         prof_raw = self._get_state_counts('professionalisering.record')
         druk_raw = self._get_state_counts('drukwerk.record')
-        # Pending = draft + form_invullen + bus_check (act) + selection_of_form + fill_in_form_* (prof) + draft + form_invullen (druk)
+        # Pending = draft + form_invullen + bus_check (act) + selection_of_form (prof) + draft + form_invullen (druk)
         pending = (
             act_raw.get('draft', 0) + act_raw.get('form_invullen', 0) +
             act_raw.get('bus_check', 0) +
             prof_raw.get('selection_of_form', 0) +
-            prof_raw.get('fill_in_form_individueel', 0) +
-            prof_raw.get('fill_in_form_teamleren', 0) +
             druk_raw.get('draft', 0) + druk_raw.get('form_invullen', 0)
         )
-        # Action needed = pending_approval + bus_refused (act) + wacht_op_goedkeuring (prof) + afdrukken + doorrekenen (druk)
+        # Action needed = pending_approval + bus_refused (act) + fill_in_form_* + bevestiging (prof) + afdrukken + doorrekenen (druk)
         action_needed = (
             act_raw.get('pending_approval', 0) +
             act_raw.get('bus_refused', 0) +
             act_raw.get('s_code', 0) +
             act_raw.get('vervanging', 0) +
-            prof_raw.get('wacht_op_goedkeuring', 0) +
+            prof_raw.get('fill_in_form_individueel', 0) +
+            prof_raw.get('fill_in_form_teamleren', 0) +
+            prof_raw.get('bevestiging', 0) +
             druk_raw.get('afdrukken', 0) + druk_raw.get('doorrekenen', 0)
         )
         # Approved (across all)
         approved = (
             act_raw.get('approved', 0) + act_raw.get('done', 0) +
-            prof_raw.get('bevestiging', 0) + prof_raw.get('done', 0) +
+            prof_raw.get('done', 0) +
             druk_raw.get('done', 0)
         )
         # Rejected

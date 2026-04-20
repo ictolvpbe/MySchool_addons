@@ -209,18 +209,12 @@ class DrukwerkRecord(models.Model):
     def _get_students_from_classes(self):
         """Get all active students from the selected classes."""
         self.ensure_one()
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
-        if not person_tree_type or not self.klas_ids:
+        if not self.klas_ids:
             return self.env['myschool.person']
-        rels = PropRelation.search([
-            ('proprelation_type_id', '=', person_tree_type.id),
-            ('id_org', 'in', self.klas_ids.ids),
-            ('id_person', '!=', False),
+        return self.env['myschool.person'].sudo().search([
+            ('tree_org_id', 'in', self.klas_ids.ids),
             ('is_active', '=', True),
         ])
-        return rels.mapped('id_person')
 
     @api.onchange('klas_ids')
     def _onchange_klas_ids_select_students(self):
@@ -395,26 +389,21 @@ class DrukwerkRecord(models.Model):
     def action_view_students(self):
         """Open wizard to select/deselect students."""
         self.ensure_one()
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
         wiz = self.env['drukwerk.student.select.wizard'].create({
             'drukwerk_id': self.id,
         })
         lines = []
-        if person_tree_type and self.klas_ids:
-            rels = PropRelation.search([
-                ('proprelation_type_id', '=', person_tree_type.id),
-                ('id_org', 'in', self.klas_ids.ids),
-                ('id_person', '!=', False),
+        if self.klas_ids:
+            students = self.env['myschool.person'].sudo().search([
+                ('tree_org_id', 'in', self.klas_ids.ids),
                 ('is_active', '=', True),
             ])
-            for rel in rels:
+            for student in students:
                 lines.append({
                     'wizard_id': wiz.id,
-                    'person_id': rel.id_person.id,
-                    'klas_id': rel.id_org.id,
-                    'selected': True,
+                    'person_id': student.id,
+                    'klas_id': student.tree_org_id.id,
+                    'selected': student.id in self.student_ids.ids,
                 })
         if lines:
             self.env['drukwerk.student.select.line'].create(lines)

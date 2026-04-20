@@ -12,20 +12,24 @@
                         <h1>Bus <field name="bus_nummer" class="d-inline"/></h1>
                     </div>
                     <field name="activiteit_id" invisible="context.get('default_activiteit_id')"/>
+                    <field name="beschikbare_klas_ids" invisible="1"/>
+                    <field name="beschikbare_leerkracht_ids" invisible="1"/>
                     <group>
                         <group string="Busbezetting">
+                            <field name="plaatsen"/>
                             <field name="klas_ids" widget="many2many_tags"
-                                   domain="[('id', 'in', context.get('allowed_klas_ids', []))]"/>
+                                   domain="[('id', 'in', beschikbare_klas_ids)]"/>
                             <field name="aantal_klassen"/>
                             <field name="student_count"/>
                             <field name="aantal_leerkrachten"/>
+                            <field name="leerlingen_namen"/>
                         </group>
                         <group string="Verantwoordelijke">
                             <field name="busverantwoordelijke_id"
-                                   domain="[('id', 'in', context.get('allowed_leerkracht_ids', []))]"/>
+                                   domain="[('id', 'in', beschikbare_leerkracht_ids)]"/>
                             <field name="busverantwoordelijke_telefoon"/>
                             <field name="leerkracht_bus_id"
-                                   domain="[('id', 'in', context.get('allowed_leerkracht_ids', []))]"/>
+                                   domain="[('id', 'in', beschikbare_leerkracht_ids)]"/>
                         </group>
                     </group>
                     <group>
@@ -49,10 +53,19 @@
         <field name="model">activiteiten.bus</field>
         <field name="arch" type="xml">
             <list>
+                <header>
+                    <button name="action_export_busverdeling"
+                            string="Exporteer busverdeling"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-file-excel-o"/>
+                </header>
                 <field name="bus_nummer"/>
+                <field name="plaatsen"/>
                 <field name="klas_ids" widget="many2many_tags"/>
                 <field name="aantal_klassen"/>
                 <field name="student_count"/>
+                <field name="leerlingen_namen" optional="hide"/>
                 <field name="aantal_leerkrachten"/>
                 <field name="busverantwoordelijke_id"/>
                 <field name="busverantwoordelijke_telefoon"/>

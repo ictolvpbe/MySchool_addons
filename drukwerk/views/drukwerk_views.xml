@@ -123,8 +123,6 @@
                                    readonly="state not in ('draft', 'form_invullen')"/>
                             <field name="formaat"
                                    readonly="state not in ('draft', 'form_invullen')"/>
-                            <field name="papier_kleur"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
                             <field name="dik_papier"
                                    invisible="drukwerk_type != 'gewoon'"
                                    readonly="state not in ('draft', 'form_invullen')"/>
@@ -168,7 +166,6 @@
                             <field name="aantal_kopies" readonly="1"/>
                             <field name="kleur" readonly="1"/>
                             <field name="formaat" readonly="1"/>
-                            <field name="papier_kleur" readonly="1"/>
                             <field name="dik_papier" readonly="1"
                                    invisible="drukwerk_type != 'gewoon'"/>
                         </group>
@@ -183,6 +180,7 @@
                         </group>
                         <group>
                             <field name="perforeren"/>
+                            <field name="papier_kleur"/>
                             <field name="gekleurd_papier"/>
                         </group>
                     </group>

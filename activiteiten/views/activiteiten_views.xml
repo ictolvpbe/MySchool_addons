@@ -174,10 +174,6 @@
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen')"
                                    readonly="state != 'bus_check'"
                                    groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
-                            <field name="plaatsen_bus"
-                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
-                                   readonly="state != 'bus_check'"
-                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
                             <field name="bus_available"
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen', 'bus_check')"
                                    readonly="1"/>
@@ -279,57 +275,9 @@
                                 <field name="totale_kost" readonly="1"/>
                             </group>
                         </page>
-                        <!-- Busverdeling tab -->
-                        <page string="Busverdeling"
-                              invisible="not bus_nodig or state != 'done'">
-                            <field name="bus_ids">
-                                <list editable="bottom">
-                                    <field name="bus_nummer"/>
-                                    <field name="klas_ids" widget="many2many_tags"
-                                           domain="[('id', 'in', parent.klas_ids)]"/>
-                                    <field name="aantal_klassen"/>
-                                    <field name="student_count"/>
-                                    <field name="aantal_leerkrachten"/>
-                                    <field name="busverantwoordelijke_id"
-                                           domain="[('id', 'in', parent.leerkracht_ids)]"/>
-                                    <field name="busverantwoordelijke_telefoon"/>
-                                    <field name="leerkracht_bus_id"
-                                           domain="[('id', 'in', parent.leerkracht_ids)]"/>
-                                    <field name="busmaatschappij"/>
-                                    <field name="nummerplaat"/>
-                                    <field name="telefoon_chauffeur"/>
-                                </list>
-                                <form>
-                                    <sheet>
-                                        <div class="oe_title">
-                                            <h1>Bus <field name="bus_nummer" class="d-inline"/></h1>
-                                        </div>
-                                        <group>
-                                            <group string="Busbezetting">
-                                                <field name="klas_ids" widget="many2many_tags"/>
-                                                <field name="aantal_klassen"/>
-                                                <field name="student_count"/>
-                                                <field name="aantal_leerkrachten"/>
-                                            </group>
-                                            <group string="Verantwoordelijke">
-                                                <field name="busverantwoordelijke_id"/>
-                                                <field name="busverantwoordelijke_telefoon"/>
-                                                <field name="leerkracht_bus_id"/>
-                                            </group>
-                                        </group>
-                                        <group>
-                                            <group string="Busmaatschappij">
-                                                <field name="busmaatschappij"/>
-                                                <field name="nummerplaat"/>
-                                                <field name="telefoon_chauffeur"/>
-                                            </group>
-                                            <group string="Afwezigen">
-                                                <field name="afwezigen" placeholder="Naam + klas..."/>
-                                            </group>
-                                        </group>
-                                    </sheet>
-                                </form>
-                            </field>
+                        <!-- Documenten tab -->
+                        <page string="Documenten">
+                            <field name="document_ids" widget="many2many_binary"/>
                         </page>
                         <!-- Afkeuring: for medewerker after rejection -->
                         <page string="Afkeuring"

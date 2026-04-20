@@ -4,6 +4,17 @@ from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 
 
+class HrEmployeeProfessionalisering(models.Model):
+    _inherit = 'hr.employee'
+
+    @api.model
+    def name_search(self, name='', domain=None, operator='ilike', limit=100):
+        if self.env.context.get('professionalisering_directie_search'):
+            return self.sudo().with_context(professionalisering_directie_search=False).name_search(
+                name=name, domain=domain, operator=operator, limit=limit)
+        return super().name_search(name=name, domain=domain, operator=operator, limit=limit)
+
+
 class IrActionsActWindow(models.Model):
     _inherit = 'ir.actions.act_window'
 
@@ -95,8 +106,9 @@ class ProfessionaliseringRecord(models.Model):
     allowed_school_json = fields.Json(
         compute='_compute_allowed_school_json',
     )
-    is_owner = fields.Boolean(compute='_compute_is_owner')
+    is_owner = fields.Boolean(compute='_compute_is_owner', compute_sudo=True)
     is_admin = fields.Boolean(compute='_compute_is_admin')
+    allowed_directie_json = fields.Json(compute='_compute_allowed_directie_json')
     start_date = fields.Date(string='Startdatum', required=True)
     end_date = fields.Date(string='Einddatum')
     duur = fields.Selection([
@@ -156,9 +168,8 @@ class ProfessionaliseringRecord(models.Model):
         'hr.employee',
         string='Toegewezen aan',
         tracking=True,
-        domain=lambda self: [('user_id', 'in',
-            self.env.ref('professionalisering.group_professionalisering_directie').all_user_ids.ids
-        )],
+        domain="[('id', 'in', allowed_directie_json)]",
+        context={'professionalisering_directie_search': True},
     )
     directie_id = fields.Many2one(
         'hr.employee',
@@ -196,6 +207,19 @@ class ProfessionaliseringRecord(models.Model):
         ids = schools.ids or self.env['myschool.org'].sudo().search([('org_type_id.name', '=', 'SCHOOL'), ('is_active', '=', True)]).ids
         for record in self:
             record.allowed_school_json = ids
+
+    @api.depends_context('uid')
+    def _compute_allowed_directie_json(self):
+        group = self.env.ref('professionalisering.group_professionalisering_directie', raise_if_not_found=False)
+        if group:
+            employees = self.env['hr.employee'].sudo().search([
+                ('user_id', 'in', group.all_user_ids.ids),
+            ])
+            ids = employees.ids
+        else:
+            ids = []
+        for record in self:
+            record.allowed_directie_json = ids
 
     @api.depends('invite_ids', 'invite_ids.employee_id', 'invite_ids.state')
     @api.depends_context('uid')
