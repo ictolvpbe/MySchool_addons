@@ -428,7 +428,7 @@ MODULE_SHAPES = {
     'planner': _shape_tasks,
     'professionalisering': _shape_graduation,
     'process_mapper': _shape_sitemap,
-    'knowledge_builder': _shape_book,
+    'myschool_knowledge_builder': _shape_book,
     'kosten_dashboard': _shape_euro,
     'security_phishing': _shape_shield,
     'drukwerk': _shape_printer,

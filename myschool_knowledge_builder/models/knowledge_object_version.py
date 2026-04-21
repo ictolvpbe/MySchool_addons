@@ -4,12 +4,12 @@ from odoo import models, fields
 
 
 class KnowledgeObjectVersion(models.Model):
-    _name = 'knowledge.object.version'
+    _name = 'myschool.knowledge.object.version'
     _description = 'Knowledge Object Version'
     _order = 'version_number desc'
 
     knowledge_object_id = fields.Many2one(
-        'knowledge.object', string='Knowledge Object',
+        'myschool.knowledge.object', string='Knowledge Object',
         required=True, ondelete='cascade',
     )
     version_number = fields.Integer(string='Version', required=True)

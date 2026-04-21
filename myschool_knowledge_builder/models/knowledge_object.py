@@ -6,7 +6,7 @@ from odoo.exceptions import UserError
 
 
 class KnowledgeObject(models.Model):
-    _name = 'knowledge.object'
+    _name = 'myschool.knowledge.object'
     _description = 'Knowledge Object'
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'name'
@@ -31,16 +31,16 @@ class KnowledgeObject(models.Model):
     ], string='State', default='draft', required=True, tracking=True)
 
     step_ids = fields.One2many(
-        'knowledge.object.step', 'knowledge_object_id', string='Steps',
+        'myschool.knowledge.object.step', 'knowledge_object_id', string='Steps',
     )
     step_count = fields.Integer(
         string='Steps', compute='_compute_step_count', store=True,
     )
     tag_ids = fields.Many2many(
-        'knowledge.tag', string='Tags',
+        'myschool.knowledge.tag', string='Tags',
     )
     version_ids = fields.One2many(
-        'knowledge.object.version', 'knowledge_object_id', string='Versions',
+        'myschool.knowledge.object.version', 'knowledge_object_id', string='Versions',
     )
     version_number = fields.Integer(string='Current Version', default=0)
     share_token = fields.Char(string='Share Token', copy=False)
@@ -104,7 +104,7 @@ class KnowledgeObject(models.Model):
         self.ensure_one()
         return {
             'type': 'ir.actions.client',
-            'tag': 'knowledge_builder_editor',
+            'tag': 'myschool_knowledge_builder_editor',
             'name': self.name,
             'context': {'active_id': self.id},
         }
@@ -115,7 +115,7 @@ class KnowledgeObject(models.Model):
 
     def get_editor_data(self):
         self.ensure_one()
-        Comment = self.env['knowledge.object.step.comment']
+        Comment = self.env['myschool.knowledge.object.step.comment']
         steps = []
         for step in self.step_ids.sorted('sequence'):
             comments = Comment.search([('step_id', '=', step.id)], order='create_date desc')
@@ -156,8 +156,8 @@ class KnowledgeObject(models.Model):
 
     def save_editor_data(self, data):
         self.ensure_one()
-        Step = self.env['knowledge.object.step']
-        Version = self.env['knowledge.object.version']
+        Step = self.env['myschool.knowledge.object.step']
+        Version = self.env['myschool.knowledge.object.version']
 
         # Create version snapshot before saving
         self.version_number += 1
@@ -218,7 +218,7 @@ class KnowledgeObject(models.Model):
 
     def add_step_comment(self, step_id, body):
         self.ensure_one()
-        Comment = self.env['knowledge.object.step.comment']
+        Comment = self.env['myschool.knowledge.object.step.comment']
         comment = Comment.create({
             'step_id': step_id,
             'body': body,
@@ -232,7 +232,7 @@ class KnowledgeObject(models.Model):
 
     def delete_step_comment(self, comment_id):
         self.ensure_one()
-        comment = self.env['knowledge.object.step.comment'].browse(comment_id)
+        comment = self.env['myschool.knowledge.object.step.comment'].browse(comment_id)
         if comment.exists():
             comment.unlink()
         return True
@@ -243,7 +243,7 @@ class KnowledgeObject(models.Model):
 
     def restore_version(self, version_id):
         self.ensure_one()
-        version = self.env['knowledge.object.version'].browse(version_id)
+        version = self.env['myschool.knowledge.object.version'].browse(version_id)
         if not version.exists() or version.knowledge_object_id.id != self.id:
             raise UserError("Version not found.")
         data = version.get_snapshot_data()
@@ -255,7 +255,7 @@ class KnowledgeObject(models.Model):
             })
             # Recreate steps from snapshot
             self.step_ids.unlink()
-            Step = self.env['knowledge.object.step']
+            Step = self.env['myschool.knowledge.object.step']
             for step_data in data.get('steps', []):
                 Step.create({
                     'name': step_data.get('name', 'Step'),

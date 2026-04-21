@@ -3,7 +3,7 @@
     <menuitem id="menu_knowledge_builder_root"
               name="Knowledge Builder"
               sequence="16"
-              groups="knowledge_builder.group_knowledge_builder_user"/>
+              groups="myschool_knowledge_builder.group_knowledge_builder_user"/>
 
     <menuitem id="menu_knowledge_objects"
               name="Knowledge Objects"
@@ -15,7 +15,7 @@
               name="Configuration"
               parent="menu_knowledge_builder_root"
               sequence="90"
-              groups="knowledge_builder.group_knowledge_builder_manager"/>
+              groups="myschool_knowledge_builder.group_knowledge_builder_manager"/>
 
     <menuitem id="menu_knowledge_tags"
               name="Tags"

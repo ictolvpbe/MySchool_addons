@@ -4,7 +4,7 @@
     <!-- List View -->
     <record id="view_knowledge_object_list" model="ir.ui.view">
         <field name="name">knowledge.object.list</field>
-        <field name="model">knowledge.object</field>
+        <field name="model">myschool.knowledge.object</field>
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
@@ -27,7 +27,7 @@
     <!-- Form View -->
     <record id="view_knowledge_object_form" model="ir.ui.view">
         <field name="name">knowledge.object.form</field>
-        <field name="model">knowledge.object</field>
+        <field name="model">myschool.knowledge.object</field>
         <field name="arch" type="xml">
             <form string="Knowledge Object">
                 <header>
@@ -97,7 +97,7 @@
     <!-- Action -->
     <record id="action_knowledge_object_list" model="ir.actions.act_window">
         <field name="name">Knowledge Objects</field>
-        <field name="res_model">knowledge.object</field>
+        <field name="res_model">myschool.knowledge.object</field>
         <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
@@ -109,7 +109,7 @@
     <!-- Tag views -->
     <record id="view_knowledge_tag_list" model="ir.ui.view">
         <field name="name">knowledge.tag.list</field>
-        <field name="model">knowledge.tag</field>
+        <field name="model">myschool.knowledge.tag</field>
         <field name="arch" type="xml">
             <list editable="bottom">
                 <field name="name"/>
@@ -120,7 +120,7 @@
 
     <record id="action_knowledge_tag_list" model="ir.actions.act_window">
         <field name="name">Tags</field>
-        <field name="res_model">knowledge.tag</field>
+        <field name="res_model">myschool.knowledge.tag</field>
         <field name="view_mode">list</field>
     </record>
 

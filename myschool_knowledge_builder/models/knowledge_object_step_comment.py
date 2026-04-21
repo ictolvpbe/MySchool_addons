@@ -2,12 +2,12 @@ from odoo import models, fields
 
 
 class KnowledgeObjectStepComment(models.Model):
-    _name = 'knowledge.object.step.comment'
+    _name = 'myschool.knowledge.object.step.comment'
     _description = 'Knowledge Object Step Comment'
     _order = 'create_date desc'
 
     step_id = fields.Many2one(
-        'knowledge.object.step', string='Step',
+        'myschool.knowledge.object.step', string='Step',
         required=True, ondelete='cascade',
     )
     author_id = fields.Many2one(

@@ -55,7 +55,7 @@ function resizeImage(base64, maxW, maxH) {
 // ============================================================
 
 class KnowledgeBuilderToolbar extends Component {
-    static template = "knowledge_builder.Toolbar";
+    static template = "myschool_knowledge_builder.Toolbar";
     static props = {
         title: String,
         knowledgeType: String,
@@ -77,7 +77,7 @@ class KnowledgeBuilderToolbar extends Component {
 // ============================================================
 
 class KnowledgeBuilderStepList extends Component {
-    static template = "knowledge_builder.StepList";
+    static template = "myschool_knowledge_builder.StepList";
     static props = {
         steps: Array,
         selectedStepIndex: Number,
@@ -135,7 +135,7 @@ class KnowledgeBuilderStepList extends Component {
 // ============================================================
 
 class RichTextToolbar extends Component {
-    static template = "knowledge_builder.RichTextToolbar";
+    static template = "myschool_knowledge_builder.RichTextToolbar";
     static props = {
         onCommand: Function,
     };
@@ -146,7 +146,7 @@ class RichTextToolbar extends Component {
 // ============================================================
 
 class KnowledgeBuilderStepEditor extends Component {
-    static template = "knowledge_builder.StepEditor";
+    static template = "myschool_knowledge_builder.StepEditor";
     static components = { RichTextToolbar };
     static props = {
         step: { type: Object, optional: true },
@@ -270,7 +270,7 @@ class KnowledgeBuilderStepEditor extends Component {
 // ============================================================
 
 class KnowledgeBuilderPreview extends Component {
-    static template = "knowledge_builder.Preview";
+    static template = "myschool_knowledge_builder.Preview";
     static props = {
         title: String,
         details: String,
@@ -284,7 +284,7 @@ class KnowledgeBuilderPreview extends Component {
 // ============================================================
 
 class KnowledgeBuilderVersions extends Component {
-    static template = "knowledge_builder.Versions";
+    static template = "myschool_knowledge_builder.Versions";
     static props = {
         versions: Array,
         onRestore: Function,
@@ -297,7 +297,7 @@ class KnowledgeBuilderVersions extends Component {
 // ============================================================
 
 class KnowledgeBuilderClient extends Component {
-    static template = "knowledge_builder.KnowledgeBuilderClient";
+    static template = "myschool_knowledge_builder.KnowledgeBuilderClient";
     static components = {
         KnowledgeBuilderToolbar,
         KnowledgeBuilderStepList,
@@ -407,7 +407,7 @@ class KnowledgeBuilderClient extends Component {
 
     async loadEditorData() {
         const data = await this.orm.call(
-            "knowledge.object", "get_editor_data", [this.state.objectId]
+            "myschool.knowledge.object", "get_editor_data", [this.state.objectId]
         );
         this.state.title = data.title;
         this.state.details = data.details;
@@ -422,7 +422,7 @@ class KnowledgeBuilderClient extends Component {
 
     async loadObjectList() {
         const objects = await this.orm.searchRead(
-            "knowledge.object", [], ["name", "knowledge_type", "state"], { limit: 100 }
+            "myschool.knowledge.object", [], ["name", "knowledge_type", "state"], { limit: 100 }
         );
         this.state.availableObjects = objects;
     }
@@ -452,7 +452,7 @@ class KnowledgeBuilderClient extends Component {
             })),
         };
         await this.orm.call(
-            "knowledge.object", "save_editor_data",
+            "myschool.knowledge.object", "save_editor_data",
             [this.state.objectId], { data }
         );
         // Reload to get real IDs and updated versions
@@ -599,7 +599,7 @@ class KnowledgeBuilderClient extends Component {
             return;
         }
         const comment = await this.orm.call(
-            "knowledge.object", "add_step_comment",
+            "myschool.knowledge.object", "add_step_comment",
             [this.state.objectId], { step_id: step.id, body }
         );
         if (!step.comments) step.comments = [];
@@ -608,7 +608,7 @@ class KnowledgeBuilderClient extends Component {
 
     async onDeleteComment(commentId) {
         await this.orm.call(
-            "knowledge.object", "delete_step_comment",
+            "myschool.knowledge.object", "delete_step_comment",
             [this.state.objectId], { comment_id: commentId }
         );
         const step = this.getSelectedStep();
@@ -627,7 +627,7 @@ class KnowledgeBuilderClient extends Component {
 
     async restoreVersion(versionId) {
         await this.orm.call(
-            "knowledge.object", "restore_version",
+            "myschool.knowledge.object", "restore_version",
             [this.state.objectId], { version_id: versionId }
         );
         await this.loadEditorData();
@@ -654,11 +654,11 @@ class KnowledgeBuilderClient extends Component {
     goBack() {
         this.action.doAction({
             type: "ir.actions.act_window",
-            res_model: "knowledge.object",
+            res_model: "myschool.knowledge.object",
             views: [[false, "list"], [false, "form"]],
             target: "current",
         });
     }
 }
 
-registry.category("actions").add("knowledge_builder_editor", KnowledgeBuilderClient);
+registry.category("actions").add("myschool_knowledge_builder_editor", KnowledgeBuilderClient);

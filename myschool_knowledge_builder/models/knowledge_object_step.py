@@ -2,7 +2,7 @@ from odoo import models, fields
 
 
 class KnowledgeObjectStep(models.Model):
-    _name = 'knowledge.object.step'
+    _name = 'myschool.knowledge.object.step'
     _description = 'Knowledge Object Step'
     _order = 'sequence, id'
 
@@ -11,6 +11,6 @@ class KnowledgeObjectStep(models.Model):
     image = fields.Binary(string='Picture', attachment=True)
     sequence = fields.Integer(string='Sequence', default=10)
     knowledge_object_id = fields.Many2one(
-        'knowledge.object', string='Knowledge Object',
+        'myschool.knowledge.object', string='Knowledge Object',
         required=True, ondelete='cascade',
     )

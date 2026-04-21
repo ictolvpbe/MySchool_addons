@@ -17,9 +17,9 @@
     ],
     'assets': {
         'web.assets_backend': [
-            'knowledge_builder/static/src/css/knowledge_builder.css',
-            'knowledge_builder/static/src/js/knowledge_builder_editor.js',
-            'knowledge_builder/static/src/xml/knowledge_builder_editor.xml',
+            'myschool_knowledge_builder/static/src/css/knowledge_builder.css',
+            'myschool_knowledge_builder/static/src/js/knowledge_builder_editor.js',
+            'myschool_knowledge_builder/static/src/xml/knowledge_builder_editor.xml',
         ],
     },
     'installable': True,

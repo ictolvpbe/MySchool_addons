@@ -4,7 +4,7 @@
     <!-- ============================================================
          Toolbar
          ============================================================ -->
-    <t t-name="knowledge_builder.Toolbar">
+    <t t-name="myschool_knowledge_builder.Toolbar">
         <div class="kb-toolbar">
             <span class="kb-toolbar-title">
                 <i class="fa fa-book me-1"/>
@@ -64,7 +64,7 @@
     <!-- ============================================================
          Step List (left panel)
          ============================================================ -->
-    <t t-name="knowledge_builder.StepList">
+    <t t-name="myschool_knowledge_builder.StepList">
         <div class="kb-step-list">
             <div class="kb-step-list-header">
                 <h4><i class="fa fa-list-ol me-1"/> Steps</h4>
@@ -146,7 +146,7 @@
     <!-- ============================================================
          Rich Text Toolbar
          ============================================================ -->
-    <t t-name="knowledge_builder.RichTextToolbar">
+    <t t-name="myschool_knowledge_builder.RichTextToolbar">
         <div class="kb-rt-toolbar">
             <button class="kb-rt-btn" t-on-click="() => this.props.onCommand('bold')" title="Bold (Ctrl+B)">
                 <i class="fa fa-bold"/>
@@ -177,7 +177,7 @@
     <!-- ============================================================
          Step Editor (center panel)
          ============================================================ -->
-    <t t-name="knowledge_builder.StepEditor">
+    <t t-name="myschool_knowledge_builder.StepEditor">
         <div class="kb-editor" t-ref="editorArea">
             <t t-if="props.step">
                 <div class="kb-editor-section">
@@ -291,7 +291,7 @@
     <!-- ============================================================
          Preview Panel
          ============================================================ -->
-    <t t-name="knowledge_builder.Preview">
+    <t t-name="myschool_knowledge_builder.Preview">
         <div class="kb-preview">
             <div class="kb-preview-doc">
                 <div class="kb-preview-title"><t t-esc="props.title"/></div>
@@ -416,7 +416,7 @@
     <!-- ============================================================
          Version History Panel
          ============================================================ -->
-    <t t-name="knowledge_builder.Versions">
+    <t t-name="myschool_knowledge_builder.Versions">
         <div class="kb-versions-panel">
             <div class="kb-versions-header">
                 <h4><i class="fa fa-history me-1"/> Version History</h4>
@@ -455,7 +455,7 @@
     <!-- ============================================================
          Main Client Component
          ============================================================ -->
-    <t t-name="knowledge_builder.KnowledgeBuilderClient">
+    <t t-name="myschool_knowledge_builder.KnowledgeBuilderClient">
         <div class="kb-container">
             <t t-if="state.objectId">
                 <KnowledgeBuilderToolbar
