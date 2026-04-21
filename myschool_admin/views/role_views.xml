@@ -5,6 +5,19 @@
     <!-- Role Views                                                            -->
     <!-- ===================================================================== -->
     
+    <!-- Res Groups selection list for role form -->
+    <record id="view_res_groups_list_for_role" model="ir.ui.view">
+        <field name="name">res.groups.list.for.role</field>
+        <field name="model">res.groups</field>
+        <field name="priority">100</field>
+        <field name="arch" type="xml">
+            <list string="Odoo Groups">
+                <field name="module_category_name" string="Module"/>
+                <field name="name" string="Rol"/>
+            </list>
+        </field>
+    </record>
+
     <!-- Role Form View -->
     <record id="view_role_form" model="ir.ui.view">
         <field name="name">myschool.role.form</field>
@@ -43,20 +56,44 @@
                     <group>
                         <group string="Access Settings">
                             <field name="has_ui_access"/>
-                            <field name="has_group"/>
-                            <button name="action_sync_persongroup_members"
-                                    type="object"
-                                    string="Sync Persongroups"
-                                    class="oe_link"
-                                    icon="fa-refresh"
-                                    invisible="not has_group"/>
                             <field name="has_accounts"/>
+                            <field name="has_group"/>
                         </group>
                         <group string="Legacy">
                             <field name="old_id"/>
                         </group>
                     </group>
-                    
+
+                    <group string="Odoo Groepen" name="odoo_groups">
+                        <group>
+                            <field name="has_odoo_group" widget="boolean_toggle"/>
+                        </group>
+                        <group>
+                            <button name="action_sync_group_members"
+                                    type="object"
+                                    string="Sync Groepsleden"
+                                    class="btn-primary"
+                                    icon="fa-refresh"
+                                    invisible="not has_odoo_group"/>
+                            <button name="action_sync_persongroup_members"
+                                    type="object"
+                                    string="Sync Persongroups"
+                                    class="btn-secondary"
+                                    icon="fa-refresh"
+                                    invisible="not has_group"/>
+                        </group>
+                    </group>
+                    <group invisible="not has_odoo_group">
+                        <field name="odoo_group_ids"
+                               widget="many2many_tags"
+                               options="{'no_create': True}"
+                               domain="[('privilege_id.category_id.name', 'in', ['Professionalisering', 'Activiteiten', 'Drukwerk', 'Planner'])]"
+                               context="{'tree_view_ref': 'myschool_admin.view_res_groups_list_for_role'}"
+                               nolabel="1" colspan="2"/>
+                        <field name="odoo_group_display" nolabel="1" colspan="2" readonly="1"
+                               invisible="not odoo_group_ids"/>
+                    </group>
+
                     <notebook>
                         <page string="Description" name="description">
                             <field name="description" placeholder="Describe this role and its permissions..."/>

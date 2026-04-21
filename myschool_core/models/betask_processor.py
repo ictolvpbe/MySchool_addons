@@ -4730,16 +4730,19 @@ class BeTaskProcessor(models.AbstractModel):
         
         for ppsbr in active_ppsbr:
             role = ppsbr.id_role
-            if role and hasattr(role, 'has_odoo_group') and role.has_odoo_group and role.odoo_group_id:
-                current_group_ids.add(role.odoo_group_id.id)
-                _logger.debug(f'[GROUP-SYNC] Role {role.name} has group: {role.odoo_group_id.full_name}')
+            if role and hasattr(role, 'has_odoo_group') and role.has_odoo_group and role.odoo_group_ids:
+                for grp in role.odoo_group_ids:
+                    current_group_ids.add(grp.id)
+                _logger.debug(f'[GROUP-SYNC] Role {role.name} has groups: {role.odoo_group_ids.mapped("full_name")}')
         
         # Get all roles that have Odoo groups (to know which groups are managed)
         managed_roles = Role.search([
             ('has_odoo_group', '=', True),
-            ('odoo_group_id', '!=', False)
+            ('odoo_group_ids', '!=', False)
         ])
-        managed_group_ids = set(managed_roles.mapped('odoo_group_id').ids)
+        managed_group_ids = set()
+        for r in managed_roles:
+            managed_group_ids.update(r.odoo_group_ids.ids)
         
         # Current user groups (only consider managed groups)
         user = person.odoo_user_id
@@ -4800,10 +4803,12 @@ class BeTaskProcessor(models.AbstractModel):
         # Get all managed groups
         managed_roles = Role.search([
             ('has_odoo_group', '=', True),
-            ('odoo_group_id', '!=', False)
+            ('odoo_group_ids', '!=', False)
         ])
-        
-        managed_group_ids = managed_roles.mapped('odoo_group_id').ids
+
+        managed_group_ids = []
+        for r in managed_roles:
+            managed_group_ids.extend(r.odoo_group_ids.ids)
         
         # Remove user from all managed groups
         for group_id in managed_group_ids:

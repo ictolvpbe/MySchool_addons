@@ -15,6 +15,7 @@
                 <field name="line_ids" readonly="1">
                     <list>
                         <field name="person_name" string="Naam"/>
+                        <field name="klas_name" string="Klas"/>
                         <field name="date_from" string="Vanaf"/>
                         <field name="date_to" string="Tot"/>
                     </list>

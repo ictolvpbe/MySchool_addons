@@ -12,19 +12,35 @@
         <field name="sequence">10</field>
     </record>
 
-    <!-- Medewerker -->
+    <!-- Personeelslid (was: Medewerker) -->
     <record id="group_professionalisering_user" model="res.groups">
-        <field name="name">Medewerker</field>
+        <field name="name">Personeelslid</field>
         <field name="privilege_id" ref="privilege_professionalisering"/>
         <field name="sequence">10</field>
         <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <!-- Drukwerk -->
+    <record id="group_professionalisering_drukwerk" model="res.groups">
+        <field name="name">Drukwerk</field>
+        <field name="privilege_id" ref="privilege_professionalisering"/>
+        <field name="sequence">20</field>
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
+    </record>
+
+    <!-- Aankoop -->
+    <record id="group_professionalisering_aankoop" model="res.groups">
+        <field name="name">Aankoop</field>
+        <field name="privilege_id" ref="privilege_professionalisering"/>
+        <field name="sequence">30</field>
+        <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
     </record>
 
     <!-- Boekhouding -->
     <record id="group_professionalisering_boekhouding" model="res.groups">
         <field name="name">Boekhouding</field>
         <field name="privilege_id" ref="privilege_professionalisering"/>
-        <field name="sequence">20</field>
+        <field name="sequence">40</field>
         <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
     </record>
 
@@ -32,7 +48,7 @@
     <record id="group_professionalisering_vervangingen" model="res.groups">
         <field name="name">Vervangingen</field>
         <field name="privilege_id" ref="privilege_professionalisering"/>
-        <field name="sequence">30</field>
+        <field name="sequence">50</field>
         <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
     </record>
 
@@ -40,7 +56,7 @@
     <record id="group_professionalisering_directie" model="res.groups">
         <field name="name">Directie</field>
         <field name="privilege_id" ref="privilege_professionalisering"/>
-        <field name="sequence">40</field>
+        <field name="sequence">60</field>
         <field name="implied_ids" eval="[(4, ref('group_professionalisering_user'))]"/>
     </record>
 
@@ -48,7 +64,7 @@
     <record id="group_professionalisering_admin" model="res.groups">
         <field name="name">Beheerder</field>
         <field name="privilege_id" ref="privilege_professionalisering"/>
-        <field name="sequence">50</field>
+        <field name="sequence">70</field>
         <field name="implied_ids" eval="[(4, ref('group_professionalisering_directie'))]"/>
     </record>
 

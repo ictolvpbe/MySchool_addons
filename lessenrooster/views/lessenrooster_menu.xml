@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="action_lessenrooster" model="ir.actions.act_window">
+        <field name="name">Lessenrooster</field>
+        <field name="res_model">lessenrooster.line</field>
+        <field name="view_mode">list,form,pivot</field>
+        <field name="search_view_id" ref="view_lessenrooster_search"/>
+    </record>
+
+    <menuitem id="menu_lessenrooster_root"
+              name="Lessenrooster"
+              sequence="80"/>
+
+    <menuitem id="menu_lessenrooster_klasrooster"
+              name="Klasrooster"
+              parent="menu_lessenrooster_root"
+              action="action_lessenrooster_klas_view"
+              sequence="5"/>
+
+    <menuitem id="menu_lessenrooster_overzicht"
+              name="Alle lessen"
+              parent="menu_lessenrooster_root"
+              action="action_lessenrooster"
+              sequence="10"/>
+
+    <menuitem id="menu_lessenrooster_import"
+              name="Importeren"
+              parent="menu_lessenrooster_root"
+              action="action_lessenrooster_import"
+              sequence="20"/>
+</odoo>

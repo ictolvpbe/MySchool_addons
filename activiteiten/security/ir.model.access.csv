@@ -17,3 +17,6 @@ access_kosten_line_admin,activiteiten.kosten.line.admin,model_activiteiten_koste
 access_snapshot_line_user,activiteiten.snapshot.line.user,model_activiteiten_snapshot_line,group_activiteiten_personeelslid,1,1,1,0
 access_snapshot_line_admin,activiteiten.snapshot.line.admin,model_activiteiten_snapshot_line,group_activiteiten_admin,1,1,1,1
 access_snapshot_wizard_user,activiteiten.snapshot.wizard.user,model_activiteiten_snapshot_wizard,group_activiteiten_personeelslid,1,1,1,1
+access_bus_user,activiteiten.bus.user,model_activiteiten_bus,group_activiteiten_personeelslid,1,0,0,0
+access_bus_aankoop,activiteiten.bus.aankoop,model_activiteiten_bus,group_activiteiten_aankoop,1,1,1,1
+access_bus_admin,activiteiten.bus.admin,model_activiteiten_bus,group_activiteiten_admin,1,1,1,1

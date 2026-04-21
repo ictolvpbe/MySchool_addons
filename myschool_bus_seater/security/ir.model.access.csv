@@ -1,0 +1,13 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_bus_user,bus_seater.bus.user,model_bus_seater_bus,group_bus_seater_user,1,0,0,0
+access_bus_admin,bus_seater.bus.admin,model_bus_seater_bus,group_bus_seater_admin,1,1,1,1
+access_seat_user,bus_seater.seat.user,model_bus_seater_seat,group_bus_seater_user,1,0,0,0
+access_seat_admin,bus_seater.seat.admin,model_bus_seater_seat,group_bus_seater_admin,1,1,1,1
+access_route_user,bus_seater.route.user,model_bus_seater_route,group_bus_seater_user,1,0,0,0
+access_route_admin,bus_seater.route.admin,model_bus_seater_route,group_bus_seater_admin,1,1,1,1
+access_stop_user,bus_seater.stop.user,model_bus_seater_stop,group_bus_seater_user,1,0,0,0
+access_stop_admin,bus_seater.stop.admin,model_bus_seater_stop,group_bus_seater_admin,1,1,1,1
+access_assignment_user,bus_seater.assignment.user,model_bus_seater_assignment,group_bus_seater_user,1,0,0,0
+access_assignment_admin,bus_seater.assignment.admin,model_bus_seater_assignment,group_bus_seater_admin,1,1,1,1
+access_person_user,bus_seater.person.user,myschool_core.model_myschool_person,group_bus_seater_user,1,0,0,0
+access_org_user,bus_seater.org.user,myschool_core.model_myschool_org,group_bus_seater_user,1,0,0,0

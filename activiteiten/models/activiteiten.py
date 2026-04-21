@@ -97,6 +97,16 @@ class Activiteiten(models.Model):
         currency_field='currency_id',
     )
     bus_available = fields.Boolean(string='Bus beschikbaar')
+    aantal_bussen = fields.Selection([
+        ('1', '1'), ('2', '2'), ('3', '3'), ('4', '4'), ('5', '5'),
+        ('6', '6'), ('7', '7'), ('8', '8'), ('9', '9'), ('10', '10'),
+    ], string='Aantal bussen', default='1')
+    bus_ids = fields.One2many(
+        'activiteiten.bus', 'activiteit_id', string='Busverdeling',
+    )
+    document_ids = fields.Many2many(
+        'ir.attachment', string='Documenten',
+    )
     s_code_name = fields.Char(string='S-Code')
     s_code_price = fields.Monetary(
         string='S-Code bedrag',
@@ -698,6 +708,30 @@ class Activiteiten(models.Model):
             record.bus_available = False
             record.state = 'bus_refused'
         self._send_notification('bus_refused')
+
+    def action_open_busverdeling(self):
+        self.ensure_one()
+        # Auto-create bus records if they don't exist yet
+        aantal = int(self.aantal_bussen or '1')
+        existing = self.bus_ids.mapped('bus_nummer')
+        for nr in range(1, aantal + 1):
+            if nr not in existing:
+                self.env['activiteiten.bus'].create({
+                    'activiteit_id': self.id,
+                    'bus_nummer': nr,
+                })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Busverdeling — {self.name}',
+            'res_model': 'activiteiten.bus',
+            'view_mode': 'list,form',
+            'domain': [('activiteit_id', '=', self.id)],
+            'context': {
+                'default_activiteit_id': self.id,
+                'allowed_klas_ids': self.klas_ids.ids,
+                'allowed_leerkracht_ids': self.leerkracht_ids.ids,
+            },
+        }
 
     # --- Directie actions ---
 

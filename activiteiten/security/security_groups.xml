@@ -20,11 +20,19 @@
         <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('myschool_core.group_myschool_core_user'))]"/>
     </record>
 
+    <!-- Drukwerk -->
+    <record id="group_activiteiten_drukwerk" model="res.groups">
+        <field name="name">Drukwerk</field>
+        <field name="privilege_id" ref="privilege_activiteiten"/>
+        <field name="sequence">20</field>
+        <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
+    </record>
+
     <!-- Aankoop -->
     <record id="group_activiteiten_aankoop" model="res.groups">
         <field name="name">Aankoop</field>
         <field name="privilege_id" ref="privilege_activiteiten"/>
-        <field name="sequence">20</field>
+        <field name="sequence">30</field>
         <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
     </record>
 
@@ -32,7 +40,7 @@
     <record id="group_activiteiten_boekhouding" model="res.groups">
         <field name="name">Boekhouding</field>
         <field name="privilege_id" ref="privilege_activiteiten"/>
-        <field name="sequence">30</field>
+        <field name="sequence">40</field>
         <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
     </record>
 
@@ -40,7 +48,7 @@
     <record id="group_activiteiten_vervangingen" model="res.groups">
         <field name="name">Vervangingen</field>
         <field name="privilege_id" ref="privilege_activiteiten"/>
-        <field name="sequence">40</field>
+        <field name="sequence">50</field>
         <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
     </record>
 
@@ -48,7 +56,7 @@
     <record id="group_activiteiten_directie" model="res.groups">
         <field name="name">Directie</field>
         <field name="privilege_id" ref="privilege_activiteiten"/>
-        <field name="sequence">50</field>
+        <field name="sequence">60</field>
         <field name="implied_ids" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
     </record>
 
@@ -56,7 +64,7 @@
     <record id="group_activiteiten_admin" model="res.groups">
         <field name="name">Beheerder</field>
         <field name="privilege_id" ref="privilege_activiteiten"/>
-        <field name="sequence">60</field>
+        <field name="sequence">70</field>
         <field name="implied_ids" eval="[
             (4, ref('group_activiteiten_directie')),
             (4, ref('group_activiteiten_boekhouding')),

@@ -170,9 +170,20 @@
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen')"
                                    readonly="state != 'bus_check'"
                                    groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
+                            <field name="aantal_bussen"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   readonly="state != 'bus_check'"
+                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
                             <field name="bus_available"
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen', 'bus_check')"
                                    readonly="1"/>
+                            <button name="action_open_busverdeling"
+                                    string="Busverdeling"
+                                    type="object"
+                                    class="btn-secondary"
+                                    icon="fa-bus"
+                                    invisible="not bus_nodig or state != 'done'"
+                                    groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
 
                             <!-- Financieel section -->
                             <separator string="Financieel"
@@ -246,7 +257,7 @@
                                     <field name="kosten_variabel_ids"
                                            context="{'default_kosten_type': 'variabel'}"
                                            nolabel="1"
-                                           readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging')">
+                                           readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging', 'done')">
                                         <list editable="bottom" create="1" delete="1">
                                             <field name="is_auto" column_invisible="1"/>
                                             <field name="kosten_type" column_invisible="1"/>
@@ -263,6 +274,10 @@
                                        groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
                                 <field name="totale_kost" readonly="1"/>
                             </group>
+                        </page>
+                        <!-- Documenten tab -->
+                        <page string="Documenten">
+                            <field name="document_ids" widget="many2many_binary"/>
                         </page>
                         <!-- Afkeuring: for medewerker after rejection -->
                         <page string="Afkeuring"
