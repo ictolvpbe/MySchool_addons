@@ -38,16 +38,8 @@
                             groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
                             invisible="state != 'afdrukken'"/>
 
-                    <!-- Boekhouding: mark invoiced (only for gewoon drukwerk) -->
-                    <button name="action_mark_invoiced"
-                            string="Doorgerekend"
-                            type="object"
-                            class="btn-primary"
-                            groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
-                            invisible="state != 'doorrekenen' or drukwerk_type == 'examen'"/>
-
                     <field name="state" widget="statusbar"
-                           statusbar_visible="form_invullen,afdrukken,doorrekenen,done"/>
+                           statusbar_visible="form_invullen,afdrukken,done"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -102,6 +94,8 @@
                             <field name="total_pages"/>
                             <field name="total_cost"
                                    invisible="drukwerk_type == 'examen'"/>
+                            <field name="cost_per_student"
+                                   invisible="drukwerk_type == 'examen'"/>
                         </group>
                     </group>
 
@@ -136,9 +130,22 @@
                                    readonly="state not in ('draft', 'form_invullen')"/>
                             <field name="nieten"
                                    readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="perforeren"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="liggend"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="sorteren"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
                         </group>
                         <group>
-                            <field name="perforeren"
+                            <field name="a3_plooien"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="boekje_a4"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="papier_kleur"
+                                   readonly="state not in ('draft', 'form_invullen')"/>
+                            <field name="gekleurd_papier"
+                                   invisible="papier_kleur == 'geen'"
                                    readonly="state not in ('draft', 'form_invullen')"/>
                         </group>
                     </group>
@@ -171,18 +178,33 @@
                         </group>
                     </group>
 
-                    <!-- Print options for afdrukken state -->
-                    <group string="Printerinstellingen" invisible="state != 'afdrukken'">
+                    <!-- Print options for afdrukken state (papierkleur bewerkbaar) -->
+                    <group string="Printerinstellingen"
+                           invisible="state != 'afdrukken'"
+                           groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin">
                         <group>
                             <field name="printer_code" readonly="1"/>
-                            <field name="dubbelzijdig"/>
-                            <field name="nieten"/>
+                            <field name="dubbelzijdig" readonly="1"/>
+                            <field name="nieten" readonly="1"/>
+                            <field name="perforeren" readonly="1"/>
+                            <field name="liggend" readonly="1"/>
                         </group>
                         <group>
-                            <field name="perforeren"/>
+                            <field name="sorteren" readonly="1"/>
+                            <field name="a3_plooien" readonly="1"/>
+                            <field name="boekje_a4" readonly="1"/>
                             <field name="papier_kleur"/>
-                            <field name="gekleurd_papier"/>
+                            <field name="gekleurd_papier"
+                                   invisible="papier_kleur == 'geen'"/>
                         </group>
+                    </group>
+
+                    <!-- Toelichting visible for drukwerk/admin in afdrukken state (read-only) -->
+                    <group string="Toelichting"
+                           invisible="state != 'afdrukken'"
+                           groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin">
+                        <field name="description" nolabel="1"
+                               readonly="1"/>
                     </group>
                 </sheet>
                 <chatter/>
@@ -203,7 +225,7 @@
                             class="btn-secondary"
                             icon="fa-cog"
                             display="always"
-                            groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"/>
+                            groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"/>
                 </header>
                 <field name="name"/>
                 <field name="create_uid" string="Aangemaakt door"/>
@@ -215,10 +237,11 @@
                 <field name="student_count" string="Leerlingen"/>
                 <field name="total_pages" string="Pagina's"/>
                 <field name="total_cost" string="Kost"/>
+                <field name="cost_per_student" string="Kost / leerling" optional="show"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
                        decoration-warning="state in ('form_invullen', 'afdrukken')"
-                       decoration-success="state in ('doorrekenen', 'done')"
+                       decoration-success="state == 'done'"
                 />
                 <button name="action_download_pdf"
                         string="Afdrukken"
@@ -244,8 +267,6 @@
                 <separator/>
                 <filter string="Te drukken" name="to_print"
                         domain="[('state', '=', 'afdrukken')]"/>
-                <filter string="Door te rekenen" name="to_invoice"
-                        domain="[('state', '=', 'doorrekenen')]"/>
                 <filter string="Afgerond" name="done"
                         domain="[('state', '=', 'done')]"/>
                 <separator/>
@@ -258,6 +279,8 @@
                             domain="[]" context="{'group_by': 'state'}"/>
                     <filter string="School" name="group_school"
                             domain="[]" context="{'group_by': 'school_id'}"/>
+                    <filter string="Klas" name="group_klas"
+                            domain="[]" context="{'group_by': 'klas_ids'}"/>
                 </group>
             </search>
         </field>

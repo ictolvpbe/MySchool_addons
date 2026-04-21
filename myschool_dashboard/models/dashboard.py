@@ -112,8 +112,6 @@ class MySchoolDashboard(models.Model):
         string="Druk. Formulier", compute='_compute_drukwerk_counts')
     druk_afdrukken = fields.Integer(
         string="Druk. Afdrukken", compute='_compute_drukwerk_counts')
-    druk_doorrekenen = fields.Integer(
-        string="Druk. Doorrekenen", compute='_compute_drukwerk_counts')
     druk_done = fields.Integer(
         string="Druk. Afgerond", compute='_compute_drukwerk_counts')
 
@@ -315,7 +313,7 @@ class MySchoolDashboard(models.Model):
             prof_raw.get('selection_of_form', 0) +
             druk_raw.get('draft', 0) + druk_raw.get('form_invullen', 0)
         )
-        # Action needed = pending_approval + bus_refused (act) + fill_in_form_* + bevestiging (prof) + afdrukken + doorrekenen (druk)
+        # Action needed = pending_approval + bus_refused (act) + fill_in_form_* + bevestiging (prof) + afdrukken (druk)
         action_needed = (
             act_raw.get('pending_approval', 0) +
             act_raw.get('bus_refused', 0) +
@@ -324,7 +322,7 @@ class MySchoolDashboard(models.Model):
             prof_raw.get('fill_in_form_individueel', 0) +
             prof_raw.get('fill_in_form_teamleren', 0) +
             prof_raw.get('bevestiging', 0) +
-            druk_raw.get('afdrukken', 0) + druk_raw.get('doorrekenen', 0)
+            druk_raw.get('afdrukken', 0)
         )
         # Approved (across all)
         approved = (
@@ -392,7 +390,6 @@ class MySchoolDashboard(models.Model):
             rec.druk_draft = raw.get('draft', 0)
             rec.druk_form_invullen = raw.get('form_invullen', 0)
             rec.druk_afdrukken = raw.get('afdrukken', 0)
-            rec.druk_doorrekenen = raw.get('doorrekenen', 0)
             rec.druk_done = raw.get('done', 0)
             if is_manager:
                 rec.druk_total = sum(raw.values())
@@ -464,7 +461,6 @@ class MySchoolDashboard(models.Model):
         'draft': ('Concept', 'ms-badge-neutral'),
         'form_invullen': ('Formulier', 'ms-badge-info'),
         'afdrukken': ('Afdrukken', 'ms-badge-warning'),
-        'doorrekenen': ('Doorrekenen', 'ms-badge-warning'),
         'done': ('Afgerond', 'ms-badge-success'),
     }
 
@@ -530,7 +526,7 @@ class MySchoolDashboard(models.Model):
                 titel = html_escape(d.titel or d.name or '')
                 if d.state == 'done':
                     dot = 'success'
-                elif d.state in ('afdrukken', 'doorrekenen'):
+                elif d.state == 'afdrukken':
                     dot = 'warning'
                 else:
                     dot = 'info'

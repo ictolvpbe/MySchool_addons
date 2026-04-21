@@ -7,8 +7,13 @@
         <field name="arch" type="xml">
             <form string="Leerlingen selecteren">
                 <field name="drukwerk_id" invisible="1"/>
-                <div class="d-flex align-items-center gap-3 mb-3">
-                    <div class="btn-group">
+                <field name="readonly_mode" invisible="1"/>
+                <div class="alert alert-info mb-3" role="alert"
+                     invisible="not readonly_mode">
+                    Deze aanvraag is afgerond. De leerlingenselectie kan niet meer gewijzigd worden.
+                </div>
+                <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+                    <div class="btn-group" invisible="readonly_mode">
                         <button name="action_select_all"
                                 string="Selecteer alles"
                                 type="object"
@@ -20,13 +25,17 @@
                                 class="btn-secondary"
                                 icon="fa-square-o"/>
                     </div>
+                    <field name="search_name" nolabel="1"
+                           placeholder="Zoek op naam..."
+                           style="max-width: 300px;"/>
                     <span class="text-muted">
                         <field name="selected_count" class="oe_inline"/> / <field name="total_count" class="oe_inline"/> geselecteerd
                     </span>
                 </div>
-                <field name="line_ids">
+                <field name="display_line_ids" readonly="readonly_mode">
                     <list editable="bottom" create="0" delete="0" default_group_by="klas_id">
-                        <field name="selected" widget="boolean_toggle"/>
+                        <field name="selected" widget="boolean_toggle"
+                               readonly="parent.readonly_mode"/>
                         <field name="person_name" readonly="1"/>
                         <field name="klas_id" readonly="1"/>
                         <field name="person_id" column_invisible="1"/>
@@ -36,8 +45,9 @@
                     <button name="action_confirm"
                             string="Bevestigen"
                             type="object"
-                            class="btn-primary"/>
-                    <button string="Annuleren" special="cancel" class="btn-secondary"/>
+                            class="btn-primary"
+                            invisible="readonly_mode"/>
+                    <button string="Sluiten" special="cancel" class="btn-secondary"/>
                 </footer>
             </form>
         </field>
