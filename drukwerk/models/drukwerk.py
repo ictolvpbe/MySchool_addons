@@ -105,6 +105,12 @@ class DrukwerkRecord(models.Model):
         compute='_compute_totals',
         store=True,
     )
+    cost_per_student = fields.Monetary(
+        string='Kost per leerling',
+        currency_field='currency_id',
+        compute='_compute_cost_per_student',
+        store=True,
+    )
     currency_id = fields.Many2one(
         'res.currency',
         string='Valuta',
@@ -115,6 +121,10 @@ class DrukwerkRecord(models.Model):
     dubbelzijdig = fields.Boolean(string='Dubbelzijdig', default=True)
     nieten = fields.Boolean(string='Nieten', default=False)
     perforeren = fields.Boolean(string='Perforeren', default=False)
+    liggend = fields.Boolean(string='Liggend', default=False)
+    sorteren = fields.Boolean(string='Sorteren', default=False)
+    a3_plooien = fields.Boolean(string='A3 plooien', default=False)
+    boekje_a4 = fields.Boolean(string='Boekje A4', default=False)
     gekleurd_papier = fields.Selection([
         ('gl4', 'Gekleurd papier optie 4'),
         ('gl5', 'Gekleurd papier optie 5'),
@@ -129,26 +139,41 @@ class DrukwerkRecord(models.Model):
         ('draft', 'Concept'),
         ('form_invullen', 'Formulier invullen'),
         ('afdrukken', 'Afdrukken'),
-        ('doorrekenen', 'Doorrekenen'),
         ('done', 'Afgerond'),
     ], string='Status', default='draft', required=True, tracking=True)
     is_owner = fields.Boolean(compute='_compute_is_owner')
 
-    @api.depends('dubbelzijdig', 'nieten', 'perforeren', 'gekleurd_papier')
+    @api.depends('dubbelzijdig', 'nieten', 'perforeren', 'liggend',
+                 'sorteren', 'a3_plooien', 'boekje_a4',
+                 'gekleurd_papier', 'papier_kleur')
     def _compute_printer_code(self):
         for record in self:
             codes = []
             if record.dubbelzijdig:
-                codes.append('DZ')
+                codes.append('R/V')
             if record.nieten:
-                codes.append('NT')
+                codes.append('NIET')
             if record.perforeren:
-                codes.append('PF')
-            if record.gekleurd_papier == 'gl4':
-                codes.append('GL4')
-            elif record.gekleurd_papier == 'gl5':
-                codes.append('GL5')
+                codes.append('PERFO')
+            if record.liggend:
+                codes.append('LIGGEND')
+            if record.sorteren:
+                codes.append('SORTEREN')
+            if record.a3_plooien:
+                codes.append('A3 plooien')
+            if record.boekje_a4:
+                codes.append('BoekjeA4')
+            if record.papier_kleur != 'geen':
+                if record.gekleurd_papier == 'gl4':
+                    codes.append('Lade4 kleur 1')
+                elif record.gekleurd_papier == 'gl5':
+                    codes.append('Lade5 kleur 2')
             record.printer_code = '-'.join(codes) if codes else ''
+
+    @api.onchange('papier_kleur')
+    def _onchange_papier_kleur(self):
+        if self.papier_kleur == 'geen':
+            self.gekleurd_papier = False
 
     @api.depends_context('uid')
     def _compute_is_owner(self):
@@ -209,18 +234,12 @@ class DrukwerkRecord(models.Model):
     def _get_students_from_classes(self):
         """Get all active students from the selected classes."""
         self.ensure_one()
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
-        if not person_tree_type or not self.klas_ids:
+        if not self.klas_ids:
             return self.env['myschool.person']
-        rels = PropRelation.search([
-            ('proprelation_type_id', '=', person_tree_type.id),
-            ('id_org', 'in', self.klas_ids.ids),
-            ('id_person', '!=', False),
+        return self.env['myschool.person'].sudo().search([
+            ('tree_org_id', 'in', self.klas_ids.ids),
             ('is_active', '=', True),
         ])
-        return rels.mapped('id_person')
 
     @api.onchange('klas_ids')
     def _onchange_klas_ids_select_students(self):
@@ -231,15 +250,20 @@ class DrukwerkRecord(models.Model):
     def action_select_all_students(self):
         """Select all students from the chosen classes."""
         for record in self:
+            if record.state == 'done':
+                raise UserError("De leerlingenselectie kan niet meer gewijzigd worden voor een afgeronde aanvraag.")
             students = record._get_students_from_classes()
             record.student_ids = [(6, 0, students.ids)]
 
     def action_deselect_all_students(self):
         """Deselect all students."""
         for record in self:
+            if record.state == 'done':
+                raise UserError("De leerlingenselectie kan niet meer gewijzigd worden voor een afgeronde aanvraag.")
             record.student_ids = [(5, 0, 0)]
 
-    @api.depends('aantal_paginas', 'aantal_kopies', 'kleur', 'formaat', 'dik_papier')
+    @api.depends('aantal_paginas', 'aantal_kopies', 'student_ids',
+                 'kleur', 'formaat', 'dik_papier')
     def _compute_totals(self):
         param = self.env['ir.config_parameter'].sudo()
         prijs_per_pagina = float(param.get_param('drukwerk.prijs_per_pagina', '0.03'))
@@ -247,16 +271,24 @@ class DrukwerkRecord(models.Model):
         prijs_a3 = float(param.get_param('drukwerk.prijs_a3', '0.02'))
         prijs_dik = float(param.get_param('drukwerk.prijs_dik_papier', '0.04'))
         for record in self:
+            student_count = len(record.student_ids)
             pages = (record.aantal_paginas or 0) * (record.aantal_kopies or 0)
-            price = prijs_per_pagina
+            page_price = prijs_per_pagina
             if record.kleur == 'kleur':
-                price += prijs_kleur
+                page_price += prijs_kleur
             if record.formaat == 'a3':
-                price += prijs_a3
+                page_price += prijs_a3
             if record.dik_papier:
-                price += prijs_dik
+                page_price += prijs_dik
+            billable_pages = (record.aantal_paginas or 0) * student_count
             record.total_pages = pages
-            record.total_cost = pages * price
+            record.total_cost = billable_pages * page_price
+
+    @api.depends('total_cost', 'student_ids')
+    def _compute_cost_per_student(self):
+        for record in self:
+            student_count = len(record.student_ids)
+            record.cost_per_student = (record.total_cost / student_count) if student_count else 0.0
 
     @api.depends('name', 'titel')
     def _compute_display_name(self):
@@ -329,11 +361,47 @@ class DrukwerkRecord(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
-            if vals.get('name', 'New') == 'New':
-                vals['name'] = self.env['ir.sequence'].next_by_code('drukwerk.record') or 'New'
+            if vals.get('name', 'New') == 'New' or not vals.get('name'):
+                vals['name'] = self._next_reference()
             if vals.get('drukwerk_type') and (not vals.get('state') or vals.get('state') == 'draft'):
                 vals['state'] = 'form_invullen'
-        return super().create(vals_list)
+        records = super().create(vals_list)
+        for record in records:
+            if not record.name or record.name == 'New':
+                record.sudo().name = self._next_reference()
+        return records
+
+    def _next_reference(self):
+        """Get next unique reference, syncing the sequence if needed."""
+        last_record = self.sudo().search(
+            [('name', 'like', 'DWK-')],
+            order='name desc', limit=1,
+        )
+        last_number = 0
+        if last_record:
+            try:
+                last_number = int(last_record.name.replace('DWK-', ''))
+            except ValueError:
+                pass
+        seq = self.env['ir.sequence'].sudo().search([
+            ('code', '=', 'drukwerk.record'),
+        ], limit=1)
+        if not seq:
+            seq = self.env['ir.sequence'].sudo().create({
+                'name': 'Drukwerk Aanvraag',
+                'code': 'drukwerk.record',
+                'prefix': 'DWK-',
+                'padding': 4,
+                'number_next': last_number + 1,
+                'number_increment': 1,
+                'company_id': False,
+            })
+            _logger.info('[DWK] Auto-created ir.sequence for drukwerk.record')
+        if seq.number_next <= last_number:
+            seq.sudo().write({'number_next': last_number + 1})
+        ref = seq.sudo()._next()
+        _logger.info('[DWK] Generated reference: %s', ref)
+        return ref
 
     # --- Personeelslid actions ---
 
@@ -356,20 +424,6 @@ class DrukwerkRecord(models.Model):
         for record in self:
             if record.state != 'afdrukken':
                 raise UserError("Kan alleen in de afdrukkenfase afgedrukt worden.")
-            if record.drukwerk_type == 'examen':
-                record.state = 'done'
-            else:
-                record.state = 'doorrekenen'
-        gewoon_records = self.filtered(lambda r: r.drukwerk_type != 'examen')
-        if gewoon_records:
-            gewoon_records._notify_boekhouding()
-
-    # --- Boekhouding actions ---
-
-    def action_mark_invoiced(self):
-        for record in self:
-            if record.state != 'doorrekenen':
-                raise UserError("Kan alleen in de doorrekeningsfase afgerond worden.")
             record.state = 'done'
 
     # --- Print actions ---
@@ -395,26 +449,22 @@ class DrukwerkRecord(models.Model):
     def action_view_students(self):
         """Open wizard to select/deselect students."""
         self.ensure_one()
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-        person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
         wiz = self.env['drukwerk.student.select.wizard'].create({
             'drukwerk_id': self.id,
+            'readonly_mode': self.state == 'done',
         })
         lines = []
-        if person_tree_type and self.klas_ids:
-            rels = PropRelation.search([
-                ('proprelation_type_id', '=', person_tree_type.id),
-                ('id_org', 'in', self.klas_ids.ids),
-                ('id_person', '!=', False),
+        if self.klas_ids:
+            students = self.env['myschool.person'].sudo().search([
+                ('tree_org_id', 'in', self.klas_ids.ids),
                 ('is_active', '=', True),
             ])
-            for rel in rels:
+            for student in students:
                 lines.append({
                     'wizard_id': wiz.id,
-                    'person_id': rel.id_person.id,
-                    'klas_id': rel.id_org.id,
-                    'selected': True,
+                    'person_id': student.id,
+                    'klas_id': student.tree_org_id.id,
+                    'selected': student.id in self.student_ids.ids,
                 })
         if lines:
             self.env['drukwerk.student.select.line'].create(lines)
@@ -446,21 +496,6 @@ class DrukwerkRecord(models.Model):
                     activity_type_id=activity_type.id if activity_type else False,
                     summary='Drukwerk afdrukken',
                     note=f'Drukwerk aanvraag "{record.titel}" is klaar om af te drukken.',
-                    user_id=user.id,
-                )
-
-    def _notify_boekhouding(self):
-        boekhouding_group = self.env.ref(
-            'drukwerk.group_drukwerk_boekhouding', raise_if_not_found=False)
-        if not boekhouding_group:
-            return
-        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
-        for record in self:
-            for user in boekhouding_group.user_ids:
-                record.activity_schedule(
-                    activity_type_id=activity_type.id if activity_type else False,
-                    summary='Drukwerk doorrekenen',
-                    note=f'Drukwerk "{record.titel}" is afgedrukt en kan doorgerekend worden.',
                     user_id=user.id,
                 )
 

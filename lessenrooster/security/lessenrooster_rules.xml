@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Users: filter by active company school -->
+    <record id="rule_lessenrooster_school" model="ir.rule">
+        <field name="name">Lessenrooster: filter op actieve school</field>
+        <field name="model_id" ref="model_lessenrooster_line"/>
+        <field name="domain_force">[('school_company_id', 'child_of', [company_id])]</field>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+</odoo>

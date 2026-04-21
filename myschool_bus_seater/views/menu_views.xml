@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo><data>
+
+    <menuitem id="menu_bus_seater_root"
+              name="Bus Seater"
+              web_icon="myschool_bus_seater,static/description/icon.png"
+              sequence="80"/>
+
+    <menuitem id="menu_bus_seater_buses"
+              name="Buses"
+              parent="menu_bus_seater_root"
+              action="action_bus"
+              sequence="10"/>
+
+    <menuitem id="menu_bus_seater_routes"
+              name="Routes"
+              parent="menu_bus_seater_root"
+              action="action_route"
+              sequence="20"/>
+
+    <menuitem id="menu_bus_seater_assignments"
+              name="Seat Assignments"
+              parent="menu_bus_seater_root"
+              action="action_assignment"
+              sequence="30"/>
+
+</data></odoo>

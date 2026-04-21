@@ -29,14 +29,14 @@
                             <div class="ms-kpi-value">
                                 <field name="kpi_pending"/>
                             </div>
-                            <div class="ms-kpi-sub">concept &amp; formulier</div>
+                            <div class="ms-kpi-sub">nog te vervolledigen</div>
                         </div>
                         <div class="ms-kpi-card c2">
                             <div class="ms-kpi-label">Actie vereist</div>
                             <div class="ms-kpi-value">
                                 <field name="kpi_action_needed"/>
                             </div>
-                            <div class="ms-kpi-sub">wacht op goedkeuring</div>
+                            <div class="ms-kpi-sub">wacht op behandeling</div>
                         </div>
                         <div class="ms-kpi-card c3">
                             <div class="ms-kpi-label">Goedgekeurd</div>
@@ -51,7 +51,8 @@
                                 <field name="kpi_rejected"/>
                             </div>
                             <div class="ms-kpi-sub">
-                                <span class="down" invisible="kpi_rejected == 0">actie nodig</span>
+                                <span>geweigerd</span>
+                                <span class="down" invisible="kpi_rejected == 0"> — actie nodig</span>
                             </div>
                         </div>
                     </div>
@@ -180,9 +181,6 @@
                                         </span>
                                         <span class="ms-badge-status ms-badge-warning">
                                             <field name="druk_afdrukken" class="d-inline"/> Afdrukken
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-warning">
-                                            <field name="druk_doorrekenen" class="d-inline"/> Doorrekenen
                                         </span>
                                         <span class="ms-badge-status ms-badge-success">
                                             <field name="druk_done" class="d-inline"/> Afgerond
