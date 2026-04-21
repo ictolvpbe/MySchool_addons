@@ -106,7 +106,7 @@ class ItsmChange(models.Model):
         string='Approval Date',
     )
     affected_asset_ids = fields.Many2many(
-        'asset.asset',
+        'myschool.asset',
         string='Affected Assets',
     )
     affected_ci_ids = fields.Many2many(

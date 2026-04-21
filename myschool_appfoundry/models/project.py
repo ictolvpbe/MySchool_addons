@@ -58,7 +58,7 @@ class AppfoundryProject(models.Model):
         ('test', 'Test'),
         ('stable', 'Stable'),
         ('eol', 'E.O.L.'),
-    ], string='Phase', default='idea', required=True, tracking=True)
+    ], string='Phase', default='idea', required=True)
     is_active = fields.Boolean(default=True)
 
     # --- Guided setup ---
@@ -340,9 +340,7 @@ class AppfoundryProject(models.Model):
     doc_technical_html = fields.Html(string='Technical Documentation', readonly=True, sanitize=False)
     doc_generated_date = fields.Datetime(string='Documentation Generated', readonly=True)
 
-    _sql_constraints = [
-        ('code_unique', 'UNIQUE(code)', 'Project code must be unique.'),
-    ]
+    _code_unique = models.Constraint('UNIQUE(code)', 'Project code must be unique.')
 
     @api.depends('item_ids')
     def _compute_item_count(self):

@@ -103,7 +103,7 @@ class ItsmTicket(models.Model):
         string='Reporter Email',
     )
     asset_ids = fields.Many2many(
-        'asset.asset',
+        'myschool.asset',
         string='Related Assets',
     )
     problem_id = fields.Many2one(

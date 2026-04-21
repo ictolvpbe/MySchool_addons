@@ -9,6 +9,4 @@ class AppfoundryTag(models.Model):
     name = fields.Char(required=True)
     color = fields.Integer(string='Color Index')
 
-    _sql_constraints = [
-        ('name_unique', 'UNIQUE(name)', 'Tag name must be unique.'),
-    ]
+    _name_unique = models.Constraint('UNIQUE(name)', 'Tag name must be unique.')

@@ -48,7 +48,7 @@ class SyncReceiverController(http.Controller):
     # Endpoints
     # ------------------------------------------------------------------
 
-    @http.route('/myschool_sync/receive', type='json', auth='public', methods=['POST'], csrf=False)
+    @http.route('/myschool_sync/receive', type='jsonrpc', auth='public', methods=['POST'], csrf=False)
     def receive(self, api_key=None, payloads=None, **kwargs):
         """Receive sync payloads from master.
 
@@ -118,7 +118,7 @@ class SyncReceiverController(http.Controller):
             'error_count': error_count,
         }
 
-    @http.route('/myschool_sync/ping', type='json', auth='public', methods=['POST'], csrf=False)
+    @http.route('/myschool_sync/ping', type='jsonrpc', auth='public', methods=['POST'], csrf=False)
     def ping(self, api_key=None, **kwargs):
         """Health check endpoint.
 

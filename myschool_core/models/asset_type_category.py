@@ -26,7 +26,6 @@ class MyschoolAssetTypeCategory(models.Model):
     )
     parent_path = fields.Char(
         index=True,
-        unaccent=False,
     )
     child_ids = fields.One2many(
         'myschool.asset.type.category',

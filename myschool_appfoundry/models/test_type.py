@@ -10,6 +10,4 @@ class AppfoundryTestType(models.Model):
     description = fields.Text()
     color = fields.Integer(string='Color Index')
 
-    _sql_constraints = [
-        ('name_unique', 'UNIQUE(name)', 'Test type name must be unique.'),
-    ]
+    _name_unique = models.Constraint('UNIQUE(name)', 'Test type name must be unique.')

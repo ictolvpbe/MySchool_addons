@@ -30,7 +30,7 @@ class ItsmCi(models.Model):
         string='State',
         default='active',
     )
-    asset_id = fields.Many2one('asset.asset', string='Linked Asset')
+    asset_id = fields.Many2one('myschool.asset', string='Linked Asset')
     service_ids = fields.Many2many('itsm.service', string='Services')
     owner_id = fields.Many2one('res.users', string='Owner')
     environment = fields.Selection(
