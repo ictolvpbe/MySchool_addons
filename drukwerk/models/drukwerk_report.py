@@ -46,7 +46,7 @@ class DrukwerkClassReport(models.Model):
                     d.drukwerk_type,
                     d.currency_id,
                     COUNT(DISTINCT p.id) AS aantal_leerlingen,
-                    COUNT(*) AS aantal_prints,
+                    COALESCE(SUM(d.aantal_paginas), 0) AS aantal_prints,
                     COUNT(DISTINCT d.id) AS aantal_aanvragen,
                     COALESCE(SUM(d.cost_per_student), 0) AS totale_kostprijs
                 FROM drukwerk_record d
@@ -92,7 +92,7 @@ class DrukwerkStudentReport(models.Model):
                     d.school_id,
                     d.drukwerk_type,
                     d.currency_id,
-                    COUNT(*) AS aantal_prints,
+                    COALESCE(SUM(d.aantal_paginas), 0) AS aantal_prints,
                     COUNT(DISTINCT d.id) AS aantal_aanvragen,
                     COALESCE(SUM(d.cost_per_student), 0) AS totale_kostprijs
                 FROM drukwerk_record d

@@ -1,6 +1,6 @@
 {
     'name': 'Drukwerk',
-    'version': '2.3',
+    'version': '2.6',
     'summary': 'Aanvragen van drukwerk per leerling/klas voor doorrekening op factuur',
     'description': """
         Het aanvragen van drukwerk per leerling in klas dat er na wordt

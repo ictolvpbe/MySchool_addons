@@ -68,7 +68,12 @@ class DrukwerkRecord(models.Model):
     # --- Document fields ---
     document_file = fields.Binary(string='Document', attachment=True)
     document_filename = fields.Char(string='Bestandsnaam')
-    aantal_paginas = fields.Integer(string="Pagina's", default=1)
+    aantal_paginas = fields.Integer(
+        string="Pagina's",
+        compute='_compute_aantal_paginas',
+        store=True,
+        default=1,
+    )
     aantal_kopies = fields.Integer(
         string='Kopieën',
         compute='_compute_aantal_kopies',
@@ -339,19 +344,19 @@ class DrukwerkRecord(models.Model):
             if record.document_filename and not record.document_filename.lower().endswith('.pdf'):
                 raise ValidationError("Alleen PDF-bestanden zijn toegestaan. Upload een .pdf bestand.")
 
-    @api.onchange('document_file', 'document_filename')
-    def _onchange_document_file(self):
-        if not self.document_file or not self.document_filename:
-            return
-        if not self.document_filename.lower().endswith('.pdf'):
-            return
-        try:
-            pdf_data = base64.b64decode(self.document_file)
-            page_count = self._count_pdf_pages(pdf_data)
-            if page_count > 0:
-                self.aantal_paginas = page_count
-        except Exception:
-            _logger.warning('Could not count pages for %s', self.document_filename, exc_info=True)
+    @api.depends('document_file')
+    def _compute_aantal_paginas(self):
+        for record in self:
+            if not record.document_file:
+                record.aantal_paginas = 1
+                continue
+            try:
+                pdf_data = base64.b64decode(record.document_file)
+                page_count = self._count_pdf_pages(pdf_data)
+                record.aantal_paginas = page_count if page_count > 0 else 1
+            except Exception:
+                _logger.warning('Could not count pages for %s', record.document_filename, exc_info=True)
+                record.aantal_paginas = 1
 
     @staticmethod
     def _count_pdf_pages(pdf_bytes):
