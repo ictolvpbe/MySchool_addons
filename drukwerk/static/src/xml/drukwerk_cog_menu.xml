@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="drukwerk.ConfigCogItem">
+        <DropdownItem onSelected.bind="onClick">
+            <i class="fa fa-cog me-2"/> Printerinstellingen
+        </DropdownItem>
+    </t>
+
+    <t t-name="drukwerk.ClassReportCogItem">
+        <DropdownItem onSelected.bind="onClick">
+            <i class="fa fa-bar-chart me-2"/> Overzicht per klas
+        </DropdownItem>
+    </t>
+
+    <t t-name="drukwerk.StudentReportCogItem">
+        <DropdownItem onSelected.bind="onClick">
+            <i class="fa fa-users me-2"/> Overzicht per leerling
+        </DropdownItem>
+    </t>
+
+</templates>

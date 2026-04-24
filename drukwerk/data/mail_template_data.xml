@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="email_template_drukwerk_done" model="mail.template">
+        <field name="name">Drukwerk - Afgedrukt</field>
+        <field name="model_id" ref="model_drukwerk_record"/>
+        <field name="subject">Uw drukwerk {{ object.name }} is afgedrukt</field>
+        <field name="body_html"><![CDATA[
+<p>Beste,</p>
+<p>Uw drukwerkaanvraag <strong>{{ object.name }} - {{ object.titel }}</strong> is afgedrukt en ligt klaar.</p>
+<p>U kunt het ophalen op de afgesproken plaats.</p>
+        ]]></field>
+    </record>
+</odoo>
