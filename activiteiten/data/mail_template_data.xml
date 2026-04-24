@@ -51,4 +51,15 @@
 <p>U kunt het formulier aanpassen en opnieuw indienen.</p>
         ]]></field>
     </record>
+
+    <record id="email_template_bus_approved" model="mail.template">
+        <field name="name">Activiteiten - Bus beschikbaar</field>
+        <field name="model_id" ref="model_activiteiten_record"/>
+        <field name="subject">Bus bevestigd voor {{ object.name }}</field>
+        <field name="body_html"><![CDATA[
+<p>Beste,</p>
+<p>Goed nieuws: de bus voor uw activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is bevestigd door Aankoop.</p>
+<p>De aanvraag is nu doorgestuurd naar de Directie voor goedkeuring.</p>
+        ]]></field>
+    </record>
 </odoo>

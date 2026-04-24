@@ -7,16 +7,6 @@
         <field name="context">{'search_default_my_requests': 1}</field>
     </record>
 
-    <!-- Boekhouding: overzicht per klas, gesorteerd op datum -->
-    <record id="action_drukwerk_boekhouding_overzicht" model="ir.actions.act_window">
-        <field name="name">Overzicht per klas</field>
-        <field name="res_model">drukwerk.record</field>
-        <field name="view_mode">list,form</field>
-        <field name="search_view_id" ref="view_drukwerk_search"/>
-        <field name="domain">[('drukwerk_type', '=', 'gewoon'), ('state', '=', 'done')]</field>
-        <field name="context">{'search_default_group_klas': 1}</field>
-    </record>
-
     <menuitem id="menu_drukwerk_root"
               name="Drukwerk"
               sequence="75"/>
@@ -30,9 +20,16 @@
     <menuitem id="menu_drukwerk_boekhouding_overzicht"
               name="Overzicht per klas"
               parent="menu_drukwerk_root"
-              action="action_drukwerk_boekhouding_overzicht"
+              action="action_drukwerk_class_report"
               groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
               sequence="15"/>
+
+    <menuitem id="menu_drukwerk_boekhouding_per_lln"
+              name="Overzicht per leerling"
+              parent="menu_drukwerk_root"
+              action="action_drukwerk_student_report"
+              groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
+              sequence="16"/>
 
     <menuitem id="menu_drukwerk_instellingen"
               name="Prijsinstellingen"

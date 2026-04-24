@@ -7,8 +7,8 @@
         <field name="arch" type="xml">
             <form class="o_activiteiten_record_form">
                 <header>
-                    <!-- Personeelslid: submit form -->
-                    <button name="action_submit_form"
+                    <!-- Personeelslid: open submit dialog (popup with tabs, then confirm) -->
+                    <button name="action_open_details"
                             string="Indienen"
                             type="object"
                             class="btn-primary"
@@ -199,115 +199,136 @@
                         </group>
                     </group>
 
-                    <!-- Pending invite warning -->
-                    <div class="alert alert-warning" role="alert"
-                         invisible="not has_pending_invites">
-                        <field name="has_pending_invites" invisible="1"/>
-                        <strong>Let op:</strong> Er zijn nog openstaande uitnodigingen.
+                    <!-- Extra info knop: opent dialoog (alleen als "Indienen" niet meer zichtbaar is) -->
+                    <div class="d-flex justify-content-end mt-3 mb-3"
+                         invisible="not activity_type or state in ('draft', 'form_invullen', 'bus_refused')">
+                        <button name="action_open_details"
+                                string="Extra info beheren"
+                                type="object"
+                                class="btn-secondary"
+                                icon="fa-edit"/>
                     </div>
 
-                    <!-- Tabs -->
-                    <notebook invisible="not activity_type">
-                        <!-- Begeleiders tab -->
-                        <page string="Begeleiders">
-                            <field name="can_manage_invites" invisible="1"/>
-                            <button name="action_send_invites"
-                                    string="Uitnodigingen versturen"
-                                    type="object"
-                                    class="btn-primary mb-3"
-                                    invisible="(state not in ('draft', 'form_invullen', 'bus_refused', 'approved', 's_code', 'vervanging', 'done') or not invite_ids or not can_manage_invites)"/>
-                            <field name="invite_ids"
-                                   readonly="not can_manage_invites or state not in ('draft', 'form_invullen', 'bus_refused', 'approved', 's_code', 'vervanging', 'done')">
-                                <list editable="bottom">
-                                    <field name="person_id"
-                                           domain="[('id', 'in', parent.available_leerkracht_ids)]"
-                                           options="{'no_quick_create': True, 'no_create': True}"/>
-                                    <field name="notified" column_invisible="1"/>
-                                    <field name="state" readonly="1" widget="badge"
-                                           decoration-info="state == 'pending'"
-                                           decoration-success="state == 'accepted'"
-                                           decoration-danger="state == 'rejected'"/>
-                                </list>
-                            </field>
-                        </page>
-                        <page string="Opmerkingen">
-                            <field name="description"
-                                   placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
-                        </page>
-                        <page string="Kosten">
-                            <div class="row">
-                                <div class="col-6">
-                                    <h4 class="mt-4 mb-3">Vaste kosten</h4>
-                                    <field name="kosten_vast_ids"
-                                           context="{'default_kosten_type': 'vast'}"
-                                           nolabel="1"
-                                           readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging')">
-                                        <list editable="bottom" create="1" delete="1">
-                                            <field name="is_auto" column_invisible="1"/>
-                                            <field name="kosten_type" column_invisible="1"/>
-                                            <field name="omschrijving" readonly="is_auto"/>
-                                            <field name="bedrag" readonly="is_auto"/>
-                                            <field name="currency_id" column_invisible="1"/>
-                                        </list>
-                                    </field>
-                                </div>
-                                <div class="col-6">
-                                    <h4 class="mt-4 mb-3">Variabele kosten</h4>
-                                    <field name="kosten_variabel_ids"
-                                           context="{'default_kosten_type': 'variabel'}"
-                                           nolabel="1"
-                                           readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging', 'done')">
-                                        <list editable="bottom" create="1" delete="1">
-                                            <field name="is_auto" column_invisible="1"/>
-                                            <field name="kosten_type" column_invisible="1"/>
-                                            <field name="omschrijving" readonly="is_auto"/>
-                                            <field name="bedrag" readonly="is_auto"/>
-                                            <field name="currency_id" column_invisible="1"/>
-                                        </list>
-                                    </field>
-                                </div>
-                            </div>
-                            <group class="mt-3">
-                                <field name="bijdragen_regeling"
-                                       readonly="state not in ('s_code', 'draft', 'form_invullen', 'bus_refused', 'pending_approval')"
-                                       groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
-                                <field name="totale_kost" readonly="1"/>
-                            </group>
-                        </page>
-                        <!-- Documenten tab -->
-                        <page string="Documenten">
-                            <field name="document_ids" widget="many2many_binary"/>
-                        </page>
-                        <!-- Afkeuring: for medewerker after rejection -->
-                        <page string="Afkeuring"
-                              invisible="state != 'rejected'">
-                            <group>
-                                <field name="rejection_reason" readonly="1"/>
-                            </group>
-                        </page>
-                        <!-- Afkeuring: for directie to fill in -->
-                        <page string="Afkeuring"
-                              groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin"
-                              invisible="state != 'pending_approval'">
-                            <group>
-                                <field name="rejection_reason"
-                                       placeholder="Geef de reden op waarom deze activiteit wordt afgekeurd..."/>
-                            </group>
-                        </page>
-                        <!-- Instellingen tab: only for boekhouding/admin -->
-                        <page string="Instellingen"
-                              groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin">
-                            <group>
-                                <group string="Verzekering">
-                                    <field name="verzekering_pct" string="Verzekering (%)"
-                                           readonly="state in ('done')"/>
-                                </group>
-                            </group>
-                        </page>
-                    </notebook>
+                    <!-- Afkeuring: zichtbaar voor medewerker na afkeuring -->
+                    <div class="alert alert-danger" role="alert"
+                         invisible="state != 'rejected'">
+                        <strong>Afkeuring:</strong>
+                        <field name="rejection_reason" readonly="1" nolabel="1" class="oe_inline"/>
+                    </div>
+
+                    <!-- Afkeuring: directie moet reden invullen voor afkeuring -->
+                    <group groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin"
+                           invisible="state != 'pending_approval'">
+                        <field name="rejection_reason"
+                               string="Reden voor afkeuring"
+                               placeholder="Geef de reden op waarom deze activiteit wordt afgekeurd..."/>
+                    </group>
                 </sheet>
                 <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Dialog Form View: Extra info (Begeleiders, Opmerkingen, Kosten, Documenten) -->
+    <record id="view_activiteiten_form_details" model="ir.ui.view">
+        <field name="name">activiteiten.record.form.details</field>
+        <field name="model">activiteiten.record</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Extra info" class="o_activiteiten_wizard_form">
+                <field name="activity_type" invisible="1"/>
+                <field name="available_leerkracht_ids" invisible="1"/>
+                <field name="can_manage_invites" invisible="1"/>
+                <field name="state" invisible="1"/>
+                <header>
+                    <field name="wizard_step" widget="statusbar" options="{'clickable': '0'}"/>
+                </header>
+                <sheet>
+                    <!-- Stap 1: Begeleiders -->
+                    <group invisible="wizard_step != '1'">
+                        <field name="invite_ids" nolabel="1"
+                               readonly="not can_manage_invites or state not in ('draft', 'form_invullen', 'bus_refused', 'approved', 's_code', 'vervanging', 'done')">
+                            <list editable="bottom">
+                                <field name="person_id"
+                                       domain="[('id', 'in', parent.available_leerkracht_ids)]"
+                                       options="{'no_quick_create': True, 'no_create': True}"/>
+                            </list>
+                        </field>
+                    </group>
+                    <!-- Stap 2: Opmerkingen -->
+                    <group invisible="wizard_step != '2'">
+                        <field name="description" nolabel="1"
+                               placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
+                               readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                    </group>
+                    <!-- Stap 3: Kosten -->
+                    <div invisible="wizard_step != '3'">
+                        <div class="row">
+                            <div class="col-6">
+                                <h4 class="mt-4 mb-3">Vaste kosten</h4>
+                                <field name="kosten_vast_ids"
+                                       context="{'default_kosten_type': 'vast'}"
+                                       nolabel="1"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging')">
+                                    <list editable="bottom" create="1" delete="1">
+                                        <field name="is_auto" column_invisible="1"/>
+                                        <field name="kosten_type" column_invisible="1"/>
+                                        <field name="omschrijving" readonly="is_auto"/>
+                                        <field name="bedrag" readonly="is_auto"/>
+                                        <field name="currency_id" column_invisible="1"/>
+                                    </list>
+                                </field>
+                            </div>
+                            <div class="col-6">
+                                <h4 class="mt-4 mb-3">Variabele kosten</h4>
+                                <field name="kosten_variabel_ids"
+                                       context="{'default_kosten_type': 'variabel'}"
+                                       nolabel="1"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging', 'done')">
+                                    <list editable="bottom" create="1" delete="1">
+                                        <field name="is_auto" column_invisible="1"/>
+                                        <field name="kosten_type" column_invisible="1"/>
+                                        <field name="omschrijving" readonly="is_auto"/>
+                                        <field name="bedrag" readonly="is_auto"/>
+                                        <field name="currency_id" column_invisible="1"/>
+                                    </list>
+                                </field>
+                            </div>
+                        </div>
+                        <group class="mt-3">
+                            <field name="bijdragen_regeling"
+                                   readonly="state not in ('s_code', 'draft', 'form_invullen', 'bus_refused', 'pending_approval')"
+                                   groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+                            <field name="totale_kost" readonly="1"/>
+                        </group>
+                    </div>
+                    <!-- Stap 4: Documenten -->
+                    <group invisible="wizard_step != '4'">
+                        <field name="document_ids" widget="many2many_binary" nolabel="1"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_wizard_prev"
+                            string="Vorige"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="wizard_step == '1'"/>
+                    <button name="action_wizard_next"
+                            string="Volgende"
+                            type="object"
+                            class="btn-primary"
+                            invisible="wizard_step == '4'"/>
+                    <button name="action_submit_from_dialog"
+                            string="Indienen &amp; bevestigen"
+                            type="object"
+                            class="btn-success"
+                            invisible="wizard_step != '4' or state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                    <button string="Opslaan"
+                            class="btn-primary"
+                            special="save"
+                            invisible="wizard_step != '4' or state in ('draft', 'form_invullen', 'bus_refused')"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
             </form>
         </field>
     </record>

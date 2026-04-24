@@ -24,8 +24,8 @@
                             type="object"
                             class="btn-danger"
                             invisible="not current_user_invited or current_user_invite_state != 'pending'"/>
-                    <!-- Employee: Submit -->
-                    <button name="action_submit"
+                    <!-- Employee: open submit dialog (popup with tabs, then confirm) -->
+                    <button name="action_open_details"
                             string="Indienen"
                             type="object"
                             class="btn-primary"
@@ -127,6 +127,15 @@
                                    invisible="type != 'teamleren'"/>
                             <field name="titel" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
                                    placeholder="bv. Cursus differentiatie in de klas"/>
+                            <field name="adres"
+                                   placeholder="bv. Kerkstraat 12, 9000 Gent"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="subtype_individueel not in ('cursus', 'workshop') and type != 'teamleren'"/>
+                            <field name="link"
+                                   widget="url"
+                                   placeholder="bv. https://youtube.com/..."
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="subtype_individueel not in ('video', 'podcast')"/>
                             <field name="school_id"
                                    options="{'no_open': True}"
                                    readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
@@ -174,39 +183,34 @@
                         </group>
                     </group>
 
-                    <!-- Tabs -->
+                    <!-- Extra info knop: opent dialoog met Uitnodigingen/Datums/Beschrijving -->
+                    <div class="d-flex justify-content-end mt-3 mb-3"
+                         invisible="state == 'selection_of_form'">
+                        <button name="action_open_details"
+                                string="Extra info beheren"
+                                type="object"
+                                class="btn-secondary"
+                                icon="fa-edit"/>
+                    </div>
+
+                    <!-- Afkeuring: voor medewerker na weigering -->
+                    <div class="alert alert-danger" role="alert"
+                         invisible="state != 'weigering'"
+                         groups="professionalisering.group_professionalisering_user">
+                        <strong>Afkeuring:</strong>
+                        <field name="rejection_reason" readonly="1" nolabel="1" class="oe_inline"/>
+                    </div>
+
+                    <!-- Afkeuring: directie moet reden invullen -->
+                    <group groups="professionalisering.group_professionalisering_directie"
+                           invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')">
+                        <field name="rejection_reason"
+                               string="Reden voor afkeuring"
+                               placeholder="Geef de reden op waarom deze aanvraag wordt afgekeurd..."/>
+                    </group>
+
+                    <!-- Tabs (enkel state-specifieke info) -->
                     <notebook>
-                        <page string="Uitnodigingen" invisible="not show_invites">
-                            <button name="action_send_invites"
-                                    string="Uitnodigingen versturen"
-                                    type="object"
-                                    class="btn-primary mb-3"
-                                    invisible="state != 'selection_of_form' or not invite_ids or not is_owner"/>
-                            <field name="invite_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
-                                <list editable="bottom">
-                                    <field name="employee_id"/>
-                                    <field name="employee_school_names" readonly="1"/>
-                                    <field name="notified" column_invisible="1"/>
-                                    <field name="state" readonly="1" widget="badge"
-                                           decoration-info="state == 'pending'"
-                                           decoration-success="state == 'accepted'"
-                                           decoration-danger="state == 'rejected'"/>
-                                </list>
-                            </field>
-                        </page>
-                        <page string="Datums" invisible="verschillende_dagen != True">
-                            <field name="date_line_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
-                                <list editable="bottom">
-                                    <field name="date"/>
-                                    <field name="cost"/>
-                                </list>
-                            </field>
-                        </page>
-                        <page string="Beschrijving">
-                            <field name="description"
-                                   placeholder="Geef een korte beschrijving van de opleiding, het doel en eventuele bijzonderheden..."
-                                   readonly="(state != 'selection_of_form' or (not is_owner and not is_admin)) and not (current_user_invited and current_user_invite_state == 'pending')"/>
-                        </page>
                         <page string="Kosten"
                               invisible="state not in ('bevestiging', 'done') or not needs_payment"
                               groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin">
@@ -276,26 +280,80 @@
                                    readonly="bewijs_ingediend and not is_admin"
                                    invisible="type != 'teamleren'"/>
                         </page>
-                        <!-- Afkeuring: for medewerker after rejection -->
-                        <page string="Afkeuring"
-                              invisible="state != 'weigering'"
-                              groups="professionalisering.group_professionalisering_user">
-                            <group>
-                                <field name="rejection_reason" readonly="1"/>
-                            </group>
-                        </page>
-                        <!-- Afkeuring: for directie to fill in -->
-                        <page string="Afkeuring"
-                              groups="professionalisering.group_professionalisering_directie"
-                              invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')">
-                            <group>
-                                <field name="rejection_reason"
-                                       placeholder="Geef de reden op waarom deze aanvraag wordt afgekeurd..."/>
-                            </group>
-                        </page>
                     </notebook>
                 </sheet>
                 <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Dialog Form View: Extra info (Uitnodigingen, Datums, Beschrijving) -->
+    <record id="view_professionalisering_form_details" model="ir.ui.view">
+        <field name="name">professionalisering.record.form.details</field>
+        <field name="model">professionalisering.record</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Extra info" class="o_professionalisering_wizard_form">
+                <field name="state" invisible="1"/>
+                <field name="is_owner" invisible="1"/>
+                <field name="is_admin" invisible="1"/>
+                <field name="show_invites" invisible="1"/>
+                <field name="has_pending_invites" invisible="1"/>
+                <field name="verschillende_dagen" invisible="1"/>
+                <field name="current_user_invited" invisible="1"/>
+                <field name="current_user_invite_state" invisible="1"/>
+                <field name="type" invisible="1"/>
+
+                <div class="alert alert-warning" role="alert"
+                     invisible="not has_pending_invites">
+                    Niet alle uitnodigingen zijn beantwoord. De aanvraag kan pas ingediend worden wanneer alle collega's hebben gereageerd.
+                </div>
+
+                <notebook>
+                    <page string="Uitnodigingen" name="details_invites" invisible="not show_invites">
+                        <button name="action_send_invites"
+                                string="Uitnodigingen versturen"
+                                type="object"
+                                class="btn-primary mb-3"
+                                invisible="state != 'selection_of_form' or not invite_ids or not is_owner"/>
+                        <field name="invite_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
+                            <list editable="bottom">
+                                <field name="employee_id"/>
+                                <field name="employee_school_names" readonly="1"/>
+                                <field name="notified" column_invisible="1"/>
+                                <field name="state" readonly="1" widget="badge"
+                                       decoration-info="state == 'pending'"
+                                       decoration-success="state == 'accepted'"
+                                       decoration-danger="state == 'rejected'"/>
+                            </list>
+                        </field>
+                    </page>
+                    <page string="Datums" name="details_dates" invisible="verschillende_dagen != True">
+                        <field name="date_line_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
+                            <list editable="bottom">
+                                <field name="date"/>
+                                <field name="cost"/>
+                            </list>
+                        </field>
+                    </page>
+                    <page string="Beschrijving" name="details_description">
+                        <field name="description"
+                               placeholder="Geef een korte beschrijving van de opleiding, het doel en eventuele bijzonderheden..."
+                               readonly="(state != 'selection_of_form' or (not is_owner and not is_admin)) and not (current_user_invited and current_user_invite_state == 'pending')"/>
+                    </page>
+                </notebook>
+                <footer>
+                    <button name="action_submit_from_dialog"
+                            string="Indienen &amp; bevestigen"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'selection_of_form' or not is_owner"/>
+                    <button string="Opslaan"
+                            class="btn-primary"
+                            special="save"
+                            invisible="state == 'selection_of_form' and is_owner"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
             </form>
         </field>
     </record>

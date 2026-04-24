@@ -16,3 +16,7 @@ access_student_select_line,drukwerk.student.select.line,model_drukwerk_student_s
 access_drukwerk_config_user,drukwerk.config.user,model_drukwerk_config,group_drukwerk_personeelslid,1,0,0,0
 access_drukwerk_config_manager,drukwerk.config.manager,model_drukwerk_config,group_drukwerk_drukwerk,1,1,1,1
 access_drukwerk_config_boekhouding,drukwerk.config.boekhouding,model_drukwerk_config,group_drukwerk_boekhouding,1,1,1,1
+access_drukwerk_class_report_boekhouding,drukwerk.class.report.boekhouding,model_drukwerk_class_report,group_drukwerk_boekhouding,1,0,0,0
+access_drukwerk_class_report_admin,drukwerk.class.report.admin,model_drukwerk_class_report,group_drukwerk_admin,1,0,0,0
+access_drukwerk_student_report_boekhouding,drukwerk.student.report.boekhouding,model_drukwerk_student_report,group_drukwerk_boekhouding,1,0,0,0
+access_drukwerk_student_report_admin,drukwerk.student.report.admin,model_drukwerk_student_report,group_drukwerk_admin,1,0,0,0

@@ -7,8 +7,8 @@
         <field name="arch" type="xml">
             <form class="drukwerk_form">
                 <header>
-                    <!-- Personeelslid: submit -->
-                    <button name="action_submit"
+                    <!-- Personeelslid: open submit dialog (popup with extra tabs, then confirm) -->
+                    <button name="action_open_details"
                             string="Indienen"
                             type="object"
                             class="btn-primary"
@@ -123,39 +123,15 @@
                         </group>
                     </group>
 
-                    <!-- Print options -->
-                    <group string="Afdrukopties" invisible="not drukwerk_type or state == 'afdrukken'">
-                        <group>
-                            <field name="dubbelzijdig"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                            <field name="nieten"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                            <field name="perforeren"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                            <field name="liggend"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                            <field name="sorteren"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                        </group>
-                        <group>
-                            <field name="a3_plooien"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                            <field name="boekje_a4"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                            <field name="papier_kleur"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                            <field name="gekleurd_papier"
-                                   invisible="papier_kleur == 'geen'"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
-                        </group>
-                    </group>
-
-                    <!-- Toelichting -->
-                    <group string="Toelichting" invisible="not drukwerk_type or state == 'afdrukken'">
-                        <field name="description" nolabel="1"
-                               placeholder="Eventuele extra informatie voor de drukkerij..."
-                               readonly="state not in ('draft', 'form_invullen')"/>
-                    </group>
+                    <!-- Extra info knop: opent dialoog (alleen als "Indienen" niet meer zichtbaar is) -->
+                    <div class="d-flex justify-content-end mt-3 mb-3"
+                         invisible="not drukwerk_type or state in ('form_invullen', 'afdrukken')">
+                        <button name="action_open_details"
+                                string="Extra info beheren"
+                                type="object"
+                                class="btn-secondary"
+                                icon="fa-edit"/>
+                    </div>
 
                     <!-- Compact summary for afdrukken state -->
                     <group invisible="state != 'afdrukken'">
@@ -212,21 +188,71 @@
         </field>
     </record>
 
+    <!-- Dialog Form View: Extra info (Afdrukopties + Toelichting) -->
+    <record id="view_drukwerk_form_details" model="ir.ui.view">
+        <field name="name">drukwerk.record.form.details</field>
+        <field name="model">drukwerk.record</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Extra info" class="o_drukwerk_wizard_form">
+                <field name="state" invisible="1"/>
+                <field name="drukwerk_type" invisible="1"/>
+                <notebook>
+                    <page string="Afdrukopties" name="details_afdrukopties">
+                        <group>
+                            <group>
+                                <field name="dubbelzijdig"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                                <field name="nieten"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                                <field name="perforeren"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                                <field name="liggend"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                                <field name="sorteren"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                            </group>
+                            <group>
+                                <field name="a3_plooien"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                                <field name="boekje_a4"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                                <field name="papier_kleur"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                                <field name="gekleurd_papier"
+                                       invisible="papier_kleur == 'geen'"
+                                       readonly="state not in ('draft', 'form_invullen')"/>
+                            </group>
+                        </group>
+                    </page>
+                    <page string="Toelichting" name="details_toelichting">
+                        <field name="description" nolabel="1"
+                               placeholder="Eventuele extra informatie voor de drukkerij..."
+                               readonly="state not in ('draft', 'form_invullen')"/>
+                    </page>
+                </notebook>
+                <footer>
+                    <button name="action_submit_from_dialog"
+                            string="Indienen &amp; bevestigen"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'form_invullen'"/>
+                    <button string="Opslaan"
+                            class="btn-primary"
+                            special="save"
+                            invisible="state == 'form_invullen'"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
     <!-- List View -->
     <record id="view_drukwerk_list" model="ir.ui.view">
         <field name="name">drukwerk.record.list</field>
         <field name="model">drukwerk.record</field>
         <field name="arch" type="xml">
             <list>
-                <header>
-                    <button name="action_open_config"
-                            string="Printerinstellingen"
-                            type="object"
-                            class="btn-secondary"
-                            icon="fa-cog"
-                            display="always"
-                            groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"/>
-                </header>
                 <field name="name"/>
                 <field name="create_uid" string="Aangemaakt door"/>
                 <field name="drukwerk_type"/>

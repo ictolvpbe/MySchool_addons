@@ -50,6 +50,22 @@ class ProfessionaliseringRecord(models.Model):
     _description = 'Professionalisering'
     _inherit = ['mail.thread', 'mail.activity.mixin']
 
+    def _auto_init(self):
+        res = super()._auto_init()
+        Sequence = self.env['ir.sequence'].sudo()
+        if not Sequence.with_context(active_test=False).search_count([('code', '=', 'professionalisering.record')]):
+            Sequence.create({
+                'name': 'Professionalisering',
+                'code': 'professionalisering.record',
+                'prefix': 'PR-',
+                'padding': 5,
+                'number_next': 1,
+                'number_increment': 1,
+                'implementation': 'standard',
+                'company_id': False,
+            })
+        return res
+
     name = fields.Char(
         string='Referentie',
         required=True,
@@ -76,6 +92,14 @@ class ProfessionaliseringRecord(models.Model):
         ('co_teaching', 'Co-teaching'),
     ], string='Vorm')
     titel = fields.Char(string='Titel opleiding', required=True)
+    adres = fields.Char(
+        string='Adres / Locatie',
+        help='Adres of locatie waar de opleiding plaatsvindt (optioneel).',
+    )
+    link = fields.Char(
+        string='Link',
+        help='URL naar de video of podcast (optioneel).',
+    )
     invite_ids = fields.One2many('professionalisering.invite', 'professionalisering_id', string='Uitnodigingen')
     has_pending_invites = fields.Boolean(compute='_compute_has_pending_invites')
     show_invites = fields.Boolean(compute='_compute_show_invites')
@@ -379,6 +403,23 @@ class ProfessionaliseringRecord(models.Model):
         if needs_notification:
             needs_notification._send_notification('professionalisering.email_template_notify_directie')
             needs_notification._notify_directie_popup()
+
+    def action_open_details(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Extra info',
+            'res_model': 'professionalisering.record',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('professionalisering.view_professionalisering_form_details').id, 'form')],
+            'target': 'new',
+        }
+
+    def action_submit_from_dialog(self):
+        self.ensure_one()
+        self.action_submit()
+        return {'type': 'ir.actions.act_window_close'}
 
     def action_approve(self):
         submitted_states = self._get_submitted_states()

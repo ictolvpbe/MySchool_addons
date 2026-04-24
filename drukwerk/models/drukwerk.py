@@ -3,6 +3,8 @@ import io
 import logging
 from datetime import timedelta
 
+from markupsafe import Markup
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 
@@ -311,6 +313,26 @@ class DrukwerkRecord(models.Model):
             'target': 'new',
         }
 
+    def action_open_class_report(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Drukwerk per klas',
+            'res_model': 'drukwerk.class.report',
+            'view_mode': 'list',
+            'context': {'search_default_type_gewoon': 1},
+            'target': 'current',
+        }
+
+    def action_open_student_report(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Drukwerk per leerling',
+            'res_model': 'drukwerk.student.report',
+            'view_mode': 'list',
+            'context': {'search_default_type_gewoon': 1},
+            'target': 'current',
+        }
+
     @api.constrains('document_filename')
     def _check_pdf_only(self):
         for record in self:
@@ -418,6 +440,23 @@ class DrukwerkRecord(models.Model):
             record.state = 'afdrukken'
         self._notify_drukwerk_team()
 
+    def action_open_details(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Extra info',
+            'res_model': 'drukwerk.record',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('drukwerk.view_drukwerk_form_details').id, 'form')],
+            'target': 'new',
+        }
+
+    def action_submit_from_dialog(self):
+        self.ensure_one()
+        self.action_submit()
+        return {'type': 'ir.actions.act_window_close'}
+
     # --- Drukwerk actions ---
 
     def action_mark_printed(self):
@@ -425,6 +464,7 @@ class DrukwerkRecord(models.Model):
             if record.state != 'afdrukken':
                 raise UserError("Kan alleen in de afdrukkenfase afgedrukt worden.")
             record.state = 'done'
+        self._send_notification('done')
 
     # --- Print actions ---
 
@@ -498,6 +538,27 @@ class DrukwerkRecord(models.Model):
                     note=f'Drukwerk aanvraag "{record.titel}" is klaar om af te drukken.',
                     user_id=user.id,
                 )
+
+    _NOTIFICATION_TEMPLATES = {
+        'done': 'drukwerk.email_template_drukwerk_done',
+    }
+
+    def _send_notification(self, notification_type):
+        template_xmlid = self._NOTIFICATION_TEMPLATES.get(notification_type)
+        if not template_xmlid:
+            return
+        template = self.env.ref(template_xmlid, raise_if_not_found=False)
+        if not template:
+            return
+        for record in self:
+            rendered = template._render_template(
+                template.body_html, template.render_model, [record.id],
+                engine='inline_template',
+                options={'post_process': True},
+            )
+            body = rendered.get(record.id, '')
+            if body:
+                record.message_post(body=Markup(body), subtype_xmlid='mail.mt_note')
 
     @api.model
     def _cron_print_deadline_reminder(self):

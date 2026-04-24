@@ -20,3 +20,6 @@ access_snapshot_wizard_user,activiteiten.snapshot.wizard.user,model_activiteiten
 access_bus_user,activiteiten.bus.user,model_activiteiten_bus,group_activiteiten_personeelslid,1,0,0,0
 access_bus_aankoop,activiteiten.bus.aankoop,model_activiteiten_bus,group_activiteiten_aankoop,1,1,1,1
 access_bus_admin,activiteiten.bus.admin,model_activiteiten_bus,group_activiteiten_admin,1,1,1,1
+access_activiteiten_config_read,activiteiten.config.read,model_activiteiten_config,group_activiteiten_personeelslid,1,0,0,0
+access_activiteiten_config_boekhouding,activiteiten.config.boekhouding,model_activiteiten_config,group_activiteiten_boekhouding,1,1,1,0
+access_activiteiten_config_admin,activiteiten.config.admin,model_activiteiten_config,group_activiteiten_admin,1,1,1,1

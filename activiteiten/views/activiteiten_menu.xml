@@ -114,4 +114,11 @@
               parent="menu_activiteiten_root"
               action="action_activiteiten_invites"
               sequence="21"/>
+
+    <menuitem id="menu_activiteiten_instellingen"
+              name="Instellingen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_config_open"
+              groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
+              sequence="30"/>
 </odoo>

@@ -1,6 +1,6 @@
 {
     'name': 'Professionalisering',
-    'version': '1.0',
+    'version': '1.4',
     'summary': 'Beheer van professionaliseringsaanvragen voor leerkrachten',
     'description': """
         Module voor het beheren van professionaliseringsaanvragen.

@@ -673,6 +673,30 @@ class MySchoolDashboard(models.Model):
             'target': 'current',
         }
 
+    def action_open_drukwerk_class_report(self):
+        if 'drukwerk.class.report' not in self.env:
+            return False
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Overzicht per klas',
+            'res_model': 'drukwerk.class.report',
+            'view_mode': 'list',
+            'context': {'search_default_type_gewoon': 1},
+            'target': 'current',
+        }
+
+    def action_open_drukwerk_student_report(self):
+        if 'drukwerk.student.report' not in self.env:
+            return False
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Overzicht per leerling',
+            'res_model': 'drukwerk.student.report',
+            'view_mode': 'list',
+            'context': {'search_default_type_gewoon': 1},
+            'target': 'current',
+        }
+
     # --- Optional apps: view inheritance & menu deactivation ---
 
     _OPTIONAL_APPS = {
