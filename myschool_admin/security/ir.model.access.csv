@@ -1,5 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_dashboard_user,myschool.dashboard.user,model_myschool_dashboard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_dashboard_user,myschool.admin.dashboard.user,model_myschool_admin_dashboard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_object_browser_user,myschool.object.browser.user,model_myschool_object_browser,myschool_core.group_myschool_core_admin,1,1,1,1
 access_create_person_wizard,myschool.create.person.wizard,model_myschool_create_person_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_add_child_org_wizard,myschool.add.child.org.wizard,model_myschool_add_child_org_wizard,myschool_core.group_myschool_core_admin,1,1,1,1

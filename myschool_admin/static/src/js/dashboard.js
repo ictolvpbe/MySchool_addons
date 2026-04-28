@@ -31,7 +31,7 @@ export class MySchoolDashboard extends Component {
     async loadData() {
         try {
             const data = await this.orm.call(
-                "myschool.dashboard",
+                "myschool.admin.dashboard",
                 "get_dashboard_data",
                 [],
             );

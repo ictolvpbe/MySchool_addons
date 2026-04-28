@@ -421,8 +421,11 @@
     background: #f0f8f8;
 }
 
+/* .ob-row-selected is triggered when a node is in the multi-select set
+   (state.selectedIds) — via checkbox, ctrl+click, or shift+click range. */
 .ob-row-selected {
     background: #d9f2f4;
+    box-shadow: inset 3px 0 0 #0b87a1;
 }
 
 /* Toggle */
@@ -657,6 +660,15 @@
 
 .ob-member-row-selected:hover {
     background: #c9eef2;
+}
+
+.ob-member-row-multi {
+    box-shadow: inset 3px 0 0 #0b87a1;
+    background: #e8f6f9;
+}
+
+.ob-member-row-multi:hover {
+    background: #daecf1;
 }
 
 /* Avatar (circular initials) */

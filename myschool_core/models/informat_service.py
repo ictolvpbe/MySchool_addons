@@ -1818,6 +1818,10 @@ class InformatService(models.AbstractModel):
                 school_shortname_cache[inst_nr_val] = ci_lookup_org.name_short
                 return ci_lookup_org.name_short
 
+            # Phase 1: collect intended ADD tasks (don't emit yet) so we can
+            # pair them with DEACT tasks later to detect classgroup MOVES.
+            pending_adds = []  # list of task_data dicts
+
             for persoon_id, registration_json in all_registrations.items():
                 registration = json.loads(registration_json)
 
@@ -1832,7 +1836,6 @@ class InformatService(models.AbstractModel):
                 for klas in inschr_klassen:
                     klas_code = klas.get('klasCode', '')
                     classgroup_fullname = f"{klas_code}-{school_short}" if school_short else f"{klas_code}-{inst_nr}"
-                    task_action = ''
 
                     # Skip if already checked
                     if classgroup_fullname in checked_classes:
@@ -1857,44 +1860,100 @@ class InformatService(models.AbstractModel):
                             # Rename to new format
                             existing_class.write({'name': classgroup_fullname})
 
-                    if not existing_class:
-                        task_action = 'ADD'
-
                     checked_classes.append(classgroup_fullname)
 
-                    # Create task if needed
-                    if task_action:
-                        task_data = {
+                    if not existing_class:
+                        pending_adds.append({
                             'orgtype': 'CLASSGROUP',
                             'isadm': 'false',
                             'name': classgroup_fullname,
                             'name_short': klas_code,
                             'instnr': inst_nr,
                             'period': current_period.id,
-                            'schoolyear': schoolyear_name
-                        }
-                        self._create_betask('DB', 'ORG', task_action, json.dumps(task_data), '')
+                            'schoolyear': schoolyear_name,
+                        })
 
-            # Check for classes to deactivate
+            # Phase 2: collect would-be DEACT tasks.
+            pending_deacts = []  # list of (org, task_data)
             all_active_classes = Org.search([
                 ('org_type_id', '=', org_type_group.id),
                 ('is_active', '=', True)
             ])
-
             for org in all_active_classes:
                 school_short = _resolve_school_shortname(org.inst_nr)
                 class_key = f"{org.name_short}-{school_short}" if school_short else f"{org.name_short}-{org.inst_nr}"
                 if class_key not in checked_classes:
-                    task_data = {
+                    pending_deacts.append((org, {
                         'orgId': org.id,
                         'name': org.name,
                         'name_short': org.name_short,
                         'instnr': org.inst_nr,
                         'period': current_period.id,
-                        'schoolyear': schoolyear_name
-                    }
-                    self._create_betask('DB', 'ORG', 'DEACT', json.dumps(task_data), '')
-            
+                        'schoolyear': schoolyear_name,
+                    }))
+
+            # Phase 3: detect classgroup MOVES — (deact X from instnr A) +
+            # (add X to instnr B) with same name_short means the class
+            # changed institution, not delete+recreate. Emit a single UPD
+            # carrying the existing org id so AD fields, ORG-TREE and
+            # instnr can be re-parented in place.
+            handled_adds = set()
+            handled_deacts = set()
+            add_index_by_code = {}
+            for i, td in enumerate(pending_adds):
+                add_index_by_code.setdefault(td['name_short'], []).append(i)
+
+            for d_idx, (deact_org, _deact_td) in enumerate(pending_deacts):
+                code = deact_org.name_short or ''
+                candidates = add_index_by_code.get(code, [])
+                for a_idx in candidates:
+                    if a_idx in handled_adds:
+                        continue
+                    add_td = pending_adds[a_idx]
+                    if add_td['instnr'] != deact_org.inst_nr:
+                        move_data = {
+                            'orgId': deact_org.id,
+                            'orgtype': 'CLASSGROUP',
+                            'isadm': 'false',
+                            'name': add_td['name'],
+                            'name_short': add_td['name_short'],
+                            'instnr': add_td['instnr'],
+                            'old_instnr': deact_org.inst_nr,
+                            'is_instnr_move': True,
+                            'period': add_td['period'],
+                            'schoolyear': add_td['schoolyear'],
+                        }
+                        self._create_betask('DB', 'ORG', 'UPD', json.dumps(move_data), '')
+                        self._create_sys_event(
+                            "SAPSYNC-001",
+                            f"Classgroup MOVE detected: {deact_org.name} "
+                            f"(instnr {deact_org.inst_nr} -> {add_td['instnr']})")
+                        handled_adds.add(a_idx)
+                        handled_deacts.add(d_idx)
+                        break
+
+            # Phase 4: emit the remaining ADD tasks. Leftover "would-be
+            # deact" classgroups (classgroups in DB without any registration
+            # referencing them) are left untouched — empty classes are kept
+            # active so that mid-year partial snapshots or missing student
+            # JSONs don't silently deactivate real classes. Bulk classgroup
+            # deactivation is handled separately at school-year initialization.
+            for i, td in enumerate(pending_adds):
+                if i in handled_adds:
+                    continue
+                self._create_betask('DB', 'ORG', 'ADD', json.dumps(td), '')
+
+            unmoved_orphans = [
+                (o, td) for idx, (o, td) in enumerate(pending_deacts)
+                if idx not in handled_deacts
+            ]
+            if unmoved_orphans:
+                orphan_names = ', '.join(o.name for o, _td in unmoved_orphans)
+                self._create_sys_event(
+                    "SAPSYNC-001",
+                    f"{len(unmoved_orphans)} classgroup(s) now empty but kept "
+                    f"active (no DEACT): {orphan_names}")
+
             return True
             
         except Exception as e:
@@ -1944,28 +2003,44 @@ class InformatService(models.AbstractModel):
                     # Check for updates
                     person_in_db = existing_persons[0]
 
-                    # Check for deactivation (new end date)
-                    reg_end_date = registration.get('regEndDate')
+                    # End-date detection: Informat ships this as 'einddatum'
+                    # at the registration level; keep 'regEndDate' as a
+                    # camelCase fallback for any alternate feed.
+                    reg_end_date = registration.get('einddatum') \
+                        or registration.get('regEndDate')
+
+                    # Check for deactivation (new end date appeared)
                     if reg_end_date and not person_in_db.reg_end_date:
                         task_data = {
                             'uuid': person_in_db.sap_person_uuid,
                             'regEndDate': reg_end_date,
-                            'person_type': 'STUDENT'
+                            'einddatum': reg_end_date,
+                            'person_type': 'STUDENT',
                         }
                         self._create_betask('DB', 'PERSON', 'DEACT', json.dumps(task_data), '')
                         continue
 
-                    # Check for reactivation
+                    # Check for reactivation (previous end date cleared)
                     if not reg_end_date and person_in_db.reg_end_date:
-                        task_data = {
+                        # Pass the fresh registration+student snapshot so the
+                        # processor can repopulate instnr, klas and relations.
+                        merged = self._merge_registration_and_student_data(
+                            registration, student_details)
+                        merged.update({
                             'uuid': person_in_db.sap_person_uuid,
+                            'persoonId': person_in_db.sap_person_uuid,
                             'regEndDate': None,
-                            'regGroupCode': registration.get('regGroupCode'),
-                            'regInstNr': registration.get('regInstNr'),
-                            'regStartDate': registration.get('regStartDate'),
-                            'person_type': 'STUDENT'
-                        }
-                        self._create_betask('DB', 'PERSON', 'UPD', json.dumps(task_data), '')
+                            'einddatum': None,
+                            'person_type': 'STUDENT',
+                            '_reactivation': True,
+                        })
+                        # data2 carries action='REACTIVATE' so that
+                        # _update_person_from_student_json clears
+                        # reg_end_date and sets is_active back to True.
+                        self._create_betask(
+                            'DB', 'PERSON', 'UPD',
+                            json.dumps(merged),
+                            json.dumps({'action': 'REACTIVATE'}))
                         continue
 
                     # Check for field updates
@@ -1974,12 +2049,39 @@ class InformatService(models.AbstractModel):
                         self._merge_registration_and_student_data(registration, student_details)
                     )
 
-                    if diff_new:
+                    # Detect institution / class move — these don't show up in
+                    # the field diff (we only compare voornaam/geboortedatum/
+                    # geslacht/insz), but they require an UPD so the PERSON-TREE
+                    # and PPSBR relations get re-linked to the new class/school.
+                    new_inst_nr = registration.get('instelnr', '') or ''
+                    active_klas_code = ''
+                    for _k in registration.get('inschrKlassen', []) or []:
+                        if not _k.get('einddatum'):
+                            active_klas_code = _k.get('klasCode', '')
+                            break
+                    current_inst_nr = person_in_db.reg_inst_nr or ''
+                    current_klas_code = person_in_db.reg_group_code or ''
+                    relation_changed = (
+                        (new_inst_nr and new_inst_nr != current_inst_nr)
+                        or (active_klas_code and active_klas_code != current_klas_code)
+                    )
+
+                    if diff_new or relation_changed:
+                        # Always include the routing info the processor needs
                         diff_new['persoonId'] = person_in_db.sap_person_uuid
                         diff_new['person_type'] = 'STUDENT'
+                        diff_new.setdefault('instelnr', new_inst_nr)
+                        diff_new.setdefault(
+                            'inschrKlassen', registration.get('inschrKlassen', []))
+                        if relation_changed:
+                            diff_new['_relation_change'] = True
+                            diff_new.setdefault('old_instelnr', current_inst_nr)
+                            diff_new.setdefault('old_klasCode', current_klas_code)
                         diff_original['persoonId'] = person_in_db.sap_person_uuid
-                        self._create_betask('DB', 'PERSON', 'UPD', json.dumps(diff_new), json.dumps(diff_original))
-                
+                        self._create_betask('DB', 'PERSON', 'UPD',
+                                            json.dumps(diff_new),
+                                            json.dumps(diff_original))
+
                 processed_students.append(persoon_id)
             
             return True
@@ -2448,15 +2550,13 @@ class InformatService(models.AbstractModel):
         @param new_data: New data from import
         @return: Tuple of (new_values_dict, original_values_dict)
         """
-        skip_fields = ['id', 'person_type', 'sap_ref', 'sap_person_uuid', 
+        skip_fields = ['id', 'person_type', 'sap_ref', 'sap_person_uuid',
                        'reg_inst_nr', 'reg_group_code', 'reg_end_date', 'reg_start_date']
-        
+
         diff_new = {}
         diff_original = {}
-        
+
         # Map of Python field names to JSON field names (must match Informat keys)
-        # Note: 'name' is excluded because the DB stores a composite "Last, First"
-        # while the incoming 'naam' only contains the raw last name.
         field_mapping = {
             'first_name': 'voornaam',
             'birth_date': 'geboortedatum',
@@ -2487,7 +2587,23 @@ class InformatService(models.AbstractModel):
             if db_value != new_value:
                 diff_new[json_field] = new_value if new_value is not None else 'null'
                 diff_original[json_field] = db_value if db_value is not None else 'null'
-        
+
+        # Composite 'name' field: compare DB value against the expected
+        # "Achternaam, Voornaam" derived from incoming data. If they
+        # differ and we actually have both parts in the data, emit the
+        # composite as part of the diff so downstream processing can
+        # repair corrupted / stale name records. Always include both
+        # parts together so the mapper's safety guard lets them through.
+        new_naam = new_data.get('naam')
+        new_voornaam = new_data.get('voornaam')
+        if new_naam and new_voornaam:
+            expected_name = f"{new_naam}, {new_voornaam}"
+            db_name = person_in_db.name or ''
+            if db_name != expected_name:
+                diff_new['naam'] = new_naam
+                diff_new['voornaam'] = new_voornaam
+                diff_original['name'] = db_name or 'null'
+
         return diff_new, diff_original
 
     def _compare_relation_fields(self, person_in_db: Any, new_data: Dict) -> tuple:

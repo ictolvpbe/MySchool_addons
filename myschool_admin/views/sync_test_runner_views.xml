@@ -1,280 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- =================================================================== -->
-    <!-- Step file — inline form for editing JSON                             -->
-    <!-- =================================================================== -->
-
-    <record id="view_sync_test_step_file_form" model="ir.ui.view">
-        <field name="name">myschool.sync.test.step.file.form</field>
-        <field name="model">myschool.sync.test.step.file</field>
+    <!-- Form View -->
+    <record id="view_sync_test_runner_form" model="ir.ui.view">
+        <field name="name">myschool.sync.test.runner.form</field>
+        <field name="model">myschool.sync.test.runner</field>
         <field name="arch" type="xml">
-            <form string="JSON file">
-                <header>
-                    <button name="action_save_to_disk" string="Opslaan naar disk"
-                            type="object" class="btn-primary"/>
-                    <button name="action_reload_from_disk" string="Opnieuw inlezen"
-                            type="object"/>
-                    <button name="action_validate_json" string="Valideer JSON"
-                            type="object"/>
-                </header>
-                <sheet>
-                    <group>
-                        <field name="filename" readonly="1"/>
-                        <field name="size_bytes" readonly="1"/>
-                        <field name="user_edited" readonly="1"/>
-                    </group>
-                    <field name="content" widget="text" options="{'resizable': true}"/>
-                </sheet>
-            </form>
-        </field>
-    </record>
-
-    <record id="view_sync_test_step_file_list" model="ir.ui.view">
-        <field name="name">myschool.sync.test.step.file.list</field>
-        <field name="model">myschool.sync.test.step.file</field>
-        <field name="arch" type="xml">
-            <list string="Files" editable="bottom">
-                <field name="filename" readonly="1"/>
-                <field name="size_bytes" readonly="1"/>
-                <field name="user_edited" readonly="1"/>
-                <button name="action_save_to_disk" string="Save" type="object" icon="fa-save"/>
-                <button name="action_reload_from_disk" string="Reload" type="object" icon="fa-refresh"/>
-                <button name="action_validate_json" string="Validate" type="object" icon="fa-check"/>
-            </list>
-        </field>
-    </record>
-
-    <!-- =================================================================== -->
-    <!-- Step — form opened from the session view                             -->
-    <!-- =================================================================== -->
-
-    <record id="view_sync_test_step_form" model="ir.ui.view">
-        <field name="name">myschool.sync.test.step.form</field>
-        <field name="model">myschool.sync.test.step</field>
-        <field name="arch" type="xml">
-            <form string="Sync test step">
-                <header>
-                    <button name="action_run" string="Stap uitvoeren"
-                            type="object" class="btn-primary"/>
-                    <button name="action_jump_to" string="Spring hierheen (UI)"
-                            type="object"/>
-                    <button name="action_reset_to_here"
-                            string="Reset &amp; replay tot deze stap"
+            <form string="SAP Sync Test Runner">
+                <group>
+                    <field name="testsets_path"/>
+                    <field name="test_person_uuid"/>
+                </group>
+                <footer>
+                    <button name="action_run_tests"
+                            string="Run All Tests"
                             type="object"
-                            confirm="Dit voert cleanup uit en herhaalt alle eerdere stappen. Doorgaan?"/>
-                    <field name="status" widget="statusbar"
-                           statusbar_visible="pending,running,completed_ok"/>
-                </header>
-                <sheet>
-                    <div class="oe_title">
-                        <h1>
-                            <field name="name" readonly="1"/>
-                        </h1>
-                        <field name="sequence" readonly="1" string="Sequence"/>
-                    </div>
-                    <group col="4">
-                        <field name="folder_path" readonly="1" colspan="4"/>
-                        <field name="last_run_at" readonly="1"/>
-                        <field name="sync_result" readonly="1"/>
-                        <field name="new_betask_count" readonly="1"/>
-                        <field name="processed_ok_count" readonly="1"/>
-                        <field name="processed_err_count" readonly="1"/>
-                    </group>
-                    <notebook>
-                        <page string="JSON files" name="files">
-                            <field name="file_ids">
-                                <list create="0" delete="0">
-                                    <field name="filename" readonly="1"/>
-                                    <field name="size_bytes" readonly="1"/>
-                                    <field name="user_edited" readonly="1"/>
-                                    <button name="action_save_to_disk" type="object"
-                                            icon="fa-save" string="Save"/>
-                                    <button name="action_reload_from_disk" type="object"
-                                            icon="fa-refresh" string="Reload"/>
-                                    <button name="action_validate_json" type="object"
-                                            icon="fa-check" string="Validate"/>
-                                </list>
-                                <form>
-                                    <header>
-                                        <button name="action_save_to_disk"
-                                                string="Opslaan naar disk"
-                                                type="object" class="btn-primary"/>
-                                        <button name="action_reload_from_disk"
-                                                string="Opnieuw inlezen"
-                                                type="object"/>
-                                        <button name="action_validate_json"
-                                                string="Valideer JSON"
-                                                type="object"/>
-                                    </header>
-                                    <group>
-                                        <field name="filename" readonly="1"/>
-                                        <field name="size_bytes" readonly="1"/>
-                                        <field name="user_edited" readonly="1"/>
-                                    </group>
-                                    <field name="content" widget="text"/>
-                                </form>
-                            </field>
-                        </page>
-                        <page string="Debug log" name="debug">
-                            <field name="debug_output" nolabel="1"/>
-                        </page>
-                        <page string="Sync events &amp; tasks" name="events">
-                            <field name="sync_events" nolabel="1"/>
-                        </page>
-                    </notebook>
-                </sheet>
+                            class="btn-primary"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+                <group string="Results" invisible="not result">
+                    <field name="result" nolabel="1"/>
+                </group>
             </form>
-        </field>
-    </record>
-
-    <record id="view_sync_test_step_list" model="ir.ui.view">
-        <field name="name">myschool.sync.test.step.list</field>
-        <field name="model">myschool.sync.test.step</field>
-        <field name="arch" type="xml">
-            <list string="Steps" create="0" delete="0"
-                  decoration-success="status == 'completed_ok'"
-                  decoration-danger="status == 'completed_errors'"
-                  decoration-info="status == 'running'"
-                  decoration-muted="status == 'pending'">
-                <field name="sequence" string="#"/>
-                <field name="name"/>
-                <field name="status_label" string="Status"/>
-                <field name="last_run_at"/>
-                <field name="new_betask_count" string="New tasks"/>
-                <field name="processed_ok_count" string="OK"/>
-                <field name="processed_err_count" string="Err"/>
-                <button name="action_run" string="Run" type="object"
-                        icon="fa-play" class="btn-primary"/>
-                <button name="action_jump_to" string="Jump" type="object"
-                        icon="fa-eye"/>
-                <button name="action_reset_to_here" string="Reset" type="object"
-                        icon="fa-undo"
-                        confirm="Dit voert cleanup uit en herhaalt alle eerdere stappen. Doorgaan?"/>
-            </list>
-        </field>
-    </record>
-
-    <!-- =================================================================== -->
-    <!-- Session                                                              -->
-    <!-- =================================================================== -->
-
-    <record id="view_sync_test_session_form" model="ir.ui.view">
-        <field name="name">myschool.sync.test.session.form</field>
-        <field name="model">myschool.sync.test.session</field>
-        <field name="arch" type="xml">
-            <form string="SAP Sync Test Session">
-                <header>
-                    <button name="action_refresh_steps"
-                            string="Herlaad stappen"
-                            type="object" class="btn-primary"/>
-                    <button name="action_cleanup_and_reset"
-                            string="Cleanup &amp; reset"
-                            type="object"
-                            confirm="Verwijdert getrackte entiteiten en zet alle stappen op pending. Doorgaan?"/>
-                    <button name="action_open_org_manager"
-                            string="Open Organisation Manager"
-                            type="object"/>
-                    <field name="overall_status" widget="statusbar"
-                           statusbar_visible="pending,in_progress,done"/>
-                </header>
-                <sheet>
-                    <div class="oe_title">
-                        <label for="name"/>
-                        <h1><field name="name" placeholder="Session name"/></h1>
-                    </div>
-                    <group col="4">
-                        <field name="mode"/>
-                        <field name="last_run_at" readonly="1"/>
-                        <field name="testsets_path" colspan="4"/>
-                        <field name="test_person_uuid"
-                               invisible="mode != 'employees'"
-                               required="mode == 'employees'"
-                               colspan="4"/>
-                        <field name="tracked_persoon_ids" readonly="1"
-                               invisible="mode != 'students'" colspan="4"/>
-                        <field name="tracked_classgroups" readonly="1"
-                               invisible="mode != 'students'" colspan="4"/>
-                    </group>
-                    <notebook>
-                        <page string="Steps" name="steps">
-                            <field name="step_ids" nolabel="1"
-                                   context="{'default_session_id': id}">
-                                <list create="0" delete="0"
-                                      decoration-success="status == 'completed_ok'"
-                                      decoration-danger="status == 'completed_errors'"
-                                      decoration-info="status == 'running'"
-                                      decoration-muted="status == 'pending'">
-                                    <field name="sequence" string="#"/>
-                                    <field name="name"/>
-                                    <field name="status_label" string="Status"/>
-                                    <field name="last_run_at"/>
-                                    <field name="new_betask_count" string="New tasks"/>
-                                    <field name="processed_ok_count" string="OK"/>
-                                    <field name="processed_err_count" string="Err"/>
-                                    <button name="action_run" string="Run"
-                                            type="object" icon="fa-play"
-                                            class="btn-primary"/>
-                                    <button name="action_jump_to" string="Jump"
-                                            type="object" icon="fa-eye"/>
-                                    <button name="action_reset_to_here"
-                                            string="Reset"
-                                            type="object" icon="fa-undo"
-                                            confirm="Cleanup + replay eerdere stappen?"/>
-                                </list>
-                            </field>
-                        </page>
-                        <page string="Huidige stap — debug log" name="debug"
-                              invisible="not current_step_id">
-                            <field name="current_step_id" readonly="1"
-                                   options="{'no_open': false}"/>
-                        </page>
-                    </notebook>
-                </sheet>
-            </form>
-        </field>
-    </record>
-
-    <record id="view_sync_test_session_list" model="ir.ui.view">
-        <field name="name">myschool.sync.test.session.list</field>
-        <field name="model">myschool.sync.test.session</field>
-        <field name="arch" type="xml">
-            <list string="Sync Test Sessions">
-                <field name="name"/>
-                <field name="mode"/>
-                <field name="overall_status"/>
-                <field name="last_run_at"/>
-                <field name="create_uid" string="Owner"/>
-                <field name="create_date"/>
-            </list>
-        </field>
-    </record>
-
-    <record id="view_sync_test_session_search" model="ir.ui.view">
-        <field name="name">myschool.sync.test.session.search</field>
-        <field name="model">myschool.sync.test.session</field>
-        <field name="arch" type="xml">
-            <search string="Sessions">
-                <field name="name"/>
-                <field name="mode"/>
-                <filter name="mine" string="My sessions"
-                        domain="[('create_uid','=',uid)]"/>
-                <separator/>
-                <filter name="employees" string="Employees"
-                        domain="[('mode','=','employees')]"/>
-                <filter name="students" string="Klassen &amp; Studenten"
-                        domain="[('mode','=','students')]"/>
-            </search>
         </field>
     </record>
 
     <!-- Action -->
     <record id="action_sync_test_runner" model="ir.actions.act_window">
-        <field name="name">Sync Test Runner</field>
-        <field name="res_model">myschool.sync.test.session</field>
-        <field name="view_mode">list,form</field>
-        <field name="search_view_id" ref="view_sync_test_session_search"/>
-        <field name="context">{'search_default_mine': 1}</field>
+        <field name="name">SAP Sync Test Runner</field>
+        <field name="res_model">myschool.sync.test.runner</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
     </record>
 
 </odoo>

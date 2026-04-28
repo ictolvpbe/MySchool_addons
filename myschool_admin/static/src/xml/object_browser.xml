@@ -38,15 +38,6 @@
              t-on-contextmenu="onContextMenu">
             <!-- Node Row -->
             <div class="ob-row" t-att-class="{ 'ob-row-expandable': hasChildren, 'ob-row-selected': isSelected }" t-on-click="onRowClick">
-                <!-- Checkbox for selection mode - only show when selectionMode is true -->
-                <t t-if="props.selectionMode">
-                    <input type="checkbox" 
-                           class="ob-checkbox-select"
-                           t-att-checked="isSelected"
-                           t-on-change="onCheckboxChange"
-                           t-on-click.stop=""/>
-                </t>
-                
                 <!-- Toggle Button -->
                 <t t-if="hasChildren">
                     <span class="ob-toggle" t-on-click.stop="toggle">
@@ -103,12 +94,10 @@
                                       activeNodeType="props.activeNodeType"
                                       onSelectNode="props.onSelectNode"
                                       onContextMenu="props.onContextMenu"
-                                      onToggleSelect="props.onToggleSelect"
                                       onDragStart="props.onDragStart"
                                       onDragOver="props.onDragOver"
                                       onDrop="props.onDrop"
                                       selectedIds="props.selectedIds"
-                                      selectionMode="props.selectionMode"
                                       draggedNode="props.draggedNode"
                                       expandedIds="props.expandedIds"
                                       onToggleExpand="props.onToggleExpand"/>
@@ -124,12 +113,10 @@
                                       activeNodeType="props.activeNodeType"
                                       onSelectNode="props.onSelectNode"
                                       onContextMenu="props.onContextMenu"
-                                      onToggleSelect="props.onToggleSelect"
                                       onDragStart="props.onDragStart"
                                       onDragOver="props.onDragOver"
                                       onDrop="props.onDrop"
                                       selectedIds="props.selectedIds"
-                                      selectionMode="props.selectionMode"
                                       draggedNode="props.draggedNode"
                                       expandedIds="props.expandedIds"
                                       onToggleExpand="props.onToggleExpand"/>
@@ -186,7 +173,7 @@
                         <t t-if="filteredPersons.length">
                             <t t-foreach="filteredPersons" t-as="person" t-key="person.id">
                                 <div class="ob-member-row"
-                                     t-att-class="{ 'ob-member-row-selected': props.selectedMemberId === person.id and props.selectedMemberType === 'person' }"
+                                     t-att-class="{ 'ob-member-row-selected': props.selectedMemberId === person.id and props.selectedMemberType === 'person', 'ob-member-row-multi': isMemberMultiSelected(person.id, 'person') }"
                                      t-on-click="onMemberClick"
                                      t-on-contextmenu="onMemberContextMenu"
                                      t-att-data-model="person.model"
@@ -217,7 +204,7 @@
                         <t t-if="filteredPersongroups.length">
                             <t t-foreach="filteredPersongroups" t-as="group" t-key="group.id">
                                 <div class="ob-member-row"
-                                     t-att-class="{ 'ob-member-row-selected': props.selectedMemberId === group.id and props.selectedMemberType === 'persongroup' }"
+                                     t-att-class="{ 'ob-member-row-selected': props.selectedMemberId === group.id and props.selectedMemberType === 'persongroup', 'ob-member-row-multi': isMemberMultiSelected(group.id, 'persongroup') }"
                                      t-on-click="onMemberClick"
                                      t-on-contextmenu="onMemberContextMenu"
                                      t-att-data-model="group.model"
@@ -543,11 +530,6 @@
                     Administrative
                 </label>
                 <div class="ob-toolbar-sep"></div>
-                <button class="ob-toolbar-btn" t-on-click="toggleSelectionMode"
-                        t-att-class="state.selectionMode ? 'ob-toolbar-btn-active' : ''">
-                    <i t-att-class="state.selectionMode ? 'fa fa-check-square' : 'fa fa-square-o'"/>
-                    Select
-                </button>
                 <button class="ob-toolbar-btn" t-on-click="onRefresh">
                     <i class="fa fa-refresh"/> Refresh
                 </button>
@@ -565,10 +547,10 @@
                 </button>
             </div>
             
-            <!-- Bulk Actions Bar (shown when items selected) -->
-            <t t-if="state.selectionMode and selectedCount > 0">
+            <!-- Bulk Actions Bar (shown whenever ≥1 item is selected) -->
+            <t t-if="selectedCount > 0">
                 <div class="ob-bulk-bar">
-                    <span class="ob-bulk-count"><t t-esc="selectedCount"/> selected</span>
+                    <span class="ob-bulk-count"><t t-esc="selectedCount"/> geselecteerd</span>
                     <button class="ob-btn ob-btn-sm" t-on-click="bulkAssignRole">
                         <i class="fa fa-id-badge" style="margin-right: 4px;"/>Assign Role
                     </button>
@@ -576,10 +558,7 @@
                         <i class="fa fa-arrows" style="margin-right: 4px;"/>Move to Org
                     </button>
                     <button class="ob-btn ob-btn-sm ob-btn-danger" t-on-click="bulkDelete">
-                        <i class="fa fa-trash" style="margin-right: 4px;"/>Delete
-                    </button>
-                    <button class="ob-btn ob-btn-sm" t-on-click="clearSelection">
-                        <i class="fa fa-times" style="margin-right: 4px;"/>Clear
+                        <i class="fa fa-trash" style="margin-right: 4px;"/>Verwijderen
                     </button>
                 </div>
             </t>
@@ -621,18 +600,16 @@
                         
                         <t t-else="">
                             <t t-foreach="state.treeData.organizations" t-as="org" t-key="org.id">
-                                <TreeNode node="org" 
-                                          level="0" 
+                                <TreeNode node="org"
+                                          level="0"
                                           activeNodeId="state.activeNode?.id"
                                           activeNodeType="state.activeNode?.type"
                                           onSelectNode="onSelectNode"
                                           onContextMenu="onContextMenu"
-                                          onToggleSelect="onToggleSelect"
                                           onDragStart="onDragStart"
                                           onDragOver="onDragOver"
                                           onDrop="onDrop"
                                           selectedIds="state.selectedIds"
-                                          selectionMode="state.selectionMode"
                                           draggedNode="state.draggedNode"
                                           expandedIds="state.expandedIds"
                                           onToggleExpand="onToggleExpand"/>
@@ -642,7 +619,7 @@
                 </div>
                 
                 <!-- Members Panel -->
-                <MembersPanel 
+                <MembersPanel
                     node="state.activeOrgNode"
                     members="state.membersData"
                     loading="state.membersLoading"
@@ -651,7 +628,8 @@
                     onMemberSelect="onMemberSelect"
                     onPasswordClick="onPasswordClick"
                     selectedMemberId="state.activeNode?.id"
-                    selectedMemberType="state.activeNode?.type"/>
+                    selectedMemberType="state.activeNode?.type"
+                    selectedIds="state.selectedIds"/>
                 
                 <!-- Details Panel -->
                 <DetailsPanel node="state.activeNode"

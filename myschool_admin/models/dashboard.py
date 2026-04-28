@@ -10,21 +10,39 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
-class Dashboard(models.TransientModel):
-    _name = 'myschool.dashboard'
-    _description = 'MySchool Dashboard'
+class AdminDashboard(models.TransientModel):
+    _name = 'myschool.admin.dashboard'
+    _description = 'MySchool Admin Dashboard'
 
     name = fields.Char(default='Dashboard')
 
     @api.model
     def get_dashboard_data(self):
-        """Return all dashboard data in a single RPC call."""
+        """Return all dashboard data in a single RPC call.
+
+        Each section is wrapped in try/except so one broken query doesn't
+        wipe out the whole dashboard — the template falls back to 0/empty
+        for missing sections.
+        """
+        def safe(section, fn):
+            try:
+                return fn()
+            except Exception:
+                _logger.exception('Dashboard section %r failed', section)
+                return None
+
         return {
-            'kpis': self._get_kpis(),
-            'hero_stats': self._get_hero_stats(),
-            'recent_tasks': self._get_recent_tasks(),
-            'system_events': self._get_system_events(),
-            'recent_activity': self._get_recent_activity(),
+            'kpis': safe('kpis', self._get_kpis) or {
+                'active_students': 0, 'active_employees': 0,
+                'organizations': 0, 'classgroups': 0,
+                'pending_tasks': 0, 'error_tasks': 0,
+            },
+            'hero_stats': safe('hero_stats', self._get_hero_stats) or {
+                'organizations': 0, 'persons': 0, 'roles': 0,
+            },
+            'recent_tasks': safe('recent_tasks', self._get_recent_tasks) or [],
+            'system_events': safe('system_events', self._get_system_events) or [],
+            'recent_activity': safe('recent_activity', self._get_recent_activity) or [],
         }
 
     # ------------------------------------------------------------------
