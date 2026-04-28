@@ -61,6 +61,18 @@
         <field name="view_mode">list,form</field>
     </record>
 
+    <!-- Action: Per Leerkracht (Directie) — overzicht van afgeronde activiteiten per leerkracht -->
+    <record id="action_activiteiten_per_employee" model="ir.actions.act_window">
+        <field name="name">Per leerkracht</field>
+        <field name="res_model">activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{
+            'search_default_state_done': 1,
+            'search_default_date_school_year': 1,
+            'search_default_group_leerkracht': 1,
+        }</field>
+    </record>
+
     <!-- Root Menu -->
     <menuitem id="menu_activiteiten_root"
               name="Activiteiten"
@@ -100,8 +112,15 @@
               name="Alle Aanvragen"
               parent="menu_activiteiten_root"
               action="action_activiteiten_all"
-              groups="activiteiten.group_activiteiten_admin"
+              groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin"
               sequence="14"/>
+
+    <menuitem id="menu_activiteiten_per_employee"
+              name="Per leerkracht"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_per_employee"
+              groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin"
+              sequence="15"/>
 
     <menuitem id="menu_activiteiten_my"
               name="Mijn Aanvragen"

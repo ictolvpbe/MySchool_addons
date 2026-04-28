@@ -199,6 +199,15 @@
                         </group>
                     </group>
 
+                    <!-- Indienen-knop onderaan de form (links uitgelijnd) -->
+                    <div class="d-flex justify-content-start mt-3 mb-3"
+                         invisible="state not in ('draft', 'form_invullen', 'bus_refused')">
+                        <button name="action_open_details"
+                                string="Indienen"
+                                type="object"
+                                class="btn-primary"/>
+                    </div>
+
                     <!-- Extra info knop: opent dialoog (alleen als "Indienen" niet meer zichtbaar is) -->
                     <div class="d-flex justify-content-end mt-3 mb-3"
                          invisible="not activity_type or state in ('draft', 'form_invullen', 'bus_refused')">
@@ -398,17 +407,35 @@
                 <separator/>
                 <filter string="Concept" name="state_draft"
                         domain="[('state', '=', 'draft')]"/>
+                <filter string="Formulier invullen" name="state_form_invullen"
+                        domain="[('state', '=', 'form_invullen')]"/>
+                <filter string="Bus geweigerd" name="state_bus_refused"
+                        domain="[('state', '=', 'bus_refused')]"/>
                 <filter string="Goedgekeurd" name="state_approved"
                         domain="[('state', '=', 'approved')]"/>
                 <filter string="Afgekeurd" name="state_rejected"
                         domain="[('state', '=', 'rejected')]"/>
                 <filter string="Afgerond" name="state_done"
                         domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter string="Deze maand" name="date_this_month"
+                        domain="[('datetime', '&gt;=', (context_today()).strftime('%Y-%m-01'))]"/>
+                <filter string="Vorige maand" name="date_last_month"
+                        domain="[('datetime', '&gt;=', (context_today() + relativedelta(months=-1)).strftime('%Y-%m-01')),
+                                 ('datetime', '&lt;', context_today().strftime('%Y-%m-01'))]"/>
+                <filter string="Dit jaar" name="date_this_year"
+                        domain="[('datetime', '&gt;=', (context_today()).strftime('%Y-01-01'))]"/>
+                <filter string="Dit schooljaar" name="date_school_year"
+                        domain="[('datetime', '&gt;=', (context_today() if context_today().month >= 9 else context_today() + relativedelta(years=-1)).strftime('%Y-09-01'))]"/>
                 <group>
                     <filter string="Status" name="group_state"
                             domain="[]" context="{'group_by': 'state'}"/>
                     <filter string="Type" name="group_type"
                             domain="[]" context="{'group_by': 'activity_type'}"/>
+                    <filter string="Leerkracht" name="group_leerkracht"
+                            domain="[]" context="{'group_by': 'leerkracht_ids'}"/>
+                    <filter string="Startdatum" name="group_datetime"
+                            domain="[]" context="{'group_by': 'datetime:month'}"/>
                 </group>
             </search>
         </field>

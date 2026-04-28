@@ -164,10 +164,21 @@
     background-color: transparent !important;
 }
 
+/* Klikbare badge-knoppen: verwijder button-default styling */
+button.ms-badge-btn {
+    border: none;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+}
+button.ms-badge-btn:hover {
+    filter: brightness(0.92);
+    text-decoration: none;
+}
+
 /* --- Grid layout (2-column) --- */
 .ms-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 1fr 2fr;
     gap: 20px;
     margin-bottom: 24px;
 }

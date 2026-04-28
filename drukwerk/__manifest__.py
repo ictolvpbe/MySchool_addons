@@ -1,6 +1,6 @@
 {
-    'name': 'Drukwerk',
-    'version': '2.6',
+    'name': 'Afdrukcentrum',
+    'version': '4.1',
     'summary': 'Aanvragen van drukwerk per leerling/klas voor doorrekening op factuur',
     'description': """
         Het aanvragen van drukwerk per leerling in klas dat er na wordt
@@ -21,12 +21,15 @@
         'views/drukwerk_config_views.xml',
         'views/drukwerk_report_views.xml',
         'wizard/student_select_wizard_views.xml',
+        'wizard/print_confirm_wizard_views.xml',
         'views/drukwerk_menu.xml',
     ],
     'assets': {
         'web.assets_backend': [
             'drukwerk/static/src/js/drukwerk_cog_menu.js',
+            'drukwerk/static/src/js/drukwerk_print_action.js',
             'drukwerk/static/src/xml/drukwerk_cog_menu.xml',
+            'drukwerk/static/src/scss/drukwerk.scss',
         ],
     },
     'installable': True,

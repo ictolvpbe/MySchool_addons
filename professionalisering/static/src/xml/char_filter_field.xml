@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="professionalisering.CharFilterField">
+        <input type="text"
+               class="o_input"
+               t-att-placeholder="props.placeholder"
+               t-att-value="value"
+               t-on-input="onInput"/>
+    </t>
+
+</templates>

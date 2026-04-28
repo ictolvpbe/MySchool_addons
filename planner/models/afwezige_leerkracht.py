@@ -159,7 +159,6 @@ class AfwezigeLeerkracht(models.Model):
                 JOIN professionalisering_invite inv ON inv.professionalisering_id = pr.id
                 JOIN hr_employee emp ON emp.id = inv.employee_id
                 WHERE pr.state IN ('bevestiging', 'done')
-                  AND inv.state = 'accepted'
             """)
 
         sql = " UNION ALL ".join(parts)

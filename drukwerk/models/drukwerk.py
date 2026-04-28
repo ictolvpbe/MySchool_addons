@@ -68,12 +68,7 @@ class DrukwerkRecord(models.Model):
     # --- Document fields ---
     document_file = fields.Binary(string='Document', attachment=True)
     document_filename = fields.Char(string='Bestandsnaam')
-    aantal_paginas = fields.Integer(
-        string="Pagina's",
-        compute='_compute_aantal_paginas',
-        store=True,
-        default=1,
-    )
+    aantal_paginas = fields.Integer(string="Pagina's", default=1)
     aantal_kopies = fields.Integer(
         string='Kopieën',
         compute='_compute_aantal_kopies',
@@ -149,6 +144,25 @@ class DrukwerkRecord(models.Model):
         ('done', 'Afgerond'),
     ], string='Status', default='draft', required=True, tracking=True)
     is_owner = fields.Boolean(compute='_compute_is_owner')
+    can_select_color = fields.Boolean(compute='_compute_can_select_color')
+
+    @api.depends_context('uid')
+    def _compute_can_select_color(self):
+        allowed = (
+            self.env.user.has_group('drukwerk.group_drukwerk_personeelslid_kleur')
+            or self.env.user.has_group('drukwerk.group_drukwerk_admin')
+        )
+        for record in self:
+            record.can_select_color = allowed
+
+    @api.constrains('kleur')
+    def _check_kleur_permission(self):
+        for record in self:
+            if record.kleur == 'kleur' and not record.can_select_color:
+                raise ValidationError(
+                    "U heeft geen rechten om kleur-drukwerk aan te vragen. "
+                    "Vraag een collega met de rol 'Personeelslid Kleur' om de aanvraag in te dienen."
+                )
 
     @api.depends('dubbelzijdig', 'nieten', 'perforeren', 'liggend',
                  'sorteren', 'a3_plooien', 'boekje_a4',
@@ -344,19 +358,46 @@ class DrukwerkRecord(models.Model):
             if record.document_filename and not record.document_filename.lower().endswith('.pdf'):
                 raise ValidationError("Alleen PDF-bestanden zijn toegestaan. Upload een .pdf bestand.")
 
-    @api.depends('document_file')
-    def _compute_aantal_paginas(self):
+    def _recount_pages(self):
+        """Update aantal_paginas and liggend by reading the PDF from document_file."""
         for record in self:
             if not record.document_file:
-                record.aantal_paginas = 1
                 continue
             try:
                 pdf_data = base64.b64decode(record.document_file)
                 page_count = self._count_pdf_pages(pdf_data)
-                record.aantal_paginas = page_count if page_count > 0 else 1
+                if page_count > 0:
+                    record.aantal_paginas = page_count
+                record.liggend = self._is_pdf_landscape(pdf_data)
             except Exception:
-                _logger.warning('Could not count pages for %s', record.document_filename, exc_info=True)
-                record.aantal_paginas = 1
+                _logger.warning('Could not read PDF info for %s', record.document_filename, exc_info=True)
+
+    @api.onchange('document_file', 'document_filename')
+    def _onchange_document_file(self):
+        if self.document_file and self.document_filename and self.document_filename.lower().endswith('.pdf'):
+            self._recount_pages()
+
+    @staticmethod
+    def _is_pdf_landscape(pdf_bytes):
+        """Return True if the first page of the PDF is landscape (width > height)."""
+        try:
+            from PyPDF2 import PdfReader
+            page = PdfReader(io.BytesIO(pdf_bytes)).pages[0]
+            mb = page.mediabox
+            return float(mb.width) > float(mb.height)
+        except (ImportError, Exception):
+            pass
+        try:
+            import pikepdf
+            pdf = pikepdf.open(io.BytesIO(pdf_bytes))
+            mb = pdf.pages[0].MediaBox
+            width = float(mb[2]) - float(mb[0])
+            height = float(mb[3]) - float(mb[1])
+            pdf.close()
+            return width > height
+        except (ImportError, Exception):
+            pass
+        return False
 
     @staticmethod
     def _count_pdf_pages(pdf_bytes):
@@ -396,7 +437,14 @@ class DrukwerkRecord(models.Model):
         for record in records:
             if not record.name or record.name == 'New':
                 record.sudo().name = self._next_reference()
+        records.filtered(lambda r: r.document_file)._recount_pages()
         return records
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'document_file' in vals:
+            self._recount_pages()
+        return res
 
     def _next_reference(self):
         """Get next unique reference, syncing the sequence if needed."""
@@ -478,9 +526,12 @@ class DrukwerkRecord(models.Model):
         if not self.document_file:
             raise UserError("Geen document beschikbaar om af te drukken.")
         return {
-            'type': 'ir.actions.act_url',
-            'url': f'/drukwerk/print/{self.id}',
-            'target': 'new',
+            'type': 'ir.actions.client',
+            'tag': 'drukwerk_print_and_confirm',
+            'params': {
+                'record_id': self.id,
+                'url': f'/drukwerk/print/{self.id}',
+            },
         }
 
     # --- Shared actions ---
@@ -522,8 +573,16 @@ class DrukwerkRecord(models.Model):
             'target': 'new',
         }
 
+    def action_delete(self):
+        self.unlink()
+        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+
     def unlink(self):
-        if not self.env.user.has_group('drukwerk.group_drukwerk_admin'):
+        privileged = (
+            self.env.user.has_group('drukwerk.group_drukwerk_admin')
+            or self.env.user.has_group('drukwerk.group_drukwerk_drukwerk')
+        )
+        if not privileged:
             for record in self:
                 if record.state not in ('draft', 'form_invullen'):
                     raise UserError("U kunt alleen aanvragen verwijderen die nog niet ingediend zijn.")

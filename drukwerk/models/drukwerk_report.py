@@ -65,17 +65,19 @@ class DrukwerkStudentReport(models.Model):
     _name = 'drukwerk.student.report'
     _description = 'Drukwerk: Overzicht per leerling'
     _auto = False
-    _order = 'klas_id, person_id'
+    _order = 'datum_indiening desc, klas_id, person_id'
 
     person_id = fields.Many2one('myschool.person', string='Leerling', readonly=True)
     klas_id = fields.Many2one('myschool.org', string='Klas', readonly=True)
     school_id = fields.Many2one('myschool.org', string='School', readonly=True)
+    drukwerk_id = fields.Many2one('drukwerk.record', string='Drukwerk', readonly=True)
+    drukwerk_titel = fields.Char(string='Omschrijving', readonly=True)
     drukwerk_type = fields.Selection([
         ('gewoon', 'Gewoon drukwerk'),
         ('examen', 'Examen drukwerk'),
     ], string='Type', readonly=True)
+    datum_indiening = fields.Datetime(string='Indieningsdatum', readonly=True)
     aantal_prints = fields.Integer(string='Aantal prints', readonly=True)
-    aantal_aanvragen = fields.Integer(string='Aantal aanvragen', readonly=True)
     totale_kostprijs = fields.Monetary(
         string='Kost', currency_field='currency_id', readonly=True,
     )
@@ -90,11 +92,13 @@ class DrukwerkStudentReport(models.Model):
                     p.id AS person_id,
                     p.tree_org_id AS klas_id,
                     d.school_id,
+                    d.id AS drukwerk_id,
+                    d.titel AS drukwerk_titel,
                     d.drukwerk_type,
+                    d.create_date AS datum_indiening,
                     d.currency_id,
-                    COALESCE(SUM(d.aantal_paginas), 0) AS aantal_prints,
-                    COUNT(DISTINCT d.id) AS aantal_aanvragen,
-                    COALESCE(SUM(d.cost_per_student), 0) AS totale_kostprijs
+                    d.aantal_paginas AS aantal_prints,
+                    d.cost_per_student AS totale_kostprijs
                 FROM drukwerk_record d
                 JOIN drukwerk_record_student_rel rel
                     ON rel.record_id = d.id
@@ -102,6 +106,5 @@ class DrukwerkStudentReport(models.Model):
                     ON p.id = rel.person_id
                 WHERE d.state = 'done'
                   AND p.tree_org_id IS NOT NULL
-                GROUP BY p.id, p.tree_org_id, d.school_id, d.drukwerk_type, d.currency_id
             )
         """)

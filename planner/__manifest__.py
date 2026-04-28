@@ -1,6 +1,6 @@
 {
     'name': 'Planner',
-    'version': '1.0',
+    'version': '1.1',
     'summary': 'Inhaalplannen voor klassen die afwezig waren door activiteiten',
     'description': """
         Plan inhaalmomenten voor klassen die een activiteit hebben gemist.

@@ -122,17 +122,30 @@
 .o_list_view .btn-primary,
 .o_kanban_view .btn-primary,
 .o_control_panel .btn-primary,
-.modal-content .btn-primary {
+.modal-content .btn-primary,
+.o_list_table .btn-primary {
     background-color: var(--myschool-brand-1) !important;
     border-color: var(--myschool-brand-1) !important;
+    color: #fff !important;
+
+    // Forceer witte tekst op ALLE child-elementen (span, i, .fa, ...)
+    &, & * {
+        color: #fff !important;
+    }
 
     &:hover {
         background-color: #006b78 !important;
         border-color: #006b78 !important;
+        color: #fff !important;
+
+        & * {
+            color: #fff !important;
+        }
     }
 
     &:focus {
         box-shadow: 0 0 0 3px rgba(0, 125, 140, 0.25) !important;
+        color: #fff !important;
     }
 }
 

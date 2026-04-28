@@ -1,6 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_drukwerk_personeelslid,drukwerk.record.personeelslid,model_drukwerk_record,group_drukwerk_personeelslid,1,1,1,1
-access_drukwerk_drukwerk,drukwerk.record.drukwerk,model_drukwerk_record,group_drukwerk_drukwerk,1,1,0,0
+access_drukwerk_drukwerk,drukwerk.record.drukwerk,model_drukwerk_record,group_drukwerk_drukwerk,1,1,0,1
 access_drukwerk_boekhouding,drukwerk.record.boekhouding,model_drukwerk_record,group_drukwerk_boekhouding,1,1,0,0
 access_drukwerk_admin,drukwerk.record.admin,model_drukwerk_record,group_drukwerk_admin,1,1,1,1
 access_drukwerk_line_personeelslid,drukwerk.line.personeelslid,model_drukwerk_line,group_drukwerk_personeelslid,1,1,1,1
@@ -13,6 +13,8 @@ access_myschool_org_type_drukwerk,myschool.org.type.drukwerk,myschool_core.model
 access_myschool_person_drukwerk,myschool.person.drukwerk,myschool_core.model_myschool_person,group_drukwerk_personeelslid,1,0,0,0
 access_student_select_wizard,drukwerk.student.select.wizard,model_drukwerk_student_select_wizard,group_drukwerk_personeelslid,1,1,1,1
 access_student_select_line,drukwerk.student.select.line,model_drukwerk_student_select_line,group_drukwerk_personeelslid,1,1,1,1
+access_print_confirm_wizard_drukwerk,drukwerk.print.confirm.wizard.drukwerk,model_drukwerk_print_confirm_wizard,group_drukwerk_drukwerk,1,1,1,1
+access_print_confirm_wizard_admin,drukwerk.print.confirm.wizard.admin,model_drukwerk_print_confirm_wizard,group_drukwerk_admin,1,1,1,1
 access_drukwerk_config_user,drukwerk.config.user,model_drukwerk_config,group_drukwerk_personeelslid,1,0,0,0
 access_drukwerk_config_manager,drukwerk.config.manager,model_drukwerk_config,group_drukwerk_drukwerk,1,1,1,1
 access_drukwerk_config_boekhouding,drukwerk.config.boekhouding,model_drukwerk_config,group_drukwerk_boekhouding,1,1,1,1

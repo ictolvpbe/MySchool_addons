@@ -9,18 +9,25 @@
                 <header>
                     <!-- Personeelslid: open submit dialog (popup with extra tabs, then confirm) -->
                     <button name="action_open_details"
-                            string="Indienen"
+                            string="Volgende"
                             type="object"
                             class="btn-primary"
                             invisible="state != 'form_invullen'"/>
 
-                    <!-- Personeelslid: reset -->
+                    <!-- Drukwerk team / Admin: wijzigen (reset naar formulier) -->
                     <button name="action_reset_to_form"
-                            string="Terugzetten"
+                            string="Wijzigen"
                             type="object"
                             class="btn-secondary"
                             invisible="state != 'afdrukken'"
-                            groups="drukwerk.group_drukwerk_admin"/>
+                            groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"/>
+                    <!-- Drukwerk team / Admin: verwijderen -->
+                    <button name="action_delete"
+                            string="Verwijderen"
+                            type="object"
+                            class="btn-danger"
+                            confirm="Weet je zeker dat je deze aanvraag wil verwijderen? Dit kan niet ongedaan worden gemaakt."
+                            groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"/>
 
                     <!-- Drukwerk: print PDF -->
                     <button name="action_download_pdf"
@@ -58,6 +65,7 @@
                     <field name="currency_id" invisible="1"/>
                     <field name="available_klas_ids" invisible="1"/>
                     <field name="is_owner" invisible="1"/>
+                    <field name="can_select_color" invisible="1"/>
                     <field name="student_ids" invisible="1"/>
 
                     <group>
@@ -82,13 +90,16 @@
                                    readonly="state not in ('draft', 'form_invullen')"/>
                             <field name="klas_ids" widget="many2many_tags"
                                    readonly="state not in ('draft', 'form_invullen')"/>
-                            <button name="action_view_students"
-                                    type="object"
-                                    class="btn-link ps-0"
-                                    icon="fa-users"
-                                    invisible="not klas_ids">
-                                <field name="student_count" widget="statinfo" string="Leerlingen" nolabel="1"/>
-                            </button>
+                            <label for="student_count" string="Leerlingen"
+                                   invisible="not klas_ids"/>
+                            <div invisible="not klas_ids">
+                                <button name="action_view_students"
+                                        type="object"
+                                        class="btn-link ps-0"
+                                        icon="fa-users">
+                                    <field name="student_count" widget="statinfo" nolabel="1"/>
+                                </button>
+                            </div>
                         </group>
                         <group string="Totalen">
                             <field name="total_pages"/>
@@ -114,7 +125,7 @@
                         </group>
                         <group>
                             <field name="kleur"
-                                   readonly="state not in ('draft', 'form_invullen')"/>
+                                   readonly="state not in ('draft', 'form_invullen') or not can_select_color"/>
                             <field name="formaat"
                                    readonly="state not in ('draft', 'form_invullen')"/>
                             <field name="dik_papier"
@@ -123,7 +134,16 @@
                         </group>
                     </group>
 
-                    <!-- Extra info knop: opent dialoog (alleen als "Indienen" niet meer zichtbaar is) -->
+                    <!-- Volgende-knop onderaan de form (links uitgelijnd) -->
+                    <div class="d-flex justify-content-start mt-3 mb-3"
+                         invisible="state != 'form_invullen'">
+                        <button name="action_open_details"
+                                string="Volgende"
+                                type="object"
+                                class="btn-primary"/>
+                    </div>
+
+                    <!-- Extra info knop: opent dialoog (alleen als "Volgende" niet meer zichtbaar is) -->
                     <div class="d-flex justify-content-end mt-3 mb-3"
                          invisible="not drukwerk_type or state in ('form_invullen', 'afdrukken')">
                         <button name="action_open_details"
@@ -154,21 +174,26 @@
                         </group>
                     </group>
 
-                    <!-- Print options for afdrukken state (papierkleur bewerkbaar) -->
+                    <!-- Print options for afdrukken state — drukwerk team kan alles bewerken -->
                     <group string="Printerinstellingen"
                            invisible="state != 'afdrukken'"
                            groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin">
                         <group>
                             <field name="printer_code" readonly="1"/>
-                            <field name="dubbelzijdig" readonly="1"/>
-                            <field name="nieten" readonly="1"/>
-                            <field name="perforeren" readonly="1"/>
-                            <field name="liggend" readonly="1"/>
+                            <field name="kleur"/>
+                            <field name="formaat"/>
+                            <field name="dik_papier"
+                                   invisible="drukwerk_type != 'gewoon'"/>
+                            <field name="dubbelzijdig"/>
+                            <field name="nieten"/>
+                            <field name="perforeren"/>
+                            <field name="liggend" readonly="1"
+                                   help="Automatisch gedetecteerd uit de PDF"/>
                         </group>
                         <group>
-                            <field name="sorteren" readonly="1"/>
-                            <field name="a3_plooien" readonly="1"/>
-                            <field name="boekje_a4" readonly="1"/>
+                            <field name="sorteren"/>
+                            <field name="a3_plooien"/>
+                            <field name="boekje_a4"/>
                             <field name="papier_kleur"/>
                             <field name="gekleurd_papier"
                                    invisible="papier_kleur == 'geen'"/>
@@ -207,8 +232,8 @@
                                        readonly="state not in ('draft', 'form_invullen')"/>
                                 <field name="perforeren"
                                        readonly="state not in ('draft', 'form_invullen')"/>
-                                <field name="liggend"
-                                       readonly="state not in ('draft', 'form_invullen')"/>
+                                <field name="liggend" readonly="1"
+                                       help="Automatisch gedetecteerd uit de PDF"/>
                                 <field name="sorteren"
                                        readonly="state not in ('draft', 'form_invullen')"/>
                             </group>
@@ -291,6 +316,8 @@
                 <filter string="Mijn aanvragen" name="my_requests"
                         domain="[('create_uid', '=', uid)]"/>
                 <separator/>
+                <filter string="Formulier invullen" name="state_form_invullen"
+                        domain="[('state', '=', 'form_invullen')]"/>
                 <filter string="Te drukken" name="to_print"
                         domain="[('state', '=', 'afdrukken')]"/>
                 <filter string="Afgerond" name="done"
