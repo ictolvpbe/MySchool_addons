@@ -22,12 +22,12 @@
         <field name="context">{'search_default_to_approve': 1}</field>
     </record>
 
-    <!-- Action: Payments (Boekhouding) -->
+    <!-- Action: Approved (Boekhouding) -->
     <record id="action_professionalisering_payments" model="ir.actions.act_window">
-        <field name="name">Betalingen</field>
+        <field name="name">Goedgekeurd</field>
         <field name="res_model">professionalisering.record</field>
         <field name="view_mode">list,form</field>
-        <field name="context">{'search_default_payment_pending': 1}</field>
+        <field name="context">{'search_default_state_done': 1}</field>
     </record>
 
     <!-- Action: Replacements (Vervangingen) -->
@@ -36,6 +36,43 @@
         <field name="res_model">professionalisering.record</field>
         <field name="view_mode">list,form</field>
         <field name="context">{'search_default_replacement_pending': 1}</field>
+    </record>
+
+    <!-- Action: Per Leerkracht (Directie) — overzicht van afgeronde professionaliseringen per leerkracht -->
+    <record id="action_professionalisering_per_employee" model="ir.actions.act_window">
+        <field name="name">Per leerkracht</field>
+        <field name="res_model">professionalisering.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{
+            'search_default_state_done': 1,
+            'search_default_date_school_year': 1,
+            'search_default_group_employee': 1,
+        }</field>
+    </record>
+
+    <!-- Action: Adressen (Directie + Admin) — beheer locaties voor professionaliseringen -->
+    <record id="action_professionalisering_addresses" model="ir.actions.act_window">
+        <field name="name">Adressen</field>
+        <field name="res_model">professionalisering.address</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_professionalisering_address_search"/>
+        <field name="group_ids" eval="[(6, 0, [
+            ref('group_professionalisering_directie'),
+            ref('group_professionalisering_admin'),
+        ])]"/>
+    </record>
+
+    <!-- Action: Te bevestigen adressen (gefilterde variant) -->
+    <record id="action_professionalisering_addresses_review" model="ir.actions.act_window">
+        <field name="name">Te bevestigen adressen</field>
+        <field name="res_model">professionalisering.address</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_professionalisering_address_search"/>
+        <field name="domain">[('needs_review', '=', True)]</field>
+        <field name="group_ids" eval="[(6, 0, [
+            ref('group_professionalisering_directie'),
+            ref('group_professionalisering_admin'),
+        ])]"/>
     </record>
 
     <!-- Action: All Requests -->
@@ -67,6 +104,20 @@
               groups="professionalisering.group_professionalisering_directie"
               sequence="10"/>
 
+    <menuitem id="menu_professionalisering_per_employee"
+              name="Per leerkracht"
+              parent="menu_professionalisering_root"
+              action="action_professionalisering_per_employee"
+              groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+              sequence="15"/>
+
+    <menuitem id="menu_professionalisering_addresses"
+              name="Adressen"
+              parent="menu_professionalisering_root"
+              action="action_professionalisering_addresses"
+              groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+              sequence="17"/>
+
     <menuitem id="menu_professionalisering_payments"
               name="Betalingen"
               parent="menu_professionalisering_root"
@@ -85,7 +136,7 @@
               name="Alle Aanvragen"
               parent="menu_professionalisering_root"
               action="action_professionalisering_all"
-              groups="professionalisering.group_professionalisering_admin"
+              groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
               sequence="40"/>
 
     <menuitem id="menu_professionalisering_my"

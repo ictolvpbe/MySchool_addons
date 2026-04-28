@@ -1,7 +1,287 @@
 import ast
+import logging
+
+import requests
 
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
+
+_logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Geocoding & route-distance helpers (Nominatim + OSRM, beide gratis/no-key)
+# ---------------------------------------------------------------------------
+NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
+OSRM_URL = 'https://router.project-osrm.org/route/v1/driving'
+HTTP_USER_AGENT = 'OLVP-MySchool-Odoo/1.0 (ict@olvp.be)'
+HTTP_TIMEOUT = 10
+
+
+def _geocode_address(query):
+    """Vraagt Nominatim om lat/lon voor `query`. Returnt (lat, lon) of (0, 0)."""
+    if not query or not query.strip():
+        return 0.0, 0.0
+    try:
+        resp = requests.get(
+            NOMINATIM_URL,
+            params={'q': query, 'format': 'json', 'limit': 1, 'countrycodes': 'be'},
+            headers={'User-Agent': HTTP_USER_AGENT},
+            timeout=HTTP_TIMEOUT,
+        )
+        data = resp.json()
+        if data:
+            return float(data[0]['lat']), float(data[0]['lon'])
+    except Exception as e:
+        _logger.warning('Nominatim geocoding failed for %r: %s', query, e)
+    return 0.0, 0.0
+
+
+def _osrm_distance_km(lat1, lon1, lat2, lon2):
+    """Vraagt OSRM om de wegafstand in km tussen twee punten. Returnt 0.0 bij fout."""
+    if not all([lat1, lon1, lat2, lon2]):
+        return 0.0
+    try:
+        url = f'{OSRM_URL}/{lon1},{lat1};{lon2},{lat2}'
+        resp = requests.get(
+            url,
+            params={'overview': 'false'},
+            headers={'User-Agent': HTTP_USER_AGENT},
+            timeout=HTTP_TIMEOUT,
+        )
+        data = resp.json()
+        if data.get('routes'):
+            return round(data['routes'][0]['distance'] / 1000.0, 1)
+    except Exception as e:
+        _logger.warning('OSRM routing failed (%s,%s -> %s,%s): %s',
+                        lat1, lon1, lat2, lon2, e)
+    return 0.0
+
+
+class ProfessionaliseringAddress(models.Model):
+    _name = 'professionalisering.address'
+    _description = 'Professionalisering Adres / Locatie'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _order = 'organization, name'
+
+    name = fields.Char(string='Naam locatie', required=True, tracking=True,
+                       help='bv. "Sint-Baafshuis Gent", "Boogkeers 5, Antwerpen", "Online"')
+    organization = fields.Char(string='Organisatie / Aanbieder',
+                               help='bv. "Katholiek Onderwijs Vlaanderen", "CNO", "VVKSO"')
+    is_online = fields.Boolean(string='Online / Webinar', default=False,
+                               help='Voor online opleidingen, webinars, Teams-sessies, ...')
+    # Location address
+    street = fields.Char(string='Straat')
+    number = fields.Char(string='Nr.')
+    postal_code = fields.Char(string='Postcode')
+    city = fields.Char(string='Gemeente')
+    country_id = fields.Many2one(
+        'res.country', string='Land',
+        default=lambda self: self.env['res.country'].search([('code', '=', 'BE')], limit=1),
+    )
+    # Billing address (per organisatie)
+    billing_street = fields.Char(string='Facturatieadres',
+                                 help='Adres voor facturatie (per organisatie).')
+    billing_postal_code = fields.Char(string='Facturatiepostcode')
+    billing_city = fields.Char(string='Facturatiegemeente')
+    note = fields.Char(string='Opmerking', help='Optionele info, bv. zaalnaam of verdieping.')
+    display_address = fields.Char(
+        string='Volledig adres', compute='_compute_display_address', store=True,
+    )
+    active = fields.Boolean(default=True)
+    needs_review = fields.Boolean(
+        string='Te bevestigen door directie',
+        default=False,
+        tracking=True,
+        help='Toegevoegd door een medewerker via de adres-picker. '
+             'Directie moet de details (straat, postcode, ...) aanvullen.',
+    )
+    latitude = fields.Float(string='Lat', digits=(10, 7), copy=False)
+    longitude = fields.Float(string='Lon', digits=(10, 7), copy=False)
+
+    def _geocode_query(self):
+        """Bouwt een query voor Nominatim op basis van straat + nr + postcode + gemeente."""
+        self.ensure_one()
+        if self.is_online:
+            return ''
+        parts = [
+            f'{self.street or ""} {self.number or ""}'.strip(),
+            f'{self.postal_code or ""} {self.city or ""}'.strip(),
+        ]
+        return ', '.join(p for p in parts if p)
+
+    def action_geocode(self):
+        """Manueel of automatisch — geocodeer dit adres via Nominatim."""
+        for rec in self:
+            if rec.is_online:
+                continue
+            query = rec._geocode_query()
+            if not query:
+                continue
+            lat, lon = _geocode_address(query)
+            if lat and lon:
+                rec.write({'latitude': lat, 'longitude': lon})
+        return True
+
+    def action_mark_reviewed(self):
+        """Door directie aangeklikt om de placeholder als bevestigd te markeren."""
+        for rec in self:
+            rec.needs_review = False
+            # Sluit eventuele openstaande activiteiten af
+            rec.activity_ids.filtered(
+                lambda a: a.activity_type_id.xml_id == 'mail.mail_activity_data_todo'
+            ).action_done()
+        return True
+
+    def _notify_directie_for_review(self, source_record=None):
+        """Stuur TODO-activity + clickable bus-popup naar directie zodat ze het adres kunnen aanvullen.
+        De bus-popup gebruikt een aangepast kanaal zodat we een knop kunnen toevoegen die
+        direct de gefilterde lijst opent."""
+        directie_group = self.env.ref(
+            'professionalisering.group_professionalisering_directie',
+            raise_if_not_found=False,
+        )
+        if not directie_group:
+            return
+        # URL naar de gefilterde-variant action — heeft een hard-coded domain dus
+        # automatisch alleen 'needs_review' records.
+        list_url = (
+            '/odoo/action-professionalisering.action_professionalisering_addresses_review'
+        )
+        for rec in self:
+            if source_record and source_record.school_id:
+                directie_users = directie_group.user_ids.filtered(
+                    lambda u: source_record.school_id in u.school_ids
+                )
+            else:
+                directie_users = directie_group.user_ids
+            origin = (
+                f' voor de aanvraag "{source_record.titel}" van {source_record.employee_id.name}'
+                if source_record else ''
+            )
+            note = (
+                f'Een nieuw adres is via de picker toegevoegd{origin}: '
+                f'<strong>{rec.name}</strong>'
+                f'{f" — organisatie: {rec.organization}" if rec.organization else ""}.'
+                f'<br/>Gelieve straat, postcode en gemeente aan te vullen en te bevestigen.'
+                f'<br/><a href="{list_url}" class="btn btn-primary btn-sm mt-2">'
+                f'Open de te bevestigen adressen</a>'
+            )
+            for user in directie_users:
+                rec.sudo().activity_schedule(
+                    'mail.mail_activity_data_todo',
+                    user_id=user.id,
+                    summary='Adres aanvullen / bevestigen',
+                    note=note,
+                )
+                # Aangepast bus-kanaal — JS-listener toont notif met "Naar adressen"-knop
+                self.env['bus.bus']._sendone(
+                    user.partner_id,
+                    'professionalisering_address_review',
+                    {
+                        'title': 'Nieuw adres toegevoegd',
+                        'message': f'"{rec.name}" wacht op bevestiging.',
+                    },
+                )
+            if source_record:
+                rec.sudo().message_post(
+                    body=note,
+                    subtype_xmlid='mail.mt_note',
+                )
+
+    @api.depends('street', 'number', 'postal_code', 'city', 'is_online')
+    def _compute_display_address(self):
+        for rec in self:
+            if rec.is_online:
+                rec.display_address = 'Online'
+                continue
+            line1 = ' '.join(p for p in [rec.street, rec.number] if p)
+            line2 = ' '.join(p for p in [rec.postal_code, rec.city] if p)
+            rec.display_address = ', '.join(p for p in [line1, line2] if p)
+
+    @api.depends('name', 'organization', 'city', 'is_online')
+    def _compute_display_name(self):
+        for rec in self:
+            parts = []
+            if rec.organization:
+                parts.append(rec.organization)
+            if rec.is_online:
+                parts.append('Online')
+            elif rec.name:
+                label = rec.name
+                if rec.city and rec.city.lower() not in label.lower():
+                    label = f'{label} ({rec.city})'
+                parts.append(label)
+            elif rec.city:
+                parts.append(rec.city)
+            rec.display_name = ' — '.join(parts) or '—'
+
+    @api.model
+    def name_search(self, name='', domain=None, operator='ilike', limit=100):
+        """Zoekt over naam + organisatie + gemeente + postcode + straat + nummer
+        zodat 'Antwerpen', 'CNO', '9000', 'Boogkeers' allemaal werken."""
+        if name and operator in ('ilike', '=ilike', '=', 'like', '=like'):
+            search_domain = ['|', '|', '|', '|', '|',
+                ('name', operator, name),
+                ('organization', operator, name),
+                ('city', operator, name),
+                ('postal_code', operator, name),
+                ('street', operator, name),
+                ('number', operator, name),
+            ]
+            if domain:
+                search_domain = ['&'] + search_domain + list(domain)
+            records = self.search(search_domain, limit=limit)
+            return [(r.id, r.display_name) for r in records]
+        return super().name_search(name=name, domain=domain, operator=operator, limit=limit)
+
+    def _get_picker(self):
+        Picker = self.env['professionalisering.address.picker']
+        picker_id = self.env.context.get('picker_id')
+        picker = Picker.browse(picker_id) if picker_id else Picker
+        if not picker.exists():
+            picker = Picker.search(
+                [('create_uid', '=', self.env.uid)],
+                order='id desc', limit=1,
+            )
+        if not picker:
+            raise UserError("Geen actieve picker-sessie gevonden.")
+        return picker
+
+    def action_select_for_picker(self):
+        """Stap 2 — selecteert dit adres en sluit de wizard met bevestiging."""
+        self.ensure_one()
+        picker = self._get_picker()
+        picker.address_id = self.id
+        return picker.action_confirm()
+
+    def action_select_organization_for_picker(self):
+        """Stap 1 — gebruikt de organisatie van dit adres en gaat naar stap 2."""
+        self.ensure_one()
+        picker = self._get_picker()
+        return picker.action_select_organization(self.organization)
+
+
+class MyschoolOrgGeocoded(models.Model):
+    """Voegt lat/lon toe aan myschool.org zodat we afstand kunnen berekenen."""
+    _inherit = 'myschool.org'
+
+    latitude = fields.Float(string='Lat', digits=(10, 7), copy=False)
+    longitude = fields.Float(string='Lon', digits=(10, 7), copy=False)
+
+    def action_geocode(self):
+        for rec in self:
+            parts = [
+                f'{rec.street or ""} {rec.street_nr or ""}'.strip(),
+                f'{rec.postal_code or ""} {rec.community or ""}'.strip(),
+            ]
+            query = ', '.join(p for p in parts if p)
+            if not query:
+                continue
+            lat, lon = _geocode_address(query)
+            if lat and lon:
+                rec.sudo().write({'latitude': lat, 'longitude': lon})
+        return True
 
 
 class HrEmployeeProfessionalisering(models.Model):
@@ -34,7 +314,7 @@ class IrActionsActWindow(models.Model):
                 if user.has_group('professionalisering.group_professionalisering_admin'):
                     pass
                 elif user.has_group('professionalisering.group_professionalisering_boekhouding'):
-                    ctx['search_default_payment_pending'] = 1
+                    ctx['search_default_state_done'] = 1
                 elif user.has_group('professionalisering.group_professionalisering_directie'):
                     pass
                 elif user.has_group('professionalisering.group_professionalisering_vervangingen'):
@@ -50,6 +330,22 @@ class ProfessionaliseringRecord(models.Model):
     _description = 'Professionalisering'
     _inherit = ['mail.thread', 'mail.activity.mixin']
 
+    def _auto_init(self):
+        res = super()._auto_init()
+        Sequence = self.env['ir.sequence'].sudo()
+        if not Sequence.with_context(active_test=False).search_count([('code', '=', 'professionalisering.record')]):
+            Sequence.create({
+                'name': 'Professionalisering',
+                'code': 'professionalisering.record',
+                'prefix': 'PR-',
+                'padding': 5,
+                'number_next': 1,
+                'number_increment': 1,
+                'implementation': 'standard',
+                'company_id': False,
+            })
+        return res
+
     name = fields.Char(
         string='Referentie',
         required=True,
@@ -59,15 +355,13 @@ class ProfessionaliseringRecord(models.Model):
     )
     type = fields.Selection([
         ('individueel', 'Individuele'),
-        ('teamleren', 'Teamleren'),
-    ], string='Type', required=True)
+        # ('teamleren', 'Teamleren'),  # tijdelijk uitgeschakeld
+    ], string='Type', required=True, default='individueel')
     subtype_individueel = fields.Selection([
-        ('cursus', 'Cursus'),
-        ('workshop', 'Workshop'),
+        ('nascholing', 'Nascholing'),
         ('lezen', 'Lezen'),
         ('video', 'Video'),
         ('podcast', 'Podcast'),
-        ('interne_opvolging', 'Interne opvolging'),
     ], string='Vorm')
     subtype_teamleren = fields.Selection([
         ('plc', 'Professional Learning Community (PLC)'),
@@ -75,16 +369,35 @@ class ProfessionaliseringRecord(models.Model):
         ('intervisie', 'Intervisie'),
         ('co_teaching', 'Co-teaching'),
     ], string='Vorm')
-    titel = fields.Char(string='Titel opleiding', required=True)
+    titel = fields.Char(string='Titel opleiding')
+    location_type = fields.Selection([
+        ('address', 'Op locatie'),
+        ('online', 'Online'),
+    ], string='Type locatie', default='address')
+    address_id = fields.Many2one(
+        'professionalisering.address',
+        string='Adres / Locatie',
+        domain="[('is_online', '=', False)]",
+        help='Kies een bestaand adres of typ een nieuw adres in.',
+    )
+    afstand_km = fields.Float(
+        string='Afstand (km)',
+        compute='_compute_afstand_km',
+        store=True,
+        digits=(10, 1),
+        help='Wegafstand heen en terug tussen de school en de locatie (via OSRM).',
+    )
+    link = fields.Char(
+        string='Link',
+        help='URL naar de video of podcast (optioneel).',
+    )
     invite_ids = fields.One2many('professionalisering.invite', 'professionalisering_id', string='Uitnodigingen')
-    has_pending_invites = fields.Boolean(compute='_compute_has_pending_invites')
+    wizard_step = fields.Selection([
+        ('1', 'Gaat een collega mee?'),
+        ('2', 'Datums'),
+        ('3', 'Motivatie'),
+    ], default='1', copy=False)
     show_invites = fields.Boolean(compute='_compute_show_invites')
-    current_user_invited = fields.Boolean(compute='_compute_current_user_invite')
-    current_user_invite_state = fields.Selection([
-        ('pending', 'In afwachting'),
-        ('accepted', 'Geaccepteerd'),
-        ('rejected', 'Geweigerd'),
-    ], compute='_compute_current_user_invite')
     description = fields.Text(string='Beschrijving')
     employee_id = fields.Many2one(
         'hr.employee',
@@ -108,8 +421,9 @@ class ProfessionaliseringRecord(models.Model):
     )
     is_owner = fields.Boolean(compute='_compute_is_owner', compute_sudo=True)
     is_admin = fields.Boolean(compute='_compute_is_admin')
+    is_directie = fields.Boolean(compute='_compute_is_directie')
     allowed_directie_json = fields.Json(compute='_compute_allowed_directie_json')
-    start_date = fields.Date(string='Startdatum', required=True)
+    start_date = fields.Date(string='Startdatum')
     end_date = fields.Date(string='Einddatum')
     duur = fields.Selection([
         ('hele_dag', 'Hele dag'),
@@ -117,10 +431,12 @@ class ProfessionaliseringRecord(models.Model):
         ('namiddag', 'Namiddag'),
         ('meerdere_dagen', 'Meerdere dagen'),
     ], string='Duur', default='hele_dag', required=True)
-    verschillende_dagen = fields.Boolean(string='Verschillende dagen', compute='_compute_verschillende_dagen', store=True)
+    verschillende_dagen = fields.Boolean(
+        string='Niet-aaneensluitende dagen',
+        help='Vink aan voor losstaande dagen, bv. 4 woensdagen verspreid over enkele weken.',
+    )
     date_line_ids = fields.One2many('professionalisering.date.line', 'professionalisering_id', string='Datums')
     dates_display = fields.Html(string='Datums', compute='_compute_dates_display', sanitize=False)
-    cost = fields.Monetary(string='Geschatte kost', currency_field='currency_id')
     currency_id = fields.Many2one(
         'res.currency', string='Munteenheid',
         default=lambda self: self.env.company.currency_id,
@@ -128,6 +444,7 @@ class ProfessionaliseringRecord(models.Model):
     total_cost = fields.Monetary(
         string='Totale kost', currency_field='currency_id',
         compute='_compute_total_cost',
+        help='Totaal van eventuele losstaande dagen-kosten. Geschatte kost is verwijderd: de werkelijke kost komt uit het bewijsdocument.',
     )
     s_code_name = fields.Char(string='S-Code')
     s_code_price = fields.Monetary(
@@ -153,12 +470,18 @@ class ProfessionaliseringRecord(models.Model):
         ('lichamelijke_opvoeding', 'Lichamelijke opvoeding'),
         ('informatica', 'Informatica'),
         ('muziek', 'Muziek'),
+        ('didactiek', 'Didactiek'),
+        ('pedagogie', 'Pedagogie'),
         ('andere', 'Andere'),
     ], string='Vak')
+    vak_andere = fields.Char(
+        string='Vermelding vak',
+        help='Specificeer het vak of geef een korte toelichting bij "Andere".',
+    )
     state = fields.Selection([
         ('selection_of_form', 'Formulier kiezen'),
-        ('fill_in_form_individueel', 'Goedkeuring'),
-        ('fill_in_form_teamleren', 'Goedkeuring'),
+        ('fill_in_form_individueel', 'Goed te keuren'),
+        ('fill_in_form_teamleren', 'Goed te keuren'),
         ('bevestiging', 'Bevestigd'),
         ('weigering', 'Geweigerd'),
         ('done', 'Afgerond'),
@@ -187,12 +510,6 @@ class ProfessionaliseringRecord(models.Model):
     needs_approval = fields.Boolean(compute='_compute_needs_approval')
     needs_payment = fields.Boolean(compute='_compute_needs_payment')
     vorm_display = fields.Char(string='Vorm', compute='_compute_vorm_display')
-    priority = fields.Selection([
-        ('0', 'Normaal'),
-        ('1', 'Laag'),
-        ('2', 'Hoog'),
-        ('3', 'Urgent'),
-    ], string='Prioriteit', default='0')
 
     @api.depends('school_id')
     def _compute_school_company_id(self):
@@ -221,36 +538,19 @@ class ProfessionaliseringRecord(models.Model):
         for record in self:
             record.allowed_directie_json = ids
 
-    @api.depends('invite_ids', 'invite_ids.employee_id', 'invite_ids.state')
-    @api.depends_context('uid')
-    def _compute_current_user_invite(self):
-        for record in self:
-            invite = record.invite_ids.filtered(
-                lambda i: i.employee_id.user_id == self.env.user
-            )[:1]
-            record.current_user_invited = bool(invite)
-            record.current_user_invite_state = invite.state if invite else False
-
-    @api.depends('invite_ids.state')
-    def _compute_has_pending_invites(self):
-        for record in self:
-            record.has_pending_invites = any(
-                inv.state == 'pending' for inv in record.invite_ids
-            )
-
     @api.depends('type', 'subtype_individueel')
     def _compute_show_invites(self):
         for record in self:
             record.show_invites = (
                 record.type == 'teamleren'
                 or (record.type == 'individueel'
-                    and record.subtype_individueel in ('cursus', 'workshop'))
+                    and record.subtype_individueel == 'nascholing')
             )
 
     # Subtypes that skip directie approval and go straight to done
-    _NO_APPROVAL_SUBTYPES = ('lezen', 'video', 'podcast', 'interne_opvolging')
+    _NO_APPROVAL_SUBTYPES = ('lezen', 'video', 'podcast')
     # Subtypes that require S-Code / payment confirmation
-    _PAYMENT_SUBTYPES = ('cursus', 'workshop')
+    _PAYMENT_SUBTYPES = ('nascholing',)
 
     @api.depends('type', 'subtype_individueel')
     def _compute_needs_approval(self):
@@ -280,15 +580,21 @@ class ProfessionaliseringRecord(models.Model):
             else:
                 record.vorm_display = ''
 
-    @api.depends('duur')
-    def _compute_verschillende_dagen(self):
-        for record in self:
-            record.verschillende_dagen = record.duur == 'meerdere_dagen'
-
     @api.onchange('type')
     def _onchange_type(self):
         self.subtype_individueel = False
         self.subtype_teamleren = False
+
+    @api.onchange('duur')
+    def _onchange_duur(self):
+        if self.duur != 'meerdere_dagen':
+            self.verschillende_dagen = False
+            self.end_date = False
+
+    @api.onchange('location_type')
+    def _onchange_location_type(self):
+        if self.location_type == 'online':
+            self.address_id = False
 
     @api.depends('employee_id')
     @api.depends_context('uid')
@@ -301,6 +607,52 @@ class ProfessionaliseringRecord(models.Model):
         is_admin = self.env.user.has_group('professionalisering.group_professionalisering_admin')
         for record in self:
             record.is_admin = is_admin
+
+    @api.depends_context('uid')
+    def _compute_is_directie(self):
+        is_directie = self.env.user.has_group('professionalisering.group_professionalisering_directie')
+        for record in self:
+            record.is_directie = is_directie
+
+    @api.depends('school_id', 'school_id.latitude', 'school_id.longitude',
+                 'address_id', 'address_id.latitude', 'address_id.longitude',
+                 'location_type', 'address_id.is_online')
+    def _compute_afstand_km(self):
+        """Berekent de wegafstand (km) tussen school en locatie via OSRM.
+        Geocodeert lazy als lat/lon nog niet ingevuld zijn."""
+        for record in self:
+            if record.location_type == 'online' or not record.address_id or not record.school_id:
+                record.afstand_km = 0
+                continue
+            if record.address_id.is_online:
+                record.afstand_km = 0
+                continue
+            school = record.school_id
+            addr = record.address_id
+            # Lazy-geocode wanneer nog geen coördinaten
+            if not (school.latitude and school.longitude):
+                school.sudo().action_geocode()
+            if not (addr.latitude and addr.longitude):
+                addr.sudo().action_geocode()
+            if school.latitude and addr.latitude:
+                # Heen en terug = enkele afstand × 2
+                one_way = _osrm_distance_km(
+                    school.latitude, school.longitude,
+                    addr.latitude, addr.longitude,
+                )
+                record.afstand_km = round(one_way * 2, 1)
+            else:
+                record.afstand_km = 0
+
+    def action_recompute_afstand(self):
+        """Knop om afstand te (her)berekenen — forceert ook re-geocoding."""
+        for rec in self:
+            if rec.address_id and not rec.address_id.is_online:
+                rec.address_id.sudo().action_geocode()
+            if rec.school_id:
+                rec.school_id.sudo().action_geocode()
+            rec._compute_afstand_km()
+        return True
 
     @api.depends('verschillende_dagen', 'start_date', 'end_date', 'date_line_ids.date', 'date_line_ids.cost')
     def _compute_dates_display(self):
@@ -327,14 +679,13 @@ class ProfessionaliseringRecord(models.Model):
             else:
                 record.dates_display = ''
 
-    @api.depends('verschillende_dagen', 'cost', 'date_line_ids.cost')
+    @api.depends('verschillende_dagen', 'date_line_ids.cost')
     def _compute_total_cost(self):
         for record in self:
             if record.verschillende_dagen:
-                record.total_cost = (record.cost or 0) + sum(
-                    record.date_line_ids.mapped('cost'))
+                record.total_cost = sum(record.date_line_ids.mapped('cost'))
             else:
-                record.total_cost = record.cost or 0
+                record.total_cost = 0
 
     @api.depends('s_code_price', 'kosten_ids.bedrag')
     def _compute_totale_kost(self):
@@ -364,8 +715,6 @@ class ProfessionaliseringRecord(models.Model):
         for record in self:
             if record.state != 'selection_of_form':
                 raise UserError("Alleen conceptaanvragen kunnen ingediend worden.")
-            if record.has_pending_invites:
-                raise UserError("Niet alle uitnodigingen zijn beantwoord. Wacht tot alle collega's hebben gereageerd.")
             if not record.type:
                 raise UserError("Selecteer eerst een type professionalisering.")
             # Types that skip approval go straight to done
@@ -380,20 +729,135 @@ class ProfessionaliseringRecord(models.Model):
             needs_notification._send_notification('professionalisering.email_template_notify_directie')
             needs_notification._notify_directie_popup()
 
+    def _get_details_action(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Extra info',
+            'res_model': 'professionalisering.record',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('professionalisering.view_professionalisering_form_details').id, 'form')],
+            'target': 'new',
+        }
+
+    def action_open_details(self):
+        self.ensure_one()
+        self.wizard_step = '1'
+        return self._get_details_action()
+
+    def action_wizard_next(self):
+        self.ensure_one()
+        next_step = {'1': '2', '2': '3'}.get(self.wizard_step)
+        # Sla de "Datums"-stap over wanneer er geen losse dagen zijn
+        if next_step == '2' and not self.verschillende_dagen:
+            next_step = '3'
+        if next_step:
+            self.wizard_step = next_step
+        return self._get_details_action()
+
+    def action_wizard_prev(self):
+        self.ensure_one()
+        prev_step = {'2': '1', '3': '2'}.get(self.wizard_step)
+        # Sla de "Datums"-stap over wanneer er geen losse dagen zijn
+        if prev_step == '2' and not self.verschillende_dagen:
+            prev_step = '1'
+        if prev_step:
+            self.wizard_step = prev_step
+        return self._get_details_action()
+
+    def action_submit_from_dialog(self):
+        self.ensure_one()
+        self._validate_for_submit()
+        self.action_submit()
+        return {'type': 'ir.actions.act_window_close'}
+
+    def _validate_for_submit(self):
+        """Server-side check op alle 'verplichte' velden bij indienen.
+        Tijdens drafting hoeven ze niet ingevuld te zijn — pas bij indienen
+        wordt alles gecontroleerd."""
+        self.ensure_one()
+        missing = []
+        if not self.titel:
+            missing.append("Titel opleiding")
+        if self.vak == 'andere' and not self.vak_andere:
+            missing.append("Vermelding vak")
+        # Adres alleen verplicht voor nascholing of teamleren met "Op locatie"
+        needs_address = (
+            self.location_type == 'address'
+            and (self.subtype_individueel == 'nascholing' or self.type == 'teamleren')
+        )
+        if needs_address and not self.address_id:
+            missing.append("Adres / Locatie")
+        # Datum-validatie
+        not_a_reading = self.subtype_individueel not in ('lezen', 'video', 'podcast')
+        if not_a_reading:
+            if self.duur == 'meerdere_dagen' and self.verschillende_dagen:
+                if not self.date_line_ids:
+                    missing.append("Minstens één datum (Datums-tab)")
+            else:
+                if not self.start_date:
+                    missing.append("Startdatum")
+                if self.duur == 'meerdere_dagen' and not self.end_date:
+                    missing.append("Einddatum")
+        if not self.description:
+            missing.append("Motivatie")
+        if missing:
+            raise UserError(
+                "De volgende velden moeten ingevuld zijn voor het indienen:\n• "
+                + "\n• ".join(missing)
+            )
+
+    def action_open_address_picker(self):
+        self.ensure_one()
+        # Maak de picker direct aan zodat zijn id beschikbaar is in de m2m-rij-buttons.
+        picker = self.env['professionalisering.address.picker'].create({
+            'record_id': self.id,
+        })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Geavanceerd kiezen',
+            'res_model': 'professionalisering.address.picker',
+            'res_id': picker.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
     def action_approve(self):
         submitted_states = self._get_submitted_states()
         for record in self:
             if record.state not in submitted_states:
                 raise UserError("Alleen ingediende aanvragen kunnen goedgekeurd worden.")
             record.directie_id = self.env.user.employee_ids[:1]
-            # Types that need payment go to bevestiging, others go straight to done
+            # Notify all invited colleagues now that directie has approved
+            record.invite_ids._notify_invited_employee()
+            record.state = 'done'
+            record._schedule_bewijs_activity_single()
+            # Inform boekhouding about new approved professionalisering with costs
             if record.needs_payment:
-                record.state = 'bevestiging'
-            else:
-                record.state = 'done'
-                record._schedule_bewijs_activity_single()
+                record._notify_boekhouding_new()
         self._send_notification('professionalisering.email_template_notify_employee_approved')
         self._schedule_vervangingen_activity()
+
+    def _notify_boekhouding_new(self):
+        """Inform boekhouding via activity that a new approved professionalisering exists."""
+        self.ensure_one()
+        boekhouding_group = self.env.ref(
+            'professionalisering.group_professionalisering_boekhouding',
+            raise_if_not_found=False,
+        )
+        if not boekhouding_group:
+            return
+        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        for user in boekhouding_group.user_ids:
+            self.activity_schedule(
+                activity_type_id=activity_type.id if activity_type else False,
+                summary='Nieuwe professionalisering goedgekeurd: %s' % self.titel,
+                note=(
+                    'Een nieuwe professionalisering is goedgekeurd door directie. '
+                    'Geschatte kost: %s. Controleer of er financiële opvolging nodig is.'
+                ) % (self.cost or 0),
+                user_id=user.id,
+            )
 
     def action_reject(self):
         submitted_states = self._get_submitted_states()
@@ -403,32 +867,6 @@ class ProfessionaliseringRecord(models.Model):
             record.state = 'weigering'
             record.directie_id = self.env.user.employee_ids[:1]
         self._send_notification('professionalisering.email_template_notify_employee_rejected')
-
-    def action_confirm_payment(self):
-        for record in self:
-            if record.state != 'bevestiging':
-                raise UserError("Betaling kan alleen bevestigd worden voor goedgekeurde aanvragen.")
-            if not record.s_code_name:
-                raise UserError("Vul eerst de S-Code in.")
-            if not record.s_code_price:
-                raise UserError("Vul eerst het S-Code bedrag in.")
-            # Remove existing auto lines and recreate
-            auto_lines = record.kosten_ids.filtered(lambda l: l.is_auto)
-            if auto_lines:
-                auto_lines.with_context(force_unlink_auto=True).unlink()
-            # Calculate verzekering (2% of all costs)
-            manual_total = sum(l.bedrag for l in record.kosten_ids if not l.is_auto)
-            basis_bedrag = (record.s_code_price or 0) + manual_total
-            verzekering_bedrag = basis_bedrag * 0.02
-            self.env['professionalisering.kosten.line'].create({
-                'professionalisering_id': record.id,
-                'omschrijving': 'Verzekering (2%)',
-                'bedrag': verzekering_bedrag,
-                'is_auto': True,
-            })
-            record.payment_done = True
-            record.state = 'done'
-        self._schedule_bewijs_activity()
 
     def action_reset_draft(self):
         for record in self:
@@ -464,9 +902,9 @@ class ProfessionaliseringRecord(models.Model):
             subtype = record.subtype_individueel
             if subtype in ('video', 'podcast') and not record.bewijs_link:
                 raise UserError("Voeg een link toe als bewijs.")
-            elif subtype in ('lezen', 'interne_opvolging') and not record.bewijs_beschrijving:
+            elif subtype == 'lezen' and not record.bewijs_beschrijving:
                 raise UserError("Voeg een beschrijving toe als bewijs.")
-            elif subtype in ('cursus', 'workshop') and not record.bewijs_document_ids:
+            elif subtype == 'nascholing' and not record.bewijs_document_ids:
                 raise UserError("Upload een attest of certificaat als bewijs.")
             elif record.type == 'teamleren' and not record.bewijs_beschrijving and not record.bewijs_document_ids:
                 raise UserError("Voeg een verslag of document toe als bewijs.")
@@ -511,40 +949,40 @@ class ProfessionaliseringRecord(models.Model):
                 if record.end_date < record.start_date:
                     raise ValidationError("De einddatum moet op of na de startdatum liggen.")
 
-    def _get_current_user_invite(self):
-        self.ensure_one()
-        invite = self.invite_ids.filtered(
-            lambda i: i.employee_id.user_id == self.env.user and i.state == 'pending'
-        )[:1]
-        if not invite:
-            raise UserError("U heeft geen openstaande uitnodiging voor deze aanvraag.")
-        return invite
-
-    def action_send_invites(self):
-        for record in self:
-            unsent = record.invite_ids.filtered(lambda i: not i.notified and i.state == 'pending')
-            if not unsent:
-                raise UserError("Er zijn geen nieuwe uitnodigingen om te versturen.")
-            unsent._notify_invited_employee()
-            unsent.write({'notified': True})
-
-    def action_accept_invite(self):
-        for record in self:
-            record._get_current_user_invite().action_accept()
-
-    def action_reject_invite(self):
-        for record in self:
-            record._get_current_user_invite().action_reject()
-
     def action_delete(self):
         self.unlink()
         return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
 
     def _send_notification(self, template_xmlid):
+        """Verstuur een mail-template naar de medewerker. Defensief:
+        - Skip als de medewerker geen geldig e-mailadres heeft
+        - Skip als geen actieve uitgaande mailserver geconfigureerd is
+        - force_send=False: mail komt in de queue (geen blocking popups bij SMTP-fouten)"""
         template = self.env.ref(template_xmlid, raise_if_not_found=False)
-        if template:
-            for record in self:
-                template.send_mail(record.id, force_send=True)
+        if not template:
+            return
+        has_mail_server = self.env['ir.mail_server'].sudo().search_count([('active', '=', True)])
+        for record in self:
+            recipient = (record.employee_id.work_email
+                         or record.employee_id.user_id.email
+                         or '')
+            if not recipient:
+                _logger.info(
+                    'Skipping mail %s for prof %s: no recipient email',
+                    template_xmlid, record.name,
+                )
+                continue
+            if not has_mail_server:
+                _logger.info(
+                    'Skipping mail %s for prof %s: no outgoing mail server configured',
+                    template_xmlid, record.name,
+                )
+                continue
+            try:
+                template.send_mail(record.id, force_send=False)
+            except Exception as e:
+                _logger.warning('Failed to queue mail %s for prof %s: %s',
+                                template_xmlid, record.name, e)
 
     def _notify_directie_popup(self):
         """Send a popup notification to directie users of the same school."""
@@ -597,18 +1035,11 @@ class ProfessionaliseringInvite(models.Model):
         related='professionalisering_id.employee_id', string='Uitgenodigd door',
     )
     employee_id = fields.Many2one(
-        'hr.employee', string='Collega', required=True,
+        'hr.employee.public', string='Collega', required=True,
     )
     employee_school_names = fields.Char(
         string='School', compute='_compute_employee_school_names',
     )
-    state = fields.Selection([
-        ('pending', 'In afwachting'),
-        ('accepted', 'Geaccepteerd'),
-        ('rejected', 'Geweigerd'),
-    ], string='Status', default='pending', tracking=True)
-    notified = fields.Boolean(default=False)
-
     @api.depends('employee_id.user_id.school_ids')
     def _compute_employee_school_names(self):
         for invite in self:
@@ -622,7 +1053,7 @@ class ProfessionaliseringInvite(models.Model):
             invite.employee_school_names = ', '.join(n for n in names if n)
 
     def _notify_invited_employee(self):
-        """Send an Odoo notification for the invited employee."""
+        """Send an Odoo notification (chatter) to the invited employee — only after directie approval."""
         for invite in self:
             if not invite.employee_id.user_id:
                 continue
@@ -630,46 +1061,13 @@ class ProfessionaliseringInvite(models.Model):
             prof.message_post(
                 body=(
                     '<p>Beste %s,</p>'
-                    '<p><strong>%s</strong> heeft u uitgenodigd voor de opleiding '
-                    '<strong>%s</strong>.</p>'
-                    '<p>Open deze aanvraag om de uitnodiging te accepteren of te weigeren.</p>'
+                    '<p>U bent door <strong>%s</strong> opgegeven voor de opleiding '
+                    '<strong>%s</strong>, en de directie heeft dit goedgekeurd.</p>'
                 ) % (invite.employee_id.name, prof.employee_id.name, prof.titel),
                 partner_ids=invite.employee_id.user_id.partner_id.ids,
                 message_type='notification',
                 subtype_xmlid='mail.mt_note',
             )
-            prof.activity_schedule(
-                'mail.mail_activity_data_todo',
-                user_id=invite.employee_id.user_id.id,
-                summary='Uitnodiging professionalisering: %s' % prof.titel,
-                note='%s heeft u uitgenodigd. Open deze aanvraag om te accepteren of te weigeren.' % prof.employee_id.name,
-            )
-
-    def action_accept(self):
-        for invite in self:
-            if invite.state != 'pending':
-                raise UserError("Deze uitnodiging is al beantwoord.")
-            invite.state = 'accepted'
-            invite._feedback_activity('geaccepteerd')
-
-    def action_reject(self):
-        for invite in self:
-            if invite.state != 'pending':
-                raise UserError("Deze uitnodiging is al beantwoord.")
-            invite.state = 'rejected'
-            invite._feedback_activity('geweigerd')
-
-    def _feedback_activity(self, result):
-        """Mark the scheduled activity as done when the invite is answered."""
-        for invite in self:
-            if not invite.employee_id.user_id:
-                continue
-            prof = invite.professionalisering_id
-            activities = prof.activity_ids.filtered(
-                lambda a: a.user_id == invite.employee_id.user_id
-                and 'Uitnodiging professionalisering' in (a.summary or '')
-            )
-            activities.action_done()
 
 
 class ProfessionaliseringKostenLine(models.Model):
@@ -700,3 +1098,189 @@ class ProfessionaliseringDateLine(models.Model):
     professionalisering_titel = fields.Char(related='professionalisering_id.titel', string='Professionalisering')
     date = fields.Date(string='Datum', required=True)
     cost = fields.Float(string='Kost (€)')
+
+
+class ProfessionaliseringAddressPicker(models.TransientModel):
+    _name = 'professionalisering.address.picker'
+    _description = 'Geavanceerd adres kiezen'
+
+    record_id = fields.Many2one(
+        'professionalisering.record', string='Aanvraag', required=True,
+    )
+    step = fields.Selection([
+        ('1', 'Organisatie'),
+        ('2', 'Locatie'),
+    ], default='1', required=True)
+
+    # Step 1 — organisatie
+    organization_filter = fields.Char(string='Zoek organisatie')
+    organization = fields.Char(string='Organisatie',
+        help='Gekozen organisatie. Wordt overgenomen naar de nieuwe locatie als je er een aanmaakt.')
+    available_org_address_ids = fields.Many2many(
+        'professionalisering.address', 'pp_picker_org_rel', 'picker_id', 'address_id',
+        compute='_compute_available_org_address_ids',
+    )
+    can_use_typed_organization = fields.Boolean(
+        compute='_compute_can_use_typed_organization',
+    )
+
+    # Step 2 — locatie
+    location_filter = fields.Char(string='Zoek locatie')
+    online_filter = fields.Selection([
+        ('all', 'Alle locaties'),
+        ('physical', 'Enkel fysieke locaties'),
+        ('online', 'Enkel online'),
+    ], string='Soort', default='all')
+    available_address_ids = fields.Many2many(
+        'professionalisering.address', 'pp_picker_loc_rel', 'picker_id', 'address_id',
+        compute='_compute_available_address_ids',
+    )
+    can_create_placeholder = fields.Boolean(
+        compute='_compute_can_create_placeholder',
+    )
+    placeholder_label = fields.Char(compute='_compute_placeholder_label')
+
+    address_id = fields.Many2one(
+        'professionalisering.address', string='Geselecteerd adres',
+    )
+
+    # ---- Step 1 ----
+
+    @api.depends('organization_filter')
+    def _compute_available_org_address_ids(self):
+        """Toont één representatieve adres-rij per unieke organisatie."""
+        Address = self.env['professionalisering.address']
+        for rec in self:
+            domain = [('organization', '!=', False)]
+            if rec.organization_filter:
+                domain.append(('organization', 'ilike', rec.organization_filter))
+            all_addrs = Address.search(domain, order='organization')
+            seen = set()
+            picks = []
+            for a in all_addrs:
+                key = (a.organization or '').strip().lower()
+                if key and key not in seen:
+                    seen.add(key)
+                    picks.append(a.id)
+            rec.available_org_address_ids = Address.browse(picks)
+
+    @api.depends('organization_filter', 'available_org_address_ids')
+    def _compute_can_use_typed_organization(self):
+        for rec in self:
+            term = (rec.organization_filter or '').strip()
+            if not term:
+                rec.can_use_typed_organization = False
+                continue
+            existing = rec.available_org_address_ids.mapped(
+                lambda a: (a.organization or '').strip().lower()
+            )
+            rec.can_use_typed_organization = term.lower() not in existing
+
+    def action_use_typed_organization(self):
+        self.ensure_one()
+        org = (self.organization_filter or '').strip()
+        if not org:
+            raise UserError("Typ eerst een organisatienaam.")
+        self.write({
+            'organization': org,
+            'step': '2',
+            'organization_filter': False,
+        })
+        return self._refresh()
+
+    def action_select_organization(self, org_name):
+        self.ensure_one()
+        self.write({
+            'organization': org_name or False,
+            'step': '2',
+            'organization_filter': False,
+        })
+        return self._refresh()
+
+    # ---- Step 2 ----
+
+    @api.depends('organization', 'location_filter', 'online_filter')
+    def _compute_available_address_ids(self):
+        Address = self.env['professionalisering.address']
+        for rec in self:
+            domain = []
+            if rec.organization:
+                domain.append(('organization', '=ilike', rec.organization))
+            if rec.location_filter:
+                term = rec.location_filter
+                domain += ['|', '|', '|',
+                    ('name', 'ilike', term),
+                    ('city', 'ilike', term),
+                    ('street', 'ilike', term),
+                    ('postal_code', 'ilike', term),
+                ]
+            if rec.online_filter == 'physical':
+                domain.append(('is_online', '=', False))
+            elif rec.online_filter == 'online':
+                domain.append(('is_online', '=', True))
+            rec.available_address_ids = Address.search(domain)
+
+    @api.depends('location_filter', 'available_address_ids')
+    def _compute_can_create_placeholder(self):
+        for rec in self:
+            rec.can_create_placeholder = bool(rec.location_filter) and not rec.available_address_ids
+
+    @api.depends('organization', 'location_filter', 'online_filter')
+    def _compute_placeholder_label(self):
+        for rec in self:
+            loc = rec.location_filter or '(geen naam)'
+            org = rec.organization or '(geen organisatie)'
+            if rec.online_filter == 'online':
+                rec.placeholder_label = f"Voeg '{loc}' (online) toe voor {org} en bevestig"
+            else:
+                rec.placeholder_label = f"Voeg '{loc}' toe voor {org} en bevestig"
+
+    def action_back_to_step_1(self):
+        self.ensure_one()
+        self.write({'step': '1', 'location_filter': False})
+        return self._refresh()
+
+    def action_create_placeholder(self):
+        self.ensure_one()
+        loc = (self.location_filter or '').strip()
+        if not loc:
+            raise UserError("Typ een locatienaam.")
+        # sudo: medewerkers mogen geen adressen rechtstreeks aanmaken (ACL),
+        # maar via de picker-wizard mogen ze wel een placeholder toevoegen
+        # die directie/admin later kunnen verfijnen.
+        address = self.env['professionalisering.address'].sudo().create({
+            'name': loc,
+            'organization': self.organization or False,
+            'is_online': self.online_filter == 'online',
+            'needs_review': True,
+        })
+        # Notify directie zodat zij het adres kunnen aanvullen
+        address._notify_directie_for_review(self.record_id)
+        self.address_id = address.id
+        return self.action_confirm()
+
+    def action_confirm(self):
+        self.ensure_one()
+        if not self.address_id:
+            raise UserError("Selecteer een adres of voeg een nieuw adres toe.")
+        address = self.address_id
+        if address.is_online:
+            self.record_id.write({
+                'address_id': False,
+                'location_type': 'online',
+            })
+        else:
+            self.record_id.write({
+                'address_id': address.id,
+                'location_type': 'address',
+            })
+        return {'type': 'ir.actions.act_window_close'}
+
+    def _refresh(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }

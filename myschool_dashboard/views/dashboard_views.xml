@@ -19,11 +19,12 @@
                 <field name="is_act_aankoop" invisible="1"/>
                 <field name="is_act_boekhouding" invisible="1"/>
                 <field name="is_act_directie" invisible="1"/>
+                <field name="is_only_teacher" invisible="1"/>
                 <sheet>
                     <div class="ms-page-title">Mijn Aanvragen</div>
 
-                    <!-- ===== KPI ROW ===== -->
-                    <div class="ms-kpi-row">
+                    <!-- ===== KPI ROW (verborgen voor pure leerkrachten) ===== -->
+                    <div class="ms-kpi-row" invisible="is_only_teacher">
                         <div class="ms-kpi-card c1">
                             <div class="ms-kpi-label">In bewerking</div>
                             <div class="ms-kpi-value">
@@ -59,145 +60,11 @@
 
                     <!-- ===== MAIN GRID ===== -->
                     <div class="ms-grid">
-                        <!-- LEFT COLUMN: Aanvragen cards -->
-                        <div>
-                            <!-- Professionalisering -->
-                            <div class="ms-card" invisible="not has_professionalisering_access">
-                                <div class="ms-card-header">
-                                    <span><i class="fa fa-graduation-cap me-1"/> Professionalisering</span>
-                                    <button name="action_open_professionalisering" type="object"
-                                            class="ms-link">Bekijk alles &#8594;</button>
-                                </div>
-                                <div class="ms-card-body">
-                                    <field name="is_prof_directie" invisible="1"/>
-                                    <field name="is_prof_boekhouding" invisible="1"/>
-                                    <field name="is_prof_vervangingen" invisible="1"/>
-                                    <field name="is_prof_only_directie" invisible="1"/>
-                                    <field name="is_prof_only_boekhouding" invisible="1"/>
-                                    <field name="is_prof_only_vervangingen" invisible="1"/>
-                                    <field name="is_prof_only_medewerker" invisible="1"/>
-                                    <div class="d-flex gap-2 flex-wrap mb-3">
-                                        <span class="ms-badge-status ms-badge-info"
-                                              invisible="is_prof_only_directie or is_prof_only_boekhouding or is_prof_only_vervangingen">
-                                            <field name="prof_draft" class="d-inline"/> Concept
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-warning"
-                                              invisible="is_prof_only_boekhouding or is_prof_only_vervangingen">
-                                            <field name="prof_submitted" class="d-inline"/> Ingediend
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-success"
-                                              invisible="is_prof_only_directie">
-                                            <field name="prof_approved" class="d-inline"/> Goedgekeurd
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-error"
-                                              invisible="is_prof_only_directie or is_prof_only_vervangingen">
-                                            <field name="prof_rejected" class="d-inline"/> Afgekeurd
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-success"
-                                              invisible="is_prof_only_directie or is_prof_only_medewerker or is_prof_only_vervangingen">
-                                            <field name="prof_done" class="d-inline"/> Afgerond
-                                        </span>
-                                    </div>
-                                    <div class="text-muted" style="font-size: 12px;">
-                                        <field name="prof_total" class="d-inline"/> totaal
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Activiteiten -->
-                            <div class="ms-card" invisible="not has_activiteiten_access">
-                                <div class="ms-card-header">
-                                    <span><i class="fa fa-calendar me-1"/> Activiteiten</span>
-                                    <button name="action_open_activiteiten_list" type="object"
-                                            class="ms-link">Bekijk alles &#8594;</button>
-                                </div>
-                                <div class="ms-card-body">
-                                    <field name="is_only_aankoop" invisible="1"/>
-                                    <field name="is_only_boekhouding" invisible="1"/>
-                                    <field name="is_only_directie" invisible="1"/>
-                                    <field name="is_only_medewerker" invisible="1"/>
-                                    <field name="is_only_vervangingen" invisible="1"/>
-                                    <div class="d-flex gap-2 flex-wrap mb-3">
-                                        <span class="ms-badge-status ms-badge-info"
-                                              invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_vervangingen">
-                                            <field name="act_draft" class="d-inline"/> Concept
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-info"
-                                              invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_vervangingen">
-                                            <field name="act_form_invullen" class="d-inline"/> Formulier
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-warning"
-                                              invisible="not is_act_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
-                                            <field name="act_bus_check" class="d-inline"/> Bus controle
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-error"
-                                              invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
-                                            <field name="act_bus_refused" class="d-inline"/> Bus geweigerd
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-warning"
-                                              invisible="not is_act_directie or is_only_boekhouding or is_only_medewerker or is_only_vervangingen">
-                                            <field name="act_pending_approval" class="d-inline"/> Wachten op goedkeuring
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-success"
-                                              invisible="is_only_aankoop or is_only_directie or is_only_vervangingen">
-                                            <field name="act_approved" class="d-inline"/> Goedgekeurd
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-error"
-                                              invisible="is_only_aankoop or is_only_directie or is_only_vervangingen">
-                                            <field name="act_rejected" class="d-inline"/> Afgekeurd
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-info"
-                                              invisible="not is_act_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
-                                            <field name="act_s_code" class="d-inline"/> S-Code
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-info"
-                                              invisible="not is_act_vervangingen or is_only_boekhouding or is_only_directie or is_only_medewerker">
-                                            <field name="act_vervanging" class="d-inline"/> Vervanging
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-success"
-                                              invisible="not is_act_manager or is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
-                                            <field name="act_done" class="d-inline"/> Afgerond
-                                        </span>
-                                    </div>
-                                    <div class="text-muted" style="font-size: 12px;">
-                                        <field name="act_total" class="d-inline"/> totaal
-                                    </div>
-                                </div>
-                            </div>
-                            <!-- Drukwerk -->
-                            <div class="ms-card" invisible="not has_drukwerk_access">
-                                <div class="ms-card-header">
-                                    <span><i class="fa fa-print me-1"/> Drukwerk</span>
-                                    <button name="action_open_drukwerk_list" type="object"
-                                            class="ms-link">Bekijk alles &#8594;</button>
-                                </div>
-                                <div class="ms-card-body">
-                                    <div class="d-flex gap-2 flex-wrap mb-3">
-                                        <span class="ms-badge-status ms-badge-info">
-                                            <field name="druk_draft" class="d-inline"/> Concept
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-info">
-                                            <field name="druk_form_invullen" class="d-inline"/> Formulier
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-warning">
-                                            <field name="druk_afdrukken" class="d-inline"/> Afdrukken
-                                        </span>
-                                        <span class="ms-badge-status ms-badge-success">
-                                            <field name="druk_done" class="d-inline"/> Afgerond
-                                        </span>
-                                    </div>
-                                    <div class="text-muted" style="font-size: 12px;">
-                                        <field name="druk_total" class="d-inline"/> totaal
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- RIGHT COLUMN -->
+                        <!-- LEFT COLUMN: Aanvragen + Recente activiteit -->
                         <div>
                             <!-- Quick Actions -->
                             <div class="ms-card">
-                                <div class="ms-card-header">Snelle acties</div>
+                                <div class="ms-card-header">Aanvragen</div>
                                 <div class="ms-card-body">
                                     <div class="ms-quick-actions">
                                         <button name="action_new_professionalisering" type="object"
@@ -266,6 +133,162 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- RIGHT COLUMN: Aanvragen cards -->
+                        <div>
+                            <!-- Professionalisering -->
+                            <div class="ms-card" invisible="not has_professionalisering_access">
+                                <div class="ms-card-header">
+                                    <span><i class="fa fa-graduation-cap me-1"/> Professionalisering</span>
+                                    <button name="action_open_professionalisering" type="object"
+                                            class="ms-link">Bekijk alles &#8594;</button>
+                                </div>
+                                <div class="ms-card-body">
+                                    <field name="is_prof_directie" invisible="1"/>
+                                    <field name="is_prof_boekhouding" invisible="1"/>
+                                    <field name="is_prof_vervangingen" invisible="1"/>
+                                    <field name="is_prof_only_directie" invisible="1"/>
+                                    <field name="is_prof_only_boekhouding" invisible="1"/>
+                                    <field name="is_prof_only_vervangingen" invisible="1"/>
+                                    <field name="is_prof_only_medewerker" invisible="1"/>
+                                    <div class="d-flex gap-2 flex-wrap mb-3">
+                                        <button type="object" name="action_open_professionalisering"
+                                                context="{'search_default_state_submitted': 1}"
+                                                class="ms-badge-status ms-badge-warning ms-badge-btn"
+                                                invisible="is_prof_only_boekhouding or is_prof_only_vervangingen">
+                                            <field name="prof_submitted" class="d-inline"/> Ingediend
+                                        </button>
+                                        <button type="object" name="action_open_professionalisering"
+                                                context="{'search_default_state_done': 1}"
+                                                class="ms-badge-status ms-badge-success ms-badge-btn"
+                                                invisible="is_prof_only_directie">
+                                            <field name="prof_approved" class="d-inline"/> Goedgekeurd
+                                        </button>
+                                        <button type="object" name="action_open_professionalisering"
+                                                context="{'search_default_state_weigering': 1}"
+                                                class="ms-badge-status ms-badge-error ms-badge-btn"
+                                                invisible="is_prof_only_directie or is_prof_only_vervangingen">
+                                            <field name="prof_rejected" class="d-inline"/> Afgekeurd
+                                        </button>
+                                        <button type="object" name="action_open_professionalisering"
+                                                context="{'search_default_state_done': 1}"
+                                                class="ms-badge-status ms-badge-success ms-badge-btn"
+                                                invisible="is_prof_only_directie or is_prof_only_medewerker or is_prof_only_vervangingen">
+                                            <field name="prof_done" class="d-inline"/> Afgerond
+                                        </button>
+                                    </div>
+                                    <div class="text-muted" style="font-size: 12px;">
+                                        <field name="prof_total" class="d-inline"/> totaal
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Activiteiten -->
+                            <div class="ms-card" invisible="not has_activiteiten_access">
+                                <div class="ms-card-header">
+                                    <span><i class="fa fa-calendar me-1"/> Activiteiten</span>
+                                    <button name="action_open_activiteiten_list" type="object"
+                                            class="ms-link">Bekijk alles &#8594;</button>
+                                </div>
+                                <div class="ms-card-body">
+                                    <field name="is_only_aankoop" invisible="1"/>
+                                    <field name="is_only_boekhouding" invisible="1"/>
+                                    <field name="is_only_directie" invisible="1"/>
+                                    <field name="is_only_medewerker" invisible="1"/>
+                                    <field name="is_only_vervangingen" invisible="1"/>
+                                    <div class="d-flex gap-2 flex-wrap mb-3">
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_state_form_invullen': 1}"
+                                                class="ms-badge-status ms-badge-info ms-badge-btn"
+                                                invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_vervangingen">
+                                            <field name="act_form_invullen" class="d-inline"/> Formulier
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_bus_check': 1}"
+                                                class="ms-badge-status ms-badge-warning ms-badge-btn"
+                                                invisible="not is_act_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
+                                            <field name="act_bus_check" class="d-inline"/> Bus controle
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_state_bus_refused': 1}"
+                                                class="ms-badge-status ms-badge-error ms-badge-btn"
+                                                invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
+                                            <field name="act_bus_refused" class="d-inline"/> Bus geweigerd
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_to_approve': 1}"
+                                                class="ms-badge-status ms-badge-warning ms-badge-btn"
+                                                invisible="not is_act_directie or is_only_boekhouding or is_only_medewerker or is_only_vervangingen">
+                                            <field name="act_pending_approval" class="d-inline"/> Wachten op goedkeuring
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_state_approved': 1}"
+                                                class="ms-badge-status ms-badge-success ms-badge-btn"
+                                                invisible="is_only_aankoop or is_only_directie or is_only_vervangingen">
+                                            <field name="act_approved" class="d-inline"/> Goedgekeurd
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_state_rejected': 1}"
+                                                class="ms-badge-status ms-badge-error ms-badge-btn"
+                                                invisible="is_only_aankoop or is_only_directie or is_only_vervangingen">
+                                            <field name="act_rejected" class="d-inline"/> Afgekeurd
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_s_code_pending': 1}"
+                                                class="ms-badge-status ms-badge-info ms-badge-btn"
+                                                invisible="not is_act_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
+                                            <field name="act_s_code" class="d-inline"/> S-Code
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_replacement_pending': 1}"
+                                                class="ms-badge-status ms-badge-info ms-badge-btn"
+                                                invisible="not is_act_vervangingen or is_only_boekhouding or is_only_directie or is_only_medewerker">
+                                            <field name="act_vervanging" class="d-inline"/> Vervanging
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_state_done': 1}"
+                                                class="ms-badge-status ms-badge-success ms-badge-btn"
+                                                invisible="not is_act_manager or is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
+                                            <field name="act_done" class="d-inline"/> Afgerond
+                                        </button>
+                                    </div>
+                                    <div class="text-muted" style="font-size: 12px;">
+                                        <field name="act_total" class="d-inline"/> totaal
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Drukwerk -->
+                            <div class="ms-card" invisible="not has_drukwerk_access">
+                                <div class="ms-card-header">
+                                    <span><i class="fa fa-print me-1"/> Drukwerk</span>
+                                    <button name="action_open_drukwerk_list" type="object"
+                                            class="ms-link">Bekijk alles &#8594;</button>
+                                </div>
+                                <div class="ms-card-body">
+                                    <div class="d-flex gap-2 flex-wrap mb-3">
+                                        <button type="object" name="action_open_drukwerk_list"
+                                                context="{'search_default_state_form_invullen': 1}"
+                                                class="ms-badge-status ms-badge-info ms-badge-btn">
+                                            <field name="druk_form_invullen" class="d-inline"/> Formulier
+                                        </button>
+                                        <button type="object" name="action_open_drukwerk_list"
+                                                context="{'search_default_to_print': 1}"
+                                                class="ms-badge-status ms-badge-warning ms-badge-btn">
+                                            <field name="druk_afdrukken" class="d-inline"/> Afdrukken
+                                        </button>
+                                        <button type="object" name="action_open_drukwerk_list"
+                                                context="{'search_default_done': 1}"
+                                                class="ms-badge-status ms-badge-success ms-badge-btn">
+                                            <field name="druk_done" class="d-inline"/> Afgerond
+                                        </button>
+                                    </div>
+                                    <div class="text-muted" style="font-size: 12px;">
+                                        <field name="druk_total" class="d-inline"/> totaal
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </sheet>
             </form>

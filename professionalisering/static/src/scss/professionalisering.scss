@@ -1,0 +1,64 @@
+// Verbreed het wizard-dialoogvenster zodat de invite-lijst en andere stappen
+// genoeg ruimte hebben om leesbaar weer te geven.
+.modal-dialog:has(.o_professionalisering_wizard_form) {
+    max-width: 900px;
+
+    .modal-content {
+        min-height: 480px;
+    }
+}
+
+// Adres-picker mag zelfs nog wat breder voor de lijst.
+.modal-dialog:has(.o_professionalisering_address_picker) {
+    max-width: 1100px;
+}
+
+
+// Klikbare adres-knop op het hoofdformulier — visueel als een input-veld
+// met een dashed border zodat duidelijk is dat hij interactief is.
+.o_pp_address_button {
+    border: 1px dashed var(--o-color-gray-400, #ced4da) !important;
+    border-radius: 4px !important;
+    background-color: rgba(0, 0, 0, 0.02);
+    text-decoration: none !important;
+    transition: all 0.15s ease-in-out;
+
+    &:hover, &:focus {
+        background-color: rgba(13, 110, 253, 0.06);
+        border-color: var(--o-brand-primary, #0d6efd) !important;
+        text-decoration: none !important;
+    }
+
+    .oe_inline {
+        font-weight: 500;
+    }
+}
+
+// Verberg de "Datums"-stap in de statusbar wanneer verschillende_dagen False is
+// (de marker .o_pp_no_dates zit dan in de DOM).
+.modal:has(.o_professionalisering_wizard_form .o_pp_no_dates) {
+    .o_arrow_button[data-value="2"],
+    .o_statusbar_status > [data-value="2"] {
+        display: none !important;
+    }
+}
+
+// Forceer ruimte binnen het wizard-formulier zelf.
+.o_professionalisering_wizard_form {
+    .o_form_sheet {
+        max-width: none;
+    }
+    // o2m-veld + interne tabel laten zich uitstrekken over de volledige breedte
+    .o_field_one2many,
+    .o_field_one2many .o_list_renderer,
+    .o_field_one2many .o_list_table {
+        width: 100% !important;
+    }
+    .o_field_one2many .o_list_renderer {
+        min-height: 250px;
+    }
+    .o_field_text textarea {
+        min-height: 200px;
+        width: 100%;
+    }
+}

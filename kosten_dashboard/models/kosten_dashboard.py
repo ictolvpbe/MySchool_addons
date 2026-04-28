@@ -120,14 +120,14 @@ class KostenPerMedewerker(models.Model):
                     CASE
                         WHEN (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
                                    WHERE inv.professionalisering_id = pr.id
-                                     AND inv.state = 'accepted')) > 0
+                                     )) > 0
                         THEN (COALESCE(pr.s_code_price, 0) +
                               COALESCE((SELECT SUM(kl.bedrag)
                                         FROM professionalisering_kosten_line kl
                                         WHERE kl.professionalisering_id = pr.id), 0))
                              / (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
                                      WHERE inv.professionalisering_id = pr.id
-                                       AND inv.state = 'accepted'))
+                                       ))
                         ELSE 0
                     END AS prof_kost
                 FROM professionalisering_record pr
@@ -143,20 +143,19 @@ class KostenPerMedewerker(models.Model):
                     CASE
                         WHEN (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
                                    WHERE inv2.professionalisering_id = pr.id
-                                     AND inv2.state = 'accepted')) > 0
+                                     )) > 0
                         THEN (COALESCE(pr.s_code_price, 0) +
                               COALESCE((SELECT SUM(kl.bedrag)
                                         FROM professionalisering_kosten_line kl
                                         WHERE kl.professionalisering_id = pr.id), 0))
                              / (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
                                      WHERE inv2.professionalisering_id = pr.id
-                                       AND inv2.state = 'accepted'))
+                                       ))
                         ELSE 0
                     END AS prof_kost
                 FROM professionalisering_record pr
                 JOIN professionalisering_invite inv ON inv.professionalisering_id = pr.id
                 WHERE pr.state IN ('bevestiging', 'done')
-                  AND inv.state = 'accepted'
             """)
 
         if parts:
@@ -262,19 +261,19 @@ class KostenDetail(models.Model):
                     CASE
                         WHEN (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
                                    WHERE inv.professionalisering_id = pr.id
-                                     AND inv.state = 'accepted')) > 0
+                                     )) > 0
                         THEN (COALESCE(pr.s_code_price, 0) +
                               COALESCE((SELECT SUM(kl.bedrag)
                                         FROM professionalisering_kosten_line kl
                                         WHERE kl.professionalisering_id = pr.id), 0))
                              / (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
                                      WHERE inv.professionalisering_id = pr.id
-                                       AND inv.state = 'accepted'))
+                                       ))
                         ELSE 0
                     END AS eigen_kost,
                     (1 + (SELECT COUNT(*) FROM professionalisering_invite inv
                           WHERE inv.professionalisering_id = pr.id
-                            AND inv.state = 'accepted')) AS aantal_deelnemers,
+                            )) AS aantal_deelnemers,
                     pr.state AS state
                 FROM professionalisering_record pr
                 WHERE pr.state IN ('bevestiging', 'done')
@@ -294,24 +293,23 @@ class KostenDetail(models.Model):
                     CASE
                         WHEN (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
                                    WHERE inv2.professionalisering_id = pr.id
-                                     AND inv2.state = 'accepted')) > 0
+                                     )) > 0
                         THEN (COALESCE(pr.s_code_price, 0) +
                               COALESCE((SELECT SUM(kl.bedrag)
                                         FROM professionalisering_kosten_line kl
                                         WHERE kl.professionalisering_id = pr.id), 0))
                              / (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
                                      WHERE inv2.professionalisering_id = pr.id
-                                       AND inv2.state = 'accepted'))
+                                       ))
                         ELSE 0
                     END AS eigen_kost,
                     (1 + (SELECT COUNT(*) FROM professionalisering_invite inv2
                           WHERE inv2.professionalisering_id = pr.id
-                            AND inv2.state = 'accepted')) AS aantal_deelnemers,
+                            )) AS aantal_deelnemers,
                     pr.state AS state
                 FROM professionalisering_record pr
                 JOIN professionalisering_invite inv ON inv.professionalisering_id = pr.id
                 WHERE pr.state IN ('bevestiging', 'done')
-                  AND inv.state = 'accepted'
             """)
 
         if parts:

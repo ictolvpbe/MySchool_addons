@@ -20,6 +20,15 @@
         <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('myschool_core.group_myschool_core_user'))]"/>
     </record>
 
+    <!-- Personeelslid Kleur (mag kleur-drukwerk aanvragen) -->
+    <record id="group_drukwerk_personeelslid_kleur" model="res.groups">
+        <field name="name">Personeelslid Kleur</field>
+        <field name="privilege_id" ref="privilege_drukwerk"/>
+        <field name="sequence">15</field>
+        <field name="implied_ids" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
+        <field name="comment">Mag kleur selecteren bij drukwerk-aanvragen, naast zwart-wit.</field>
+    </record>
+
     <!-- Drukwerk -->
     <record id="group_drukwerk_drukwerk" model="res.groups">
         <field name="name">Drukwerk</field>
@@ -69,6 +78,7 @@
             (4, ref('group_drukwerk_directie')),
             (4, ref('group_drukwerk_boekhouding')),
             (4, ref('group_drukwerk_drukwerk')),
+            (4, ref('group_drukwerk_personeelslid_kleur')),
         ]"/>
     </record>
 

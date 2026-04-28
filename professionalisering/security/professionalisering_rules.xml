@@ -49,12 +49,22 @@
     </record>
 
     <!--
-        Override base hr.employee multi-company rule to use child_of.
-        All employees are in the parent company (OLVP), but users work in
-        child companies (schools). child_of allows child company users to
-        see employees from the parent company.
+        Override base hr.employee + hr.employee.public multi-company rules to
+        use parent_of. All employees are in the parent company (OLVP), but users
+        work in child companies (schools). parent_of allows child-company users
+        to see employees from the parent company.
     -->
     <record id="hr.hr_employee_comp_rule" model="ir.rule">
+        <field name="domain_force">['|', '|', '|', '|',
+            ('company_id', 'in', company_ids + [False]),
+            ('company_id', 'parent_of', company_ids),
+            ('parent_id.user_id', '=', user.id),
+            ('id', '=', user.employee_id.parent_id.id),
+            ('user_id', '=', user.id)
+        ]</field>
+    </record>
+
+    <record id="hr.hr_employee_public_comp_rule" model="ir.rule">
         <field name="domain_force">['|', '|', '|', '|',
             ('company_id', 'in', company_ids + [False]),
             ('company_id', 'parent_of', company_ids),

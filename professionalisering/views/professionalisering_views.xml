@@ -9,24 +9,12 @@
                 <header>
                     <field name="is_owner" invisible="1"/>
                     <field name="is_admin" invisible="1"/>
+                    <field name="is_directie" invisible="1"/>
                     <field name="needs_approval" invisible="1"/>
                     <field name="needs_payment" invisible="1"/>
-                    <field name="current_user_invited" invisible="1"/>
-                    <field name="current_user_invite_state" invisible="1"/>
-                    <!-- Invited teacher: Accept/Reject -->
-                    <button name="action_accept_invite"
-                            string="Uitnodiging accepteren"
-                            type="object"
-                            class="btn-success"
-                            invisible="not current_user_invited or current_user_invite_state != 'pending'"/>
-                    <button name="action_reject_invite"
-                            string="Uitnodiging weigeren"
-                            type="object"
-                            class="btn-danger"
-                            invisible="not current_user_invited or current_user_invite_state != 'pending'"/>
-                    <!-- Employee: Submit -->
-                    <button name="action_submit"
-                            string="Indienen"
+                    <!-- Employee: open submit dialog (popup with tabs, then confirm) -->
+                    <button name="action_open_details"
+                            string="Volgende"
                             type="object"
                             class="btn-primary"
                             invisible="state != 'selection_of_form' or not is_owner"/>
@@ -57,13 +45,6 @@
                             class="btn-danger"
                             groups="professionalisering.group_professionalisering_directie"
                             invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren') or not needs_approval"/>
-                    <!-- Boekhouding: Confirm payment / S-Code (only for types that need payment) -->
-                    <button name="action_confirm_payment"
-                            string="S-Code bevestigen"
-                            type="object"
-                            class="btn-primary"
-                            groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"
-                            invisible="state != 'bevestiging' or payment_done == True or not needs_payment"/>
                     <!-- Owner: Submit proof -->
                     <button name="action_submit_bewijs"
                             string="Bewijs indienen"
@@ -85,7 +66,7 @@
                             invisible="is_owner or state != 'selection_of_form'"
                             confirm="Weet u zeker dat u deze aanvraag wilt verwijderen?"/>
 
-                    <field name="state" widget="statusbar" statusbar_visible="selection_of_form,fill_in_form_individueel,bevestiging,done"/>
+                    <field name="state" widget="statusbar" statusbar_visible="selection_of_form,fill_in_form_individueel,done"/>
                 </header>
                 <sheet>
                     <!-- Title -->
@@ -93,132 +74,200 @@
                         <h1>
                             <field name="name" readonly="1"/>
                         </h1>
-                        <h3 class="mt-1">
+                       <!--  <h3 class="mt-1">
                             <span class="text-muted">
-                                Medewerker: <field name="employee_id" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)" class="oe_inline" nolabel="1"/>
-                                <span invisible="not titel"> — </span>
+                                Medewerker:
+                                <field name="employee_id"
+                                       readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                       class="oe_inline" nolabel="1"/>
+                                <span invisible="not titel">—</span>
                                 <field name="titel" readonly="1" class="oe_inline" invisible="not titel"/>
                             </span>
-                        </h3>
+                        </h3> -->
                     </div>
 
-                    <field name="priority" widget="priority"
-                           groups="professionalisering.group_professionalisering_directie"/>
                     <field name="currency_id" invisible="1"/>
                     <field name="allowed_school_json" invisible="1"/>
                     <field name="allowed_directie_json" invisible="1"/>
                     <field name="show_invites" invisible="1"/>
-                    <field name="has_pending_invites" invisible="1"/>
-
-                    <div class="alert alert-warning" role="alert"
-                         invisible="not has_pending_invites">
-                        Niet alle uitnodigingen zijn beantwoord. De aanvraag kan pas ingediend worden wanneer alle collega's hebben gereageerd.
-                    </div>
 
                     <!-- Two-column layout -->
                     <group>
                         <!-- LEFT COLUMN: Professionalisering + Planning -->
                         <group>
                             <separator string="Professionalisering"/>
-                            <field name="type" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="type" readonly="1"/>
                             <field name="subtype_individueel" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
                                    invisible="type != 'individueel'"/>
-                            <field name="subtype_teamleren" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
-                                   invisible="type != 'teamleren'"/>
+                            <!--<field name="subtype_teamleren" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="type != 'teamleren'"/> -->
                             <field name="titel" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
                                    placeholder="bv. Cursus differentiatie in de klas"/>
+                            <field name="location_type" widget="radio" options="{'horizontal': true}"
+                                   readonly="state not in ('selection_of_form', 'fill_in_form_individueel') or (not is_owner and not is_admin and not is_directie)"
+                                   invisible="subtype_individueel != 'nascholing' and type != 'teamleren'"/>
+                            <label for="address_id" string="Adres / Locatie"
+                                   invisible="location_type != 'address' or (subtype_individueel != 'nascholing' and type != 'teamleren')"/>
+                            <div invisible="location_type != 'address' or (subtype_individueel != 'nascholing' and type != 'teamleren')">
+                                <!-- Klikbaar: opent de geavanceerde picker direct.
+                                     Toont het gekozen adres OF een placeholder-tekst. -->
+                                <button name="action_open_address_picker"
+                                        type="object"
+                                        class="o_pp_address_button btn btn-link text-start w-100 p-2"
+                                        invisible="state not in ('selection_of_form', 'fill_in_form_individueel') or (not is_owner and not is_admin and not is_directie)">
+                                    <span invisible="not address_id">
+                                        <i class="fa fa-edit me-2 text-muted"/>
+                                        <field name="address_id" readonly="1" nolabel="1"
+                                               options="{'no_open': True}" class="oe_inline"/>
+                                    </span>
+                                    <span class="text-muted fst-italic" invisible="address_id">
+                                        <i class="fa fa-search-plus me-2"/>
+                                        Klik om een adres te kiezen...
+                                    </span>
+                                </button>
+                                <!-- Readonly weergave wanneer state niet meer bewerkbaar is -->
+                                <div invisible="state in ('selection_of_form', 'fill_in_form_individueel') and (is_owner or is_admin or is_directie)">
+                                    <field name="address_id" readonly="1" nolabel="1"
+                                           options="{'no_open': True}"
+                                           invisible="not address_id"/>
+                                    <span class="text-muted fst-italic"
+                                          invisible="address_id">— geen adres gekozen —</span>
+                                </div>
+                            </div>
+                            <label for="afstand_km" string="Afstand"
+                                   invisible="location_type != 'address' or not address_id or (subtype_individueel != 'nascholing' and type != 'teamleren')"/>
+                            <div class="o_row"
+                                 invisible="location_type != 'address' or not address_id or (subtype_individueel != 'nascholing' and type != 'teamleren')">
+                                <field name="afstand_km" readonly="1" nolabel="1" class="oe_inline"/>
+                                <span class="text-muted">km (heen en terug)</span>
+                                <button name="action_recompute_afstand"
+                                        type="object"
+                                        icon="fa-refresh"
+                                        title="Afstand opnieuw berekenen"
+                                        class="btn-link ms-2"/>
+                            </div>
+                            <field name="link"
+                                   widget="url"
+                                   placeholder="bv. https://youtube.com/..."
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="subtype_individueel not in ('video', 'podcast')"/>
                             <field name="school_id"
                                    options="{'no_open': True}"
                                    readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
                             <field name="vak" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
-                            <field name="cost" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
-                                   placeholder="bv. 150.00"/>
-
-                            <separator string="Planning"/>
-                            <field name="duur" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
-                            <field name="start_date" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
-                            <field name="end_date" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
-                                   invisible="duur != 'meerdere_dagen'"/>
-                            <field name="verschillende_dagen" invisible="1"/>
+                            <field name="vak_andere"
+                                   placeholder="Specificeer het vak of vermeld een toelichting"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="vak != 'andere'"/>
+                            <separator string="Planning"
+                                       invisible="subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <field name="duur" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <field name="verschillende_dagen"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="duur != 'meerdere_dagen' or subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <label for="start_date" string="Datum"
+                                   invisible="duur == 'meerdere_dagen' or subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <label for="start_date" string="Startdatum"
+                                   invisible="duur != 'meerdere_dagen' or verschillende_dagen or subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <field name="start_date" nolabel="1"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="(duur == 'meerdere_dagen' and verschillende_dagen) or subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <field name="end_date"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="duur != 'meerdere_dagen' or verschillende_dagen or subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <div colspan="2"
+                                 invisible="duur != 'meerdere_dagen' or not verschillende_dagen or subtype_individueel in ('lezen', 'video', 'podcast')">
+                                <span class="text-muted">
+                                    <i class="fa fa-info-circle me-1"/>
+                                    Beheer de losse datums via <strong>Extra info beheren → Datums</strong>.
+                                </span>
+                            </div>
                         </group>
 
-                        <!-- RIGHT COLUMN: Beoordeling + Financieel -->
+                        <!-- RIGHT COLUMN: Beoordeling + Extra info (voor directie) -->
                         <group>
                             <separator string="Beoordeling"
                                        invisible="state == 'selection_of_form' or not needs_approval"/>
                             <field name="assigned_to"
                                    invisible="state == 'selection_of_form' or not needs_approval"
-                                   readonly="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren', 'bevestiging')"
+                                   readonly="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')"
                                    groups="professionalisering.group_professionalisering_directie"/>
                             <field name="directie_id"
-                                   invisible="state not in ('bevestiging', 'weigering', 'done') or not needs_approval"/>
+                                   invisible="state not in ('weigering', 'done') or not needs_approval"/>
 
-                            <!-- Financieel section (only for types that need payment) -->
-                            <separator string="Financieel"
-                                       invisible="state not in ('bevestiging', 'done') or not needs_payment"/>
-                            <field name="s_code_name"
-                                   placeholder="bv. S-1234"
-                                   invisible="state not in ('bevestiging', 'done') or not needs_payment"
-                                   readonly="state != 'bevestiging'"
-                                   groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
-                            <field name="s_code_price"
-                                   placeholder="bv. 500.00"
-                                   invisible="state not in ('bevestiging', 'done') or not needs_payment"
-                                   readonly="state != 'bevestiging'"
-                                   groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
-                            <field name="totale_kost"
-                                   invisible="state not in ('bevestiging', 'done') or not needs_payment"
-                                   groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
-                            <field name="payment_done" readonly="1"
-                                   invisible="state not in ('bevestiging', 'done') or not needs_payment"/>
-                        </group>
-                    </group>
-
-                    <!-- Tabs -->
-                    <notebook>
-                        <page string="Uitnodigingen" invisible="not show_invites">
-                            <button name="action_send_invites"
-                                    string="Uitnodigingen versturen"
-                                    type="object"
-                                    class="btn-primary mb-3"
-                                    invisible="state != 'selection_of_form' or not invite_ids or not is_owner"/>
-                            <field name="invite_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
-                                <list editable="bottom">
+                            <!-- Extra info inline zichtbaar voor directie/admin -->
+                            <separator string="Extra info"
+                                       groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+                                       invisible="state == 'selection_of_form'"/>
+                            <label for="description" string="Motivatie"
+                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+                                   invisible="state == 'selection_of_form'"/>
+                            <field name="description" nolabel="1" readonly="1"
+                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+                                   invisible="state == 'selection_of_form'"/>
+                            <label for="invite_ids" string="Collega's mee"
+                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+                                   invisible="state == 'selection_of_form' or not show_invites or not invite_ids"/>
+                            <field name="invite_ids" nolabel="1" readonly="1"
+                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+                                   invisible="state == 'selection_of_form' or not show_invites or not invite_ids">
+                                <list create="false" edit="false" delete="false">
                                     <field name="employee_id"/>
-                                    <field name="employee_school_names" readonly="1"/>
-                                    <field name="notified" column_invisible="1"/>
-                                    <field name="state" readonly="1" widget="badge"
-                                           decoration-info="state == 'pending'"
-                                           decoration-success="state == 'accepted'"
-                                           decoration-danger="state == 'rejected'"/>
+                                    <field name="employee_school_names"/>
                                 </list>
                             </field>
-                        </page>
-                        <page string="Datums" invisible="verschillende_dagen != True">
-                            <field name="date_line_ids" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
-                                <list editable="bottom">
+                            <label for="date_line_ids" string="Losse datums"
+                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+                                   invisible="state == 'selection_of_form' or not verschillende_dagen"/>
+                            <field name="date_line_ids" nolabel="1" readonly="1"
+                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+                                   invisible="state == 'selection_of_form' or not verschillende_dagen">
+                                <list create="false" edit="false" delete="false">
                                     <field name="date"/>
                                     <field name="cost"/>
                                 </list>
                             </field>
-                        </page>
-                        <page string="Beschrijving">
-                            <field name="description"
-                                   placeholder="Geef een korte beschrijving van de opleiding, het doel en eventuele bijzonderheden..."
-                                   readonly="(state != 'selection_of_form' or (not is_owner and not is_admin)) and not (current_user_invited and current_user_invite_state == 'pending')"/>
-                        </page>
-                        <page string="Kosten"
-                              invisible="state not in ('bevestiging', 'done') or not needs_payment"
-                              groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin">
-                            <field name="kosten_ids" readonly="state != 'bevestiging'">
-                                <list editable="bottom" create="1" delete="1">
-                                    <field name="is_auto" column_invisible="1"/>
-                                    <field name="omschrijving" readonly="is_auto"/>
-                                    <field name="bedrag" readonly="is_auto"/>
-                                    <field name="currency_id" column_invisible="1"/>
-                                </list>
-                            </field>
-                        </page>
+                        </group>
+                    </group>
+
+                    <!-- Volgende-knop onderaan de form (links uitgelijnd) -->
+                    <div class="d-flex justify-content-start mt-3 mb-3"
+                         invisible="state != 'selection_of_form' or not is_owner">
+                        <button name="action_open_details"
+                                string="Volgende"
+                                type="object"
+                                class="btn-primary"/>
+                    </div>
+
+                    <!-- Extra info knop: opent dialoog met Uitnodigingen/Datums/Beschrijving -->
+                    <div class="d-flex justify-content-end mt-3 mb-3"
+                         invisible="state == 'selection_of_form'">
+                        <button name="action_open_details"
+                                string="Extra info beheren"
+                                type="object"
+                                class="btn-secondary"
+                                icon="fa-edit"/>
+                    </div>
+
+                    <!-- Afkeuring: voor medewerker na weigering -->
+                    <div class="alert alert-danger" role="alert"
+                         invisible="state != 'weigering'"
+                         groups="professionalisering.group_professionalisering_user">
+                        <strong>Afkeuring:</strong>
+                        <field name="rejection_reason" readonly="1" nolabel="1" class="oe_inline"/>
+                    </div>
+
+                    <!-- Afkeuring: directie moet reden invullen -->
+                    <group groups="professionalisering.group_professionalisering_directie"
+                           invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')">
+                        <field name="rejection_reason"
+                               string="Reden voor afkeuring"
+                               placeholder="Geef de reden op waarom deze aanvraag wordt afgekeurd..."/>
+                    </group>
+
+                    <!-- Tabs (enkel state-specifieke info) -->
+                    <notebook>
                         <!-- Bewijs tab -->
                         <page string="Bewijs" invisible="state != 'done'">
                             <group>
@@ -234,17 +283,12 @@
                                            placeholder="bv. https://spotify.com/..."
                                            readonly="bewijs_ingediend and not is_admin"
                                            invisible="subtype_individueel != 'podcast'"/>
-                                    <!-- Lezen/Interne opvolging: beschrijving -->
+                                    <!-- Lezen: beschrijving -->
                                     <field name="bewijs_beschrijving"
                                            string="Samenvatting"
                                            placeholder="Beschrijf kort wat u gelezen heeft en wat u geleerd heeft..."
                                            readonly="bewijs_ingediend and not is_admin"
                                            invisible="subtype_individueel != 'lezen'"/>
-                                    <field name="bewijs_beschrijving"
-                                           string="Verslag"
-                                           placeholder="Beschrijf het verloop en de resultaten van de opvolging..."
-                                           readonly="bewijs_ingediend and not is_admin"
-                                           invisible="subtype_individueel != 'interne_opvolging'"/>
                                     <!-- Teamleren: beschrijving -->
                                     <field name="bewijs_beschrijving"
                                            string="Verslag"
@@ -255,16 +299,16 @@
                                 <group>
                                 </group>
                             </group>
-                            <!-- Cursus/Workshop: attest upload -->
+                            <!-- Nascholing: attest upload -->
                             <div class="d-flex align-items-center justify-content-between"
-                                 invisible="subtype_individueel not in ('cursus', 'workshop')">
+                                 invisible="subtype_individueel != 'nascholing'">
                                 <h3 class="mb-0">Attest / Certificaat</h3>
                                 <field name="bewijs_ingediend" readonly="1"/>
                             </div>
-                            <hr invisible="subtype_individueel not in ('cursus', 'workshop')"/>
+                            <hr invisible="subtype_individueel != 'nascholing'"/>
                             <field name="bewijs_document_ids" widget="many2many_binary"
                                    readonly="bewijs_ingediend and not is_admin"
-                                   invisible="subtype_individueel not in ('cursus', 'workshop')"/>
+                                   invisible="subtype_individueel != 'nascholing'"/>
                             <!-- Teamleren: document upload -->
                             <div class="d-flex align-items-center justify-content-between"
                                  invisible="type != 'teamleren'">
@@ -276,26 +320,92 @@
                                    readonly="bewijs_ingediend and not is_admin"
                                    invisible="type != 'teamleren'"/>
                         </page>
-                        <!-- Afkeuring: for medewerker after rejection -->
-                        <page string="Afkeuring"
-                              invisible="state != 'weigering'"
-                              groups="professionalisering.group_professionalisering_user">
-                            <group>
-                                <field name="rejection_reason" readonly="1"/>
-                            </group>
-                        </page>
-                        <!-- Afkeuring: for directie to fill in -->
-                        <page string="Afkeuring"
-                              groups="professionalisering.group_professionalisering_directie"
-                              invisible="state not in ('fill_in_form_individueel', 'fill_in_form_teamleren')">
-                            <group>
-                                <field name="rejection_reason"
-                                       placeholder="Geef de reden op waarom deze aanvraag wordt afgekeurd..."/>
-                            </group>
-                        </page>
                     </notebook>
                 </sheet>
                 <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Dialog Form View: Extra info (wizard met statusbar — analoog aan activiteiten) -->
+    <record id="view_professionalisering_form_details" model="ir.ui.view">
+        <field name="name">professionalisering.record.form.details</field>
+        <field name="model">professionalisering.record</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Extra info" class="o_professionalisering_wizard_form">
+                <field name="state" invisible="1"/>
+                <field name="is_owner" invisible="1"/>
+                <field name="is_admin" invisible="1"/>
+                <field name="show_invites" invisible="1"/>
+                <field name="verschillende_dagen" invisible="1"/>
+                <field name="type" invisible="1"/>
+                <header>
+                    <field name="wizard_step" widget="statusbar" options="{'clickable': '0'}"/>
+                </header>
+                <sheet>
+                    <!-- Stap 1: Gaat een collega mee? -->
+                    <div invisible="wizard_step != '1'" class="w-100">
+                        <p class="text-muted mb-2">
+                            Voeg eventueel collega's toe die mee inschrijven voor dezelfde opleiding.
+                        </p>
+                        <field name="invite_ids" nolabel="1"
+                               readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
+                            <list editable="bottom">
+                                <field name="employee_id"/>
+                                <field name="employee_school_names" readonly="1"/>
+                            </list>
+                        </field>
+                    </div>
+                    <!-- Stap 2: Datums -->
+                    <div invisible="wizard_step != '2'" class="w-100">
+                        <p class="text-muted mb-2"
+                           invisible="verschillende_dagen">
+                            <i class="fa fa-info-circle me-1"/>
+                            Niet van toepassing — vink eerst <strong>"Niet-aaneensluitende dagen"</strong>
+                            aan op het hoofdformulier om losstaande datums op te geven.
+                        </p>
+                        <field name="date_line_ids" nolabel="1"
+                               invisible="not verschillende_dagen"
+                               readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
+                            <list editable="bottom">
+                                <field name="date"/>
+                                <field name="cost"/>
+                            </list>
+                        </field>
+                    </div>
+                    <!-- Stap 3: Motivatie -->
+                    <div invisible="wizard_step != '3'" class="w-100">
+                        <p class="text-muted mb-2">
+                            Beschrijf waarom deze opleiding voor jou (en eventueel je collega's) waardevol is.
+                        </p>
+                        <field name="description" nolabel="1"
+                               placeholder="bv. Ik wil mijn kennis over differentiatie in de klas verdiepen om beter te kunnen omgaan met heterogene groepen..."
+                               readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_wizard_prev"
+                            string="Vorige"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="wizard_step == '1'"/>
+                    <button name="action_wizard_next"
+                            string="Volgende"
+                            type="object"
+                            class="btn-primary"
+                            invisible="wizard_step == '3'"/>
+                    <button name="action_submit_from_dialog"
+                            string="Indienen &amp; bevestigen"
+                            type="object"
+                            class="btn-success"
+                            invisible="wizard_step != '3' or state != 'selection_of_form' or not is_owner"/>
+                    <button string="Opslaan"
+                            class="btn-primary"
+                            special="save"
+                            invisible="wizard_step != '3' or (state == 'selection_of_form' and is_owner)"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
             </form>
         </field>
     </record>
@@ -307,15 +417,13 @@
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
-                <field name="priority" widget="priority" optional="show"
-                       groups="professionalisering.group_professionalisering_directie"/>
                 <field name="type" optional="hide"/>
                 <field name="vorm_display" string="Vorm"/>
                 <field name="titel"/>
                 <field name="employee_id"/>
                 <field name="school_id"/>
                 <field name="dates_display" widget="html"/>
-                <field name="total_cost" string="Geschatte kost" optional="show"/>
+                <field name="total_cost" string="Prijs" optional="show"/>
                 <field name="totale_kost" string="Totaal"
                        groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
                 <field name="assigned_to" optional="show"
@@ -323,7 +431,7 @@
                 <field name="state" widget="badge"
                        decoration-info="state == 'selection_of_form'"
                        decoration-warning="state in ('fill_in_form_individueel', 'fill_in_form_teamleren')"
-                       decoration-success="state in ('bevestiging', 'done')"
+                       decoration-success="state == 'done'"
                        decoration-danger="state == 'weigering'"/>
             </list>
         </field>
@@ -339,49 +447,45 @@
                 <field name="employee_id"/>
                 <field name="name"/>
                 <field name="assigned_to"/>
+                <field name="start_date"/>
                 <filter string="Mijn aanvragen" name="my_requests" domain="['|', ('employee_id.user_id', '=', uid), ('invite_ids.employee_id.user_id', '=', uid)]"/>
                 <separator/>
                 <filter string="Aan mij toegewezen" name="assigned_to_me" domain="[('assigned_to.user_id', '=', uid)]"/>
                 <filter string="Te beoordelen" name="to_approve" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
-                <filter string="Betaling openstaand" name="payment_pending" domain="[('state', '=', 'bevestiging'), ('payment_done', '=', False)]"/>
-                <filter string="Vervangingen openstaand" name="replacement_pending" domain="[('state', '=', 'bevestiging')]"/>
+                <filter string="Vervangingen openstaand" name="replacement_pending" domain="[('state', '=', 'done')]"/>
                 <separator/>
                 <filter string="Formulier kiezen" name="state_selection_of_form" domain="[('state', '=', 'selection_of_form')]"/>
                 <filter string="Ingediend" name="state_submitted" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
-                <filter string="Bevestigd" name="state_bevestiging" domain="[('state', '=', 'bevestiging')]"/>
                 <filter string="Geweigerd" name="state_weigering" domain="[('state', '=', 'weigering')]"/>
                 <filter string="Afgerond" name="state_done" domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter string="Deze maand" name="date_this_month"
+                        domain="[('start_date', '&gt;=', (context_today()).strftime('%Y-%m-01'))]"/>
+                <filter string="Vorige maand" name="date_last_month"
+                        domain="[('start_date', '&gt;=', (context_today() + relativedelta(months=-1)).strftime('%Y-%m-01')),
+                                 ('start_date', '&lt;', context_today().strftime('%Y-%m-01'))]"/>
+                <filter string="Dit jaar" name="date_this_year"
+                        domain="[('start_date', '&gt;=', (context_today()).strftime('%Y-01-01'))]"/>
+                <filter string="Dit schooljaar" name="date_school_year"
+                        domain="[('start_date', '&gt;=', (context_today() if context_today().month >= 9 else context_today() + relativedelta(years=-1)).strftime('%Y-09-01'))]"/>
                 <group>
                     <filter string="Status" name="group_state" domain="[]" context="{'group_by': 'state'}"/>
                     <filter string="Medewerker" name="group_employee" domain="[]" context="{'group_by': 'employee_id'}"/>
                     <filter string="School" name="group_school" domain="[]" context="{'group_by': 'school_id'}"/>
-                    <filter string="Prioriteit" name="group_priority" domain="[]" context="{'group_by': 'priority'}"/>
                     <filter string="Type" name="group_type" domain="[]" context="{'group_by': 'type'}"/>
                     <filter string="Toegewezen aan" name="group_assigned" domain="[]" context="{'group_by': 'assigned_to'}"/>
+                    <filter string="Startdatum" name="group_start_date" domain="[]" context="{'group_by': 'start_date:month'}"/>
                 </group>
             </search>
         </field>
     </record>
 
-    <!-- Invite Form View -->
+    <!-- Invite Form View (readonly — bevestiging gebeurt door directie) -->
     <record id="view_professionalisering_invite_form" model="ir.ui.view">
         <field name="name">professionalisering.invite.form</field>
         <field name="model">professionalisering.invite</field>
         <field name="arch" type="xml">
-            <form>
-                <header>
-                    <button name="action_accept"
-                            string="Accepteren"
-                            type="object"
-                            class="btn-primary"
-                            invisible="state != 'pending'"/>
-                    <button name="action_reject"
-                            string="Weigeren"
-                            type="object"
-                            class="btn-danger"
-                            invisible="state != 'pending'"/>
-                    <field name="state" widget="statusbar"/>
-                </header>
+            <form create="false" edit="false">
                 <sheet>
                     <group>
                         <group>
@@ -390,6 +494,7 @@
                         </group>
                         <group>
                             <field name="employee_id"/>
+                            <field name="professionalisering_state"/>
                         </group>
                     </group>
                 </sheet>
@@ -397,25 +502,253 @@
         </field>
     </record>
 
-    <!-- Invite List View -->
+    <!-- Invite List View (readonly — voor documentatie) -->
     <record id="view_professionalisering_invite_list" model="ir.ui.view">
         <field name="name">professionalisering.invite.list</field>
         <field name="model">professionalisering.invite</field>
         <field name="arch" type="xml">
-            <list>
+            <list create="false" edit="false">
                 <field name="professionalisering_titel"/>
                 <field name="invited_by"/>
-                <field name="state" widget="badge"
-                       decoration-info="state == 'pending'"
-                       decoration-success="state == 'accepted'"
-                       decoration-danger="state == 'rejected'"/>
-                <button name="action_accept" string="Accepteren" type="object"
-                        class="btn-primary" icon="fa-check"
-                        invisible="state != 'pending'"/>
-                <button name="action_reject" string="Weigeren" type="object"
-                        class="btn-danger" icon="fa-times"
-                        invisible="state != 'pending'"/>
+                <field name="professionalisering_state" widget="badge"/>
             </list>
         </field>
     </record>
+
+    <!-- Address List View -->
+    <record id="view_professionalisering_address_list" model="ir.ui.view">
+        <field name="name">professionalisering.address.list</field>
+        <field name="model">professionalisering.address</field>
+        <field name="arch" type="xml">
+            <list decoration-warning="needs_review">
+                <field name="organization" optional="show"/>
+                <field name="name"/>
+                <field name="is_online" optional="show" widget="boolean_toggle"/>
+                <field name="street" optional="hide"/>
+                <field name="number" optional="hide"/>
+                <field name="postal_code" optional="show"/>
+                <field name="city" optional="show"/>
+                <field name="country_id" optional="hide"/>
+                <field name="needs_review" widget="boolean_toggle" optional="show"
+                       string="Te bevestigen"/>
+                <field name="active" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Address Search View -->
+    <record id="view_professionalisering_address_search" model="ir.ui.view">
+        <field name="name">professionalisering.address.search</field>
+        <field name="model">professionalisering.address</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="organization"/>
+                <field name="city"/>
+                <field name="postal_code"/>
+                <field name="street"/>
+                <separator/>
+                <filter string="Te bevestigen" name="filter_needs_review"
+                        domain="[('needs_review', '=', True)]"/>
+                <separator/>
+                <filter string="Online / Webinar" name="filter_online" domain="[('is_online', '=', True)]"/>
+                <filter string="Fysiek" name="filter_physical" domain="[('is_online', '=', False)]"/>
+                <separator/>
+                <filter string="Gearchiveerd" name="archived" domain="[('active', '=', False)]"/>
+                <group>
+                    <filter string="Organisator" name="group_org" domain="[]" context="{'group_by': 'organization'}"/>
+                    <filter string="Gemeente" name="group_city" domain="[]" context="{'group_by': 'city'}"/>
+                    <filter string="Land" name="group_country" domain="[]" context="{'group_by': 'country_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Address Form View -->
+    <record id="view_professionalisering_address_form" model="ir.ui.view">
+        <field name="name">professionalisering.address.form</field>
+        <field name="model">professionalisering.address</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_mark_reviewed"
+                            string="Bevestigen / aangevuld"
+                            type="object"
+                            class="btn-primary"
+                            invisible="not needs_review"
+                            groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"/>
+                </header>
+                <sheet>
+                    <widget name="web_ribbon" title="Gearchiveerd" bg_color="text-bg-danger" invisible="active"/>
+                    <widget name="web_ribbon" title="Online" bg_color="text-bg-info" invisible="not is_online"/>
+                    <widget name="web_ribbon" title="Te bevestigen" bg_color="text-bg-warning" invisible="not needs_review"/>
+                    <div class="oe_title">
+                        <label for="name" string="Naam locatie"/>
+                        <h1>
+                            <field name="name" placeholder="bv. Sint-Baafshuis Gent, Boogkeers 5 Antwerpen, Online"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Algemeen">
+                            <field name="organization" placeholder="bv. Katholiek Onderwijs Vlaanderen, CNO"/>
+                            <field name="is_online"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Locatie" invisible="is_online">
+                            <label for="street" string="Straat &amp; nummer"/>
+                            <div class="o_address_format">
+                                <field name="street" placeholder="Straat" class="o_address_street"/>
+                                <field name="number" placeholder="Nr." class="o_address_number"/>
+                            </div>
+                            <label for="postal_code" string="Postcode &amp; gemeente"/>
+                            <div class="o_address_format">
+                                <field name="postal_code" placeholder="Postcode" class="o_address_zip"/>
+                                <field name="city" placeholder="Gemeente" class="o_address_city"/>
+                            </div>
+                            <field name="country_id" options="{'no_open': True, 'no_create': True}"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Facturatie" name="page_billing">
+                            <group>
+                                <group>
+                                    <label for="billing_street" string="Facturatieadres"/>
+                                    <div class="o_address_format">
+                                        <field name="billing_street" placeholder="Straat &amp; nummer" class="o_address_street"/>
+                                    </div>
+                                    <label for="billing_postal_code" string="Postcode &amp; gemeente"/>
+                                    <div class="o_address_format">
+                                        <field name="billing_postal_code" placeholder="Postcode" class="o_address_zip"/>
+                                        <field name="billing_city" placeholder="Gemeente" class="o_address_city"/>
+                                    </div>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Opmerking" name="page_note">
+                            <field name="note" placeholder="bv. Zaal A, 2de verdieping, parking achterzijde, ..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+
+    <!-- Address Picker Wizard (TransientModel) -->
+    <record id="view_professionalisering_address_picker_form" model="ir.ui.view">
+        <field name="name">professionalisering.address.picker.form</field>
+        <field name="model">professionalisering.address.picker</field>
+        <field name="arch" type="xml">
+            <form string="Geavanceerd kiezen" class="o_professionalisering_wizard_form o_professionalisering_address_picker">
+                <header>
+                    <field name="step" widget="statusbar" options="{'clickable': '0'}"/>
+                </header>
+                <sheet>
+                    <!-- ============================================================
+                         STAP 1: Organisatie kiezen
+                         ============================================================ -->
+                    <div invisible="step != '1'" class="w-100">
+                        <p class="text-muted mb-2">
+                            <strong>Stap 1.</strong> Zoek of typ de organisatie. Klik op een rij om
+                            ze te kiezen, of bevestig je eigen invoer als de organisatie er nog niet
+                            tussen staat.
+                        </p>
+                        <group>
+                            <field name="organization_filter"
+                                   widget="char_filter"
+                                   placeholder="bv. CNO, KOV, KU Leuven, ..."/>
+                        </group>
+                        <field name="available_org_address_ids" nolabel="1"
+                               context="{'picker_id': id}">
+                            <list create="false" edit="false" delete="false">
+                                <field name="organization" string="Organisatie"/>
+                                <button name="action_select_organization_for_picker"
+                                        type="object"
+                                        string="Kies organisatie"
+                                        icon="fa-arrow-right"
+                                        class="btn-primary"/>
+                            </list>
+                        </field>
+                        <field name="can_use_typed_organization" invisible="1"/>
+                        <div class="alert alert-info mt-3" role="alert"
+                             invisible="not can_use_typed_organization">
+                            <p class="mb-2">
+                                <i class="fa fa-info-circle me-1"/>
+                                <strong>"<field name="organization_filter" readonly="1" nolabel="1" class="oe_inline"/>"</strong>
+                                staat nog niet in de lijst. Bevestig om verder te gaan met deze
+                                organisatie als nieuwe.
+                            </p>
+                            <button name="action_use_typed_organization"
+                                    type="object"
+                                    string="Bevestig en ga naar locatie"
+                                    icon="fa-arrow-right"
+                                    class="btn-info"/>
+                        </div>
+                    </div>
+
+                    <!-- ============================================================
+                         STAP 2: Locatie kiezen voor de gekozen organisatie
+                         ============================================================ -->
+                    <div invisible="step != '2'" class="w-100">
+                        <p class="text-muted mb-2">
+                            <strong>Stap 2.</strong> Kies een locatie voor
+                            <strong><field name="organization" readonly="1" nolabel="1" class="oe_inline"/></strong>,
+                            of typ een nieuwe locatie als ze er niet bij staat.
+                        </p>
+                        <group>
+                            <group>
+                                <field name="location_filter"
+                                       widget="char_filter"
+                                       placeholder="bv. Antwerpen, Boogkeers, 9000, ..."/>
+                            </group>
+                            <group>
+                                <field name="online_filter" widget="radio"/>
+                            </group>
+                        </group>
+                        <field name="available_address_ids" nolabel="1"
+                               context="{'picker_id': id}">
+                            <list create="false" edit="false" delete="false"
+                                  decoration-info="is_online">
+                                <field name="name"/>
+                                <field name="city"/>
+                                <field name="postal_code" optional="show"/>
+                                <field name="is_online" widget="boolean_toggle" optional="show"/>
+                                <button name="action_select_for_picker"
+                                        type="object"
+                                        string="Kies"
+                                        icon="fa-check"
+                                        class="btn-primary"/>
+                            </list>
+                        </field>
+                        <field name="can_create_placeholder" invisible="1"/>
+                        <field name="placeholder_label" invisible="1"/>
+                        <div class="alert alert-warning mt-3" role="alert"
+                             invisible="not can_create_placeholder">
+                            <p class="mb-2">
+                                <i class="fa fa-info-circle me-1"/>
+                                <strong>"<field name="location_filter" readonly="1" nolabel="1" class="oe_inline"/>"</strong>
+                                staat niet in de lijst — deze zal later bevestigd worden door de directie.
+                            </p>
+                            <button name="action_create_placeholder"
+                                    type="object"
+                                    class="btn-warning">
+                                <i class="fa fa-plus-circle me-1"/>
+                                <field name="placeholder_label" nolabel="1" readonly="1" class="oe_inline"/>
+                            </button>
+                        </div>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_back_to_step_1"
+                            type="object"
+                            string="← Terug naar organisatie"
+                            class="btn-secondary"
+                            invisible="step != '2'"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
 </odoo>

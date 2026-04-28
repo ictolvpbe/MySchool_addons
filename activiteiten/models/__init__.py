@@ -1,5 +1,6 @@
 from . import activiteiten
 from . import activiteiten_action
+from . import activiteiten_config
 from . import activiteiten_invite
 from . import bus_assignment
 from . import kosten_line

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="action_drukwerk_print_confirm_wizard" model="ir.actions.act_window">
+        <field name="name">Document afdrukken</field>
+        <field name="res_model">drukwerk.print.confirm.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="view_drukwerk_print_confirm_wizard_form" model="ir.ui.view">
+        <field name="name">drukwerk.print.confirm.wizard.form</field>
+        <field name="model">drukwerk.print.confirm.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Document afdrukken">
+                <sheet>
+                    <div class="alert alert-info" role="alert">
+                        <h4 class="mb-2"><i class="fa fa-print me-2"/>Afdruk bevestigen</h4>
+                        <p>De PDF is geopend in een nieuw tabblad. Druk het daar af.</p>
+                        <p class="mb-0">Klik op <strong>"Afgedrukt &amp; afgerond"</strong> zodra het document succesvol is afgedrukt, of op <strong>"Heropenen"</strong> als je de PDF opnieuw wil openen.</p>
+                    </div>
+                    <group>
+                        <field name="titel" readonly="1"/>
+                        <field name="record_id" invisible="1"/>
+                    </group>
+                    <div class="d-flex justify-content-start mt-3">
+                        <button name="action_open_pdf"
+                                string="Heropenen"
+                                type="object"
+                                class="btn-secondary"
+                                icon="fa-external-link"/>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_confirm_printed"
+                            string="Afgedrukt &amp; afgerond"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Annuleren"
+                            class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

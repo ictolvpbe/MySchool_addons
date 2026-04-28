@@ -68,6 +68,11 @@ class MySchoolDashboard(models.Model):
         compute='_compute_access_rights')
     is_prof_only_medewerker = fields.Boolean(
         compute='_compute_access_rights')
+    is_only_teacher = fields.Boolean(
+        string='Alleen leerkracht', compute='_compute_access_rights',
+        help='True als de gebruiker geen manager/admin-rol heeft in activiteiten, '
+             'professionalisering of drukwerk.',
+    )
 
     # Counts activiteiten (per actual state)
     act_total = fields.Integer(
@@ -298,6 +303,13 @@ class MySchoolDashboard(models.Model):
             rec.is_prof_only_boekhouding = rec.is_prof_boekhouding and not rec.is_prof_directie and not rec.is_prof_vervangingen
             rec.is_prof_only_vervangingen = rec.is_prof_vervangingen and not rec.is_prof_directie and not rec.is_prof_boekhouding
             rec.is_prof_only_medewerker = not rec.is_prof_directie and not rec.is_prof_boekhouding and not rec.is_prof_vervangingen
+            rec.is_only_teacher = (
+                rec.is_only_medewerker
+                and rec.is_prof_only_medewerker
+                and not rec.is_drukwerk_manager
+                and not rec.is_drukwerk_drukwerk
+                and not rec.is_drukwerk_boekhouding
+            )
 
     # --- KPI ---
 
@@ -557,8 +569,14 @@ class MySchoolDashboard(models.Model):
             'name': 'Professionalisering',
             'res_model': 'professionalisering.record',
             'view_mode': 'list,form',
-            'context': {},
+            'context': dict(self.env.context),
         }
+        # If a search_default_* filter is set in context (from a dashboard badge click),
+        # keep it and skip role-based defaults so the user can remove the filter.
+        has_search_default = any(k.startswith('search_default_') for k in self.env.context)
+        if has_search_default:
+            return action
+        action['context'] = {}
         model = 'professionalisering.record'
         if self._is_admin(model):
             pass  # no filter for admin
@@ -568,7 +586,7 @@ class MySchoolDashboard(models.Model):
             if self._safe_has_group('professionalisering.group_professionalisering_directie'):
                 pass  # directie sees all records from their school
             elif self._safe_has_group('professionalisering.group_professionalisering_boekhouding'):
-                action['context'] = {'search_default_payment_pending': 1}
+                action['context'] = {'search_default_state_done': 1}
             elif self._safe_has_group('professionalisering.group_professionalisering_vervangingen'):
                 action['context'] = {'search_default_replacement_pending': 1}
         else:
@@ -600,8 +618,12 @@ class MySchoolDashboard(models.Model):
             'name': 'Activiteiten',
             'res_model': 'activiteiten.record',
             'view_mode': 'list,form',
-            'context': {},
+            'context': dict(self.env.context),
         }
+        has_search_default = any(k.startswith('search_default_') for k in self.env.context)
+        if has_search_default:
+            return action
+        action['context'] = {}
         model = 'activiteiten.record'
         if self._is_admin(model):
             pass
@@ -648,8 +670,12 @@ class MySchoolDashboard(models.Model):
             'name': 'Drukwerk',
             'res_model': 'drukwerk.record',
             'view_mode': 'list,form',
-            'context': {},
+            'context': dict(self.env.context),
         }
+        has_search_default = any(k.startswith('search_default_') for k in self.env.context)
+        if has_search_default:
+            return action
+        action['context'] = {}
         model = 'drukwerk.record'
         if self._is_admin(model):
             pass
@@ -673,6 +699,30 @@ class MySchoolDashboard(models.Model):
             'target': 'current',
         }
 
+    def action_open_drukwerk_class_report(self):
+        if 'drukwerk.class.report' not in self.env:
+            return False
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Overzicht per klas',
+            'res_model': 'drukwerk.class.report',
+            'view_mode': 'list',
+            'context': {'search_default_type_gewoon': 1},
+            'target': 'current',
+        }
+
+    def action_open_drukwerk_student_report(self):
+        if 'drukwerk.student.report' not in self.env:
+            return False
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Overzicht per leerling',
+            'res_model': 'drukwerk.student.report',
+            'view_mode': 'list',
+            'context': {'search_default_type_gewoon': 1},
+            'target': 'current',
+        }
+
     # --- Optional apps: view inheritance & menu deactivation ---
 
     _OPTIONAL_APPS = {
@@ -684,6 +734,13 @@ class MySchoolDashboard(models.Model):
             'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
                     '<h2 class="text-muted">Professionalisering</h2></xpath>',
             'menu_ref': 'professionalisering.menu_professionalisering_root',
+            'reparent_under_dashboard': True,
+            'reparent_sequence': 10,
+            'keep_submenus': [
+                'professionalisering.menu_professionalisering_all',
+                'professionalisering.menu_professionalisering_per_employee',
+                'professionalisering.menu_professionalisering_addresses',
+            ],
         },
         'activiteiten': {
             'data_name': 'view_activiteiten_form_title',
@@ -693,6 +750,12 @@ class MySchoolDashboard(models.Model):
             'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
                     '<h2 class="text-muted">Activiteit</h2></xpath>',
             'menu_ref': 'activiteiten.menu_activiteiten_root',
+            'reparent_under_dashboard': True,
+            'reparent_sequence': 20,
+            'keep_submenus': [
+                'activiteiten.menu_activiteiten_all',
+                'activiteiten.menu_activiteiten_per_employee',
+            ],
         },
         'drukwerk': {
             'data_name': 'view_drukwerk_form_title',
@@ -702,6 +765,8 @@ class MySchoolDashboard(models.Model):
             'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
                     '<h2 class="text-muted">Drukwerk</h2></xpath>',
             'menu_ref': 'drukwerk.menu_drukwerk_root',
+            'reparent_under_dashboard': True,
+            'reparent_sequence': 30,
         },
     }
 
@@ -715,7 +780,12 @@ class MySchoolDashboard(models.Model):
 
     @api.model
     def _setup_optional_apps(self):
-        """Create view inheritances and deactivate menus for installed optional apps."""
+        """Create view inheritances and reparent/activate menus for installed optional apps."""
+        dashboard_root = self.env.ref(
+            'myschool_dashboard.menu_myschool_dashboard_root',
+            raise_if_not_found=False,
+        )
+
         for module_name, cfg in self._OPTIONAL_APPS.items():
             model_available = cfg['view_model'] in self.env
 
@@ -739,10 +809,50 @@ class MySchoolDashboard(models.Model):
                         'noupdate': False,
                     })
 
-            # Deactivate/reactivate the module's root menu
+            # Manage the module's root menu visibility
             menu = self.env.ref(cfg['menu_ref'], raise_if_not_found=False)
-            if menu:
-                if model_available and menu.active:
-                    menu.sudo().active = False
-                elif not model_available and not menu.active:
+            if not menu:
+                continue
+
+            if cfg.get('reparent_under_dashboard') and dashboard_root and model_available:
+                # Move the app's root menu under the dashboard root so it appears
+                # as a dropdown inside the "Aanvragen" app instead of as a top-level app.
+                vals = {}
+                if menu.parent_id != dashboard_root:
+                    vals['parent_id'] = dashboard_root.id
+                if not menu.active:
+                    vals['active'] = True
+                if cfg.get('reparent_sequence') and menu.sequence != cfg['reparent_sequence']:
+                    vals['sequence'] = cfg['reparent_sequence']
+                if vals:
+                    menu.sudo().write(vals)
+
+                # If keep_submenus is set, deactivate all other direct children
+                # so the dropdown only shows the curated entries.
+                keep_xmlids = cfg.get('keep_submenus')
+                if keep_xmlids:
+                    keep_ids = set()
+                    for xmlid in keep_xmlids:
+                        sub = self.env.ref(xmlid, raise_if_not_found=False)
+                        if sub:
+                            keep_ids.add(sub.id)
+                    children = self.env['ir.ui.menu'].sudo().search([
+                        ('parent_id', '=', menu.id),
+                    ])
+                    to_deactivate = children.filtered(
+                        lambda c: c.id not in keep_ids and c.active
+                    )
+                    if to_deactivate:
+                        to_deactivate.write({'active': False})
+                    to_activate = children.filtered(
+                        lambda c: c.id in keep_ids and not c.active
+                    )
+                    if to_activate:
+                        to_activate.write({'active': True})
+            elif cfg.get('keep_menu_visible'):
+                if not menu.active:
                     menu.sudo().active = True
+            elif model_available and menu.active:
+                menu.sudo().active = False
+            elif not model_available and not menu.active:
+                menu.sudo().active = True

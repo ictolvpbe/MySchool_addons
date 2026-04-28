@@ -3,6 +3,8 @@ import io
 import logging
 from datetime import timedelta
 
+from markupsafe import Markup
+
 from odoo import models, fields, api
 from odoo.exceptions import UserError, ValidationError
 
@@ -142,6 +144,25 @@ class DrukwerkRecord(models.Model):
         ('done', 'Afgerond'),
     ], string='Status', default='draft', required=True, tracking=True)
     is_owner = fields.Boolean(compute='_compute_is_owner')
+    can_select_color = fields.Boolean(compute='_compute_can_select_color')
+
+    @api.depends_context('uid')
+    def _compute_can_select_color(self):
+        allowed = (
+            self.env.user.has_group('drukwerk.group_drukwerk_personeelslid_kleur')
+            or self.env.user.has_group('drukwerk.group_drukwerk_admin')
+        )
+        for record in self:
+            record.can_select_color = allowed
+
+    @api.constrains('kleur')
+    def _check_kleur_permission(self):
+        for record in self:
+            if record.kleur == 'kleur' and not record.can_select_color:
+                raise ValidationError(
+                    "U heeft geen rechten om kleur-drukwerk aan te vragen. "
+                    "Vraag een collega met de rol 'Personeelslid Kleur' om de aanvraag in te dienen."
+                )
 
     @api.depends('dubbelzijdig', 'nieten', 'perforeren', 'liggend',
                  'sorteren', 'a3_plooien', 'boekje_a4',
@@ -311,25 +332,72 @@ class DrukwerkRecord(models.Model):
             'target': 'new',
         }
 
+    def action_open_class_report(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Drukwerk per klas',
+            'res_model': 'drukwerk.class.report',
+            'view_mode': 'list',
+            'context': {'search_default_type_gewoon': 1},
+            'target': 'current',
+        }
+
+    def action_open_student_report(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Drukwerk per leerling',
+            'res_model': 'drukwerk.student.report',
+            'view_mode': 'list',
+            'context': {'search_default_type_gewoon': 1},
+            'target': 'current',
+        }
+
     @api.constrains('document_filename')
     def _check_pdf_only(self):
         for record in self:
             if record.document_filename and not record.document_filename.lower().endswith('.pdf'):
                 raise ValidationError("Alleen PDF-bestanden zijn toegestaan. Upload een .pdf bestand.")
 
+    def _recount_pages(self):
+        """Update aantal_paginas and liggend by reading the PDF from document_file."""
+        for record in self:
+            if not record.document_file:
+                continue
+            try:
+                pdf_data = base64.b64decode(record.document_file)
+                page_count = self._count_pdf_pages(pdf_data)
+                if page_count > 0:
+                    record.aantal_paginas = page_count
+                record.liggend = self._is_pdf_landscape(pdf_data)
+            except Exception:
+                _logger.warning('Could not read PDF info for %s', record.document_filename, exc_info=True)
+
     @api.onchange('document_file', 'document_filename')
     def _onchange_document_file(self):
-        if not self.document_file or not self.document_filename:
-            return
-        if not self.document_filename.lower().endswith('.pdf'):
-            return
+        if self.document_file and self.document_filename and self.document_filename.lower().endswith('.pdf'):
+            self._recount_pages()
+
+    @staticmethod
+    def _is_pdf_landscape(pdf_bytes):
+        """Return True if the first page of the PDF is landscape (width > height)."""
         try:
-            pdf_data = base64.b64decode(self.document_file)
-            page_count = self._count_pdf_pages(pdf_data)
-            if page_count > 0:
-                self.aantal_paginas = page_count
-        except Exception:
-            _logger.warning('Could not count pages for %s', self.document_filename, exc_info=True)
+            from PyPDF2 import PdfReader
+            page = PdfReader(io.BytesIO(pdf_bytes)).pages[0]
+            mb = page.mediabox
+            return float(mb.width) > float(mb.height)
+        except (ImportError, Exception):
+            pass
+        try:
+            import pikepdf
+            pdf = pikepdf.open(io.BytesIO(pdf_bytes))
+            mb = pdf.pages[0].MediaBox
+            width = float(mb[2]) - float(mb[0])
+            height = float(mb[3]) - float(mb[1])
+            pdf.close()
+            return width > height
+        except (ImportError, Exception):
+            pass
+        return False
 
     @staticmethod
     def _count_pdf_pages(pdf_bytes):
@@ -369,7 +437,14 @@ class DrukwerkRecord(models.Model):
         for record in records:
             if not record.name or record.name == 'New':
                 record.sudo().name = self._next_reference()
+        records.filtered(lambda r: r.document_file)._recount_pages()
         return records
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'document_file' in vals:
+            self._recount_pages()
+        return res
 
     def _next_reference(self):
         """Get next unique reference, syncing the sequence if needed."""
@@ -418,6 +493,23 @@ class DrukwerkRecord(models.Model):
             record.state = 'afdrukken'
         self._notify_drukwerk_team()
 
+    def action_open_details(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Extra info',
+            'res_model': 'drukwerk.record',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('drukwerk.view_drukwerk_form_details').id, 'form')],
+            'target': 'new',
+        }
+
+    def action_submit_from_dialog(self):
+        self.ensure_one()
+        self.action_submit()
+        return {'type': 'ir.actions.act_window_close'}
+
     # --- Drukwerk actions ---
 
     def action_mark_printed(self):
@@ -425,6 +517,7 @@ class DrukwerkRecord(models.Model):
             if record.state != 'afdrukken':
                 raise UserError("Kan alleen in de afdrukkenfase afgedrukt worden.")
             record.state = 'done'
+        self._send_notification('done')
 
     # --- Print actions ---
 
@@ -433,9 +526,12 @@ class DrukwerkRecord(models.Model):
         if not self.document_file:
             raise UserError("Geen document beschikbaar om af te drukken.")
         return {
-            'type': 'ir.actions.act_url',
-            'url': f'/drukwerk/print/{self.id}',
-            'target': 'new',
+            'type': 'ir.actions.client',
+            'tag': 'drukwerk_print_and_confirm',
+            'params': {
+                'record_id': self.id,
+                'url': f'/drukwerk/print/{self.id}',
+            },
         }
 
     # --- Shared actions ---
@@ -477,8 +573,16 @@ class DrukwerkRecord(models.Model):
             'target': 'new',
         }
 
+    def action_delete(self):
+        self.unlink()
+        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+
     def unlink(self):
-        if not self.env.user.has_group('drukwerk.group_drukwerk_admin'):
+        privileged = (
+            self.env.user.has_group('drukwerk.group_drukwerk_admin')
+            or self.env.user.has_group('drukwerk.group_drukwerk_drukwerk')
+        )
+        if not privileged:
             for record in self:
                 if record.state not in ('draft', 'form_invullen'):
                     raise UserError("U kunt alleen aanvragen verwijderen die nog niet ingediend zijn.")
@@ -498,6 +602,27 @@ class DrukwerkRecord(models.Model):
                     note=f'Drukwerk aanvraag "{record.titel}" is klaar om af te drukken.',
                     user_id=user.id,
                 )
+
+    _NOTIFICATION_TEMPLATES = {
+        'done': 'drukwerk.email_template_drukwerk_done',
+    }
+
+    def _send_notification(self, notification_type):
+        template_xmlid = self._NOTIFICATION_TEMPLATES.get(notification_type)
+        if not template_xmlid:
+            return
+        template = self.env.ref(template_xmlid, raise_if_not_found=False)
+        if not template:
+            return
+        for record in self:
+            rendered = template._render_template(
+                template.body_html, template.render_model, [record.id],
+                engine='inline_template',
+                options={'post_process': True},
+            )
+            body = rendered.get(record.id, '')
+            if body:
+                record.message_post(body=Markup(body), subtype_xmlid='mail.mt_note')
 
     @api.model
     def _cron_print_deadline_reminder(self):

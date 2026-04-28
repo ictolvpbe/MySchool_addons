@@ -142,17 +142,17 @@ class Activiteiten(models.Model):
         default=False,
         help='Geeft aan dat deze activiteit onder de bijdragenregeling valt.',
     )
-    verzekering_pct = fields.Float(
-        string='Verzekeringspercentage (%)',
-        compute='_compute_verzekering_pct',
-        inverse='_inverse_verzekering_pct',
-    )
     verzekering_done = fields.Boolean(string='Verzekering geregeld', default=False)
+    wizard_step = fields.Selection([
+        ('1', 'Begeleiders'),
+        ('2', 'Opmerkingen'),
+        ('3', 'Kosten'),
+        ('4', 'Documenten'),
+    ], default='1', copy=False)
     rejection_reason = fields.Text(string='Reden voor afkeuring')
     invite_ids = fields.One2many(
         'activiteiten.invite', 'activiteit_id', string='Uitnodigingen',
     )
-    has_pending_invites = fields.Boolean(compute='_compute_has_pending_invites')
     student_count = fields.Integer(
         string='Aantal leerlingen',
         compute='_compute_student_count',
@@ -354,42 +354,6 @@ class Activiteiten(models.Model):
         for record in self:
             record.can_manage_invites = is_admin or record.is_owner
 
-    @api.depends('invite_ids.state')
-    def _compute_has_pending_invites(self):
-        for record in self:
-            record.has_pending_invites = any(
-                i.state == 'pending' for i in record.invite_ids
-            )
-
-    def action_send_invites(self):
-        from .activiteiten_invite import LATE_STATES
-        for record in self:
-            unsent = record.invite_ids.filtered(lambda i: not i.notified and i.state == 'pending')
-            if not unsent:
-                raise UserError("Er zijn geen nieuwe uitnodigingen om te versturen.")
-            unsent._notify_invited_person()
-            unsent.write({'notified': True})
-            # Notify vervangingen if activity is already past approval
-            if record.state in LATE_STATES:
-                self._notify_vervangingen_new_invites(unsent)
-
-    def action_accept_invite(self):
-        for record in self:
-            invite = record.invite_ids.filtered(
-                lambda i: i.person_id.odoo_user_id == self.env.user and i.state == 'pending'
-            )[:1]
-            if not invite:
-                raise UserError("U heeft geen openstaande uitnodiging voor deze activiteit.")
-            invite.action_accept()
-
-    def action_reject_invite(self):
-        for record in self:
-            invite = record.invite_ids.filtered(
-                lambda i: i.person_id.odoo_user_id == self.env.user and i.state == 'pending'
-            )[:1]
-            if not invite:
-                raise UserError("U heeft geen openstaande uitnodiging voor deze activiteit.")
-            invite.action_reject()
 
     dates_display = fields.Html(
         string='Datum',
@@ -440,15 +404,41 @@ class Activiteiten(models.Model):
         except (ValueError, TypeError):
             return 2.0
 
-    def _compute_verzekering_pct(self):
-        pct = self._get_verzekering_pct()
-        for record in self:
-            record.verzekering_pct = pct
+    def _get_details_action(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Extra info',
+            'res_model': 'activiteiten.record',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('activiteiten.view_activiteiten_form_details').id, 'form')],
+            'target': 'new',
+        }
 
-    def _inverse_verzekering_pct(self):
-        for record in self:
-            self.env['ir.config_parameter'].sudo().set_param(
-                'activiteiten.verzekering_pct', str(record.verzekering_pct))
+    def action_open_details(self):
+        self.ensure_one()
+        self.wizard_step = '1'
+        return self._get_details_action()
+
+    def action_wizard_next(self):
+        self.ensure_one()
+        next_step = {'1': '2', '2': '3', '3': '4'}.get(self.wizard_step)
+        if next_step:
+            self.wizard_step = next_step
+        return self._get_details_action()
+
+    def action_wizard_prev(self):
+        self.ensure_one()
+        prev_step = {'2': '1', '3': '2', '4': '3'}.get(self.wizard_step)
+        if prev_step:
+            self.wizard_step = prev_step
+        return self._get_details_action()
+
+    def action_submit_from_dialog(self):
+        self.ensure_one()
+        self.action_submit_form()
+        return {'type': 'ir.actions.act_window_close'}
 
     @api.depends('kosten_ids.bedrag')
     def _compute_totale_kost(self):
@@ -618,8 +608,6 @@ class Activiteiten(models.Model):
                 self.env['activiteiten.invite'].sudo().create({
                     'activiteit_id': record.id,
                     'person_id': person.id,
-                    'state': 'accepted',
-                    'notified': True,
                 })
         return records
 
@@ -698,6 +686,7 @@ class Activiteiten(models.Model):
                 raise UserError("Bus controle is niet van toepassing.")
             record.bus_available = True
             record.state = 'pending_approval'
+        self._send_notification('bus_approved')
         self._send_notification('submit')
         self._schedule_directie_activity()
 
@@ -739,6 +728,15 @@ class Activiteiten(models.Model):
         for record in self:
             if record.state != 'pending_approval':
                 raise UserError("Alleen aanvragen in afwachting kunnen goedgekeurd worden.")
+            # Voeg alle uitgenodigde leerkrachten toe aan leerkracht_ids en breng hen op de hoogte
+            persons_to_add = record.invite_ids.mapped('person_id').filtered(
+                lambda p: p not in record.leerkracht_ids
+            )
+            if persons_to_add:
+                record.write({
+                    'leerkracht_ids': [(4, p.id) for p in persons_to_add],
+                })
+            record.invite_ids._notify_invited_person()
             record.state = 's_code'
         self._send_notification('approved')
         self._schedule_owner_approved_activity()
@@ -969,6 +967,7 @@ class Activiteiten(models.Model):
         'approved': 'activiteiten.email_template_approved',
         'rejected': 'activiteiten.email_template_rejected',
         'bus_refused': 'activiteiten.email_template_bus_refused',
+        'bus_approved': 'activiteiten.email_template_bus_approved',
     }
 
     def _send_notification(self, notification_type):

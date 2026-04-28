@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ============================================================ -->
+    <!-- Overzicht per klas                                           -->
+    <!-- ============================================================ -->
+
+    <record id="view_drukwerk_class_report_list" model="ir.ui.view">
+        <field name="name">drukwerk.class.report.list</field>
+        <field name="model">drukwerk.class.report</field>
+        <field name="arch" type="xml">
+            <list create="false" edit="false" delete="false" class="o_drukwerk_report_list">
+                <field name="klas_id"/>
+                <field name="school_id"/>
+                <field name="drukwerk_type" widget="badge"
+                       decoration-info="drukwerk_type == 'gewoon'"
+                       decoration-warning="drukwerk_type == 'examen'"/>
+                <field name="aantal_leerlingen" sum="Totaal"/>
+                <field name="aantal_aanvragen" sum="Totaal"/>
+                <field name="aantal_prints" sum="Totaal"/>
+                <field name="totale_kostprijs" widget="monetary" sum="Totaal"/>
+                <field name="currency_id" column_invisible="1"/>
+                <button name="action_view_students"
+                        type="object"
+                        string="Leerlingen"
+                        icon="fa-users"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_drukwerk_class_report_search" model="ir.ui.view">
+        <field name="name">drukwerk.class.report.search</field>
+        <field name="model">drukwerk.class.report</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="klas_id"/>
+                <field name="school_id"/>
+                <filter string="Gewoon drukwerk" name="type_gewoon"
+                        domain="[('drukwerk_type', '=', 'gewoon')]"/>
+                <filter string="Examen drukwerk" name="type_examen"
+                        domain="[('drukwerk_type', '=', 'examen')]"/>
+                <group>
+                    <filter string="School" name="group_school"
+                            context="{'group_by': 'school_id'}"/>
+                    <filter string="Type" name="group_type"
+                            context="{'group_by': 'drukwerk_type'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_drukwerk_class_report" model="ir.actions.act_window">
+        <field name="name">Overzicht per klas</field>
+        <field name="res_model">drukwerk.class.report</field>
+        <field name="view_mode">list</field>
+        <field name="search_view_id" ref="view_drukwerk_class_report_search"/>
+        <field name="context">{'search_default_type_gewoon': 1}</field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- Overzicht per leerling                                       -->
+    <!-- ============================================================ -->
+
+    <record id="view_drukwerk_student_report_list" model="ir.ui.view">
+        <field name="name">drukwerk.student.report.list</field>
+        <field name="model">drukwerk.student.report</field>
+        <field name="arch" type="xml">
+            <list create="false" edit="false" delete="false" class="o_drukwerk_report_list">
+                <field name="datum_indiening" widget="date"/>
+                <field name="person_id"/>
+                <field name="klas_id"/>
+                <field name="drukwerk_id" optional="show"/>
+                <field name="drukwerk_titel" optional="show"/>
+                <field name="drukwerk_type" widget="badge"
+                       decoration-info="drukwerk_type == 'gewoon'"
+                       decoration-warning="drukwerk_type == 'examen'"/>
+                <field name="aantal_prints" sum="Totaal"/>
+                <field name="totale_kostprijs" widget="monetary" sum="Totaal"/>
+                <field name="currency_id" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_drukwerk_student_report_search" model="ir.ui.view">
+        <field name="name">drukwerk.student.report.search</field>
+        <field name="model">drukwerk.student.report</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="person_id"/>
+                <field name="klas_id"/>
+                <field name="school_id"/>
+                <field name="drukwerk_id"/>
+                <field name="datum_indiening"/>
+                <filter string="Gewoon drukwerk" name="type_gewoon"
+                        domain="[('drukwerk_type', '=', 'gewoon')]"/>
+                <filter string="Examen drukwerk" name="type_examen"
+                        domain="[('drukwerk_type', '=', 'examen')]"/>
+                <separator/>
+                <filter string="Deze maand" name="date_this_month"
+                        domain="[('datum_indiening', '&gt;=', (context_today()).strftime('%Y-%m-01'))]"/>
+                <filter string="Vorige maand" name="date_last_month"
+                        domain="[('datum_indiening', '&gt;=', (context_today() + relativedelta(months=-1)).strftime('%Y-%m-01')), ('datum_indiening', '&lt;', context_today().strftime('%Y-%m-01'))]"/>
+                <filter string="Dit jaar" name="date_this_year"
+                        domain="[('datum_indiening', '&gt;=', (context_today()).strftime('%Y-01-01'))]"/>
+                <group>
+                    <filter string="Leerling" name="group_person"
+                            context="{'group_by': 'person_id'}"/>
+                    <filter string="Klas" name="group_klas"
+                            context="{'group_by': 'klas_id'}"/>
+                    <filter string="School" name="group_school"
+                            context="{'group_by': 'school_id'}"/>
+                    <filter string="Type" name="group_type"
+                            context="{'group_by': 'drukwerk_type'}"/>
+                    <filter string="Indieningsdatum" name="group_date"
+                            context="{'group_by': 'datum_indiening:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_drukwerk_student_report" model="ir.actions.act_window">
+        <field name="name">Overzicht per leerling</field>
+        <field name="res_model">drukwerk.student.report</field>
+        <field name="view_mode">list</field>
+        <field name="search_view_id" ref="view_drukwerk_student_report_search"/>
+        <field name="context">{'search_default_type_gewoon': 1}</field>
+    </record>
+
+</odoo>

@@ -1,6 +1,6 @@
 {
     'name': 'Professionalisering',
-    'version': '1.0',
+    'version': '3.8',
     'summary': 'Beheer van professionaliseringsaanvragen voor leerkrachten',
     'description': """
         Module voor het beheren van professionaliseringsaanvragen.
@@ -21,6 +21,15 @@
         'views/professionalisering_views.xml',
         'views/professionalisering_menu.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'professionalisering/static/src/scss/professionalisering.scss',
+            'professionalisering/static/src/js/char_filter_field.js',
+            'professionalisering/static/src/xml/char_filter_field.xml',
+            'professionalisering/static/src/js/address_review_notification.js',
+            'professionalisering/static/src/js/activity_menu_patch.js',
+        ],
+    },
     'installable': True,
     'application': True,
     'auto_install': False,

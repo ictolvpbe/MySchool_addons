@@ -1,5 +1,4 @@
 from odoo import models, fields, api
-from odoo.exceptions import UserError
 
 LATE_STATES = ('approved', 's_code', 'vervanging', 'done')
 
@@ -25,12 +24,6 @@ class ActiviteitenInvite(models.Model):
     person_id = fields.Many2one(
         'myschool.person', string='Leerkracht', required=True,
     )
-    state = fields.Selection([
-        ('pending', 'In afwachting'),
-        ('accepted', 'Geaccepteerd'),
-        ('rejected', 'Geweigerd'),
-    ], string='Status', default='pending', tracking=True)
-    notified = fields.Boolean(default=False)
 
     def _notify_invited_person(self):
         for invite in self:
@@ -41,70 +34,21 @@ class ActiviteitenInvite(models.Model):
             act.message_post(
                 body=(
                     '<p>Beste %s,</p>'
-                    '<p><strong>%s</strong> heeft u uitgenodigd voor de activiteit '
-                    '<strong>%s</strong>.</p>'
-                    '<p>Open deze aanvraag om de uitnodiging te accepteren of te weigeren.</p>'
+                    '<p>U bent door <strong>%s</strong> opgegeven als begeleider voor de activiteit '
+                    '<strong>%s</strong>, en de directie heeft dit goedgekeurd.</p>'
                 ) % (invite.person_id.name, act.create_uid.name, act.titel),
                 partner_ids=user.partner_id.ids,
                 message_type='notification',
                 subtype_xmlid='mail.mt_note',
             )
-            act.activity_schedule(
-                'mail.mail_activity_data_todo',
-                user_id=user.id,
-                summary='Uitnodiging activiteit: %s' % act.titel,
-                note='%s heeft u uitgenodigd. Open deze aanvraag om te accepteren of te weigeren.' % act.create_uid.name,
-            )
-
-    def action_accept(self):
-        for invite in self:
-            if invite.state != 'pending':
-                raise UserError("Deze uitnodiging is al beantwoord.")
-            invite.state = 'accepted'
-            invite._feedback_activity('geaccepteerd')
-            # Add person to leerkracht_ids
-            if invite.person_id not in invite.activiteit_id.leerkracht_ids:
-                invite.activiteit_id.write({
-                    'leerkracht_ids': [(4, invite.person_id.id)],
-                })
-            if invite.activiteit_id.state in LATE_STATES:
-                invite._notify_vervangingen('geaccepteerd')
-
-    def action_reject(self):
-        for invite in self:
-            if invite.state != 'pending':
-                raise UserError("Deze uitnodiging is al beantwoord.")
-            invite.state = 'rejected'
-            invite._feedback_activity('geweigerd')
-            # Remove person from leerkracht_ids
-            if invite.person_id in invite.activiteit_id.leerkracht_ids:
-                invite.activiteit_id.write({
-                    'leerkracht_ids': [(3, invite.person_id.id)],
-                })
-            if invite.activiteit_id.state in LATE_STATES:
-                invite._notify_vervangingen('geweigerd')
 
     def unlink(self):
         for invite in self:
             act = invite.activiteit_id
-            if act.state in LATE_STATES and invite.state == 'accepted':
-                # Remove from leerkracht_ids and notify vervangingen
-                if invite.person_id in act.leerkracht_ids:
-                    act.write({'leerkracht_ids': [(3, invite.person_id.id)]})
+            if act.state in LATE_STATES and invite.person_id in act.leerkracht_ids:
+                act.write({'leerkracht_ids': [(3, invite.person_id.id)]})
                 invite._notify_vervangingen('verwijderd')
         return super().unlink()
-
-    def _feedback_activity(self, result):
-        for invite in self:
-            user = invite.person_id.odoo_user_id
-            if not user:
-                continue
-            act = invite.activiteit_id
-            activities = act.activity_ids.filtered(
-                lambda a: a.user_id == user
-                and 'Uitnodiging activiteit' in (a.summary or '')
-            )
-            activities.action_done()
 
     def _notify_vervangingen(self, result):
         """Notify vervangingen team when a teacher accepts/rejects after activity is past approval."""

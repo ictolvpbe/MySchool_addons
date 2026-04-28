@@ -1,0 +1,12 @@
+// Zorg dat kolomtitels in álle list-views altijd volledig zichtbaar zijn
+// (geen ellipsis, wrapping toegestaan naar meerdere regels indien nodig)
+.o_list_table thead th {
+    .text-truncate,
+    span.d-block {
+        text-overflow: initial !important;
+        overflow: visible !important;
+        white-space: normal !important;
+        word-break: normal;
+        line-height: 1.2;
+    }
+}

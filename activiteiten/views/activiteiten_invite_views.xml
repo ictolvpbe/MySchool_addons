@@ -1,24 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <!-- Invite Form View -->
+    <!-- Invite Form View (readonly — documentatie) -->
     <record id="view_activiteiten_invite_form" model="ir.ui.view">
         <field name="name">activiteiten.invite.form</field>
         <field name="model">activiteiten.invite</field>
         <field name="arch" type="xml">
-            <form>
-                <header>
-                    <button name="action_accept"
-                            string="Accepteren"
-                            type="object"
-                            class="btn-primary"
-                            invisible="state != 'pending'"/>
-                    <button name="action_reject"
-                            string="Weigeren"
-                            type="object"
-                            class="btn-danger"
-                            invisible="state != 'pending'"/>
-                    <field name="state" widget="statusbar"/>
-                </header>
+            <form create="false" edit="false">
                 <sheet>
                     <group>
                         <group>
@@ -27,6 +14,7 @@
                         </group>
                         <group>
                             <field name="person_id"/>
+                            <field name="activiteit_state"/>
                         </group>
                     </group>
                 </sheet>
@@ -34,24 +22,18 @@
         </field>
     </record>
 
-    <!-- Invite List View -->
+    <!-- Invite List View (readonly) -->
     <record id="view_activiteiten_invite_list" model="ir.ui.view">
         <field name="name">activiteiten.invite.list</field>
         <field name="model">activiteiten.invite</field>
         <field name="arch" type="xml">
-            <list>
+            <list create="false" edit="false">
                 <field name="activiteit_titel"/>
                 <field name="invited_by"/>
-                <field name="state" widget="badge"
-                       decoration-info="state == 'pending'"
-                       decoration-success="state == 'accepted'"
-                       decoration-danger="state == 'rejected'"/>
-                <button name="action_accept" string="Accepteren" type="object"
-                        class="btn-primary" icon="fa-check"
-                        invisible="state != 'pending'"/>
-                <button name="action_reject" string="Weigeren" type="object"
-                        class="btn-danger" icon="fa-times"
-                        invisible="state != 'pending'"/>
+                <field name="activiteit_state" widget="badge"
+                       decoration-info="activiteit_state in ('draft', 'form_invullen', 'bus_check', 'pending_approval')"
+                       decoration-success="activiteit_state in ('s_code', 'vervanging', 'done')"
+                       decoration-danger="activiteit_state in ('rejected', 'bus_refused')"/>
             </list>
         </field>
     </record>

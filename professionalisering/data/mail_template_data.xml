@@ -22,12 +22,52 @@
     <record id="email_template_notify_employee_approved" model="mail.template">
         <field name="name">Professionalisering - Goedgekeurd</field>
         <field name="model_id" ref="model_professionalisering_record"/>
-        <field name="subject">Uw professionaliseringsaanvraag {{ object.name }} is goedgekeurd</field>
-        <field name="email_to">{{ (object.employee_id.work_email or '') }}</field>
+        <field name="subject">Uw professionaliseringsaanvraag is goedgekeurd — {{ object.titel }}</field>
+        <field name="email_to">{{ (object.employee_id.work_email or object.employee_id.user_id.email or '') }}</field>
         <field name="body_html"><![CDATA[
-<p>Beste {{ object.employee_id.name }},</p>
-<p>Uw professionaliseringsaanvraag <strong>{{ object.name }} - {{ object.titel }}</strong> is goedgekeurd.</p>
-<p>De betaling en vervanging worden verder afgehandeld.</p>
+<div style="font-family: Arial, sans-serif; max-width: 600px;">
+  <p>Beste {{ object.employee_id.name }},</p>
+
+  <p>Goed nieuws! Uw professionaliseringsaanvraag is <strong style="color: #198754;">goedgekeurd</strong>.</p>
+
+  <table style="border-collapse: collapse; margin: 16px 0; width: 100%;">
+    <tr>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee; width: 30%;"><strong>Referentie</strong></td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">{{ object.name }}</td>
+    </tr>
+    <tr>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;"><strong>Opleiding</strong></td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">{{ object.titel }}</td>
+    </tr>
+    <tr t-if="object.start_date">
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;"><strong>Datum</strong></td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">
+        {{ object.start_date.strftime('%d/%m/%Y') }}
+        <t t-if="object.end_date and object.end_date != object.start_date">
+          – {{ object.end_date.strftime('%d/%m/%Y') }}
+        </t>
+      </td>
+    </tr>
+    <tr t-if="object.location_type == 'address' and object.address_id">
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;"><strong>Locatie</strong></td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">{{ object.address_id.display_name }}</td>
+    </tr>
+    <tr t-if="object.location_type == 'online'">
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;"><strong>Locatie</strong></td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">Online / webinar</td>
+    </tr>
+    <tr t-if="object.directie_id">
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;"><strong>Goedgekeurd door</strong></td>
+      <td style="padding: 6px 12px; border-bottom: 1px solid #eee;">{{ object.directie_id.name }}</td>
+    </tr>
+  </table>
+
+  <p>De betaling en eventuele vervanging worden verder afgehandeld.
+     U ontvangt later nog een herinnering om uw bewijs van deelname (attest, verslag, ...) toe te voegen.</p>
+
+  <p style="margin-top: 20px;">Met vriendelijke groeten,<br/>
+  <em>Het MySchool-team</em></p>
+</div>
         ]]></field>
     </record>
 
