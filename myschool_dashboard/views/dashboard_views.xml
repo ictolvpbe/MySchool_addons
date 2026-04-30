@@ -140,16 +140,16 @@
                                             <field name="prof_submitted" class="d-inline"/> Goed te keuren
                                         </button>
                                         <button type="object" name="action_open_professionalisering"
+                                                context="{'search_default_state_bevestiging': 1}"
+                                                class="ms-badge-status ms-badge-success ms-badge-btn"
+                                                invisible="is_prof_only_directie">
+                                            <field name="prof_approved" class="d-inline"/> Goedgekeurd
+                                        </button>
+                                        <button type="object" name="action_open_professionalisering"
                                                 context="{'search_default_state_bewijs': 1}"
                                                 class="ms-badge-status ms-badge-warning ms-badge-btn"
                                                 invisible="is_prof_only_directie or is_prof_only_vervangingen">
                                             <field name="prof_bewijs_pending" class="d-inline"/> Bewijs in te dienen
-                                        </button>
-                                        <button type="object" name="action_open_professionalisering"
-                                                context="{'search_default_state_done': 1}"
-                                                class="ms-badge-status ms-badge-success ms-badge-btn"
-                                                invisible="is_prof_only_directie">
-                                            <field name="prof_approved" class="d-inline"/> Goedgekeurd
                                         </button>
                                         <button type="object" name="action_open_professionalisering"
                                                 context="{'search_default_state_weigering': 1}"
@@ -192,7 +192,7 @@
                                                 context="{'search_default_state_form_invullen': 1}"
                                                 class="ms-badge-status ms-badge-info ms-badge-btn"
                                                 invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_vervangingen">
-                                            <field name="act_form_invullen" class="d-inline"/> Formulier
+                                            <field name="act_form_invullen" class="d-inline"/> Concepten
                                         </button>
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_bus_check': 1}"
@@ -210,7 +210,7 @@
                                                 context="{'search_default_to_approve': 1}"
                                                 class="ms-badge-status ms-badge-warning ms-badge-btn"
                                                 invisible="not is_act_directie or is_only_boekhouding or is_only_medewerker or is_only_vervangingen">
-                                            <field name="act_pending_approval" class="d-inline"/> Wachten op goedkeuring
+                                            <field name="act_pending_approval" class="d-inline"/> Wacht op goedkeuring
                                         </button>
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_state_approved': 1}"
@@ -229,12 +229,6 @@
                                                 class="ms-badge-status ms-badge-info ms-badge-btn"
                                                 invisible="not is_act_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
                                             <field name="act_s_code" class="d-inline"/> S-Code
-                                        </button>
-                                        <button type="object" name="action_open_activiteiten_list"
-                                                context="{'search_default_replacement_pending': 1}"
-                                                class="ms-badge-status ms-badge-info ms-badge-btn"
-                                                invisible="not is_act_vervangingen or is_only_boekhouding or is_only_directie or is_only_medewerker">
-                                            <field name="act_vervanging" class="d-inline"/> Vervanging
                                         </button>
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_state_done': 1}"
@@ -264,17 +258,17 @@
                                         <button type="object" name="action_open_drukwerk_list"
                                                 context="{'search_default_state_form_invullen': 1}"
                                                 class="ms-badge-status ms-badge-info ms-badge-btn">
-                                            <field name="druk_form_invullen" class="d-inline"/> Formulier
+                                            <field name="druk_form_invullen" class="d-inline"/> Concepten
                                         </button>
                                         <button type="object" name="action_open_drukwerk_list"
                                                 context="{'search_default_to_print': 1}"
                                                 class="ms-badge-status ms-badge-warning ms-badge-btn">
-                                            <field name="druk_afdrukken" class="d-inline"/> Afdrukken
+                                            <field name="druk_afdrukken" class="d-inline"/> Af te drukken
                                         </button>
                                         <button type="object" name="action_open_drukwerk_list"
                                                 context="{'search_default_done': 1}"
                                                 class="ms-badge-status ms-badge-success ms-badge-btn">
-                                            <field name="druk_done" class="d-inline"/> Afgerond
+                                            <field name="druk_done" class="d-inline"/> Afgedrukt
                                         </button>
                                     </div>
                                 </div>

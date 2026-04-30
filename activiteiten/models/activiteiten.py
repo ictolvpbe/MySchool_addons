@@ -80,8 +80,8 @@ class Activiteiten(models.Model):
     is_active = fields.Boolean(string='Actief', default=True)
     state = fields.Selection([
         ('draft', 'Concept'),
-        ('form_invullen', 'Formulier invullen'),
-        ('bus_check', 'Controle bus'),
+        ('form_invullen', 'Concept'),
+        ('bus_check', 'Bus controle'),
         ('bus_refused', 'Bus geweigerd'),
         ('pending_approval', 'Wacht op goedkeuring'),
         ('approved', 'Goedgekeurd'),
@@ -91,7 +91,22 @@ class Activiteiten(models.Model):
         ('done', 'Afgerond'),
     ], string='Status', default='draft', required=True, tracking=True)
 
+    vervoer_type = fields.Selection([
+        ('bus', 'Schoolbus'),
+        ('openbaar_vervoer', 'Openbaar vervoer'),
+        ('te_voet', 'Te voet'),
+        ('fiets', 'Fiets'),
+        ('auto', 'Met de wagen'),
+        ('anders', 'Anders'),
+    ], string='Vervoer', default='bus',
+       help='Hoe verplaatst de groep zich tijdens deze activiteit. '
+            'Selectie van "Schoolbus" triggert de bus-controle-flow.')
     bus_nodig = fields.Boolean(string='Bus nodig', default=False)
+
+    @api.onchange('vervoer_type')
+    def _onchange_vervoer_type(self):
+        for record in self:
+            record.bus_nodig = (record.vervoer_type == 'bus')
     bus_price = fields.Monetary(
         string='Prijs van bus',
         currency_field='currency_id',
@@ -170,6 +185,23 @@ class Activiteiten(models.Model):
         compute='_compute_snapshot_counts',
     )
     is_owner = fields.Boolean(compute='_compute_is_owner')
+    can_edit_s_code = fields.Boolean(
+        compute='_compute_can_edit_s_code',
+        help='True wanneer de huidige gebruiker de S-Code mag bewerken: '
+             'enkel boekhouding/admin in de status S-Code controle.',
+    )
+
+    @api.depends_context('uid')
+    @api.depends('state')
+    def _compute_can_edit_s_code(self):
+        is_boekhouding_or_admin = (
+            self.env.user.has_group('activiteiten.group_activiteiten_boekhouding')
+            or self.env.user.has_group('activiteiten.group_activiteiten_admin')
+        )
+        for record in self:
+            record.can_edit_s_code = (
+                is_boekhouding_or_admin and record.state == 's_code'
+            )
     can_manage_invites = fields.Boolean(compute='_compute_can_manage_invites')
     display_state = fields.Selection([
         ('draft', 'Concept'),
@@ -594,6 +626,10 @@ class Activiteiten(models.Model):
                 vals['name'] = self._next_reference()
             if vals.get('activity_type') and vals.get('state', 'draft') == 'draft':
                 vals['state'] = 'form_invullen'
+            # Houd bus_nodig synchroon met vervoer_type wanneer dat laatste
+            # programmatisch gezet wordt zonder expliciete bus_nodig waarde.
+            if 'vervoer_type' in vals and 'bus_nodig' not in vals:
+                vals['bus_nodig'] = (vals.get('vervoer_type') == 'bus')
         records = super().create(vals_list)
         # Fix any records that still ended up without a proper reference
         for record in records:
@@ -612,6 +648,8 @@ class Activiteiten(models.Model):
         return records
 
     def write(self, vals):
+        if 'vervoer_type' in vals and 'bus_nodig' not in vals:
+            vals['bus_nodig'] = (vals.get('vervoer_type') == 'bus')
         res = super().write(vals)
         for record in self:
             if not record.name or record.name == 'New':

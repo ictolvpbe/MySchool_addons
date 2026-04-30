@@ -29,9 +29,7 @@ class Org(models.Model):
                 name = name.split(',', 1)[1].strip()
             record.display_name = name
 
-    @api.model
-    def _rec_names_search(self):
-        return ['name']
+    _rec_names_search = ['name']
     inst_nr = fields.Char(string='Instellingsnummer', required=True, size=10)
     is_active = fields.Boolean(string='Actief', default=True, required=True)
     automatic_sync = fields.Boolean(string='Auto Sync', default=True, required=True)

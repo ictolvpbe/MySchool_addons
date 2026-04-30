@@ -355,7 +355,7 @@ class ProfessionaliseringRecord(models.Model):
     )
     type = fields.Selection([
         ('individueel', 'Individuele'),
-        # ('teamleren', 'Teamleren'),  # tijdelijk uitgeschakeld
+        # ('teamleren', 'Teamleren'), # tijdelijk uitgeschakeld
     ], string='Type', required=True, default='individueel')
     subtype_individueel = fields.Selection([
         ('nascholing', 'Nascholing'),
@@ -393,12 +393,42 @@ class ProfessionaliseringRecord(models.Model):
     )
     invite_ids = fields.One2many('professionalisering.invite', 'professionalisering_id', string='Uitnodigingen')
     wizard_step = fields.Selection([
-        ('1', 'Gaat een collega mee?'),
-        ('2', 'Datums'),
-        ('3', 'Motivatie'),
+        ('1', 'Datums'),
+        ('2', 'Motivatie'),
     ], default='1', copy=False)
     show_invites = fields.Boolean(compute='_compute_show_invites')
-    description = fields.Text(string='Beschrijving')
+    description = fields.Text(string='Beschrijving (legacy)')
+
+    # Gestructureerde motivatie (vervangt het oude vrije description-veld)
+    motivatie_aanleiding = fields.Text(
+        string='Aanleiding',
+        help='Wat triggerde deze keuze voor professionalisering?',
+    )
+    motivatie_doelstelling = fields.Text(
+        string='Doelstelling',
+        help='Wat wil je concreet behalen met deze opleiding?',
+    )
+    motivatie_toepassing = fields.Text(
+        string='Toepassing',
+        help='Hoe ga je het geleerde in de praktijk brengen?',
+    )
+    motivatie_effect = fields.Text(
+        string='Verwacht effect op leerlingen',
+        help='Wat zou deze opleiding moeten opleveren voor de klas / leerlingen?',
+    )
+
+    # Carpool — voor wanneer collega's samen naar de opleiding rijden
+    carpool = fields.Boolean(
+        string='Carpool',
+        help='Aanvinken als je samen met collega(s) rijdt naar de opleiding.',
+    )
+    carpool_employee_ids = fields.Many2many(
+        'hr.employee',
+        'professionalisering_carpool_rel',
+        'professionalisering_id', 'employee_id',
+        string='Carpool met',
+        help='Collega(s) waarmee je samen rijdt.',
+    )
     employee_id = fields.Many2one(
         'hr.employee',
         string='Medewerker',
@@ -421,6 +451,24 @@ class ProfessionaliseringRecord(models.Model):
     )
     is_owner = fields.Boolean(compute='_compute_is_owner', compute_sudo=True)
     is_admin = fields.Boolean(compute='_compute_is_admin')
+    can_edit_s_code = fields.Boolean(
+        compute='_compute_can_edit_s_code',
+        help='True wanneer de huidige gebruiker de S-Code mag bewerken: '
+             'enkel boekhouding/admin in de fases waarin S-Code relevant is.',
+    )
+
+    @api.depends_context('uid')
+    @api.depends('state')
+    def _compute_can_edit_s_code(self):
+        is_boekhouding_or_admin = (
+            self.env.user.has_group('professionalisering.group_professionalisering_boekhouding')
+            or self.env.user.has_group('professionalisering.group_professionalisering_admin')
+        )
+        for record in self:
+            record.can_edit_s_code = (
+                is_boekhouding_or_admin
+                and record.state in ('bevestiging', 'bewijs', 'done')
+            )
     is_directie = fields.Boolean(compute='_compute_is_directie')
     allowed_directie_json = fields.Json(compute='_compute_allowed_directie_json')
     start_date = fields.Date(string='Startdatum')
@@ -460,18 +508,18 @@ class ProfessionaliseringRecord(models.Model):
         compute='_compute_totale_kost',
     )
     vak = fields.Selection([
-        ('wiskunde', 'Wiskunde'),
-        ('nederlands', 'Nederlands'),
-        ('frans', 'Frans'),
-        ('engels', 'Engels'),
-        ('wetenschap', 'Wetenschap'),
-        ('geschiedenis', 'Geschiedenis'),
         ('aardrijkskunde', 'Aardrijkskunde'),
-        ('lichamelijke_opvoeding', 'Lichamelijke opvoeding'),
-        ('informatica', 'Informatica'),
-        ('muziek', 'Muziek'),
         ('didactiek', 'Didactiek'),
+        ('engels', 'Engels'),
+        ('frans', 'Frans'),
+        ('geschiedenis', 'Geschiedenis'),
+        ('informatica', 'Informatica'),
+        ('lichamelijke_opvoeding', 'Lichamelijke opvoeding'),
+        ('muziek', 'Muziek'),
+        ('nederlands', 'Nederlands'),
         ('pedagogie', 'Pedagogie'),
+        ('wiskunde', 'Wiskunde'),
+        ('wetenschap', 'Wetenschap'),
         ('andere', 'Andere'),
     ], string='Vak')
     vak_andere = fields.Char(
@@ -748,20 +796,14 @@ class ProfessionaliseringRecord(models.Model):
 
     def action_wizard_next(self):
         self.ensure_one()
-        next_step = {'1': '2', '2': '3'}.get(self.wizard_step)
-        # Sla de "Datums"-stap over wanneer er geen losse dagen zijn
-        if next_step == '2' and not self.verschillende_dagen:
-            next_step = '3'
+        next_step = {'1': '2'}.get(self.wizard_step)
         if next_step:
             self.wizard_step = next_step
         return self._get_details_action()
 
     def action_wizard_prev(self):
         self.ensure_one()
-        prev_step = {'2': '1', '3': '2'}.get(self.wizard_step)
-        # Sla de "Datums"-stap over wanneer er geen losse dagen zijn
-        if prev_step == '2' and not self.verschillende_dagen:
-            prev_step = '1'
+        prev_step = {'2': '1'}.get(self.wizard_step)
         if prev_step:
             self.wizard_step = prev_step
         return self._get_details_action()

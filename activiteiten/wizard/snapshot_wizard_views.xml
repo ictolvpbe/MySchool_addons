@@ -9,15 +9,26 @@
                 <group>
                     <field name="activiteit_id" invisible="1"/>
                     <field name="snapshot_type" invisible="1"/>
+                    <field name="is_live_preview" invisible="1"/>
                     <field name="peildatum"/>
                     <field name="person_count" string="Aantal"/>
                 </group>
-                <field name="line_ids" readonly="1">
+                <div class="alert alert-info" role="alert" invisible="not is_live_preview">
+                    Live overzicht op basis van de huidige klas-/leerkracht-selectie.
+                    Een definitieve momentopname (snapshot) wordt pas vastgelegd
+                    wanneer u de aanvraag indient.
+                </div>
+                <field name="line_ids" readonly="1" invisible="is_live_preview">
                     <list>
                         <field name="person_name" string="Naam"/>
                         <field name="klas_name" string="Klas"/>
                         <field name="date_from" string="Vanaf"/>
                         <field name="date_to" string="Tot"/>
+                    </list>
+                </field>
+                <field name="live_person_ids" readonly="1" invisible="not is_live_preview">
+                    <list>
+                        <field name="name" string="Naam"/>
                     </list>
                 </field>
                 <footer>

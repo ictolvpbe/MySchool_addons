@@ -139,12 +139,32 @@ class DrukwerkRecord(models.Model):
 
     state = fields.Selection([
         ('draft', 'Concept'),
-        ('form_invullen', 'Formulier invullen'),
-        ('afdrukken', 'Afdrukken'),
-        ('done', 'Afgerond'),
+        ('form_invullen', 'Concept'),
+        ('afdrukken', 'Af te drukken'),
+        ('done', 'Afgedrukt'),
+        ('gestockeerd', 'Gestockeerd'),
     ], string='Status', default='draft', required=True, tracking=True)
+    done_date = fields.Datetime(
+        string='Datum afgerond',
+        readonly=True,
+        help='Tijdstip waarop de aanvraag de status Afgerond bereikte. '
+             'Wordt gebruikt om automatisch te stockeren na X dagen.',
+    )
     is_owner = fields.Boolean(compute='_compute_is_owner')
+    can_edit_content = fields.Boolean(
+        compute='_compute_can_edit_content',
+        help='True wanneer de inhoud van de aanvraag aangepast mag worden: '
+             'in concept- of formulier-fase, of in de afdrukken-fase voor de eigenaar.',
+    )
     can_select_color = fields.Boolean(compute='_compute_can_select_color')
+
+    @api.depends('state', 'is_owner')
+    def _compute_can_edit_content(self):
+        for record in self:
+            record.can_edit_content = (
+                record.state in ('draft', 'form_invullen')
+                or (record.state == 'afdrukken' and record.is_owner)
+            )
 
     @api.depends_context('uid')
     def _compute_can_select_color(self):
@@ -517,7 +537,35 @@ class DrukwerkRecord(models.Model):
             if record.state != 'afdrukken':
                 raise UserError("Kan alleen in de afdrukkenfase afgedrukt worden.")
             record.state = 'done'
+            record.done_date = fields.Datetime.now()
         self._send_notification('done')
+
+    def action_stockeren(self):
+        """Move done records into stock (gestockeerd)."""
+        for record in self:
+            if record.state != 'done':
+                raise UserError(
+                    "Alleen afgeronde aanvragen kunnen gestockeerd worden."
+                )
+            record.state = 'gestockeerd'
+
+    @api.model
+    def _cron_auto_stock(self):
+        """Automatically move records from 'done' to 'gestockeerd' once their
+        done_date is older than the configured threshold (default 30 days)."""
+        days = int(self.env['ir.config_parameter'].sudo().get_param(
+            'drukwerk.auto_stock_after_days', '30'))
+        cutoff = fields.Datetime.now() - timedelta(days=days)
+        records = self.search([
+            ('state', '=', 'done'),
+            ('done_date', '!=', False),
+            ('done_date', '<', cutoff),
+        ])
+        if records:
+            records.write({'state': 'gestockeerd'})
+            _logger.info(
+                "Drukwerk auto-stock: %d records moved to gestockeerd "
+                "(threshold %d days).", len(records), days)
 
     # --- Print actions ---
 

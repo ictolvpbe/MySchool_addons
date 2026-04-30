@@ -9,20 +9,20 @@
                 <header>
                     <!-- Personeelslid: open submit dialog (popup with tabs, then confirm) -->
                     <button name="action_open_details"
-                            string="Indienen"
+                            string="Volgende"
                             type="object"
                             class="btn-primary"
                             invisible="state not in ('draft', 'form_invullen', 'bus_refused')"/>
 
                     <!-- Personeelslid: reset to form after rejection or bus refusal (owner) -->
                     <button name="action_reset_to_form"
-                            string="Opnieuw indienen"
+                            string="Opnieuw Volgende"
                             type="object"
                             class="btn-secondary"
                             invisible="state not in ('rejected', 'bus_refused') or not is_owner"/>
                     <!-- Admin: reset to form after rejection or bus refusal (non-owner) -->
                     <button name="action_reset_to_form"
-                            string="Opnieuw indienen"
+                            string="Opnieuw Volgende"
                             type="object"
                             class="btn-secondary"
                             groups="activiteiten.group_activiteiten_admin"
@@ -149,9 +149,10 @@
                                    placeholder="bv. Technologielaan 1, 2800 Mechelen"
                                    invisible="activity_type != 'buitenschools'"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
-                            <field name="bus_nodig"
+                            <field name="vervoer_type"
                                    invisible="activity_type == 'binnenschools'"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                            <field name="bus_nodig" invisible="1"/>
 
                             <separator string="Planning"/>
                             <field name="datetime"
@@ -188,27 +189,27 @@
                             <!-- Financieel section -->
                             <separator string="Financieel"
                                        invisible="state not in ('s_code', 'vervanging', 'done')"/>
+                            <field name="can_edit_s_code" invisible="1"/>
                             <field name="s_code_name"
                                    placeholder="bv. S-1234"
                                    invisible="state not in ('s_code', 'vervanging', 'done')"
-                                   readonly="state != 's_code'"
-                                   groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+                                   readonly="not can_edit_s_code"/>
                             <field name="verzekering_done"
                                    readonly="1"
                                    invisible="state not in ('s_code', 'vervanging', 'done')"/>
                         </group>
                     </group>
 
-                    <!-- Indienen-knop onderaan de form (links uitgelijnd) -->
+                    <!-- Volgende-knop onderaan de form (links uitgelijnd) -->
                     <div class="d-flex justify-content-start mt-3 mb-3"
                          invisible="state not in ('draft', 'form_invullen', 'bus_refused')">
                         <button name="action_open_details"
-                                string="Indienen"
+                                string="Volgende"
                                 type="object"
                                 class="btn-primary"/>
                     </div>
 
-                    <!-- Extra info knop: opent dialoog (alleen als "Indienen" niet meer zichtbaar is) -->
+                    <!-- Extra info knop: opent dialoog (alleen als "Volgende" niet meer zichtbaar is) -->
                     <div class="d-flex justify-content-end mt-3 mb-3"
                          invisible="not activity_type or state in ('draft', 'form_invullen', 'bus_refused')">
                         <button name="action_open_details"
@@ -328,7 +329,7 @@
                             class="btn-primary"
                             invisible="wizard_step == '4'"/>
                     <button name="action_submit_from_dialog"
-                            string="Indienen &amp; bevestigen"
+                            string="Volgende &amp; bevestigen"
                             type="object"
                             class="btn-success"
                             invisible="wizard_step != '4' or state not in ('draft', 'form_invullen', 'bus_refused')"/>
@@ -407,9 +408,7 @@
                         domain="[('state', '=', 'vervanging')]"/>
                 <separator/>
                 <filter string="Concept" name="state_draft"
-                        domain="[('state', '=', 'draft')]"/>
-                <filter string="Formulier invullen" name="state_form_invullen"
-                        domain="[('state', '=', 'form_invullen')]"/>
+                        domain="[('state', 'in', ('draft', 'form_invullen'))]"/>
                 <filter string="Bus geweigerd" name="state_bus_refused"
                         domain="[('state', '=', 'bus_refused')]"/>
                 <filter string="Goedgekeurd" name="state_approved"

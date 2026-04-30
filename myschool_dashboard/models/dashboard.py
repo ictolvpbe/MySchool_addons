@@ -116,7 +116,7 @@ class MySchoolDashboard(models.Model):
     druk_form_invullen = fields.Integer(
         string="Druk. Formulier", compute='_compute_drukwerk_counts')
     druk_afdrukken = fields.Integer(
-        string="Druk. Afdrukken", compute='_compute_drukwerk_counts')
+        string="Druk. Af te drukken", compute='_compute_drukwerk_counts')
     druk_done = fields.Integer(
         string="Druk. Afgerond", compute='_compute_drukwerk_counts')
 
@@ -404,7 +404,7 @@ class MySchoolDashboard(models.Model):
             rec.act_bus_check = raw.get('bus_check', 0)
             rec.act_bus_refused = raw.get('bus_refused', 0)
             rec.act_pending_approval = raw.get('pending_approval', 0)
-            rec.act_approved = raw.get('approved', 0) + raw.get('s_code', 0) + raw.get('vervanging', 0) + raw.get('done', 0)
+            rec.act_approved = raw.get('approved', 0)
             rec.act_rejected = raw.get('rejected', 0)
             rec.act_s_code = raw.get('s_code', 0)
             rec.act_vervanging = raw.get('vervanging', 0)
@@ -496,20 +496,21 @@ class MySchoolDashboard(models.Model):
 
     _DRUK_STATE_LABEL = {
         'draft': ('Concept', 'ms-badge-neutral'),
-        'form_invullen': ('Formulier', 'ms-badge-info'),
-        'afdrukken': ('Afdrukken', 'ms-badge-warning'),
-        'done': ('Afgerond', 'ms-badge-success'),
+        'form_invullen': ('Concept', 'ms-badge-info'),
+        'afdrukken': ('Af te drukken', 'ms-badge-warning'),
+        'done': ('Afgedrukt', 'ms-badge-success'),
+        'gestockeerd': ('Gestockeerd', 'ms-badge-neutral'),
     }
 
     _ACT_STATE_LABEL = {
         'draft': ('Concept', 'ms-badge-neutral'),
-        'form_invullen': ('Formulier', 'ms-badge-info'),
+        'form_invullen': ('Concept', 'ms-badge-info'),
         'bus_check': ('Bus controle', 'ms-badge-warning'),
         'bus_refused': ('Bus geweigerd', 'ms-badge-error'),
         'pending_approval': ('Wacht op goedkeuring', 'ms-badge-warning'),
         'approved': ('Goedgekeurd', 'ms-badge-success'),
         'rejected': ('Afgekeurd', 'ms-badge-error'),
-        's_code': ('S-Code', 'ms-badge-info'),
+        's_code': ('S-Code controle', 'ms-badge-info'),
         'vervanging': ('Vervanging', 'ms-badge-info'),
         'done': ('Afgerond', 'ms-badge-success'),
     }

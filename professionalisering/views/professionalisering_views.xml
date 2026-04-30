@@ -183,6 +183,14 @@
                                     Beheer de losse datums via <strong>Extra info beheren → Datums</strong>.
                                 </span>
                             </div>
+                            <!-- Carpool — alleen relevant voor opleidingen op locatie -->
+                            <field name="carpool"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="subtype_individueel in ('lezen', 'video', 'podcast') or location_type != 'address'"/>
+                            <field name="carpool_employee_ids" widget="many2many_tags"
+                                   options="{'no_create': True}"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
+                                   invisible="not carpool or subtype_individueel in ('lezen', 'video', 'podcast') or location_type != 'address'"/>
                         </group>
 
                         <!-- RIGHT COLUMN: Beoordeling + Extra info (voor directie) -->
@@ -197,21 +205,28 @@
                                    invisible="state not in ('weigering', 'done') or not needs_approval"/>
 
                             <!-- Extra info inline zichtbaar voor iedereen na indienen -->
-                            <separator string="Extra info"
+                            <separator string="Motivatie"
                                        invisible="state == 'selection_of_form'"/>
-                            <label for="description" string="Motivatie"
-                                   invisible="state == 'selection_of_form'"/>
+                            <field name="motivatie_aanleiding" readonly="1"
+                                   invisible="state == 'selection_of_form' or not motivatie_aanleiding"/>
+                            <field name="motivatie_doelstelling" readonly="1"
+                                   invisible="state == 'selection_of_form' or not motivatie_doelstelling"/>
+                            <field name="motivatie_toepassing" readonly="1"
+                                   invisible="state == 'selection_of_form' or not motivatie_toepassing"/>
+                            <field name="motivatie_effect" readonly="1"
+                                   invisible="state == 'selection_of_form' or not motivatie_effect"/>
+                            <!-- Legacy beschrijving — alleen tonen als nog geen
+                                 nieuwe motivatie-velden zijn ingevuld (oude records) -->
+                            <label for="description" string="Beschrijving (legacy)"
+                                   invisible="state == 'selection_of_form' or not description or motivatie_aanleiding or motivatie_doelstelling or motivatie_toepassing or motivatie_effect"/>
                             <field name="description" nolabel="1" readonly="1"
-                                   invisible="state == 'selection_of_form'"/>
-                            <label for="invite_ids" string="Collega's mee"
-                                   invisible="state == 'selection_of_form' or not show_invites or not invite_ids"/>
-                            <field name="invite_ids" nolabel="1" readonly="1"
-                                   invisible="state == 'selection_of_form' or not show_invites or not invite_ids">
-                                <list create="false" edit="false" delete="false">
-                                    <field name="employee_id"/>
-                                    <field name="employee_school_names"/>
-                                </list>
-                            </field>
+                                   invisible="state == 'selection_of_form' or not description or motivatie_aanleiding or motivatie_doelstelling or motivatie_toepassing or motivatie_effect"/>
+                            <!-- Carpool — collega's met wie je samen rijdt -->
+                            <separator string="Carpool"
+                                       invisible="state == 'selection_of_form' or not carpool"/>
+                            <field name="carpool_employee_ids" widget="many2many_tags"
+                                   readonly="1"
+                                   invisible="state == 'selection_of_form' or not carpool"/>
                             <label for="date_line_ids" string="Losse datums"
                                    invisible="state == 'selection_of_form' or not verschillende_dagen"/>
                             <field name="date_line_ids" nolabel="1"
@@ -221,6 +236,22 @@
                                     <field name="cost"/>
                                 </list>
                             </field>
+
+                            <!-- Financieel — zichtbaar vanaf 'Goedgekeurd';
+                                 boekhouding kan invullen, alle anderen lezen. -->
+                            <separator string="Financieel"
+                                       invisible="state not in ('bevestiging', 'bewijs', 'done')"/>
+                            <field name="can_edit_s_code" invisible="1"/>
+                            <field name="s_code_name"
+                                   placeholder="bv. S-1234"
+                                   invisible="state not in ('bevestiging', 'bewijs', 'done')"
+                                   readonly="not can_edit_s_code"/>
+                            <field name="s_code_price"
+                                   invisible="state not in ('bevestiging', 'bewijs', 'done')"
+                                   readonly="not can_edit_s_code"/>
+                            <field name="totale_kost"
+                                   invisible="state not in ('bevestiging', 'bewijs', 'done')"
+                                   readonly="1"/>
                         </group>
                     </group>
 
@@ -327,21 +358,8 @@
                     <field name="wizard_step" widget="statusbar" options="{'clickable': '0'}"/>
                 </header>
                 <sheet>
-                    <!-- Stap 1: Gaat een collega mee? -->
+                    <!-- Stap 1: Datums -->
                     <div invisible="wizard_step != '1'" class="w-100">
-                        <p class="text-muted mb-2">
-                            Voeg eventueel collega's toe die mee inschrijven voor dezelfde opleiding.
-                        </p>
-                        <field name="invite_ids" nolabel="1"
-                               readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
-                            <list editable="bottom">
-                                <field name="employee_id"/>
-                                <field name="employee_school_names" readonly="1"/>
-                            </list>
-                        </field>
-                    </div>
-                    <!-- Stap 2: Datums -->
-                    <div invisible="wizard_step != '2'" class="w-100">
                         <p class="text-muted mb-2"
                            invisible="verschillende_dagen">
                             <i class="fa fa-info-circle me-1"/>
@@ -357,14 +375,25 @@
                             </list>
                         </field>
                     </div>
-                    <!-- Stap 3: Motivatie -->
-                    <div invisible="wizard_step != '3'" class="w-100">
+                    <!-- Stap 2: Motivatie (gestructureerd) -->
+                    <div invisible="wizard_step != '2'" class="w-100">
                         <p class="text-muted mb-2">
-                            Beschrijf waarom deze opleiding voor jou (en eventueel je collega's) waardevol is.
+                            Beschrijf in 4 stappen waarom deze opleiding waardevol is.
                         </p>
-                        <field name="description" nolabel="1"
-                               placeholder="bv. Ik wil mijn kennis over differentiatie in de klas verdiepen om beter te kunnen omgaan met heterogene groepen..."
-                               readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                        <group>
+                            <field name="motivatie_aanleiding"
+                                   placeholder="Wat triggerde deze keuze? Bv. tekortschietend resultaat in een vakdomein, een nieuwe didactiek..."
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="motivatie_doelstelling"
+                                   placeholder="Wat wil je concreet behalen? Bv. de differentiatie-aanpak in mijn klas verbeteren..."
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="motivatie_toepassing"
+                                   placeholder="Hoe ga je het in de praktijk brengen? Bv. een lessenreeks uitwerken, collega's coachen..."
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="motivatie_effect"
+                                   placeholder="Wat zou dit moeten opleveren voor de leerlingen? Bv. hogere betrokkenheid, betere resultaten..."
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                        </group>
                     </div>
                 </sheet>
                 <footer>
@@ -377,16 +406,16 @@
                             string="Volgende"
                             type="object"
                             class="btn-primary"
-                            invisible="wizard_step == '3'"/>
+                            invisible="wizard_step == '2'"/>
                     <button name="action_submit_from_dialog"
                             string="Indienen &amp; bevestigen"
                             type="object"
                             class="btn-success"
-                            invisible="wizard_step != '3' or state != 'selection_of_form' or not is_owner"/>
+                            invisible="wizard_step != '2' or state != 'selection_of_form' or not is_owner"/>
                     <button string="Opslaan"
                             class="btn-primary"
                             special="save"
-                            invisible="wizard_step != '3' or (state == 'selection_of_form' and is_owner)"/>
+                            invisible="wizard_step != '2' or (state == 'selection_of_form' and is_owner)"/>
                     <button string="Annuleren" class="btn-secondary" special="cancel"/>
                 </footer>
             </form>
@@ -441,7 +470,7 @@
                 <filter string="Vervangingen openstaand" name="replacement_pending" domain="[('state', '=', 'done')]"/>
                 <separator/>
                 <filter string="Concept" name="state_selection_of_form" domain="[('state', '=', 'selection_of_form')]"/>
-                <filter string="Ingediend" name="state_submitted" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
+                <filter string="Goed te keuren" name="state_submitted" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
                 <filter string="Goedgekeurd" name="state_bevestiging" domain="[('state', '=', 'bevestiging')]"/>
                 <filter string="Bewijs" name="state_bewijs" domain="[('state', '=', 'bewijs')]"/>
                 <filter string="Geweigerd" name="state_weigering" domain="[('state', '=', 'weigering')]"/>
