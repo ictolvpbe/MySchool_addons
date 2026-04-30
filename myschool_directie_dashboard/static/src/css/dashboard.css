@@ -1,0 +1,206 @@
+/* ============================================================================
+   MySchool Directie Dashboard
+   ============================================================================ */
+
+:root {
+    --dd-brand-1: #007d8c;
+    --dd-brand-2: #0094A4;
+    --dd-bg: #ffffff;
+    --dd-bg-card: #fff;
+    --dd-border: #d6e4e4;
+    --dd-border-light: #e8f0f0;
+    --dd-text: #003333;
+    --dd-text-muted: #5a7a7a;
+    --dd-gray: #9B9B9B;
+    --dd-success: #0d9488;
+    --dd-success-bg: #ccfbf1;
+    --dd-warning: #d97706;
+    --dd-warning-bg: #fef3c7;
+}
+
+.o_directie_dashboard .o_form_sheet_bg {
+    background: var(--dd-bg) !important;
+}
+.o_directie_dashboard .o_form_sheet {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+.o_directie_dashboard .o_form_statusbar {
+    display: none !important;
+}
+
+.o_directie_dashboard .ms-page-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: #252525;
+}
+
+/* --- Toolbar (employee + dates + quick set buttons) --- */
+.dd-toolbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    padding: 16px 20px;
+    background: var(--dd-bg-card);
+    border: 1px solid var(--dd-border-light);
+    border-radius: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.dd-toolbar-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 180px;
+}
+.dd-toolbar-field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--dd-text-muted);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+}
+.dd-toolbar-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+.dd-toolbar-actions .btn {
+    border-radius: 8px;
+}
+
+/* --- Total cards --- */
+.dd-totals {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.dd-total-card {
+    padding: 20px 24px;
+    border-radius: 12px;
+    border-left: 4px solid var(--dd-border);
+    background: var(--dd-bg-card);
+    box-shadow: 0 1px 3px rgba(0, 60, 60, .06);
+}
+.dd-total-card.dd-total-done { border-left-color: var(--dd-success); }
+.dd-total-card.dd-total-planned { border-left-color: var(--dd-warning); }
+.dd-total-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--dd-gray);
+    font-weight: 600;
+}
+.dd-total-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #252525;
+    margin-top: 6px;
+}
+
+/* --- Empty state --- */
+.dd-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--dd-text-muted);
+}
+.dd-empty-icon {
+    font-size: 48px;
+    color: var(--dd-border);
+    display: block;
+    margin-bottom: 12px;
+}
+.dd-empty-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--dd-text);
+    margin-bottom: 4px;
+}
+.dd-empty-sub {
+    font-size: 13px;
+}
+
+/* --- Section grid --- */
+.dd-sections {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+.dd-section {
+    background: var(--dd-bg-card);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 60, 60, .06);
+    overflow: hidden;
+}
+.dd-section-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--dd-border-light);
+}
+.dd-section-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #252525;
+}
+.dd-section-title i.fa {
+    color: var(--dd-brand-1);
+    margin-right: 6px;
+}
+.dd-section-body {
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+/* --- Bucket buttons (gedaan / gaat doen) --- */
+.dd-bucket {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--dd-border-light);
+    background: var(--dd-bg-card);
+    cursor: pointer;
+    text-align: left;
+    transition: filter 0.15s ease, border-color 0.15s ease;
+}
+.dd-bucket:hover {
+    filter: brightness(0.98);
+    border-color: var(--dd-brand-2);
+}
+.dd-bucket.dd-bucket-done {
+    background: var(--dd-success-bg);
+    border-color: var(--dd-success-bg);
+}
+.dd-bucket.dd-bucket-planned {
+    background: var(--dd-warning-bg);
+    border-color: var(--dd-warning-bg);
+}
+.dd-bucket-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    font-weight: 600;
+    color: var(--dd-text-muted);
+}
+.dd-bucket-count {
+    font-size: 24px;
+    font-weight: 700;
+    color: #252525;
+    line-height: 1.1;
+}
+.dd-bucket-cost {
+    font-size: 13px;
+    color: var(--dd-text-muted);
+    font-weight: 600;
+}
+.dd-bucket-cost .o_field_widget {
+    font-size: 13px;
+}

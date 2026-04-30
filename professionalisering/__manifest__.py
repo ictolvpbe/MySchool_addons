@@ -18,6 +18,7 @@
         'security/professionalisering_rules.xml',
         'data/sequence.xml',
         'data/mail_template_data.xml',
+        'data/cron_data.xml',
         'views/professionalisering_views.xml',
         'views/professionalisering_menu.xml',
     ],

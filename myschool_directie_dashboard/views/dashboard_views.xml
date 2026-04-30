@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_directie_dashboard_form" model="ir.ui.view">
+        <field name="name">myschool.directie.dashboard.form</field>
+        <field name="model">myschool.directie.dashboard</field>
+        <field name="arch" type="xml">
+            <form string="Directie Dashboard" create="false" delete="false" class="o_directie_dashboard">
+                <field name="currency_id" invisible="1"/>
+                <sheet>
+                    <div class="ms-page-title">Directie Dashboard</div>
+
+                    <!-- ========== TOP BAR: leerkracht + datums ========== -->
+                    <div class="dd-toolbar">
+                        <div class="dd-toolbar-field">
+                            <label for="employee_id" string="Leerkracht"/>
+                            <field name="employee_id" options="{'no_create': True, 'no_open': True}"/>
+                        </div>
+                        <div class="dd-toolbar-field">
+                            <label for="date_from" string="Van"/>
+                            <field name="date_from"/>
+                        </div>
+                        <div class="dd-toolbar-field">
+                            <label for="date_to" string="Tot"/>
+                            <field name="date_to"/>
+                        </div>
+                        <div class="dd-toolbar-actions">
+                            <button name="action_set_today" type="object"
+                                    string="Vandaag" class="btn btn-secondary"
+                                    help="Zet de 'Tot'-datum op vandaag"/>
+                            <button name="action_set_schoolyear" type="object"
+                                    string="Schooljaar" class="btn btn-secondary"
+                                    help="Vul het huidige schooljaar in (1 sept → 31 aug)"/>
+                        </div>
+                    </div>
+
+                    <!-- ========== TOTAAL CARDS ========== -->
+                    <div class="dd-totals" invisible="not employee_id">
+                        <div class="dd-total-card dd-total-done">
+                            <div class="dd-total-label">Totaal gedaan</div>
+                            <div class="dd-total-value">
+                                <field name="total_cost_done" widget="monetary"/>
+                            </div>
+                        </div>
+                        <div class="dd-total-card dd-total-planned">
+                            <div class="dd-total-label">Totaal gepland</div>
+                            <div class="dd-total-value">
+                                <field name="total_cost_planned" widget="monetary"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========== EMPTY STATE ========== -->
+                    <div class="dd-empty" invisible="employee_id">
+                        <i class="fa fa-user-circle dd-empty-icon"/>
+                        <div class="dd-empty-title">Selecteer een leerkracht</div>
+                        <div class="dd-empty-sub">Kies bovenaan een leerkracht om het overzicht te tonen.</div>
+                    </div>
+
+                    <!-- ========== SECTIE GRID ========== -->
+                    <div class="dd-sections" invisible="not employee_id">
+
+                        <!-- Professionalisering -->
+                        <div class="dd-section dd-prof">
+                            <div class="dd-section-header">
+                                <span class="dd-section-title"><i class="fa fa-graduation-cap"/> Professionalisering</span>
+                            </div>
+                            <div class="dd-section-body">
+                                <button name="action_open_prof_done" type="object" class="dd-bucket dd-bucket-done">
+                                    <div class="dd-bucket-label">Gedaan</div>
+                                    <div class="dd-bucket-count"><field name="prof_count_done"/></div>
+                                    <div class="dd-bucket-cost">
+                                        <field name="prof_cost_done" widget="monetary"/>
+                                    </div>
+                                </button>
+                                <button name="action_open_prof_planned" type="object" class="dd-bucket dd-bucket-planned">
+                                    <div class="dd-bucket-label">Gaat doen</div>
+                                    <div class="dd-bucket-count"><field name="prof_count_planned"/></div>
+                                    <div class="dd-bucket-cost">
+                                        <field name="prof_cost_planned" widget="monetary"/>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Activiteiten -->
+                        <div class="dd-section dd-act">
+                            <div class="dd-section-header">
+                                <span class="dd-section-title"><i class="fa fa-calendar"/> Activiteiten</span>
+                            </div>
+                            <div class="dd-section-body">
+                                <button name="action_open_act_done" type="object" class="dd-bucket dd-bucket-done">
+                                    <div class="dd-bucket-label">Gedaan</div>
+                                    <div class="dd-bucket-count"><field name="act_count_done"/></div>
+                                    <div class="dd-bucket-cost">
+                                        <field name="act_cost_done" widget="monetary"/>
+                                    </div>
+                                </button>
+                                <button name="action_open_act_planned" type="object" class="dd-bucket dd-bucket-planned">
+                                    <div class="dd-bucket-label">Gaat doen</div>
+                                    <div class="dd-bucket-count"><field name="act_count_planned"/></div>
+                                    <div class="dd-bucket-cost">
+                                        <field name="act_cost_planned" widget="monetary"/>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Drukwerk -->
+                        <div class="dd-section dd-druk">
+                            <div class="dd-section-header">
+                                <span class="dd-section-title"><i class="fa fa-print"/> Drukwerk</span>
+                            </div>
+                            <div class="dd-section-body">
+                                <button name="action_open_druk_done" type="object" class="dd-bucket dd-bucket-done">
+                                    <div class="dd-bucket-label">Gedaan</div>
+                                    <div class="dd-bucket-count"><field name="druk_count_done"/></div>
+                                    <div class="dd-bucket-cost">
+                                        <field name="druk_cost_done" widget="monetary"/>
+                                    </div>
+                                </button>
+                                <button name="action_open_druk_planned" type="object" class="dd-bucket dd-bucket-planned">
+                                    <div class="dd-bucket-label">Gaat doen</div>
+                                    <div class="dd-bucket-count"><field name="druk_count_planned"/></div>
+                                    <div class="dd-bucket-cost">
+                                        <field name="druk_cost_planned" widget="monetary"/>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Client action wrapper (no breadcrumb/control panel) -->
+    <record id="action_directie_dashboard_client" model="ir.actions.client">
+        <field name="name">Directie Dashboard</field>
+        <field name="tag">myschool_directie_dashboard_action</field>
+    </record>
+</odoo>

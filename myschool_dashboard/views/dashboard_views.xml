@@ -23,41 +23,6 @@
                 <sheet>
                     <div class="ms-page-title">Mijn Aanvragen</div>
 
-                    <!-- ===== KPI ROW (verborgen voor pure leerkrachten) ===== -->
-                    <div class="ms-kpi-row" invisible="is_only_teacher">
-                        <div class="ms-kpi-card c1">
-                            <div class="ms-kpi-label">In bewerking</div>
-                            <div class="ms-kpi-value">
-                                <field name="kpi_pending"/>
-                            </div>
-                            <div class="ms-kpi-sub">nog te vervolledigen</div>
-                        </div>
-                        <div class="ms-kpi-card c2">
-                            <div class="ms-kpi-label">Actie vereist</div>
-                            <div class="ms-kpi-value">
-                                <field name="kpi_action_needed"/>
-                            </div>
-                            <div class="ms-kpi-sub">wacht op behandeling</div>
-                        </div>
-                        <div class="ms-kpi-card c3">
-                            <div class="ms-kpi-label">Goedgekeurd</div>
-                            <div class="ms-kpi-value">
-                                <field name="kpi_approved"/>
-                            </div>
-                            <div class="ms-kpi-sub">goedgekeurd &amp; afgerond</div>
-                        </div>
-                        <div class="ms-kpi-card c4">
-                            <div class="ms-kpi-label">Afgekeurd</div>
-                            <div class="ms-kpi-value">
-                                <field name="kpi_rejected"/>
-                            </div>
-                            <div class="ms-kpi-sub">
-                                <span>geweigerd</span>
-                                <span class="down" invisible="kpi_rejected == 0"> — actie nodig</span>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- ===== MAIN GRID ===== -->
                     <div class="ms-grid">
                         <!-- LEFT COLUMN: Aanvragen + Recente activiteit -->
@@ -77,6 +42,7 @@
                                             </div>
                                         </button>
                                         <button name="action_open_professionalisering" type="object"
+                                                context="{'search_default_my_requests': 1}"
                                                 class="ms-qa-btn"
                                                 invisible="not has_professionalisering_access">
                                             <div class="ms-qa-icon c4"><i class="fa fa-list"/></div>
@@ -95,6 +61,7 @@
                                             </div>
                                         </button>
                                         <button name="action_open_activiteiten_list" type="object"
+                                                context="{'search_default_my_requests': 1}"
                                                 class="ms-qa-btn"
                                                 invisible="not has_activiteiten_access">
                                             <div class="ms-qa-icon c3"><i class="fa fa-list"/></div>
@@ -113,6 +80,7 @@
                                             </div>
                                         </button>
                                         <button name="action_open_drukwerk_list" type="object"
+                                                context="{'search_default_my_requests': 1}"
                                                 class="ms-qa-btn"
                                                 invisible="not has_drukwerk_access">
                                             <div class="ms-qa-icon c3"><i class="fa fa-list"/></div>
@@ -151,12 +119,31 @@
                                     <field name="is_prof_only_boekhouding" invisible="1"/>
                                     <field name="is_prof_only_vervangingen" invisible="1"/>
                                     <field name="is_prof_only_medewerker" invisible="1"/>
+                                    <field name="prof_action_count" invisible="1"/>
+                                    <button type="object" name="action_open_professionalisering"
+                                            class="ms-action-banner"
+                                            invisible="prof_action_count == 0">
+                                        <i class="fa fa-bolt"/>
+                                        <field name="prof_action_label" class="d-inline"/>
+                                    </button>
                                     <div class="d-flex gap-2 flex-wrap mb-3">
+                                        <button type="object" name="action_open_professionalisering"
+                                                context="{'search_default_state_selection_of_form': 1}"
+                                                class="ms-badge-status ms-badge-info ms-badge-btn"
+                                                invisible="is_prof_only_boekhouding or is_prof_only_directie or is_prof_only_vervangingen">
+                                            <field name="prof_draft" class="d-inline"/> Concepten
+                                        </button>
                                         <button type="object" name="action_open_professionalisering"
                                                 context="{'search_default_state_submitted': 1}"
                                                 class="ms-badge-status ms-badge-warning ms-badge-btn"
                                                 invisible="is_prof_only_boekhouding or is_prof_only_vervangingen">
-                                            <field name="prof_submitted" class="d-inline"/> Ingediend
+                                            <field name="prof_submitted" class="d-inline"/> Goed te keuren
+                                        </button>
+                                        <button type="object" name="action_open_professionalisering"
+                                                context="{'search_default_state_bewijs': 1}"
+                                                class="ms-badge-status ms-badge-warning ms-badge-btn"
+                                                invisible="is_prof_only_directie or is_prof_only_vervangingen">
+                                            <field name="prof_bewijs_pending" class="d-inline"/> Bewijs in te dienen
                                         </button>
                                         <button type="object" name="action_open_professionalisering"
                                                 context="{'search_default_state_done': 1}"
@@ -177,9 +164,6 @@
                                             <field name="prof_done" class="d-inline"/> Afgerond
                                         </button>
                                     </div>
-                                    <div class="text-muted" style="font-size: 12px;">
-                                        <field name="prof_total" class="d-inline"/> totaal
-                                    </div>
                                 </div>
                             </div>
 
@@ -196,6 +180,13 @@
                                     <field name="is_only_directie" invisible="1"/>
                                     <field name="is_only_medewerker" invisible="1"/>
                                     <field name="is_only_vervangingen" invisible="1"/>
+                                    <field name="act_action_count" invisible="1"/>
+                                    <button type="object" name="action_open_activiteiten_list"
+                                            class="ms-action-banner"
+                                            invisible="act_action_count == 0">
+                                        <i class="fa fa-bolt"/>
+                                        <field name="act_action_label" class="d-inline"/>
+                                    </button>
                                     <div class="d-flex gap-2 flex-wrap mb-3">
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_state_form_invullen': 1}"
@@ -252,9 +243,6 @@
                                             <field name="act_done" class="d-inline"/> Afgerond
                                         </button>
                                     </div>
-                                    <div class="text-muted" style="font-size: 12px;">
-                                        <field name="act_total" class="d-inline"/> totaal
-                                    </div>
                                 </div>
                             </div>
                             <!-- Drukwerk -->
@@ -265,6 +253,13 @@
                                             class="ms-link">Bekijk alles &#8594;</button>
                                 </div>
                                 <div class="ms-card-body">
+                                    <field name="druk_action_count" invisible="1"/>
+                                    <button type="object" name="action_open_drukwerk_list"
+                                            class="ms-action-banner"
+                                            invisible="druk_action_count == 0">
+                                        <i class="fa fa-bolt"/>
+                                        <field name="druk_action_label" class="d-inline"/>
+                                    </button>
                                     <div class="d-flex gap-2 flex-wrap mb-3">
                                         <button type="object" name="action_open_drukwerk_list"
                                                 context="{'search_default_state_form_invullen': 1}"
@@ -281,9 +276,6 @@
                                                 class="ms-badge-status ms-badge-success ms-badge-btn">
                                             <field name="druk_done" class="d-inline"/> Afgerond
                                         </button>
-                                    </div>
-                                    <div class="text-muted" style="font-size: 12px;">
-                                        <field name="druk_total" class="d-inline"/> totaal
                                     </div>
                                 </div>
                             </div>

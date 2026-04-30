@@ -96,10 +96,9 @@
                                 <list>
                                     <field name="asset_tag"/>
                                     <field name="name"/>
-                                    <field name="category_id"/>
+                                    <field name="asset_type_category_id"/>
                                     <field name="state"/>
-                                    <field name="location_building"/>
-                                    <field name="location_room"/>
+                                    <field name="location_id"/>
                                 </list>
                             </field>
                         </page>

@@ -1,5 +1,5 @@
 /** @odoo-module **/
-import { Component, onWillStart, useChildSubEnv } from "@odoo/owl";
+import { Component, onWillStart, onMounted, onWillUnmount, useChildSubEnv } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
@@ -37,6 +37,29 @@ export class DashboardAction extends Component {
                 display: { controlPanel: false },
                 views: [[false, "form"]],
             };
+        });
+
+        // Toggle .is-zero on badge buttons so empty counters render muted.
+        onMounted(() => {
+            const root = document.querySelector(".o_myschool_dashboard_container");
+            if (!root) return;
+            const apply = () => {
+                root.querySelectorAll(".ms-badge-btn").forEach((btn) => {
+                    const fld = btn.querySelector(".o_field_widget");
+                    if (!fld) return;
+                    const val = parseInt((fld.textContent || "").trim(), 10);
+                    btn.classList.toggle("is-zero", val === 0);
+                });
+            };
+            apply();
+            this._zeroObserver = new MutationObserver(() => apply());
+            this._zeroObserver.observe(root, {
+                childList: true, subtree: true, characterData: true,
+            });
+        });
+
+        onWillUnmount(() => {
+            if (this._zeroObserver) this._zeroObserver.disconnect();
         });
     }
 }

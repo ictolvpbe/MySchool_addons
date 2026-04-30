@@ -135,12 +135,16 @@ class MySchoolDashboard(models.Model):
         string="Prof. Afgerond", compute='_compute_professionalisering_counts')
     prof_payment_pending = fields.Integer(
         string="Prof. Betaling openstaand", compute='_compute_professionalisering_counts')
+    prof_bewijs_pending = fields.Integer(
+        string="Prof. Bewijs in te dienen", compute='_compute_professionalisering_counts')
 
-    # KPI: combined pending / action-needed / approved / rejected
-    kpi_pending = fields.Integer(compute='_compute_kpi')
-    kpi_action_needed = fields.Integer(compute='_compute_kpi')
-    kpi_approved = fields.Integer(compute='_compute_kpi')
-    kpi_rejected = fields.Integer(compute='_compute_kpi')
+    # Per-module action banners (role-aware "what's on your plate")
+    prof_action_count = fields.Integer(compute='_compute_action_banners')
+    prof_action_label = fields.Char(compute='_compute_action_banners')
+    act_action_count = fields.Integer(compute='_compute_action_banners')
+    act_action_label = fields.Char(compute='_compute_action_banners')
+    druk_action_count = fields.Integer(compute='_compute_action_banners')
+    druk_action_label = fields.Char(compute='_compute_action_banners')
 
     # Recent activity (own aanvragen)
     recent_activity_html = fields.Html(
@@ -313,46 +317,6 @@ class MySchoolDashboard(models.Model):
 
     # --- KPI ---
 
-    @api.depends_context('uid')
-    def _compute_kpi(self):
-        act_raw = self._get_state_counts('activiteiten.record')
-        prof_raw = self._get_state_counts('professionalisering.record')
-        druk_raw = self._get_state_counts('drukwerk.record')
-        # Pending = draft + form_invullen + bus_check (act) + selection_of_form (prof) + draft + form_invullen (druk)
-        pending = (
-            act_raw.get('draft', 0) + act_raw.get('form_invullen', 0) +
-            act_raw.get('bus_check', 0) +
-            prof_raw.get('selection_of_form', 0) +
-            druk_raw.get('draft', 0) + druk_raw.get('form_invullen', 0)
-        )
-        # Action needed = pending_approval + bus_refused (act) + fill_in_form_* + bevestiging (prof) + afdrukken (druk)
-        action_needed = (
-            act_raw.get('pending_approval', 0) +
-            act_raw.get('bus_refused', 0) +
-            act_raw.get('s_code', 0) +
-            act_raw.get('vervanging', 0) +
-            prof_raw.get('fill_in_form_individueel', 0) +
-            prof_raw.get('fill_in_form_teamleren', 0) +
-            prof_raw.get('bevestiging', 0) +
-            druk_raw.get('afdrukken', 0)
-        )
-        # Approved (across all)
-        approved = (
-            act_raw.get('approved', 0) + act_raw.get('done', 0) +
-            prof_raw.get('done', 0) +
-            druk_raw.get('done', 0)
-        )
-        # Rejected
-        rejected = (
-            act_raw.get('rejected', 0) +
-            prof_raw.get('weigering', 0)
-        )
-        for rec in self:
-            rec.kpi_pending = pending
-            rec.kpi_action_needed = action_needed
-            rec.kpi_approved = approved
-            rec.kpi_rejected = rejected
-
     # --- Counts ---
 
     def _get_state_counts(self, model_name):
@@ -377,6 +341,7 @@ class MySchoolDashboard(models.Model):
                 + raw.get('fill_in_form_teamleren', 0)
             ),
             'approved': raw.get('bevestiging', 0),
+            'bewijs': raw.get('bewijs', 0),
             'rejected': raw.get('weigering', 0),
             'done': raw.get('done', 0),
         }
@@ -384,6 +349,7 @@ class MySchoolDashboard(models.Model):
             rec.prof_draft = counts.get('draft', 0)
             rec.prof_submitted = counts.get('submitted', 0)
             rec.prof_approved = counts.get('approved', 0)
+            rec.prof_bewijs_pending = counts.get('bewijs', 0)
             rec.prof_rejected = counts.get('rejected', 0)
             rec.prof_done = counts.get('done', 0)
             rec.prof_payment_pending = 0
@@ -448,6 +414,65 @@ class MySchoolDashboard(models.Model):
                 if state in visible_states
             )
 
+    # --- Per-module action banners ---
+
+    def _plural(self, n, singular, plural):
+        return singular if n == 1 else plural
+
+    @api.depends_context('uid')
+    def _compute_action_banners(self):
+        for rec in self:
+            # Professionalisering
+            prof_parts = []
+            if rec.is_prof_directie and rec.prof_submitted:
+                n = rec.prof_submitted
+                prof_parts.append((n, self._plural(n,
+                    f"{n} goedkeuring wacht op jou",
+                    f"{n} goedkeuringen wachten op jou")))
+            if rec.is_prof_boekhouding and rec.prof_payment_pending:
+                n = rec.prof_payment_pending
+                prof_parts.append((n, self._plural(n,
+                    f"{n} betaling staat open",
+                    f"{n} betalingen staan open")))
+            rec.prof_action_count = sum(p[0] for p in prof_parts)
+            rec.prof_action_label = ' · '.join(p[1] for p in prof_parts)
+
+            # Activiteiten
+            act_parts = []
+            if rec.is_act_directie and rec.act_pending_approval:
+                n = rec.act_pending_approval
+                act_parts.append((n, self._plural(n,
+                    f"{n} goedkeuring wacht op jou",
+                    f"{n} goedkeuringen wachten op jou")))
+            if rec.is_act_aankoop:
+                bus_total = rec.act_bus_check + rec.act_bus_refused
+                if bus_total:
+                    act_parts.append((bus_total, self._plural(bus_total,
+                        f"{bus_total} bus controle is nodig",
+                        f"{bus_total} bus controles zijn nodig")))
+            if rec.is_act_boekhouding and rec.act_s_code:
+                n = rec.act_s_code
+                act_parts.append((n, self._plural(n,
+                    f"{n} S-Code te verwerken",
+                    f"{n} S-Codes te verwerken")))
+            if rec.is_act_vervangingen and rec.act_vervanging:
+                n = rec.act_vervanging
+                act_parts.append((n, self._plural(n,
+                    f"{n} vervanging te plannen",
+                    f"{n} vervangingen te plannen")))
+            rec.act_action_count = sum(p[0] for p in act_parts)
+            rec.act_action_label = ' · '.join(p[1] for p in act_parts)
+
+            # Drukwerk
+            druk_parts = []
+            if rec.is_drukwerk_drukwerk and rec.druk_afdrukken:
+                n = rec.druk_afdrukken
+                druk_parts.append((n, self._plural(n,
+                    f"{n} document af te drukken",
+                    f"{n} documenten af te drukken")))
+            rec.druk_action_count = sum(p[0] for p in druk_parts)
+            rec.druk_action_label = ' · '.join(p[1] for p in druk_parts)
+
     # --- Recent activity (own aanvragen) ---
 
     def _relative_time(self, dt):
@@ -489,6 +514,14 @@ class MySchoolDashboard(models.Model):
         'done': ('Afgerond', 'ms-badge-success'),
     }
 
+    def _actor_name(self, record):
+        emp = getattr(record, 'employee_id', None)
+        if emp and emp.name:
+            return html_escape(emp.name)
+        if record.create_uid and record.create_uid.name:
+            return html_escape(record.create_uid.name)
+        return ''
+
     @api.depends_context('uid')
     def _compute_recent_activity_html(self):
         items = []
@@ -500,11 +533,15 @@ class MySchoolDashboard(models.Model):
             for a in acts:
                 label, css = self._ACT_STATE_LABEL.get(a.state, ('', ''))
                 titel = html_escape(a.titel or a.name or '')
+                actor = self._actor_name(a)
+                meta = f'{actor} · ' if actor else ''
+                dot = 'success' if a.state in ("approved", "done") else 'error' if a.state in ("rejected", "bus_refused") else 'info'
                 items.append((a.write_date, (
-                    f'<li class="{"success" if a.state in ("approved", "done") else "error" if a.state in ("rejected", "bus_refused") else "info"}">'
+                    f'<li class="{dot}">'
+                    f'<i class="fa fa-calendar ms-tl-icon"/>'
                     f'<strong>{titel}</strong> '
                     f'<span class="ms-badge-status {css}">{label}</span><br>'
-                    f'<span class="ms-time">{self._relative_time(a.write_date)}</span>'
+                    f'<span class="ms-time">{meta}{self._relative_time(a.write_date)}</span>'
                     f'</li>'
                 )))
         # Recent professionalisering
@@ -521,11 +558,14 @@ class MySchoolDashboard(models.Model):
                     dot = 'error'
                 else:
                     dot = 'info'
+                actor = self._actor_name(p)
+                meta = f'{actor} · ' if actor else ''
                 items.append((p.write_date, (
                     f'<li class="{dot}">'
+                    f'<i class="fa fa-graduation-cap ms-tl-icon"/>'
                     f'<strong>{titel}</strong> '
                     f'<span class="ms-badge-status ms-badge-neutral">Prof.</span><br>'
-                    f'<span class="ms-time">{self._relative_time(p.write_date)}</span>'
+                    f'<span class="ms-time">{meta}{self._relative_time(p.write_date)}</span>'
                     f'</li>'
                 )))
         # Recent drukwerk
@@ -542,12 +582,15 @@ class MySchoolDashboard(models.Model):
                     dot = 'warning'
                 else:
                     dot = 'info'
+                actor = self._actor_name(d)
+                meta = f'{actor} · ' if actor else ''
                 items.append((d.write_date, (
                     f'<li class="{dot}">'
+                    f'<i class="fa fa-print ms-tl-icon"/>'
                     f'<strong>{titel}</strong> '
                     f'<span class="ms-badge-status {css}">{label}</span> '
                     f'<span class="ms-badge-status ms-badge-neutral">Drukwerk</span><br>'
-                    f'<span class="ms-time">{self._relative_time(d.write_date)}</span>'
+                    f'<span class="ms-time">{meta}{self._relative_time(d.write_date)}</span>'
                     f'</li>'
                 )))
         # Sort combined and take top 8

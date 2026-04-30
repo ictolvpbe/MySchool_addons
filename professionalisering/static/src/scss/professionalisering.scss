@@ -1,3 +1,32 @@
+// Lijstkop-titels van Aanvraagdatum en Opleidingsdatum mogen wrappen i.p.v.
+// afgekapt te worden. We targeten specifiek deze kolommen via data-name zodat
+// andere lijstweergaven onaangetast blijven. De headertekst zit in
+// <span class="text-truncate"> binnen de <th>; daar moeten we Bootstrap's
+// truncate-stijl breken.
+.o_list_table thead th[data-name="create_date"] .text-truncate,
+.o_list_table thead th[data-name="start_date"] .text-truncate {
+    white-space: normal !important;
+    text-overflow: clip !important;
+    overflow: visible !important;
+    // Geen word-break: break-word — daardoor zou hij midden in "Aanvraag" of
+    // "Opleidings" splitten. Een zero-width space (&#8203;) tussen woord en
+    // "datum" in de label zorgt voor een natuurlijke breekpositie.
+    word-break: normal;
+    overflow-wrap: normal;
+    line-height: 1.15;
+}
+
+// Aanvraagdatum smaller, Opleidingsdatum breder. Komt overeen met "27 apr, 14:54"
+// en geeft de Opleidingsdatum-kolom genoeg breedte voor "OPLEIDINGS" + "DATUM"
+// op twee regels.
+.o_list_table th[data-name="create_date"] {
+    width: 110px;
+    max-width: 110px;
+}
+.o_list_table th[data-name="start_date"] {
+    min-width: 120px;
+}
+
 // Verbreed het wizard-dialoogvenster zodat de invite-lijst en andere stappen
 // genoeg ruimte hebben om leesbaar weer te geven.
 .modal-dialog:has(.o_professionalisering_wizard_form) {

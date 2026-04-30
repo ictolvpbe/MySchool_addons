@@ -49,62 +49,6 @@
     color: var(--ms-black);
 }
 
-/* --- KPI row --- */
-.ms-kpi-row {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    margin-bottom: 24px;
-}
-.ms-kpi-card {
-    background: transparent !important;
-    border-radius: 12px;
-    padding: 20px 24px;
-    box-shadow: none !important;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    border-left: 4px solid transparent;
-}
-.ms-kpi-card.c1 { border-left-color: var(--ms-brand-1); }
-.ms-kpi-card.c2 { border-left-color: var(--ms-brand-2); }
-.ms-kpi-card.c3 { border-left-color: var(--ms-brand-3); }
-.ms-kpi-card.c4 { border-left-color: var(--ms-brand-4); }
-.ms-kpi-label {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: .8px;
-    color: var(--ms-gray);
-    font-weight: 600;
-}
-.ms-kpi-value {
-    font-size: 32px;
-    font-weight: 700;
-    color: var(--ms-black);
-    line-height: 1.1;
-}
-.ms-kpi-value .o_field_widget {
-    font-size: 32px;
-    font-weight: 700;
-    color: var(--ms-black);
-    display: inline;
-}
-.ms-kpi-value .o_field_widget span,
-.ms-kpi-value .o_field_widget .o_input,
-.ms-kpi-value .o_field_widget input,
-.ms-kpi-value .o_readonly_modifier span,
-.ms-kpi-value .o_readonly_modifier input {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-.ms-kpi-sub {
-    font-size: 12px;
-    color: var(--ms-gray);
-}
-.ms-kpi-sub .up { color: var(--ms-success); }
-.ms-kpi-sub .down { color: var(--ms-error); }
-
 /* --- Card --- */
 .ms-card {
     background: var(--ms-bg-card);
@@ -143,13 +87,51 @@
     padding: 16px 20px;
 }
 
+/* --- Action banner (per-card spotlight) --- */
+.ms-action-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: var(--ms-warning-bg);
+    color: var(--ms-warning);
+    border: none;
+    border-left: 4px solid var(--ms-warning);
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    transition: filter 0.15s ease;
+}
+.ms-action-banner:hover {
+    filter: brightness(0.96);
+}
+.ms-action-banner i.fa {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+.ms-action-banner .o_field_widget {
+    color: var(--ms-warning);
+    font-weight: 600;
+}
+
 /* --- Badges --- */
 .ms-badge-status {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 12px;
-    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 18px;
+    font-size: 14px;
     font-weight: 600;
+    line-height: 1.2;
+}
+.ms-badge-status .o_field_widget {
+    font-size: 16px;
+    font-weight: 700;
 }
 .ms-badge-success { background: var(--ms-success-bg); color: var(--ms-success); }
 .ms-badge-warning { background: var(--ms-warning-bg); color: var(--ms-warning); }
@@ -168,11 +150,15 @@
 button.ms-badge-btn {
     border: none;
     cursor: pointer;
-    transition: filter 0.15s ease;
+    transition: filter 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 button.ms-badge-btn:hover {
     filter: brightness(0.92);
     text-decoration: none;
+}
+/* Badges met count = 0: volledig verborgen */
+button.ms-badge-btn.is-zero {
+    display: none !important;
 }
 
 /* --- Grid layout (2-column) --- */
@@ -207,6 +193,26 @@ button.ms-badge-btn:hover {
 .ms-qa-btn:hover {
     border-color: var(--ms-brand-2) !important;
     background: #e6f7f8 !important;
+}
+/* Primaire actie ("Nieuwe X"): gevulde teal-knop */
+.ms-qa-btn[name^="action_new_"] {
+    background: var(--ms-brand-1) !important;
+    border-color: var(--ms-brand-1) !important;
+    color: #fff !important;
+}
+.ms-qa-btn[name^="action_new_"]:hover {
+    background: var(--ms-brand-2) !important;
+    border-color: var(--ms-brand-2) !important;
+}
+.ms-qa-btn[name^="action_new_"] .ms-qa-text strong {
+    color: #fff !important;
+}
+.ms-qa-btn[name^="action_new_"] .ms-qa-text span {
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+.ms-qa-btn[name^="action_new_"] .ms-qa-icon {
+    background: rgba(255, 255, 255, 0.18) !important;
+    color: #fff !important;
 }
 .ms-qa-icon {
     width: 32px;
@@ -272,9 +278,17 @@ button.ms-badge-btn:hover {
 .ms-timeline li.success::before { background: var(--ms-success); }
 .ms-timeline li.error::before { background: var(--ms-error); }
 .ms-timeline li.info::before { background: var(--ms-brand-2); }
+.ms-timeline li.warning::before { background: var(--ms-warning); }
+.ms-tl-icon {
+    color: var(--ms-text-muted);
+    margin-right: 6px;
+    font-size: 12px;
+}
 .ms-time {
     color: var(--ms-gray);
     font-size: 11px;
+    display: inline-block;
+    margin-top: 2px;
 }
 
 /* --- Empty state --- */
@@ -292,20 +306,3 @@ button.ms-badge-btn:hover {
     margin: 0 !important;
 }
 
-/* --- Responsive --- */
-@media (max-width: 1024px) {
-    .ms-kpi-row {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    .ms-grid {
-        grid-template-columns: 1fr;
-    }
-}
-@media (max-width: 640px) {
-    .ms-kpi-row {
-        grid-template-columns: 1fr;
-    }
-    .ms-quick-actions {
-        grid-template-columns: 1fr;
-    }
-}

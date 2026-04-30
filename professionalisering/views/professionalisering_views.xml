@@ -50,7 +50,7 @@
                             string="Bewijs indienen"
                             type="object"
                             class="btn-primary"
-                            invisible="state != 'done' or bewijs_ingediend or not is_owner"/>
+                            invisible="state not in ('bevestiging', 'bewijs') or bewijs_ingediend or not is_owner"/>
                     <!-- Owner or Admin: delete unsubmitted -->
                     <button name="action_delete"
                             string="Verwijderen"
@@ -196,21 +196,16 @@
                             <field name="directie_id"
                                    invisible="state not in ('weigering', 'done') or not needs_approval"/>
 
-                            <!-- Extra info inline zichtbaar voor directie/admin -->
+                            <!-- Extra info inline zichtbaar voor iedereen na indienen -->
                             <separator string="Extra info"
-                                       groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
                                        invisible="state == 'selection_of_form'"/>
                             <label for="description" string="Motivatie"
-                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
                                    invisible="state == 'selection_of_form'"/>
                             <field name="description" nolabel="1" readonly="1"
-                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
                                    invisible="state == 'selection_of_form'"/>
                             <label for="invite_ids" string="Collega's mee"
-                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
                                    invisible="state == 'selection_of_form' or not show_invites or not invite_ids"/>
                             <field name="invite_ids" nolabel="1" readonly="1"
-                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
                                    invisible="state == 'selection_of_form' or not show_invites or not invite_ids">
                                 <list create="false" edit="false" delete="false">
                                     <field name="employee_id"/>
@@ -218,12 +213,10 @@
                                 </list>
                             </field>
                             <label for="date_line_ids" string="Losse datums"
-                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
                                    invisible="state == 'selection_of_form' or not verschillende_dagen"/>
-                            <field name="date_line_ids" nolabel="1" readonly="1"
-                                   groups="professionalisering.group_professionalisering_directie,professionalisering.group_professionalisering_admin"
+                            <field name="date_line_ids" nolabel="1"
                                    invisible="state == 'selection_of_form' or not verschillende_dagen">
-                                <list create="false" edit="false" delete="false">
+                                <list create="false" edit="false" delete="true">
                                     <field name="date"/>
                                     <field name="cost"/>
                                 </list>
@@ -238,16 +231,6 @@
                                 string="Volgende"
                                 type="object"
                                 class="btn-primary"/>
-                    </div>
-
-                    <!-- Extra info knop: opent dialoog met Uitnodigingen/Datums/Beschrijving -->
-                    <div class="d-flex justify-content-end mt-3 mb-3"
-                         invisible="state == 'selection_of_form'">
-                        <button name="action_open_details"
-                                string="Extra info beheren"
-                                type="object"
-                                class="btn-secondary"
-                                icon="fa-edit"/>
                     </div>
 
                     <!-- Afkeuring: voor medewerker na weigering -->
@@ -269,7 +252,7 @@
                     <!-- Tabs (enkel state-specifieke info) -->
                     <notebook>
                         <!-- Bewijs tab -->
-                        <page string="Bewijs" invisible="state != 'done'">
+                        <page string="Bewijs" invisible="state not in ('bevestiging', 'bewijs', 'done')">
                             <group>
                                 <group>
                                     <!-- Video/Podcast: link -->
@@ -417,6 +400,8 @@
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
+                <field name="create_date" string="Aanvraag&#8203;datum" optional="show"/>
+                <field name="start_date" string="Opleidings&#8203;datum" optional="show"/>
                 <field name="type" optional="hide"/>
                 <field name="vorm_display" string="Vorm"/>
                 <field name="titel"/>
@@ -430,8 +415,8 @@
                        groups="professionalisering.group_professionalisering_directie"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'selection_of_form'"
-                       decoration-warning="state in ('fill_in_form_individueel', 'fill_in_form_teamleren')"
-                       decoration-success="state == 'done'"
+                       decoration-warning="state in ('fill_in_form_individueel', 'fill_in_form_teamleren', 'bewijs')"
+                       decoration-success="state in ('bevestiging', 'done')"
                        decoration-danger="state == 'weigering'"/>
             </list>
         </field>
@@ -447,15 +432,18 @@
                 <field name="employee_id"/>
                 <field name="name"/>
                 <field name="assigned_to"/>
-                <field name="start_date"/>
+                <field name="start_date" string="Opleidingsdatum"/>
+                <field name="create_date" string="Aanvraagdatum"/>
                 <filter string="Mijn aanvragen" name="my_requests" domain="['|', ('employee_id.user_id', '=', uid), ('invite_ids.employee_id.user_id', '=', uid)]"/>
                 <separator/>
                 <filter string="Aan mij toegewezen" name="assigned_to_me" domain="[('assigned_to.user_id', '=', uid)]"/>
                 <filter string="Te beoordelen" name="to_approve" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
                 <filter string="Vervangingen openstaand" name="replacement_pending" domain="[('state', '=', 'done')]"/>
                 <separator/>
-                <filter string="Formulier kiezen" name="state_selection_of_form" domain="[('state', '=', 'selection_of_form')]"/>
+                <filter string="Concept" name="state_selection_of_form" domain="[('state', '=', 'selection_of_form')]"/>
                 <filter string="Ingediend" name="state_submitted" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
+                <filter string="Goedgekeurd" name="state_bevestiging" domain="[('state', '=', 'bevestiging')]"/>
+                <filter string="Bewijs" name="state_bewijs" domain="[('state', '=', 'bewijs')]"/>
                 <filter string="Geweigerd" name="state_weigering" domain="[('state', '=', 'weigering')]"/>
                 <filter string="Afgerond" name="state_done" domain="[('state', '=', 'done')]"/>
                 <separator/>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_directie_dashboard_root"
+              name="Directie Dashboard"
+              action="action_directie_dashboard_client"
+              sequence="6"
+              groups="myschool_directie_dashboard.group_directie_dashboard"/>
+</odoo>

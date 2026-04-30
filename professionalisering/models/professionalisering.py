@@ -479,10 +479,11 @@ class ProfessionaliseringRecord(models.Model):
         help='Specificeer het vak of geef een korte toelichting bij "Andere".',
     )
     state = fields.Selection([
-        ('selection_of_form', 'Formulier kiezen'),
+        ('selection_of_form', 'Concept'),
         ('fill_in_form_individueel', 'Goed te keuren'),
         ('fill_in_form_teamleren', 'Goed te keuren'),
-        ('bevestiging', 'Bevestigd'),
+        ('bevestiging', 'Goedgekeurd'),
+        ('bewijs', 'Bewijs'),
         ('weigering', 'Geweigerd'),
         ('done', 'Afgerond'),
     ], string='Status', default='selection_of_form', tracking=True)
@@ -717,9 +718,9 @@ class ProfessionaliseringRecord(models.Model):
                 raise UserError("Alleen conceptaanvragen kunnen ingediend worden.")
             if not record.type:
                 raise UserError("Selecteer eerst een type professionalisering.")
-            # Types that skip approval go straight to done
+            # Types that skip approval go straight to bewijs (user can upload bewijs)
             if not record.needs_approval:
-                record.state = 'done'
+                record.state = 'bewijs'
                 record._schedule_bewijs_activity_single()
             else:
                 new_state = type_state_map.get(record.type)
@@ -830,8 +831,9 @@ class ProfessionaliseringRecord(models.Model):
             record.directie_id = self.env.user.employee_ids[:1]
             # Notify all invited colleagues now that directie has approved
             record.invite_ids._notify_invited_employee()
-            record.state = 'done'
-            record._schedule_bewijs_activity_single()
+            record.state = 'bevestiging'
+            # Bewijs activity is scheduled later (via _cron_advance_to_bewijs)
+            # when the start_date has passed.
             # Inform boekhouding about new approved professionalisering with costs
             if record.needs_payment:
                 record._notify_boekhouding_new()
@@ -855,7 +857,7 @@ class ProfessionaliseringRecord(models.Model):
                 note=(
                     'Een nieuwe professionalisering is goedgekeurd door directie. '
                     'Geschatte kost: %s. Controleer of er financiële opvolging nodig is.'
-                ) % (self.cost or 0),
+                ) % (self.total_cost or 0),
                 user_id=user.id,
             )
 
@@ -864,6 +866,8 @@ class ProfessionaliseringRecord(models.Model):
         for record in self:
             if record.state not in submitted_states:
                 raise UserError("Alleen ingediende aanvragen kunnen afgekeurd worden.")
+            if not (record.rejection_reason or '').strip():
+                raise UserError("Vul eerst een reden voor afkeuring in voordat u de aanvraag afkeurt.")
             record.state = 'weigering'
             record.directie_id = self.env.user.employee_ids[:1]
         self._send_notification('professionalisering.email_template_notify_employee_rejected')
@@ -897,8 +901,8 @@ class ProfessionaliseringRecord(models.Model):
 
     def action_submit_bewijs(self):
         for record in self:
-            if record.state != 'done':
-                raise UserError("Bewijs kan alleen ingediend worden voor afgeronde aanvragen.")
+            if record.state not in ('bevestiging', 'bewijs'):
+                raise UserError("Bewijs kan alleen ingediend worden vanaf de status 'Goedgekeurd'.")
             subtype = record.subtype_individueel
             if subtype in ('video', 'podcast') and not record.bewijs_link:
                 raise UserError("Voeg een link toe als bewijs.")
@@ -909,12 +913,32 @@ class ProfessionaliseringRecord(models.Model):
             elif record.type == 'teamleren' and not record.bewijs_beschrijving and not record.bewijs_document_ids:
                 raise UserError("Voeg een verslag of document toe als bewijs.")
             record.bewijs_ingediend = True
+            record.state = 'done'
             # Mark the bewijs activity as done
             activities = record.activity_ids.filtered(
                 lambda a: a.user_id == record.employee_id.user_id
                 and 'Bewijs uploaden' in (a.summary or '')
             )
             activities.action_done()
+
+    @api.model
+    def _cron_advance_to_bewijs(self):
+        """Move records from 'bevestiging' (Goedgekeurd) to 'bewijs' once the
+        last training date has passed, and schedule the bewijs upload activity."""
+        today = fields.Date.today()
+        records = self.search([('state', '=', 'bevestiging')])
+        for rec in records:
+            last_date = rec._latest_training_date()
+            if last_date and last_date < today:
+                rec.state = 'bewijs'
+                rec._schedule_bewijs_activity_single()
+
+    def _latest_training_date(self):
+        """Return the latest date of the training (start_date or last date_line)."""
+        self.ensure_one()
+        if self.verschillende_dagen and self.date_line_ids:
+            return max(self.date_line_ids.mapped('date'))
+        return self.start_date
 
     def _schedule_vervangingen_activity(self):
         vervangingen_group = self.env.ref(

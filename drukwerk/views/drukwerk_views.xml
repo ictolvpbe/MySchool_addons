@@ -279,6 +279,7 @@
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
+                <field name="create_date" string="Aanvraagdatum" optional="show"/>
                 <field name="create_uid" string="Aangemaakt door"/>
                 <field name="drukwerk_type"/>
                 <field name="titel"/>

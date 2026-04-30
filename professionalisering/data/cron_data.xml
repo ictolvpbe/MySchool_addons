@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <record id="ir_cron_advance_to_bewijs" model="ir.cron">
+        <field name="name">Professionalisering: doorzetten naar Bewijs na laatste opleidingsdatum</field>
+        <field name="model_id" ref="model_professionalisering_record"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_advance_to_bewijs()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

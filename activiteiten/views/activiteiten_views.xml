@@ -349,6 +349,7 @@
         <field name="arch" type="xml">
             <list>
                 <field name="name"/>
+                <field name="create_date" string="Aanvraagdatum" optional="show"/>
                 <field name="create_uid" string="Aangemaakt door" optional="show"/>
                 <field name="titel"/>
                 <field name="school_id" optional="show"/>
