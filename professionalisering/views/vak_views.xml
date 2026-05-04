@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- List view -->
+    <record id="view_professionalisering_vak_list" model="ir.ui.view">
+        <field name="name">professionalisering.vak.list</field>
+        <field name="model">professionalisering.vak</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="is_other" optional="show"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form view -->
+    <record id="view_professionalisering_vak_form" model="ir.ui.view">
+        <field name="name">professionalisering.vak.form</field>
+        <field name="model">professionalisering.vak</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="code"/>
+                        </group>
+                        <group>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                            <field name="is_other"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_professionalisering_vak_search" model="ir.ui.view">
+        <field name="name">professionalisering.vak.search</field>
+        <field name="model">professionalisering.vak</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="code"/>
+                <filter string="Actief" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Gearchiveerd" name="inactive" domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_professionalisering_vak" model="ir.actions.act_window">
+        <field name="name">Vakken (Professionalisering)</field>
+        <field name="res_model">professionalisering.vak</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Voeg een vak toe
+            </p>
+            <p>
+                Vakken zijn beschikbaar als selectie in elke
+                professionalisering-aanvraag.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu — onder MySchool Admin → Master Data → Types -->
+    <menuitem id="menu_professionalisering_vak"
+              name="Professionalisering Vakken"
+              parent="myschool_admin.menu_types"
+              action="action_professionalisering_vak"
+              sequence="80"
+              groups="myschool_core.group_myschool_core_admin,professionalisering.group_professionalisering_admin"/>
+</odoo>

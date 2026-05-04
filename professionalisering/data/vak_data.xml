@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- Initiële vakken — overgenomen uit de oude Selection-lijst.
+         Admins kunnen dit verder beheren via MySchool Admin → Master Data → Vakken. -->
+
+    <record id="vak_wiskunde" model="professionalisering.vak">
+        <field name="code">wiskunde</field>
+        <field name="name">Wiskunde</field>
+        <field name="sequence">10</field>
+    </record>
+    <record id="vak_nederlands" model="professionalisering.vak">
+        <field name="code">nederlands</field>
+        <field name="name">Nederlands</field>
+        <field name="sequence">20</field>
+    </record>
+    <record id="vak_frans" model="professionalisering.vak">
+        <field name="code">frans</field>
+        <field name="name">Frans</field>
+        <field name="sequence">30</field>
+    </record>
+    <record id="vak_engels" model="professionalisering.vak">
+        <field name="code">engels</field>
+        <field name="name">Engels</field>
+        <field name="sequence">40</field>
+    </record>
+    <record id="vak_wetenschap" model="professionalisering.vak">
+        <field name="code">wetenschap</field>
+        <field name="name">Wetenschap</field>
+        <field name="sequence">50</field>
+    </record>
+    <record id="vak_geschiedenis" model="professionalisering.vak">
+        <field name="code">geschiedenis</field>
+        <field name="name">Geschiedenis</field>
+        <field name="sequence">60</field>
+    </record>
+    <record id="vak_aardrijkskunde" model="professionalisering.vak">
+        <field name="code">aardrijkskunde</field>
+        <field name="name">Aardrijkskunde</field>
+        <field name="sequence">70</field>
+    </record>
+    <record id="vak_lichamelijke_opvoeding" model="professionalisering.vak">
+        <field name="code">lichamelijke_opvoeding</field>
+        <field name="name">Lichamelijke opvoeding</field>
+        <field name="sequence">80</field>
+    </record>
+    <record id="vak_informatica" model="professionalisering.vak">
+        <field name="code">informatica</field>
+        <field name="name">Informatica</field>
+        <field name="sequence">90</field>
+    </record>
+    <record id="vak_muziek" model="professionalisering.vak">
+        <field name="code">muziek</field>
+        <field name="name">Muziek</field>
+        <field name="sequence">100</field>
+    </record>
+    <record id="vak_didactiek" model="professionalisering.vak">
+        <field name="code">didactiek</field>
+        <field name="name">Didactiek</field>
+        <field name="sequence">110</field>
+    </record>
+    <record id="vak_pedagogie" model="professionalisering.vak">
+        <field name="code">pedagogie</field>
+        <field name="name">Pedagogie</field>
+        <field name="sequence">120</field>
+    </record>
+    <record id="vak_andere" model="professionalisering.vak">
+        <field name="code">andere</field>
+        <field name="name">Andere</field>
+        <field name="is_other">1</field>
+        <field name="sequence">999</field>
+    </record>
+</odoo>
