@@ -10,4 +10,26 @@
 <p>U kunt het ophalen op de afgesproken plaats.</p>
         ]]></field>
     </record>
+
+    <record id="email_template_drukwerk_new" model="mail.template">
+        <field name="name">Drukwerk - Nieuwe aanvraag voor drukker</field>
+        <field name="model_id" ref="model_drukwerk_record"/>
+        <field name="subject">Nieuw drukwerk: {{ object.name }} - {{ object.titel }}</field>
+        <field name="body_html"><![CDATA[
+<p>Beste drukkerij-team,</p>
+<p>Er is een nieuwe drukwerk-aanvraag ingediend en klaar om af te drukken:</p>
+<ul>
+    <li><strong>Referentie:</strong> {{ object.name }}</li>
+    <li><strong>Titel:</strong> {{ object.titel }}</li>
+    <li><strong>Aangevraagd door:</strong> {{ object.create_uid.name }}</li>
+    <li><strong>School:</strong> {{ object.school_id.name or '-' }}</li>
+    <li><strong>Klassen:</strong>
+        {% for k in object.klas_ids %}{{ k.name_short }}{% if not loop.last %}, {% endif %}{% endfor %}
+    </li>
+    <li><strong>Aantal pagina's:</strong> {{ object.aantal_paginas }}</li>
+    <li><strong>Print deadline:</strong> {{ object.print_deadline.strftime('%d/%m/%Y') if object.print_deadline else '-' }}</li>
+</ul>
+<p>Open de aanvraag in Odoo om het document te bekijken en af te drukken.</p>
+        ]]></field>
+    </record>
 </odoo>

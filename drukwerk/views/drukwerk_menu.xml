@@ -14,6 +14,14 @@
         <field name="context">{'search_default_state_gestockeerd': 1}</field>
     </record>
 
+    <!-- Drukwerk Centrum: zonder "Mijn drukwerk" default, drukkerij ziet alle af-te-drukken records van hun school -->
+    <record id="action_drukwerk_centrum" model="ir.actions.act_window">
+        <field name="name">Drukwerk</field>
+        <field name="res_model">drukwerk.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_not_gestockeerd': 1}</field>
+    </record>
+
     <menuitem id="menu_drukwerk_root"
               name="Drukwerk"
               sequence="75"/>
@@ -47,6 +55,48 @@
     <menuitem id="menu_drukwerk_instellingen"
               name="Prijsinstellingen"
               parent="menu_drukwerk_root"
+              action="action_drukwerk_config_open"
+              sequence="20"/>
+
+    <!-- =================================================================
+         Drukwerk Centrum — top-level shortcut zodat het ook als app-icoon
+         in de Apps-drawer verschijnt. Hangt los van de Aanvragen-hub
+         waarin menu_drukwerk_root genest staat.
+         ================================================================= -->
+    <menuitem id="menu_drukwerk_centrum_root"
+              name="Drukwerk Centrum"
+              groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
+              sequence="76"/>
+
+    <menuitem id="menu_drukwerk_centrum_aanvragen"
+              name="Aanvragen"
+              parent="menu_drukwerk_centrum_root"
+              action="action_drukwerk_centrum"
+              sequence="10"/>
+
+    <menuitem id="menu_drukwerk_centrum_voorraad"
+              name="Voorraad"
+              parent="menu_drukwerk_centrum_root"
+              action="action_drukwerk_voorraad"
+              sequence="12"/>
+
+    <menuitem id="menu_drukwerk_centrum_overzicht"
+              name="Overzicht per klas"
+              parent="menu_drukwerk_centrum_root"
+              action="action_drukwerk_class_report"
+              groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
+              sequence="15"/>
+
+    <menuitem id="menu_drukwerk_centrum_per_lln"
+              name="Overzicht per leerling"
+              parent="menu_drukwerk_centrum_root"
+              action="action_drukwerk_student_report"
+              groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
+              sequence="16"/>
+
+    <menuitem id="menu_drukwerk_centrum_instellingen"
+              name="Prijsinstellingen"
+              parent="menu_drukwerk_centrum_root"
               action="action_drukwerk_config_open"
               sequence="20"/>
 </odoo>

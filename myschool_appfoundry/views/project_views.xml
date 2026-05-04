@@ -202,6 +202,45 @@
                             invisible="phase in ('idea', 'design') and (not has_user_story or (process_map_count == 0 and not process_map_skipped))"/>
                     </div>
                     <notebook>
+                        <page string="Icon" name="icon">
+                            <group>
+                                <group string="Custom Icon (eigen upload)">
+                                    <field name="custom_icon" widget="image"
+                                           filename="custom_icon_filename"
+                                           options="{'preview_image': 'custom_icon', 'size': [100, 100]}"/>
+                                    <field name="custom_icon_filename" invisible="1"/>
+                                    <div colspan="2" class="text-muted">
+                                        Upload een PNG (vierkant, 100×100 of 256×256 aanbevolen).
+                                        Wanneer ingesteld, wordt deze gebruikt i.p.v. de
+                                        auto-gegenereerde versie.
+                                    </div>
+                                </group>
+                                <group string="Auto-gegenereerd voorbeeld">
+                                    <field name="icon_preview" widget="image"
+                                           options="{'size': [100, 100]}" readonly="1"/>
+                                    <field name="icon_module_name"/>
+                                    <field name="icon_main_color" widget="color"/>
+                                    <field name="icon_accent_color" widget="color"/>
+                                </group>
+                            </group>
+                            <separator string="Icoon activeren"/>
+                            <div class="d-flex gap-2 mb-2">
+                                <button name="action_apply_icon_to_menu" type="object"
+                                        string="Apply icon to menu"
+                                        class="btn-primary" icon="fa-th"
+                                        help="Gebruikt het icoon op het hoofdmenu / breadcrumb / app drawer (in de DB op ir.ui.menu)."/>
+                                <button name="action_save_icon_to_module" type="object"
+                                        string="Save icon to module (Apps-pagina)"
+                                        class="btn-secondary" icon="fa-floppy-o"
+                                        help="Schrijft het icoon naar &lt;module&gt;/static/description/icon.png op disk. Vereist na hard refresh om te verschijnen op de Apps-pagina."/>
+                            </div>
+                            <div class="text-muted small">
+                                <i class="fa fa-info-circle me-1"/>
+                                Twee icoon-locaties zijn los van elkaar: het menu (DB) en de
+                                Apps-pagina (bestand op disk). Klik beide knoppen wanneer je
+                                het icoon overal wil bijwerken.
+                            </div>
+                        </page>
                         <page string="Sprints" name="sprints">
                             <field name="sprint_ids">
                                 <list>

@@ -211,6 +211,13 @@ class AppfoundryProject(models.Model):
         help='Technische modulenaam voor het icoon (bepaalt de vorm).',
     )
     icon_preview = fields.Binary(string='Icoon voorbeeld', readonly=True, attachment=False)
+    custom_icon = fields.Binary(
+        string='Custom Icoon',
+        attachment=True,
+        help='Upload een eigen icoon (PNG, vierkant, bv. 100×100 of 256×256). '
+             'Wordt gebruikt i.p.v. de auto-gegenereerde versie wanneer ingesteld.',
+    )
+    custom_icon_filename = fields.Char(string='Bestandsnaam custom icon')
 
     def action_generate_icon_preview(self):
         """Generate a preview icon using the icon generator."""
@@ -226,21 +233,85 @@ class AppfoundryProject(models.Model):
             )
             record.icon_preview = base64.b64encode(icon_bytes)
 
+    def action_save_icon_to_module(self):
+        """Schrijf het icoon naar <module>/static/description/icon.png op disk.
+        Dat is de bron die de Apps-pagina gebruikt. Custom icoon heeft voorrang
+        op de auto-gegenereerde versie."""
+        import base64
+        import os
+        from io import BytesIO
+        from odoo.exceptions import UserError
+        from odoo.modules.module import get_module_path
+        from odoo.addons.myschool_theme.models.icon_generator import generate_icon
+        from PIL import Image
+
+        for record in self:
+            module_name = record.icon_module_name or record.code or record.name or ''
+            module_name = module_name.lower().replace(' ', '_')
+            if not module_name:
+                raise UserError("Geen modulenaam ingesteld op het project.")
+            module_path = get_module_path(module_name)
+            if not module_path:
+                raise UserError(
+                    f"Module '{module_name}' niet gevonden op disk. "
+                    f"Controleer dat de map bestaat in extra-addons/.")
+
+            # Bepaal welke icon-data te gebruiken
+            if record.custom_icon:
+                icon_bytes = base64.b64decode(record.custom_icon)
+            else:
+                icon_bytes = generate_icon(
+                    record.icon_main_color or '#007d8c',
+                    record.icon_accent_color or '#00C4D9',
+                    module_name=module_name,
+                    display_name=record.name or module_name,
+                )
+
+            # Schrijf naar disk via PIL (zorgt voor geldig PNG-formaat)
+            target_dir = os.path.join(module_path, 'static', 'description')
+            os.makedirs(target_dir, exist_ok=True)
+            target_path = os.path.join(target_dir, 'icon.png')
+            try:
+                img = Image.open(BytesIO(icon_bytes))
+                img.save(target_path, 'PNG')
+            except OSError as e:
+                raise UserError(
+                    f"Kon icon.png niet schrijven naar {target_path}: {e}\n"
+                    f"Controleer schrijfrechten op de module-directory.")
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Icoon opgeslagen',
+                'message': 'Hard refresh (Ctrl+Shift+R) de Apps-pagina om de '
+                           'nieuwe icoon te zien.',
+                'type': 'success',
+            },
+        }
+
     def action_apply_icon_to_menu(self):
-        """Apply the generated icon to the module's app menu."""
+        """Apply the icon to the module's app menu.
+        Custom uploaded icon heeft voorrang op de auto-gegenereerde versie."""
         import base64
         from odoo.addons.myschool_theme.models.icon_generator import generate_icon
         for record in self:
             module_name = record.icon_module_name or record.code or record.name or ''
             mod_name_clean = module_name.lower().replace(' ', '_')
-            icon_bytes = generate_icon(
-                record.icon_main_color or '#007d8c',
-                record.icon_accent_color or '#00C4D9',
-                module_name=mod_name_clean,
-                display_name=record.name or module_name,
-            )
-            icon_b64 = base64.b64encode(icon_bytes)
-            # Find matching root menu by module name
+            if record.custom_icon:
+                # Geüploade custom icon — direct gebruiken
+                icon_b64 = record.custom_icon
+            else:
+                icon_bytes = generate_icon(
+                    record.icon_main_color or '#007d8c',
+                    record.icon_accent_color or '#00C4D9',
+                    module_name=mod_name_clean,
+                    display_name=record.name or module_name,
+                )
+                icon_b64 = base64.b64encode(icon_bytes)
+            # Apply to ALL top-level menus owned by this module — een module
+            # kan meerdere root-menus hebben (bv. een hoofdmenu + een
+            # "Centrum"-shortcut). Allemaal krijgen ze hetzelfde icoon.
             menus = self.env['ir.ui.menu'].sudo().search([
                 ('parent_id', '=', False),
             ])
@@ -248,7 +319,6 @@ class AppfoundryProject(models.Model):
                 xmlid = menu.get_external_id().get(menu.id, '')
                 if xmlid and xmlid.startswith(mod_name_clean + '.'):
                     menu.write({'web_icon_data': icon_b64})
-                    break
 
     def action_phase_design(self):
         self.write({'phase': 'design'})
@@ -283,6 +353,33 @@ class AppfoundryProject(models.Model):
                 'state': 'draft',
             })
         return projects
+
+    def write(self, vals):
+        """Automatisch icoon herapplicatie wanneer icon-relevante velden wijzigen.
+        Voorkomt dat een verwijderd custom_icon op disk/menu blijft staan."""
+        icon_fields = {'custom_icon', 'icon_main_color', 'icon_accent_color',
+                       'icon_module_name'}
+        triggered = bool(icon_fields & set(vals.keys()))
+        result = super().write(vals)
+        if triggered:
+            # Beide locaties opnieuw schrijven: menu (DB) + bestand (disk).
+            # Stilletjes — geen notification op deze auto-flow.
+            for record in self:
+                if not (record.icon_module_name or record.code or record.name):
+                    continue
+                try:
+                    record.action_apply_icon_to_menu()
+                except Exception as e:
+                    _logger.warning(
+                        "Auto-apply icon to menu failed for project %s: %s",
+                        record.name, e)
+                try:
+                    record.action_save_icon_to_module()
+                except Exception as e:
+                    _logger.warning(
+                        "Auto-save icon to module failed for project %s: %s",
+                        record.name, e)
+        return result
 
     def _item_action(self, name, extra_domain=None, extra_context=None):
         """Helper to open release-scoped item views."""

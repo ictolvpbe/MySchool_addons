@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_lessenrooster_inhaal" model="ir.actions.client">
+        <field name="name">Mijn lessenrooster (inhaalplanning)</field>
+        <field name="tag">lessenrooster_inhaal_grid</field>
+    </record>
+
+    <menuitem id="menu_lessenrooster_inhaal"
+              name="Mijn rooster (inhaal)"
+              parent="lessenrooster.menu_lessenrooster_root"
+              action="action_lessenrooster_inhaal"
+              sequence="20"/>
+</odoo>

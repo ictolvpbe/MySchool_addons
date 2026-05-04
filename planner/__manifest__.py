@@ -1,6 +1,6 @@
 {
     'name': 'Planner',
-    'version': '1.1',
+    'version': '1.2',
     'summary': 'Inhaalplannen voor klassen die afwezig waren door activiteiten',
     'description': """
         Plan inhaalmomenten voor klassen die een activiteit hebben gemist.
@@ -8,7 +8,7 @@
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
-    'depends': ['base', 'mail', 'myschool_admin', 'activiteiten'],
+    'depends': ['base', 'mail', 'myschool_admin', 'activiteiten', 'lessenrooster'],
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
@@ -18,6 +18,7 @@
         'views/vervanging_line_views.xml',
         'views/afwezige_leerkracht_views.xml',
         'views/org_inherit_views.xml',
+        'wizard/free_slot_wizard_views.xml',
         'views/planner_menu.xml',
     ],
     'installable': True,

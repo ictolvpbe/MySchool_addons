@@ -71,6 +71,110 @@ class PlannerRecord(models.Model):
         ('cancelled', 'Geannuleerd'),
     ], string='Status', default='gepland', required=True, tracking=True)
 
+    gemiste_lessen_ids = fields.Many2many(
+        'lessenrooster.line',
+        compute='_compute_gemiste_lessen_ids',
+        string='Gemiste lessen',
+    )
+
+    # Mapping: Python weekday() (0-6, Monday=0) → lessenrooster.line.dag selectie
+    _DAY_KEY_FROM_WEEKDAY = {0: '1', 1: '2', 2: '3', 3: '4', 4: '5'}
+
+    def _collect_absence_dates(self):
+        """Verzamel alle datums waarop de leerkracht/klas afwezig is via
+        activiteiten en professionalisering. Returns een set van date-objects."""
+        self.ensure_one()
+        dates = set()
+        if self.leerkracht_id:
+            person = self.env['myschool.person'].search(
+                [('odoo_employee_id', '=', self.leerkracht_id.id)], limit=1)
+            if person:
+                acts = self.env['activiteiten.record'].search([
+                    ('state', 'in', ('approved', 's_code', 'vervanging', 'done')),
+                    ('leerkracht_ids', 'in', [person.id]),
+                    ('datetime', '!=', False),
+                ])
+                for act in acts:
+                    start = act.datetime.date()
+                    end = (act.datetime_end or act.datetime).date()
+                    cur = start
+                    while cur <= end:
+                        dates.add(cur)
+                        cur += timedelta(days=1)
+            if 'professionalisering.record' in self.env:
+                profs = self.env['professionalisering.record'].sudo().search([
+                    ('state', 'in', ('bevestiging', 'bewijs', 'done')),
+                    ('employee_id', '=', self.leerkracht_id.id),
+                ])
+                for pr in profs:
+                    if pr.start_date:
+                        end_date = pr.end_date or pr.start_date
+                        cur = pr.start_date
+                        while cur <= end_date:
+                            dates.add(cur)
+                            cur += timedelta(days=1)
+        if self.klas_id:
+            acts = self.env['activiteiten.record'].search([
+                ('state', 'in', ('approved', 's_code', 'vervanging', 'done')),
+                ('klas_ids', 'in', [self.klas_id.id]),
+                ('datetime', '!=', False),
+            ])
+            for act in acts:
+                start = act.datetime.date()
+                end = (act.datetime_end or act.datetime).date()
+                cur = start
+                while cur <= end:
+                    dates.add(cur)
+                    cur += timedelta(days=1)
+        return dates
+
+    @api.depends('leerkracht_id', 'klas_id')
+    def _compute_gemiste_lessen_ids(self):
+        Line = self.env['lessenrooster.line']
+        for record in self:
+            if not record.leerkracht_id and not record.klas_id:
+                record.gemiste_lessen_ids = False
+                continue
+            absence_days = {
+                self._DAY_KEY_FROM_WEEKDAY[d.weekday()]
+                for d in record._collect_absence_dates()
+                if d.weekday() in self._DAY_KEY_FROM_WEEKDAY
+            }
+            if not absence_days:
+                record.gemiste_lessen_ids = False
+                continue
+            person = (
+                record.leerkracht_id
+                and self.env['myschool.person'].search(
+                    [('odoo_employee_id', '=', record.leerkracht_id.id)], limit=1
+                )
+            )
+            clauses = []
+            if person:
+                clauses.append(('leerkracht_id', '=', person.id))
+            if record.klas_id:
+                clauses.append(('klas_id', '=', record.klas_id.id))
+            if not clauses:
+                record.gemiste_lessen_ids = False
+                continue
+            domain = [('dag', 'in', list(absence_days))]
+            if len(clauses) == 1:
+                domain += clauses
+            else:
+                domain += ['|'] + clauses
+            record.gemiste_lessen_ids = Line.search(domain)
+
+    def action_open_free_slot_wizard(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Vrij moment zoeken',
+            'res_model': 'planner.free.slot.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_planner_id': self.id},
+        }
+
     @staticmethod
     def _float_to_time_str(f):
         h = int(f)
@@ -175,11 +279,10 @@ class PlannerRecord(models.Model):
                 # Professionalisering (optional module)
                 if 'professionalisering.record' in self.env:
                     prof_records = self.env['professionalisering.record'].sudo().search([
-                        ('state', 'in', ('bevestiging', 'done')),
+                        ('state', 'in', ('bevestiging', 'bewijs', 'done')),
                         '|',
                         ('employee_id', '=', record.leerkracht_id.id),
-                        '&', ('invite_ids.employee_id', '=', record.leerkracht_id.id),
-                             ('invite_ids.state', '=', 'accepted'),
+                        ('invite_ids.employee_id', '=', record.leerkracht_id.id),
                     ], order='start_date asc')
                     for pr in prof_records:
                         datum_str = pr.start_date.strftime('%d/%m/%Y') if pr.start_date else 'Geen datum'
@@ -212,8 +315,16 @@ class PlannerRecord(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
-            if vals.get('name', 'New') == 'New':
-                vals['name'] = self.env['ir.sequence'].next_by_code('planner.record')
+            if not vals.get('name') or vals.get('name') == 'New':
+                # Probeer eerst de standaard manier (respecteert company-context)
+                new_name = self.env['ir.sequence'].next_by_code('planner.record')
+                if not new_name:
+                    # Fallback: zoek de sequence company-onafhankelijk via sudo
+                    seq = self.env['ir.sequence'].sudo().search(
+                        [('code', '=', 'planner.record')], limit=1)
+                    if seq:
+                        new_name = seq.next_by_id()
+                vals['name'] = new_name or 'PLN/NEW'
         return super().create(vals_list)
 
     def action_submit(self):

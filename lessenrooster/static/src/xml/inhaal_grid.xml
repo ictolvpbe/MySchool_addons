@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="lessenrooster.InhaalGrid">
+        <div class="lr-inhaal-page">
+            <!-- ============================================ -->
+            <!-- Header / toolbar                              -->
+            <!-- ============================================ -->
+            <div class="lr-toolbar">
+                <div class="lr-toolbar-title">
+                    <h2 t-if="state.data">
+                        <i class="fa fa-calendar me-2"/>
+                        Mijn lessenrooster — Inhaalplanning
+                    </h2>
+                    <small t-if="state.data" class="text-muted">
+                        <t t-esc="state.data.leerkracht.name"/>
+                    </small>
+                </div>
+                <div class="lr-toolbar-controls">
+                    <button class="btn btn-outline-secondary" t-on-click="onPrevWeek">
+                        <i class="fa fa-chevron-left"/> Vorige
+                    </button>
+                    <button class="btn btn-outline-secondary" t-on-click="onToday">
+                        Vandaag
+                    </button>
+                    <button class="btn btn-outline-secondary" t-on-click="onNextWeek">
+                        Volgende <i class="fa fa-chevron-right"/>
+                    </button>
+                    <span class="lr-week-label" t-esc="weekRangeLabel"/>
+                    <label class="lr-toggle ms-3">
+                        <input type="checkbox"
+                               t-att-checked="state.showOnlyMissed"
+                               t-on-change="onToggleMissed"/>
+                        Alleen gemiste lessen
+                    </label>
+                </div>
+            </div>
+
+            <!-- ============================================ -->
+            <!-- Loading / Error states                        -->
+            <!-- ============================================ -->
+            <div t-if="state.loading" class="lr-state-message">
+                <i class="fa fa-spinner fa-spin me-2"/>
+                Laden...
+            </div>
+            <div t-if="state.error" class="lr-state-message lr-error">
+                <i class="fa fa-exclamation-triangle me-2"/>
+                <t t-esc="state.error"/>
+            </div>
+
+            <!-- ============================================ -->
+            <!-- Main grid + side panel                        -->
+            <!-- ============================================ -->
+            <div t-if="!state.loading and !state.error and state.data" class="lr-main">
+                <!-- Grid -->
+                <div t-att-class="state.selectedLesson ? 'lr-grid lr-grid-narrow' : 'lr-grid'">
+                    <table class="lr-table">
+                        <thead>
+                            <tr>
+                                <th class="lr-col-uur">Uur</th>
+                                <t t-foreach="state.data.days" t-as="day" t-key="day.key">
+                                    <th class="lr-col-day">
+                                        <div t-esc="day.name"/>
+                                        <small class="text-muted" t-esc="_fmtDayMonth(day.date)"/>
+                                    </th>
+                                </t>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="state.data.lesuren" t-as="uur" t-key="uur">
+                                <tr>
+                                    <td class="lr-col-uur"><strong t-esc="uur"/></td>
+                                    <t t-foreach="state.data.days" t-as="day" t-key="day.key">
+                                        <td class="lr-cell">
+                                            <t t-set="cellLessons" t-value="lessonsByCell[day.key + '-' + uur]"/>
+                                            <t t-if="cellLessons">
+                                                <t t-foreach="cellLessons" t-as="lesson" t-key="lesson.id">
+                                                    <div t-att-class="'lr-lesson ' + cellClass(lesson)"
+                                                         t-on-click="() => this.onLessonClick(lesson)">
+                                                        <div class="lr-lesson-vak">
+                                                            <i t-if="cellIcon(lesson)"
+                                                               t-att-class="'fa me-1 ' + cellIcon(lesson)"/>
+                                                            <strong t-esc="lesson.vak"/>
+                                                        </div>
+                                                        <div class="lr-lesson-meta">
+                                                            <span t-esc="lesson.klas_name"/>
+                                                            <span t-if="lesson.lokaal_name"
+                                                                  class="text-muted ms-1">
+                                                                · <t t-esc="lesson.lokaal_name"/>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </t>
+                                            </t>
+                                        </td>
+                                    </t>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+
+                    <!-- Legend -->
+                    <div class="lr-legend">
+                        <span><span class="lr-swatch lr-cell-normal"/> Normaal</span>
+                        <span><span class="lr-swatch lr-cell-missed-self"/> Eigen afwezigheid</span>
+                        <span><span class="lr-swatch lr-cell-missed-class"/> Klas afwezig</span>
+                    </div>
+                </div>
+
+                <!-- Side panel -->
+                <div t-if="state.selectedLesson" class="lr-side-panel">
+                    <div class="lr-side-header">
+                        <h4>
+                            Inhaal plannen voor
+                            <span class="text-primary" t-esc="state.selectedLesson.klas_name"/>
+                        </h4>
+                        <button class="btn-close" t-on-click="onCloseSidePanel"/>
+                    </div>
+                    <div class="lr-side-body">
+                        <div class="lr-lesson-summary">
+                            <div><strong>Vak:</strong> <t t-esc="state.selectedLesson.vak"/></div>
+                            <div><strong>Datum gemist:</strong> <t t-esc="state.selectedLesson.missed_date"/></div>
+                            <div t-if="state.selectedLesson.missed_reasons.length">
+                                <strong>Reden(en):</strong>
+                                <ul class="lr-reasons">
+                                    <t t-foreach="state.selectedLesson.missed_reasons" t-as="r" t-key="r_index">
+                                        <li>
+                                            <i t-att-class="r.who === 'leerkracht' ? 'fa fa-user-times me-1' : 'fa fa-users me-1'"/>
+                                            <em t-esc="r.titel"/>
+                                            (<t t-esc="r.who === 'leerkracht' ? 'jezelf' : 'klas'"/>)
+                                        </li>
+                                    </t>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <hr/>
+
+                        <div class="lr-search-form">
+                            <h5>Zoek vrij moment</h5>
+                            <div class="lr-quick-ranges">
+                                <button class="btn btn-outline-secondary"
+                                        t-on-click="() => this.setRange(7)">7 dagen</button>
+                                <button class="btn btn-outline-secondary"
+                                        t-on-click="() => this.setRange(14)">14 dagen</button>
+                                <button class="btn btn-outline-secondary"
+                                        t-on-click="() => this.setRange(30)">1 maand</button>
+                            </div>
+                            <div class="lr-date-row">
+                                <div>
+                                    <label>Vanaf</label>
+                                    <input type="date" class="form-control"
+                                           t-att-value="state.slotSearchFrom"
+                                           t-on-change="(ev) => this.onSlotSearchChange('slotSearchFrom', ev)"/>
+                                </div>
+                                <div>
+                                    <label>Tot</label>
+                                    <input type="date" class="form-control"
+                                           t-att-value="state.slotSearchTo"
+                                           t-on-change="(ev) => this.onSlotSearchChange('slotSearchTo', ev)"/>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary w-100" t-on-click="onSearchSlots">
+                                <i class="fa fa-search me-1"/> Zoek vrije momenten
+                            </button>
+                        </div>
+
+                        <hr/>
+
+                        <div t-if="state.slotLoading" class="lr-state-message">
+                            <i class="fa fa-spinner fa-spin me-2"/> Zoeken...
+                        </div>
+
+                        <div t-if="!state.slotLoading and state.slots !== null">
+                            <h5 t-if="state.slots.length">
+                                <t t-esc="state.slots.length"/> vrije momenten gevonden
+                            </h5>
+                            <div t-if="!state.slots.length" class="alert alert-warning">
+                                <i class="fa fa-info-circle me-1"/>
+                                Geen vrije momenten in dit venster. Verbreed de zoekperiode.
+                            </div>
+                            <div t-if="state.slots.length" class="lr-slots-list">
+                                <t t-foreach="state.slots" t-as="slot" t-key="slot_index">
+                                    <div class="lr-slot" t-on-click="() => this.onApplySlot(slot)">
+                                        <div class="lr-slot-info">
+                                            <strong t-esc="slot.day_name"/>
+                                            <span class="ms-2" t-esc="_fmtDayMonth(slot.date)"/>
+                                        </div>
+                                        <div class="lr-slot-uur">
+                                            Uur <t t-esc="slot.lesuur"/>
+                                        </div>
+                                        <i class="fa fa-arrow-right text-muted"/>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>

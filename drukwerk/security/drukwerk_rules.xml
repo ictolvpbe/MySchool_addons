@@ -1,18 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <!-- Personeelslid: own records, filtered by active company school -->
+    <!-- Personeelslid: own records, filtered by active company school.
+         Voor drukkerij-gebruikers wordt deze rule geneutraliseerd (create_uid=-1),
+         zodat enkel rule_drukwerk_drukwerk telt en zij strikt op state='afdrukken' beperkt zijn. -->
     <record id="rule_drukwerk_personeelslid" model="ir.rule">
         <field name="name">Drukwerk: personeelslid ziet eigen aanvragen van actieve school</field>
         <field name="model_id" ref="model_drukwerk_record"/>
-        <field name="domain_force">['&amp;', ('create_uid', '=', user.id), '|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
+        <field name="domain_force">['&amp;', ('create_uid', '=', user.id if not user.has_group('drukwerk.group_drukwerk_drukwerk') else -1), '|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_drukwerk_personeelslid'))]"/>
     </record>
 
-    <!-- Drukwerk team -->
+    <!-- Drukwerk team: alleen records met status 'Af te drukken' -->
     <record id="rule_drukwerk_drukwerk" model="ir.rule">
-        <field name="name">Drukwerk: drukwerk team ziet actieve school</field>
+        <field name="name">Drukwerk: drukwerk team ziet enkel 'Af te drukken' van actieve school</field>
         <field name="model_id" ref="model_drukwerk_record"/>
-        <field name="domain_force">['|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
+        <field name="domain_force">['&amp;', ('state', '=', 'afdrukken'), '|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_drukwerk_drukwerk'))]"/>
     </record>
 

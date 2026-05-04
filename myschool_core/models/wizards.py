@@ -30,8 +30,10 @@ class CreatePersonWizard(models.TransientModel):
     role_id = fields.Many2one('myschool.role', string='Role')
     
     # Odoo user linking
-    create_odoo_user = fields.Boolean(string='Create Odoo User', default=False,
-        help='Create a linked Odoo user account for this person')
+    create_odoo_user = fields.Boolean(string='Create Odoo User', default=True,
+        help='Create a linked Odoo user account for this person. Wordt ook '
+             'een gekoppelde hr.employee aangemaakt zodat de persoon '
+             'beschikbaar is in andere modules (Activiteiten, Professionalisering, ...).')
     odoo_user_login = fields.Char(string='Login', 
         help='Leave empty to use email as login')
     link_existing_user = fields.Boolean(string='Link Existing User', default=False)
@@ -56,52 +58,61 @@ class CreatePersonWizard(models.TransientModel):
         if self.create_odoo_user:
             self.link_existing_user = False
 
-    def action_create(self):
-        """Create the person and optionally link/create Odoo user."""
-        self.ensure_one()
-        
+    def _resolve_user_and_employee(self):
+        """Geeft (user, employee) terug. Maakt aan / koppelt waar nodig.
+        Returned (False, False) wanneer er geen account moet aangemaakt
+        worden (geen email + geen expliciete keuze)."""
+        if self.link_existing_user and self.existing_user_id:
+            user = self.existing_user_id
+        elif self.create_odoo_user:
+            login = self.odoo_user_login or self.email
+            if not login:
+                raise UserError(
+                    "Login of email is verplicht om een Odoo-gebruiker aan te "
+                    "maken. Vul een email in of vink 'Create Odoo User' uit.")
+            user = self.env['res.users'].search([('login', '=', login)], limit=1)
+            if not user:
+                user = self.env['res.users'].create({
+                    'name': f"{self.first_name} {self.last_name}",
+                    'login': login,
+                    'email': self.email or login,
+                })
+        else:
+            return self.env['res.users'], self.env['hr.employee']
+
+        # Zorg dat er ook een hr.employee bestaat — gekoppeld aan deze user
+        employee = self.env['hr.employee'].sudo().search(
+            [('user_id', '=', user.id)], limit=1)
+        if not employee:
+            employee = self.env['hr.employee'].sudo().create({
+                'name': f"{self.first_name} {self.last_name}",
+                'work_email': self.email or user.email or False,
+                'user_id': user.id,
+            })
+        return user, employee
+
+    def _do_create(self):
+        """Gemeenschappelijke logica voor action_create + action_create_and_close.
+        Returnt het aangemaakte persoon-record."""
         Person = self.env['myschool.person']
         PropRelation = self.env['myschool.proprelation']
-        
-        # Prepare person values
+
         person_vals = {
             'first_name': self.first_name,
             'name': self.last_name,
             'is_active': True,
         }
-        
         if self.email and 'email' in Person._fields:
             person_vals['email'] = self.email
-        
-        # Handle Odoo user linking/creation
-        user = None
-        if self.link_existing_user and self.existing_user_id:
-            user = self.existing_user_id
-        elif self.create_odoo_user:
-            # Create new Odoo user
-            login = self.odoo_user_login or self.email
-            if not login:
-                raise UserError("Login or email is required to create Odoo user")
-            
-            # Check if login already exists
-            existing_user = self.env['res.users'].search([('login', '=', login)], limit=1)
-            if existing_user:
-                raise UserError(f"A user with login '{login}' already exists")
-            
-            user = self.env['res.users'].create({
-                'name': f"{self.first_name} {self.last_name}",
-                'login': login,
-                'email': self.email or login,
-            })
-        
-        # Link user if available
-        if user and 'user_id' in Person._fields:
-            person_vals['user_id'] = user.id
-        
-        # Create person
+
+        user, employee = self._resolve_user_and_employee()
+        if user and 'odoo_user_id' in Person._fields:
+            person_vals['odoo_user_id'] = user.id
+        if employee and 'odoo_employee_id' in Person._fields:
+            person_vals['odoo_employee_id'] = employee.id
+
         person = Person.create(person_vals)
-        
-        # Create proprelation to org
+
         proprel_vals = {
             'id_person': person.id,
             'id_org': self.org_id.id,
@@ -109,12 +120,19 @@ class CreatePersonWizard(models.TransientModel):
         }
         if self.role_id:
             proprel_vals['id_role'] = self.role_id.id
-        
         PropRelation.create(proprel_vals)
-        
-        _logger.info(f"Created person {person.name} in org {self.org_id.name}")
-        
-        # Return action to optionally open the person form
+
+        _logger.info(
+            "Created person %s in org %s (user=%s, employee=%s)",
+            person.name, self.org_id.name,
+            user.id if user else '-', employee.id if employee else '-',
+        )
+        return person
+
+    def action_create(self):
+        """Create the person, link/create Odoo user + employee, open form."""
+        self.ensure_one()
+        person = self._do_create()
         return {
             'type': 'ir.actions.act_window',
             'res_model': 'myschool.person',
@@ -127,54 +145,7 @@ class CreatePersonWizard(models.TransientModel):
     def action_create_and_close(self):
         """Create person and return to browser."""
         self.ensure_one()
-        
-        Person = self.env['myschool.person']
-        PropRelation = self.env['myschool.proprelation']
-        
-        # Prepare person values
-        person_vals = {
-            'first_name': self.first_name,
-            'name': self.last_name,
-            'is_active': True,
-        }
-        
-        if self.email and 'email' in Person._fields:
-            person_vals['email'] = self.email
-        
-        # Handle Odoo user
-        user = None
-        if self.link_existing_user and self.existing_user_id:
-            user = self.existing_user_id
-        elif self.create_odoo_user:
-            login = self.odoo_user_login or self.email
-            if not login:
-                raise UserError("Login or email is required to create Odoo user")
-            
-            existing_user = self.env['res.users'].search([('login', '=', login)], limit=1)
-            if existing_user:
-                raise UserError(f"A user with login '{login}' already exists")
-            
-            user = self.env['res.users'].create({
-                'name': f"{self.first_name} {self.last_name}",
-                'login': login,
-                'email': self.email or login,
-            })
-        
-        if user and 'user_id' in Person._fields:
-            person_vals['user_id'] = user.id
-        
-        person = Person.create(person_vals)
-        
-        proprel_vals = {
-            'id_person': person.id,
-            'id_org': self.org_id.id,
-            'is_active': True,
-        }
-        if self.role_id:
-            proprel_vals['id_role'] = self.role_id.id
-        
-        PropRelation.create(proprel_vals)
-        
+        self._do_create()
         return {'type': 'ir.actions.client', 'tag': 'reload'}
 
 

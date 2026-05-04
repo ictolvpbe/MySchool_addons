@@ -518,6 +518,32 @@ class Activiteiten(models.Model):
             record.available_klas_ids = klas_rels.mapped('id_org')
 
     @api.depends('school_id')
+    def _expand_org_descendants(self, root_org_ids):
+        """Geef root_org_ids + alle descendants terug, gevonden via ORG-TREE
+        proprelations (id_org_parent → id_org). Itereert breadth-first tot er
+        geen nieuwe kinderen meer gevonden worden."""
+        PropRel = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        org_tree_type = PropRelationType.search(
+            [('name', '=', 'ORG-TREE')], limit=1)
+        if not org_tree_type or not root_org_ids:
+            return list(root_org_ids)
+        visited = set(root_org_ids)
+        frontier = list(root_org_ids)
+        while frontier:
+            children_rels = PropRel.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org_parent', 'in', frontier),
+                ('id_org', '!=', False),
+            ])
+            children_ids = children_rels.mapped('id_org').ids
+            new_ids = [cid for cid in children_ids if cid not in visited]
+            if not new_ids:
+                break
+            visited.update(new_ids)
+            frontier = new_ids
+        return list(visited)
+
     def _compute_available_leerkracht_ids(self):
         PropRel = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
@@ -538,10 +564,13 @@ class Activiteiten(models.Model):
             if not pers_ids:
                 record.available_leerkracht_ids = False
                 continue
-            # Find all persons linked to pers departments via PERSON-TREE
+            # Expand pers naar alle nakomelingen (lkr, adm, dir, ...) zodat
+            # leerkrachten gekoppeld aan een sub-departement ook gevonden worden.
+            org_ids = record._expand_org_descendants(pers_ids)
+            # Find all persons linked to pers (or any descendant) via PERSON-TREE
             person_rels = PropRel.search([
                 ('proprelation_type_id', '=', person_tree_type.id),
-                ('id_org', 'in', pers_ids),
+                ('id_org', 'in', org_ids),
                 ('id_person', '!=', False),
                 ('is_active', '=', True),
             ])

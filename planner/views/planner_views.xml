@@ -53,8 +53,29 @@
                                    invisible="not tijdslot_ids"/>
                             <field name="verantwoordelijke_id"
                                    readonly="state != 'gepland'"/>
+                            <button name="action_open_free_slot_wizard"
+                                    type="object"
+                                    string="Zoek vrij moment"
+                                    class="btn-secondary"
+                                    icon="fa-search"
+                                    invisible="state != 'gepland' or (not leerkracht_id and not klas_id)"/>
                         </group>
                     </group>
+
+                    <!-- Gemiste lessen — wat valt er weg door de afwezigheid -->
+                    <separator string="Gemiste lessen (uit lessenrooster)"
+                               invisible="not gemiste_lessen_ids"/>
+                    <field name="gemiste_lessen_ids" readonly="1"
+                           invisible="not gemiste_lessen_ids">
+                        <list create="false" delete="false" edit="false">
+                            <field name="dag"/>
+                            <field name="lesuur"/>
+                            <field name="vak"/>
+                            <field name="klas_id"/>
+                            <field name="leerkracht_id"/>
+                            <field name="lokaal_id" optional="hide"/>
+                        </list>
+                    </field>
                 </sheet>
                 <chatter/>
             </form>

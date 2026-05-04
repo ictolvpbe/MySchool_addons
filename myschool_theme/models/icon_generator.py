@@ -450,6 +450,7 @@ MODULE_SHAPES = {
     'myschool_h5p': _shape_play,
     'myschool_sync': _shape_sync,
     'planner': _shape_tasks,
+    'lessenrooster': _shape_calendar,
     'professionalisering': _shape_graduation,
     'process_mapper': _shape_sitemap,
     'myschool_knowledge_builder': _shape_book,
@@ -474,6 +475,8 @@ MODULE_SHAPES = {
 
 KEYWORD_SHAPES = {
     'calendar': _shape_calendar, 'event': _shape_calendar,
+    'rooster': _shape_calendar, 'lesson': _shape_calendar,
+    'schedule': _shape_calendar, 'timetable': _shape_calendar,
     'dash': _shape_dashboard, 'board': _shape_dashboard,
     'code': _shape_code, 'dev': _shape_code,
     'monitor': _shape_monitor, 'desktop': _shape_monitor,

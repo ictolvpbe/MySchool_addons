@@ -384,6 +384,15 @@ export class MembersPanel extends Component {
     isMemberSelected(memberId, memberType) {
         return this.props.selectedMemberId === memberId && this.props.selectedMemberType === memberType;
     }
+
+    /**
+     * Stub for the multi-select feature (referenced in the template).
+     * Return false until proper multi-select state is wired up — that requires
+     * a list of selected members in props/state, which isn't there yet.
+     */
+    isMemberMultiSelected(memberId, memberType) {
+        return false;
+    }
 }
 
 /**

@@ -43,7 +43,8 @@
                             type="object"
                             class="btn-primary"
                             groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"
-                            invisible="state != 'afdrukken'"/>
+                            invisible="state != 'afdrukken'"
+                            confirm="Bevestig: is dit drukwerk effectief afgedrukt en klaar om af te halen? Deze actie kan niet ongedaan worden gemaakt."/>
 
                     <!-- Iedereen met toegang: stockeren vanaf 'Afgerond' -->
                     <button name="action_stockeren"
@@ -97,8 +98,20 @@
                             <field name="school_id"
                                    options="{'no_open': True}"
                                    readonly="not can_edit_content"/>
-                            <field name="klas_ids" widget="many2many_tags"
-                                   readonly="not can_edit_content"/>
+                            <label for="klas_ids"/>
+                            <div>
+                                <field name="klas_ids" widget="many2many_tags"
+                                       options="{'no_create': True, 'no_create_edit': True, 'no_open': True}"
+                                       domain="[('id', 'in', available_klas_ids)]"
+                                       readonly="not can_edit_content"
+                                       nolabel="1"/>
+                                <button name="action_open_extra_klas_wizard"
+                                        type="object"
+                                        string="Andere klas toevoegen…"
+                                        class="btn-link ps-0 mt-1"
+                                        icon="fa-plus"
+                                        invisible="not can_edit_content"/>
+                            </div>
                             <label for="student_count" string="Leerlingen"
                                    invisible="not klas_ids"/>
                             <div invisible="not klas_ids">
@@ -183,6 +196,15 @@
                                    invisible="drukwerk_type != 'gewoon'"/>
                         </group>
                     </group>
+
+                    <!-- PDF voorbeeld — toont het document inline tijdens afdrukfase -->
+                    <separator string="Document voorbeeld" invisible="not document_file"/>
+                    <field name="document_file"
+                           filename="document_filename"
+                           widget="pdf_viewer"
+                           nolabel="1"
+                           readonly="1"
+                           invisible="not document_file or state == 'form_invullen'"/>
 
                     <!-- Print options for afdrukken state — drukwerk team kan alles bewerken -->
                     <group string="Printerinstellingen"

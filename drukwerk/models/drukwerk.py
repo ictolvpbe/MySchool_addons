@@ -226,10 +226,21 @@ class DrukwerkRecord(models.Model):
             record.school_company_id = school_to_company.get(record.school_id.id, False)
 
     @api.depends('school_id')
+    @api.depends_context('uid')
     def _compute_available_klas_ids(self):
         OrgType = self.env['myschool.org.type']
         dept_type = OrgType.search([('name', '=', 'DEPARTMENT')], limit=1)
         PropRel = self.env['myschool.proprelation']
+        # Bepaal eenmalig de teaching-klassen voor de huidige gebruiker (indien leerkracht)
+        teacher_klas_ids = None
+        if 'lessenrooster.line' in self.env:
+            Person = self.env['myschool.person']
+            person = Person.sudo().search([('odoo_user_id', '=', self.env.uid)], limit=1)
+            if person:
+                lines = self.env['lessenrooster.line'].sudo().search([
+                    ('leerkracht_id', '=', person.id),
+                ])
+                teacher_klas_ids = set(lines.mapped('klas_id').ids)
         for record in self:
             if not record.school_id or not dept_type:
                 record.available_klas_ids = False
@@ -247,7 +258,11 @@ class DrukwerkRecord(models.Model):
                 ('id_org_parent', 'in', lln_ids),
                 ('id_org', '!=', False),
             ])
-            record.available_klas_ids = klas_rels.mapped('id_org')
+            klassen = klas_rels.mapped('id_org')
+            # Als de gebruiker een leerkracht is met lessen, filter op zijn klassen
+            if teacher_klas_ids:
+                klassen = klassen.filtered(lambda k: k.id in teacher_klas_ids)
+            record.available_klas_ids = klassen
 
     @api.depends('kopie_leerkracht', 'student_ids')
     def _compute_aantal_kopies(self):
@@ -611,6 +626,21 @@ class DrukwerkRecord(models.Model):
             'target': 'new',
         }
 
+    def action_open_extra_klas_wizard(self):
+        """Open wizard om klassen toe te voegen die niet door de leerkracht worden lesgegeven."""
+        self.ensure_one()
+        wiz = self.env['drukwerk.extra.klas.wizard'].create({
+            'drukwerk_id': self.id,
+        })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Andere klas toevoegen',
+            'res_model': 'drukwerk.extra.klas.wizard',
+            'res_id': wiz.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
     def action_delete(self):
         self.unlink()
         return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
@@ -627,18 +657,33 @@ class DrukwerkRecord(models.Model):
         return super().unlink()
 
     def _notify_drukwerk_team(self):
+        """Stuur een mail.activity (todo) én een email naar elke gebruiker
+        in de drukkerij-rol zodra er nieuw drukwerk klaarstaat."""
         drukwerk_group = self.env.ref(
             'drukwerk.group_drukwerk_drukwerk', raise_if_not_found=False)
         if not drukwerk_group:
             return
-        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        activity_type = self.env.ref(
+            'mail.mail_activity_data_todo', raise_if_not_found=False)
+        new_template = self.env.ref(
+            'drukwerk.email_template_drukwerk_new', raise_if_not_found=False)
+        partner_ids = drukwerk_group.user_ids.partner_id.ids
+
         for record in self:
+            # Activity (todo) per drukker
             for user in drukwerk_group.user_ids:
                 record.activity_schedule(
                     activity_type_id=activity_type.id if activity_type else False,
                     summary='Drukwerk afdrukken',
                     note=f'Drukwerk aanvraag "{record.titel}" is klaar om af te drukken.',
                     user_id=user.id,
+                )
+            # Email naar alle drukkers tegelijk via mail-template
+            if new_template and partner_ids:
+                new_template.send_mail(
+                    record.id,
+                    force_send=False,  # respecteer de mail-queue
+                    email_values={'partner_ids': [(6, 0, partner_ids)]},
                 )
 
     _NOTIFICATION_TEMPLATES = {

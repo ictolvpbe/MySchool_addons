@@ -22,6 +22,7 @@
         'views/drukwerk_report_views.xml',
         'wizard/student_select_wizard_views.xml',
         'wizard/print_confirm_wizard_views.xml',
+        'wizard/extra_klas_wizard_views.xml',
         'views/drukwerk_menu.xml',
     ],
     'assets': {

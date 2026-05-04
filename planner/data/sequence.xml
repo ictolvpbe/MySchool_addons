@@ -5,5 +5,7 @@
         <field name="code">planner.record</field>
         <field name="prefix">PLN-</field>
         <field name="padding">4</field>
+        <!-- Company-onafhankelijk: sequence werkt in alle scholen/companies. -->
+        <field name="company_id" eval="False"/>
     </record>
 </odoo>
