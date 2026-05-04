@@ -154,11 +154,14 @@
                             <field name="school_id"
                                    options="{'no_open': True}"
                                    readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
-                            <field name="vak" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            <field name="vak_is_other" invisible="1"/>
+                            <field name="vak_id"
+                                   options="{'no_create': True, 'no_open': True}"
+                                   readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
                             <field name="vak_andere"
                                    placeholder="Specificeer het vak of vermeld een toelichting"
                                    readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
-                                   invisible="vak != 'andere'"/>
+                                   invisible="not vak_is_other"/>
                             <separator string="Planning"
                                        invisible="subtype_individueel in ('lezen', 'video', 'podcast')"/>
                             <field name="duur" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"

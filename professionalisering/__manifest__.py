@@ -1,6 +1,6 @@
 {
     'name': 'Professionalisering',
-    'version': '3.8',
+    'version': '3.9',
     'summary': 'Beheer van professionaliseringsaanvragen voor leerkrachten',
     'description': """
         Module voor het beheren van professionaliseringsaanvragen.
@@ -11,7 +11,7 @@
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
-    'depends': ['base', 'mail', 'hr', 'myschool_core'],
+    'depends': ['base', 'mail', 'hr', 'myschool_core', 'myschool_admin'],
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
@@ -19,7 +19,9 @@
         'data/sequence.xml',
         'data/mail_template_data.xml',
         'data/cron_data.xml',
+        'data/vak_data.xml',
         'views/professionalisering_views.xml',
+        'views/vak_views.xml',
         'views/professionalisering_menu.xml',
     ],
     'assets': {

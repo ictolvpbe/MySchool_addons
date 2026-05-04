@@ -1,4 +1,5 @@
 #from . import app
+from . import allowed_schools_mixin
 from . import org_type
 from . import org
 from . import person_type

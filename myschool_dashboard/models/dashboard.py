@@ -1,8 +1,5 @@
 import logging
 
-from markupsafe import Markup
-from odoo.tools import html_escape
-
 from odoo import models, fields, api
 
 _logger = logging.getLogger(__name__)
@@ -133,8 +130,6 @@ class MySchoolDashboard(models.Model):
         string="Prof. Afgekeurd", compute='_compute_professionalisering_counts')
     prof_done = fields.Integer(
         string="Prof. Afgerond", compute='_compute_professionalisering_counts')
-    prof_payment_pending = fields.Integer(
-        string="Prof. Betaling openstaand", compute='_compute_professionalisering_counts')
     prof_bewijs_pending = fields.Integer(
         string="Prof. Bewijs in te dienen", compute='_compute_professionalisering_counts')
 
@@ -145,10 +140,6 @@ class MySchoolDashboard(models.Model):
     act_action_label = fields.Char(compute='_compute_action_banners')
     druk_action_count = fields.Integer(compute='_compute_action_banners')
     druk_action_label = fields.Char(compute='_compute_action_banners')
-
-    # Recent activity (own aanvragen)
-    recent_activity_html = fields.Html(
-        compute='_compute_recent_activity_html', sanitize=False)
 
     _DIRECTIE_GROUPS = {
         'professionalisering.record':
@@ -352,7 +343,6 @@ class MySchoolDashboard(models.Model):
             rec.prof_bewijs_pending = counts.get('bewijs', 0)
             rec.prof_rejected = counts.get('rejected', 0)
             rec.prof_done = counts.get('done', 0)
-            rec.prof_payment_pending = 0
             if is_manager:
                 rec.prof_total = sum(counts.values())
             else:
@@ -429,11 +419,6 @@ class MySchoolDashboard(models.Model):
                 prof_parts.append((n, self._plural(n,
                     f"{n} goedkeuring wacht op jou",
                     f"{n} goedkeuringen wachten op jou")))
-            if rec.is_prof_boekhouding and rec.prof_payment_pending:
-                n = rec.prof_payment_pending
-                prof_parts.append((n, self._plural(n,
-                    f"{n} betaling staat open",
-                    f"{n} betalingen staan open")))
             rec.prof_action_count = sum(p[0] for p in prof_parts)
             rec.prof_action_label = ' · '.join(p[1] for p in prof_parts)
 
@@ -472,136 +457,6 @@ class MySchoolDashboard(models.Model):
                     f"{n} documenten af te drukken")))
             rec.druk_action_count = sum(p[0] for p in druk_parts)
             rec.druk_action_label = ' · '.join(p[1] for p in druk_parts)
-
-    # --- Recent activity (own aanvragen) ---
-
-    def _relative_time(self, dt):
-        if not dt:
-            return ''
-        now = fields.Datetime.now()
-        diff = now - dt
-        seconds = int(diff.total_seconds())
-        if seconds < 60:
-            return 'Zojuist'
-        minutes = seconds // 60
-        if minutes < 60:
-            return f'{minutes} min geleden'
-        hours = minutes // 60
-        if hours < 24:
-            return f'{hours}u geleden'
-        days = hours // 24
-        if days == 1:
-            return 'Gisteren'
-        return f'{days} dagen geleden'
-
-    _DRUK_STATE_LABEL = {
-        'draft': ('Concept', 'ms-badge-neutral'),
-        'form_invullen': ('Concept', 'ms-badge-info'),
-        'afdrukken': ('Af te drukken', 'ms-badge-warning'),
-        'done': ('Afgedrukt', 'ms-badge-success'),
-        'gestockeerd': ('Gestockeerd', 'ms-badge-neutral'),
-    }
-
-    _ACT_STATE_LABEL = {
-        'draft': ('Concept', 'ms-badge-neutral'),
-        'form_invullen': ('Concept', 'ms-badge-info'),
-        'bus_check': ('Bus controle', 'ms-badge-warning'),
-        'bus_refused': ('Bus geweigerd', 'ms-badge-error'),
-        'pending_approval': ('Wacht op goedkeuring', 'ms-badge-warning'),
-        'approved': ('Goedgekeurd', 'ms-badge-success'),
-        'rejected': ('Afgekeurd', 'ms-badge-error'),
-        's_code': ('S-Code controle', 'ms-badge-info'),
-        'vervanging': ('Vervanging', 'ms-badge-info'),
-        'done': ('Afgerond', 'ms-badge-success'),
-    }
-
-    def _actor_name(self, record):
-        emp = getattr(record, 'employee_id', None)
-        if emp and emp.name:
-            return html_escape(emp.name)
-        if record.create_uid and record.create_uid.name:
-            return html_escape(record.create_uid.name)
-        return ''
-
-    @api.depends_context('uid')
-    def _compute_recent_activity_html(self):
-        items = []
-        # Recent activiteiten
-        if self._has_access('activiteiten.record'):
-            domain = self._get_base_domain('activiteiten.record')
-            acts = self.env['activiteiten.record'].search(
-                domain, limit=5, order='write_date desc')
-            for a in acts:
-                label, css = self._ACT_STATE_LABEL.get(a.state, ('', ''))
-                titel = html_escape(a.titel or a.name or '')
-                actor = self._actor_name(a)
-                meta = f'{actor} · ' if actor else ''
-                dot = 'success' if a.state in ("approved", "done") else 'error' if a.state in ("rejected", "bus_refused") else 'info'
-                items.append((a.write_date, (
-                    f'<li class="{dot}">'
-                    f'<i class="fa fa-calendar ms-tl-icon"/>'
-                    f'<strong>{titel}</strong> '
-                    f'<span class="ms-badge-status {css}">{label}</span><br>'
-                    f'<span class="ms-time">{meta}{self._relative_time(a.write_date)}</span>'
-                    f'</li>'
-                )))
-        # Recent professionalisering
-        if self._has_access('professionalisering.record'):
-            domain = self._get_base_domain('professionalisering.record')
-            profs = self.env['professionalisering.record'].search(
-                domain, limit=5, order='write_date desc')
-            for p in profs:
-                titel = html_escape(getattr(p, 'titel', '') or p.name or '')
-                state = p.state or ''
-                if state in ('bevestiging', 'done'):
-                    dot = 'success'
-                elif state == 'weigering':
-                    dot = 'error'
-                else:
-                    dot = 'info'
-                actor = self._actor_name(p)
-                meta = f'{actor} · ' if actor else ''
-                items.append((p.write_date, (
-                    f'<li class="{dot}">'
-                    f'<i class="fa fa-graduation-cap ms-tl-icon"/>'
-                    f'<strong>{titel}</strong> '
-                    f'<span class="ms-badge-status ms-badge-neutral">Prof.</span><br>'
-                    f'<span class="ms-time">{meta}{self._relative_time(p.write_date)}</span>'
-                    f'</li>'
-                )))
-        # Recent drukwerk
-        if self._has_access('drukwerk.record'):
-            domain = self._get_base_domain('drukwerk.record')
-            druks = self.env['drukwerk.record'].search(
-                domain, limit=5, order='write_date desc')
-            for d in druks:
-                label, css = self._DRUK_STATE_LABEL.get(d.state, ('', ''))
-                titel = html_escape(d.titel or d.name or '')
-                if d.state == 'done':
-                    dot = 'success'
-                elif d.state == 'afdrukken':
-                    dot = 'warning'
-                else:
-                    dot = 'info'
-                actor = self._actor_name(d)
-                meta = f'{actor} · ' if actor else ''
-                items.append((d.write_date, (
-                    f'<li class="{dot}">'
-                    f'<i class="fa fa-print ms-tl-icon"/>'
-                    f'<strong>{titel}</strong> '
-                    f'<span class="ms-badge-status {css}">{label}</span> '
-                    f'<span class="ms-badge-status ms-badge-neutral">Drukwerk</span><br>'
-                    f'<span class="ms-time">{meta}{self._relative_time(d.write_date)}</span>'
-                    f'</li>'
-                )))
-        # Sort combined and take top 8
-        items.sort(key=lambda x: x[0] or fields.Datetime.now(), reverse=True)
-        items = items[:8]
-        html = (
-            '<ul class="ms-timeline">' + ''.join(i[1] for i in items) + '</ul>'
-        ) if items else '<div class="ms-empty">Geen recente activiteit</div>'
-        for rec in self:
-            rec.recent_activity_html = Markup(html)
 
     # --- Actions ---
 
@@ -644,14 +499,6 @@ class MySchoolDashboard(models.Model):
         'boekhouding': ['approved', 's_code', 'vervanging', 'done'],
         'vervangingen': ['vervanging'],
         'medewerker': ['draft', 'form_invullen', 'bus_check', 'bus_refused', 'pending_approval', 'approved', 'rejected', 's_code', 'vervanging', 'done'],
-    }
-
-    # Professionalisering states visible per role
-    _PROF_ROLE_STATES = {
-        'directie': ['fill_in_form_individueel', 'fill_in_form_teamleren'],
-        'boekhouding': ['bevestiging', 'done'],
-        'vervangingen': ['bevestiging'],
-        'medewerker': ['selection_of_form', 'fill_in_form_individueel', 'fill_in_form_teamleren', 'bevestiging', 'weigering', 'done'],
     }
 
     def action_open_activiteiten_list(self):

@@ -14,7 +14,7 @@ _logger = logging.getLogger(__name__)
 class DrukwerkRecord(models.Model):
     _name = 'drukwerk.record'
     _description = 'Drukwerk Aanvraag'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'myschool.allowed.schools.mixin']
     _order = 'create_date desc'
 
     name = fields.Char(
@@ -43,9 +43,6 @@ class DrukwerkRecord(models.Model):
     school_company_id = fields.Many2one(
         'res.company', string='Bedrijf (school)',
         compute='_compute_school_company_id', store=True,
-    )
-    allowed_school_json = fields.Json(
-        compute='_compute_allowed_school_json',
     )
     available_klas_ids = fields.Many2many(
         'myschool.org',
@@ -227,13 +224,6 @@ class DrukwerkRecord(models.Model):
         school_to_company = {c.school_id.id: c.id for c in companies}
         for record in self:
             record.school_company_id = school_to_company.get(record.school_id.id, False)
-
-    @api.depends_context('uid', 'company')
-    def _compute_allowed_school_json(self):
-        schools = self.env.company.school_id or self.env.user.school_ids
-        ids = schools.ids or self.env['myschool.org'].sudo().search([('org_type_id.name', '=', 'SCHOOL'), ('is_active', '=', True)]).ids
-        for record in self:
-            record.allowed_school_json = ids
 
     @api.depends('school_id')
     def _compute_available_klas_ids(self):

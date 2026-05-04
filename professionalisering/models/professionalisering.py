@@ -328,7 +328,7 @@ class IrActionsActWindow(models.Model):
 class ProfessionaliseringRecord(models.Model):
     _name = 'professionalisering.record'
     _description = 'Professionalisering'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'myschool.allowed.schools.mixin']
 
     def _auto_init(self):
         res = super()._auto_init()
@@ -446,9 +446,6 @@ class ProfessionaliseringRecord(models.Model):
         'res.company', string='Bedrijf (school)',
         compute='_compute_school_company_id', store=True,
     )
-    allowed_school_json = fields.Json(
-        compute='_compute_allowed_school_json',
-    )
     is_owner = fields.Boolean(compute='_compute_is_owner', compute_sudo=True)
     is_admin = fields.Boolean(compute='_compute_is_admin')
     can_edit_s_code = fields.Boolean(
@@ -507,21 +504,14 @@ class ProfessionaliseringRecord(models.Model):
         currency_field='currency_id',
         compute='_compute_totale_kost',
     )
-    vak = fields.Selection([
-        ('aardrijkskunde', 'Aardrijkskunde'),
-        ('didactiek', 'Didactiek'),
-        ('engels', 'Engels'),
-        ('frans', 'Frans'),
-        ('geschiedenis', 'Geschiedenis'),
-        ('informatica', 'Informatica'),
-        ('lichamelijke_opvoeding', 'Lichamelijke opvoeding'),
-        ('muziek', 'Muziek'),
-        ('nederlands', 'Nederlands'),
-        ('pedagogie', 'Pedagogie'),
-        ('wiskunde', 'Wiskunde'),
-        ('wetenschap', 'Wetenschap'),
-        ('andere', 'Andere'),
-    ], string='Vak')
+    vak_id = fields.Many2one(
+        'professionalisering.vak',
+        string='Vak',
+        ondelete='restrict',
+    )
+    vak_is_other = fields.Boolean(
+        related='vak_id.is_other', string='Vak is "Andere"',
+    )
     vak_andere = fields.Char(
         string='Vermelding vak',
         help='Specificeer het vak of geef een korte toelichting bij "Andere".',
@@ -566,13 +556,6 @@ class ProfessionaliseringRecord(models.Model):
         school_to_company = {c.school_id.id: c.id for c in companies}
         for record in self:
             record.school_company_id = school_to_company.get(record.school_id.id, False)
-
-    @api.depends_context('uid', 'company')
-    def _compute_allowed_school_json(self):
-        schools = self.env.company.school_id or self.env.user.school_ids
-        ids = schools.ids or self.env['myschool.org'].sudo().search([('org_type_id.name', '=', 'SCHOOL'), ('is_active', '=', True)]).ids
-        for record in self:
-            record.allowed_school_json = ids
 
     @api.depends_context('uid')
     def _compute_allowed_directie_json(self):
@@ -822,7 +805,7 @@ class ProfessionaliseringRecord(models.Model):
         missing = []
         if not self.titel:
             missing.append("Titel opleiding")
-        if self.vak == 'andere' and not self.vak_andere:
+        if self.vak_id.is_other and not self.vak_andere:
             missing.append("Vermelding vak")
         # Adres alleen verplicht voor nascholing of teamleren met "Op locatie"
         needs_address = (
@@ -842,8 +825,16 @@ class ProfessionaliseringRecord(models.Model):
                     missing.append("Startdatum")
                 if self.duur == 'meerdere_dagen' and not self.end_date:
                     missing.append("Einddatum")
-        if not self.description:
-            missing.append("Motivatie")
+        # Motivatie: minstens één van de 4 gestructureerde velden invullen
+        # (legacy `description` blijft als fallback voor oude records).
+        if not (
+            self.motivatie_aanleiding
+            or self.motivatie_doelstelling
+            or self.motivatie_toepassing
+            or self.motivatie_effect
+            or self.description
+        ):
+            missing.append("Motivatie (minstens één veld)")
         if missing:
             raise UserError(
                 "De volgende velden moeten ingevuld zijn voor het indienen:\n• "

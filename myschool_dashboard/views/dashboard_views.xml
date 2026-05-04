@@ -25,7 +25,7 @@
 
                     <!-- ===== MAIN GRID ===== -->
                     <div class="ms-grid">
-                        <!-- LEFT COLUMN: Aanvragen + Recente activiteit -->
+                        <!-- LEFT COLUMN: Aanvragen -->
                         <div>
                             <!-- Quick Actions -->
                             <div class="ms-card">
@@ -93,13 +93,6 @@
                                 </div>
                             </div>
 
-                            <!-- Recent Activity -->
-                            <div class="ms-card">
-                                <div class="ms-card-header">Recente activiteit</div>
-                                <div class="ms-card-body ms-html-field">
-                                    <field name="recent_activity_html" class="w-100"/>
-                                </div>
-                            </div>
                         </div>
 
                         <!-- RIGHT COLUMN: Aanvragen cards -->
