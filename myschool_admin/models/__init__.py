@@ -13,3 +13,4 @@ from . import log_viewer
 from . import data_exchange
 from . import server_benchmark
 from . import create_filialen_wizard
+from . import health_check

@@ -844,12 +844,22 @@ class BeTaskProcessor(models.AbstractModel):
             field_changes.append(f"Created first PersonDetails version for instNr {inst_nr}")
             _logger.info(f"Created first PersonDetails for {person.name}, instNr {inst_nr}")
 
-        # Check assignment status for account lifecycle
-        has_assignments = self._has_active_assignments(employee_json)
+        # Check assignment status for account lifecycle.
+        # Two scopes:
+        #  - this iteration (this instnr's import) — drives the
+        #    "ensure PPSBR" logic below.
+        #  - person-wide (all active PersonDetails) — drives the
+        #    pending-since/proprelation-cleanup logic. The PersonDetails
+        #    were just refreshed above, so this reflects post-import state.
+        person.invalidate_recordset(['person_details_set'])
+        has_assignments_this = self._has_active_assignments(employee_json)
+        has_assignments_anywhere = (
+            has_assignments_this
+            or self._person_has_active_assignments(person))
 
-        if has_assignments:
-            # Active assignments exist — clear the suspend-clock if it
-            # was set so the cron doesn't deactivate this person.
+        if has_assignments_anywhere:
+            # Person still has at least one active assignment somewhere —
+            # clear any leftover suspend-clock and skip group cleanup.
             if person.deactivation_pending_since:
                 person.write({'deactivation_pending_since': False})
                 field_changes.append(
@@ -873,10 +883,11 @@ class BeTaskProcessor(models.AbstractModel):
                 )
                 _logger.info(f'Created ODOO-PERSON-UPD task for {person.name}')
         else:
-            # No active assignments — start the suspend-clock and remove
-            # the person from all groups (deactivate proprelations).
-            # Account-deactivation + AD-removal happen later, via the
-            # lifecycle cron, when account_deactivation_due_date arrives.
+            # No active assignments anywhere — start the suspend-clock
+            # (if not already running) and remove the person from all
+            # groups. Account-deactivation + AD-removal happen later,
+            # via the lifecycle cron, when account_deactivation_due_date
+            # arrives.
             if not person.deactivation_pending_since:
                 person.write({
                     'deactivation_pending_since': fields.Date.context_today(self),
@@ -908,8 +919,10 @@ class BeTaskProcessor(models.AbstractModel):
                     f'for {person.name}'
                 )
 
-        # Only ensure PPSBR exists if employee has active assignments
-        if has_assignments:
+        # Only ensure PPSBR exists if THIS instnr brought an active
+        # assignment. Even if the person has assignments elsewhere we
+        # don't create/restore a PPSBR for an instnr that has none.
+        if has_assignments_this:
             self._ensure_ppsbr_exists_for_employee(person, inst_nr, field_changes)
 
         return {'success': True, 'field_changes': field_changes}
@@ -2258,8 +2271,10 @@ class BeTaskProcessor(models.AbstractModel):
                     else:
                         _logger.warning(f'[ORG-ADD] No OuForClasses CI found for {parent_school.name_short}')
 
-            # Auto-create persongroup for orgs with has_comgroup
-            if new_org.has_comgroup:
+            # Auto-sync persongroup for orgs that carry any group flag
+            # (has_comgroup / has_secgroup / has_odoo_group).
+            if (new_org.has_comgroup or new_org.has_secgroup
+                    or new_org.has_odoo_group):
                 self._sync_org_persongroup(new_org)
                 changes.append(f"Synced persongroup for {new_org.name}")
 
@@ -3426,7 +3441,9 @@ class BeTaskProcessor(models.AbstractModel):
                 self._sync_persongroup_memberships(person)
 
                 # If person moved to a different org, also sync old org's persongroup
-                if old_org and old_org.has_comgroup:
+                if old_org and (
+                        old_org.has_comgroup or old_org.has_secgroup
+                        or old_org.has_odoo_group):
                     new_pt = PropRelation.search([
                         ('proprelation_type_id', '=', pt_type.id),
                         ('id_person', '=', person.id),
@@ -6138,35 +6155,44 @@ class BeTaskProcessor(models.AbstractModel):
         return {'added': len(to_add), 'removed': len(to_remove)}
 
     def _sync_org_persongroup(self, org):
-        """Sync persongroup for an org with has_comgroup=True.
+        """Sync persongroup membership for an org carrying any of the
+        group flags (``has_comgroup`` / ``has_secgroup`` / ``has_odoo_group``).
 
-        Creates the persongroup if needed, then syncs its PG-P members
-        to match the org's PERSON-TREE members.
+        Two operating modes:
 
-        **Self-recursion guard**: a PERSONGROUP itself never spawns
-        another persongroup. ``process_manual_org_add`` calls this for
-        every freshly-created org that has ``has_comgroup=True`` —
-        without the guard a newly-created PERSONGROUP (which we always
-        create with that flag on) re-entered ``_find_or_create_persongroup``
-        with its own ``name_short`` as the seed, the formula re-prefixed
-        ``grp-`` and re-appended ``-{school}``, and the resulting org
-        triggered the same chain again. Names ballooned: ``grp-ict-bawa``
-        → ``grp-grp-ict-bawa-bawa`` → ``grp-grp-grp-ict-bawa-bawa-bawa`` …
+        - **Container mode** — ``org`` is a school/department whose flags
+          drive the existence of one or more child PERSONGROUPs.
+          ``_find_or_create_persongroup`` resolves the COM persongroup
+          and we sync its PG-P members.
+        - **Persongroup mode** — ``org`` IS a PERSONGROUP itself (the
+          BRSO target points at it directly, e.g. ``bgrp-adm-pers-so``
+          for SEC-only groups). We sync members on it directly without
+          re-entering ``_find_or_create_persongroup`` — that would either
+          trip the recursion guard or produce a sibling with a doubled
+          name like ``grp-grp-ict-bawa-bawa``.
+
+        Without this split, BRSOs whose target was a SEC-only PERSONGROUP
+        (``has_secgroup=True``, ``has_comgroup=False``) silently skipped
+        membership sync and the persongroup never picked up new PPSBRs.
         """
-        if not org or not org.has_comgroup:
-            return
-        if org.org_type_id and org.org_type_id.name == 'PERSONGROUP':
-            return
-
-        school_org = self._resolve_parent_school_from_org(org)
-        if not school_org:
-            _logger.warning(f'[PG-SYNC] Cannot resolve school for org {org.name}')
+        if not org or not (
+                org.has_comgroup or org.has_secgroup or org.has_odoo_group):
             return
 
-        persongroup, _created = self._find_or_create_persongroup(
-            org.name, org.name_short, school_org, source_label=f'org:{org.name}')
-        if not persongroup:
-            return
+        is_persongroup = bool(
+            org.org_type_id and org.org_type_id.name == 'PERSONGROUP')
+        if is_persongroup:
+            persongroup = org
+        else:
+            school_org = self._resolve_parent_school_from_org(org)
+            if not school_org:
+                _logger.warning(f'[PG-SYNC] Cannot resolve school for org {org.name}')
+                return
+            persongroup, _created = self._find_or_create_persongroup(
+                org.name, org.name_short, school_org,
+                source_label=f'org:{org.name}')
+            if not persongroup:
+                return
 
         # Member set = PERSON-TREE-placed persons ∪ persons reachable
         # via PPSBRs at this org's school for any role whose BRSO
@@ -6240,13 +6266,11 @@ class BeTaskProcessor(models.AbstractModel):
 
     def _sync_role_persongroups(self, role):
         """Sync persongroups for a role across all schools where it
-        targets an org with ``has_comgroup=True``.
+        targets an org carrying any group flag (``has_comgroup`` /
+        ``has_secgroup`` / ``has_odoo_group``).
 
-        Source of truth is the **target org's** ``has_comgroup`` flag:
-        if a BRSO maps the role to an org that has the flag set, that
-        school gets a persongroup. The legacy ``role.has_group`` is no
-        longer consulted — it carried no school-context and led to
-        inconsistent behaviour.
+        The legacy ``role.has_group`` is no longer consulted — it
+        carried no school-context and led to inconsistent behaviour.
         """
         if not role:
             return
@@ -6262,19 +6286,24 @@ class BeTaskProcessor(models.AbstractModel):
             _logger.warning(f'[PG-SYNC] BRSO or PPSBR type not found for role {role.name}')
             return
 
-        # Get all active BRSO for this role whose target org wants groups.
+        # Get all active BRSO for this role whose target org wants groups
+        # (any of the three group flags is enough).
         brso_rels = PropRelation.search([
             ('proprelation_type_id', '=', brso_type.id),
             ('id_role', '=', role.id),
             ('is_active', '=', True),
             ('id_org_parent', '!=', False),
             ('id_org', '!=', False),
+            '|', '|',
             ('id_org.has_comgroup', '=', True),
+            ('id_org.has_secgroup', '=', True),
+            ('id_org.has_odoo_group', '=', True),
         ])
 
         if not brso_rels:
             _logger.info(
-                f'[PG-SYNC] No BRSOs of role {role.name} target an org with has_comgroup=True')
+                f'[PG-SYNC] No BRSOs of role {role.name} target an org '
+                f'with has_comgroup / has_secgroup / has_odoo_group')
             return
 
         # Group by resolved non-admin school
@@ -6358,7 +6387,10 @@ class BeTaskProcessor(models.AbstractModel):
                 ('is_active', '=', True),
                 ('id_org', '!=', False),
             ], limit=1)
-            if pt_rel and pt_rel.id_org and pt_rel.id_org.has_comgroup:
+            if pt_rel and pt_rel.id_org and (
+                    pt_rel.id_org.has_comgroup
+                    or pt_rel.id_org.has_secgroup
+                    or pt_rel.id_org.has_odoo_group):
                 self._sync_org_persongroup(pt_rel.id_org)
 
         # 2. PPSBR-based — every BRSO target_org (with has_comgroup)
@@ -6399,7 +6431,8 @@ class BeTaskProcessor(models.AbstractModel):
                 if not target or target.id in synced_target_ids:
                     continue
                 synced_target_ids.add(target.id)
-                if target.has_comgroup:
+                if (target.has_comgroup or target.has_secgroup
+                        or target.has_odoo_group):
                     self._sync_org_persongroup(target)
 
     # =========================================================================

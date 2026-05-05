@@ -923,6 +923,16 @@ class InformatService(models.AbstractModel):
             self._process_betasks('DB', 'PROPRELATION', 'UPD')
             self._process_betasks('DB', 'PROPRELATION', 'DEACT')
 
+            # After PROPRELATION-DEACT processing, employees that no
+            # longer hold any active proprelation enter the suspend
+            # pipeline (deactivation_pending_since starts the clock).
+            # This catches the per-instnr deactivation paths
+            # (pension > 1mo / isActive=false) — they queue PROPRELATION
+            # DEACT tasks but cannot themselves observe the post-DEACT
+            # state. The lifecycle cron will pick the actual account
+            # deactivation up later, after EmployeeSuspendPeriod.
+            self._post_sync_flag_pending_employees()
+
             # =====================================================
             # PHASE 2b: Sync Odoo Group Memberships (NEW!)
             # =====================================================
@@ -1252,6 +1262,41 @@ class InformatService(models.AbstractModel):
 
         return current_org
 
+    def _post_sync_flag_pending_employees(self):
+        """Sweep at end of employee-sync: every active sap-managed
+        employee with no remaining active proprelations starts the
+        suspend-clock (``deactivation_pending_since``). Idempotent —
+        skips employees that are already pending or that still hold
+        active relations.
+        """
+        Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
+        PropRelation = self.env['myschool.proprelation']
+
+        candidates = Person.search([
+            ('is_active', '=', True),
+            ('automatic_sync', '=', True),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+            ('deactivation_pending_since', '=', False),
+        ])
+        today = fields.Date.context_today(self)
+        flagged = 0
+        for person in candidates:
+            has_active = PropRelation.search_count([
+                '|', '|',
+                ('id_person', '=', person.id),
+                ('id_person_parent', '=', person.id),
+                ('id_person_child', '=', person.id),
+                ('is_active', '=', True),
+            ])
+            if not has_active:
+                person.write({'deactivation_pending_since': today})
+                flagged += 1
+        if flagged:
+            self._create_sys_event(
+                "BETASK-001",
+                f"Post-sync sweep: {flagged} employee(s) entered suspend "
+                f"pipeline (deactivation_pending_since={today}).")
+
     def _deactivate_employee_for_instnr(self, person, inst_nr: str, employee_json: dict = None):
         """
         Deactivate an employee's proprelations for a specific instNr.
@@ -1299,15 +1344,25 @@ class InformatService(models.AbstractModel):
                 ('is_active', '=', True)
             ], limit=1)
             if not remaining and person.is_active:
-                # No active proprelations at all - deactivate person
-                deact_fallback = {'personId': person.sap_person_uuid, 'person_type': 'EMPLOYEE'}
-                self._create_betask(
-                    'DB', 'PERSON', 'DEACT',
-                    json.dumps(employee_json) if employee_json else json.dumps(deact_fallback),
-                    None
-                )
-                self._create_sys_event("BETASK-001",
-                    f"No active proprelations for {person.name} - created PERSON DEACT task")
+                # No active proprelations anywhere — start the suspend-
+                # clock instead of deactivating immediately. The lifecycle
+                # cron flips is_active and queues LDAP/USER/DEL once the
+                # EmployeeSuspendPeriod has elapsed.
+                if not person.deactivation_pending_since:
+                    person.with_context(skip_manual_audit=True).write({
+                        'deactivation_pending_since': fields.Date.context_today(self),
+                    })
+                    self._create_sys_event(
+                        "BETASK-001",
+                        f"No active proprelations for {person.name} — "
+                        f"deactivation_pending_since set; account suspends "
+                        f"after EmployeeSuspendPeriod.")
+                else:
+                    self._create_sys_event(
+                        "BETASK-001",
+                        f"No active proprelations for {person.name} — "
+                        f"deactivation_pending_since already set on "
+                        f"{person.deactivation_pending_since}; nothing to do.")
             return
 
         # Create DEACT tasks for each proprelation

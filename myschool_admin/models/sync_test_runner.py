@@ -148,6 +148,230 @@ EXPECTATIONS = {
             {'type': 'person_inactive_or_ended', 'uuid': '6e32356f-790a-44c8-86d4-595b8880c088'},
         ],
     },
+
+    # =========================================================================
+    # Employees-mode testset — testpersoon Mark Demeyer
+    #   uuid     : 2dc5c533-5a7a-4b2f-9020-7372345a53bc
+    #   instnrs  : 011007  &  143651
+    # De checks volgen de nieuwe lifecycle:
+    #   pending_since gezet ↔ geen actieve assignments meer
+    #   account suspend gebeurt pas via cron na EmployeeSuspendPeriod
+    # =========================================================================
+
+    '1- new 1 instnr no hoofdambt': {
+        'description': (
+            'Nieuwe employee in 011007 zonder hoofd_ambt. Persoon wordt '
+            'aangemaakt en is actief; PersonDetails voor 011007 actief; '
+            'pending_since blijft leeg (assignments zijn aanwezig).'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_details_inst',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
+             'inst_nr': '011007'},
+        ],
+    },
+    '2-new 2de instnr geen hoofdambt': {
+        'description': (
+            'Tweede instnr 143651 wordt toegevoegd (zonder hoofd_ambt). '
+            'PersonDetails voor 011007 én 143651 staan actief.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_details_inst',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
+             'inst_nr': '011007'},
+            {'type': 'person_details_inst',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
+             'inst_nr': '143651'},
+        ],
+    },
+    '3>-1ste+ 2de  instnr +hoofdambt': {
+        'description': (
+            'Beide instnrs krijgen een hoofd_ambt: 011007=00000255 '
+            '(ict-coordinator), 143651=00000007 (Leraar). Persoon actief '
+            'met active proprelations.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_hoofd_ambt',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
+             'inst_nr': '011007', 'code': '00000255'},
+            {'type': 'person_hoofd_ambt',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
+             'inst_nr': '143651', 'code': '00000007'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '4-2de instnr +hoofdambt wijzigt': {
+        'description': (
+            'inst 143651 hoofd_ambt verandert van 00000007 (Leraar) naar '
+            '00000255 (ict-coordinator). Nieuwe actieve PersonDetails-versie '
+            'voor 143651 met de nieuwe code.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_hoofd_ambt',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
+             'inst_nr': '143651', 'code': '00000255'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '5-change extradata': {
+        'description': (
+            'Wijziging van bank/iban/adres-extradata zonder impact op '
+            'lifecycle. Persoon blijft actief, geen suspend.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '6-change Persondata': {
+        'description': (
+            'Wijziging van persoonsdata (initialen, geboortedatum, hoofdAmbt '
+            'naam …). Persoon blijft actief; PersonDetails-versies vernieuwd.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '7-change Persondata + persondata': {
+        'description': (
+            'Combineerde wijziging persoonsdata + iban. Persoon blijft '
+            'actief en buiten de suspend-pipeline.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '8-change inst1 hoofdambt': {
+        'description': (
+            'inst 011007 hoofd_ambt verandert naar 00000007 (Leraar). '
+            'Persoon actief, PersonDetails voor 011007 toont nieuwe code.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_hoofd_ambt',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
+             'inst_nr': '011007', 'code': '00000007'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '9-inst1 assignment weg': {
+        'description': (
+            'inst 011007 verliest zijn assignment (lege assignmentsfile). '
+            'inst 143651 heeft nog wel assignments → cross-instnr check ziet '
+            'actieve assignments → pending_since blijft leeg, persoon actief, '
+            'minstens 1 actieve proprelation.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '10-inst2 assignment weg': {
+        'description': (
+            'Nu vallen ook de inst 143651 assignments weg → géén actieve '
+            'assignments meer. pending_since=today, alle proprelations '
+            'inactief, maar account zelf blijft actief (suspend-grace).'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_set',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_no_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '11-inst1 + inst2 assignment terug': {
+        'description': (
+            'Beide instnrs hebben opnieuw assignments → suspend-clock stopt '
+            '(pending_since geleegd). Phase 2 herstelt PPSBR-proprelations.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '12-inst1 + inst2 pensioendatum niet in toekomst': {
+        'description': (
+            'Beide instnrs krijgen een pensioendatum in het verleden '
+            '(2024-12-01). should_deactivate_instnr triggert per inst → '
+            'PROPRELATION/DEACT tasks. Na de post-sync sweep zit de persoon '
+            'in de suspend-pipeline (account nog actief, alle proprelations '
+            'inactief, pending_since gezet).'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_set',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_no_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '13 -  inst1 + 2 pensioendatum weg': {
+        'description': (
+            'Pensioendatum gewist op beide instnrs. Persoon is nooit '
+            'gedeactiveerd geweest (zat enkel in suspend), should_deactivate '
+            'triggert niet meer; pending_since wordt gewist; Phase 2 herstelt '
+            'PPSBR-proprelations vanuit de assignments.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
+    '14 -  inst1 + 2 isactive false': {
+        'description': (
+            'Beide instnrs krijgen isActive=false. should_deactivate_instnr '
+            'triggert → PROPRELATION/DEACT tasks. Post-sync sweep zet de '
+            'suspend-clock; account zelf blijft actief tot de cron na '
+            'EmployeeSuspendPeriod.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_pending_since_set',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_no_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+        ],
+    },
 }
 
 
@@ -1284,6 +1508,25 @@ class SyncTestSession(models.Model):
             return f"Persoon [{check['uuid'][:8]}…] hoort niet meer bij klas '{check['klas_code']}'"
         if t == 'person_reg_inst_nr':
             return f"Persoon [{check['uuid'][:8]}…] heeft reg_inst_nr={check['inst_nr']}"
+        if t == 'person_pending_since_set':
+            return (f"Persoon [{check['uuid'][:8]}…] heeft "
+                    f"deactivation_pending_since gezet (in suspend-pipeline)")
+        if t == 'person_pending_since_empty':
+            return (f"Persoon [{check['uuid'][:8]}…] heeft "
+                    f"deactivation_pending_since leeg (niet in suspend)")
+        if t == 'person_no_active_proprelations':
+            return f"Persoon [{check['uuid'][:8]}…] heeft géén actieve proprelations"
+        if t == 'person_has_active_proprelations':
+            return f"Persoon [{check['uuid'][:8]}…] heeft minstens 1 actieve proprelation"
+        if t == 'person_details_inst':
+            return (f"Persoon [{check['uuid'][:8]}…] heeft actieve "
+                    f"PersonDetails voor instnr {check['inst_nr']}")
+        if t == 'person_no_details_inst':
+            return (f"Persoon [{check['uuid'][:8]}…] heeft géén actieve "
+                    f"PersonDetails voor instnr {check['inst_nr']}")
+        if t == 'person_hoofd_ambt':
+            return (f"Persoon [{check['uuid'][:8]}…] @ {check['inst_nr']}: "
+                    f"hoofd_ambt={check['code']}")
         return f"{t} {check}"
 
     # -------------------------------------------------------------------------
@@ -2087,10 +2330,124 @@ class SyncTestStep(models.Model):
                 return self._check_person_not_in_class(check['uuid'], check['klas_code'])
             if t == 'person_reg_inst_nr':
                 return self._check_person_reg_inst_nr(check['uuid'], check['inst_nr'])
+            # New employee-lifecycle check types
+            if t == 'person_pending_since_set':
+                return self._check_person_pending_since_set(check['uuid'])
+            if t == 'person_pending_since_empty':
+                return self._check_person_pending_since_empty(check['uuid'])
+            if t == 'person_no_active_proprelations':
+                return self._check_person_no_active_proprelations(check['uuid'])
+            if t == 'person_has_active_proprelations':
+                return self._check_person_has_active_proprelations(check['uuid'])
+            if t == 'person_details_inst':
+                return self._check_person_details_inst(check['uuid'], check['inst_nr'])
+            if t == 'person_no_details_inst':
+                return self._check_person_no_details_inst(check['uuid'], check['inst_nr'])
+            if t == 'person_hoofd_ambt':
+                return self._check_person_hoofd_ambt(
+                    check['uuid'], check['inst_nr'], check['code'])
             return (False, f'unknown check type: {t}')
         except Exception as e:
             _logger.exception('expectation check raised')
             return (False, f'exception: {e}')
+
+    # ------------------------------------------------------------------
+    # Employee-lifecycle check helpers
+    # ------------------------------------------------------------------
+
+    def _check_person_pending_since_set(self, uuid):
+        p = self._find_person(uuid)
+        if not p:
+            return (False, 'person not found')
+        if not p.deactivation_pending_since:
+            return (False, f'{p.name}: deactivation_pending_since is empty')
+        return (True,
+                f'{p.name}: pending_since={p.deactivation_pending_since}, '
+                f'due={p.account_deactivation_due_date}')
+
+    def _check_person_pending_since_empty(self, uuid):
+        p = self._find_person(uuid)
+        if not p:
+            return (False, 'person not found')
+        if p.deactivation_pending_since:
+            return (False,
+                    f'{p.name}: pending_since={p.deactivation_pending_since} '
+                    f'(should be empty)')
+        return (True, f'{p.name}: pending_since empty')
+
+    def _check_person_no_active_proprelations(self, uuid):
+        p = self._find_person(uuid)
+        if not p:
+            return (False, 'person not found')
+        active = self._active_proprelations_count(p)
+        if active == 0:
+            return (True, f'{p.name}: 0 active proprelations')
+        return (False, f'{p.name}: still {active} active proprelation(s)')
+
+    def _check_person_has_active_proprelations(self, uuid):
+        p = self._find_person(uuid)
+        if not p:
+            return (False, 'person not found')
+        active = self._active_proprelations_count(p)
+        if active > 0:
+            return (True, f'{p.name}: {active} active proprelation(s)')
+        return (False, f'{p.name}: no active proprelations')
+
+    def _active_proprelations_count(self, person):
+        PropRelation = self.env['myschool.proprelation']
+        return PropRelation.search_count([
+            '|', '|',
+            ('id_person', '=', person.id),
+            ('id_person_parent', '=', person.id),
+            ('id_person_child', '=', person.id),
+            ('is_active', '=', True),
+        ])
+
+    def _check_person_details_inst(self, uuid, inst_nr):
+        p = self._find_person(uuid)
+        if not p:
+            return (False, 'person not found')
+        Details = self.env['myschool.person.details']
+        d = Details.search([
+            ('person_id', '=', p.id),
+            ('extra_field_1', '=', inst_nr),
+            ('is_active', '=', True),
+        ], limit=1)
+        if d:
+            return (True, f'{p.name}: PersonDetails active for inst {inst_nr} (id={d.id})')
+        return (False, f'{p.name}: no active PersonDetails for inst {inst_nr}')
+
+    def _check_person_no_details_inst(self, uuid, inst_nr):
+        p = self._find_person(uuid)
+        if not p:
+            return (True, 'person not found')
+        Details = self.env['myschool.person.details']
+        d = Details.search([
+            ('person_id', '=', p.id),
+            ('extra_field_1', '=', inst_nr),
+            ('is_active', '=', True),
+        ], limit=1)
+        if d:
+            return (False, f'{p.name}: still has active PersonDetails for inst {inst_nr}')
+        return (True, f'{p.name}: no active PersonDetails for inst {inst_nr}')
+
+    def _check_person_hoofd_ambt(self, uuid, inst_nr, code):
+        p = self._find_person(uuid)
+        if not p:
+            return (False, 'person not found')
+        Details = self.env['myschool.person.details']
+        d = Details.search([
+            ('person_id', '=', p.id),
+            ('extra_field_1', '=', inst_nr),
+            ('is_active', '=', True),
+        ], limit=1)
+        if not d:
+            return (False, f'no active PersonDetails for inst {inst_nr}')
+        actual = d.hoofd_ambt or ''
+        if actual == code:
+            return (True, f'{p.name} @ {inst_nr}: hoofd_ambt={actual}')
+        return (False,
+                f'{p.name} @ {inst_nr}: hoofd_ambt={actual!r} expected {code!r}')
 
     def _find_classgroup(self, name_short, inst_nr=None):
         Org = self.env['myschool.org'].with_context(active_test=False)
