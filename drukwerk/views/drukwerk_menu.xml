@@ -99,4 +99,11 @@
               parent="menu_drukwerk_centrum_root"
               action="action_drukwerk_config_open"
               sequence="20"/>
+
+    <menuitem id="menu_drukwerk_centrum_count_e_export"
+              name="Export Count-e"
+              parent="menu_drukwerk_centrum_root"
+              action="action_count_e_export_wizard"
+              groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
+              sequence="18"/>
 </odoo>

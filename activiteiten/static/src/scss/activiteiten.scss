@@ -19,20 +19,22 @@
     }
 }
 
-// Forceer auto-layout op lijsten binnen dialogen, zodat verborgen kolommen écht collapsen
-body .modal .o_list_table {
+// Forceer auto-layout op lijsten binnen dialogen, zodat verborgen kolommen écht collapsen.
+// Scope: enkel binnen activiteiten-dialogs zodat we andere modules (bv. professionalisering)
+// niet treffen.
+body .modal:has(.o_activiteiten_record_form) .o_list_table {
     table-layout: auto !important;
 }
 
-// Verberg de volledige actie-kolom (header + cellen + footer-cel)
-body .modal .o_list_table .o_list_actions_header,
-body .modal .o_list_table .o_list_record_remove,
-body .modal .o_list_table tfoot td.w-print-0.p-print-0 {
+// Verberg de volledige actie-kolom (header + cellen + footer-cel) in activiteiten-dialogs.
+body .modal:has(.o_activiteiten_record_form) .o_list_table .o_list_actions_header,
+body .modal:has(.o_activiteiten_record_form) .o_list_table .o_list_record_remove,
+body .modal:has(.o_activiteiten_record_form) .o_list_table tfoot td.w-print-0.p-print-0 {
     display: none !important;
 }
 
-// Laat de eerste kolom vrij uitrekken (verwijdert de inline 868px width)
-body .modal .o_list_table thead th:first-child,
-body .modal .o_list_table tbody td:first-child {
+// Laat de eerste kolom vrij uitrekken (verwijdert de inline 868px width).
+body .modal:has(.o_activiteiten_record_form) .o_list_table thead th:first-child,
+body .modal:has(.o_activiteiten_record_form) .o_list_table tbody td:first-child {
     width: auto !important;
 }

@@ -90,4 +90,18 @@
         min-height: 200px;
         width: 100%;
     }
+
+    // Maak de standaard "verwijder regel"-X altijd zichtbaar en prominent
+    // in date_line_ids zodat de leerkracht een verkeerde datum makkelijk
+    // kan verwijderen i.p.v. enkel op hover.
+    .o_field_one2many .o_list_record_remove {
+        opacity: 1 !important;
+        visibility: visible !important;
+        color: var(--bs-danger, #dc3545) !important;
+        font-size: 1.1rem;
+    }
+    .o_field_one2many .o_list_record_remove:hover {
+        color: #a02530 !important;
+        transform: scale(1.15);
+    }
 }

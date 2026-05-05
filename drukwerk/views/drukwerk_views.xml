@@ -21,13 +21,23 @@
                             class="btn-secondary"
                             invisible="state != 'afdrukken'"
                             groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"/>
-                    <!-- Drukwerk team / Admin: verwijderen -->
+                    <!-- Drukwerk team / Admin: verwijderen (alle states) -->
                     <button name="action_delete"
                             string="Verwijderen"
                             type="object"
                             class="btn-danger"
                             confirm="Weet je zeker dat je deze aanvraag wil verwijderen? Dit kan niet ongedaan worden gemaakt."
                             groups="drukwerk.group_drukwerk_drukwerk,drukwerk.group_drukwerk_admin"/>
+                    <!-- Eigenaar (leerkracht): verwijderen in concept-fase, vóór indienen -->
+                    <!-- Verberg voor gebruikers die ook in de drukkerij-/admin-groep zitten;
+                         daar dekt de bovenstaande knop al alle states af. -->
+                    <button name="action_delete"
+                            string="Verwijderen"
+                            type="object"
+                            class="btn-danger"
+                            confirm="Weet je zeker dat je deze aanvraag wil verwijderen? Dit kan niet ongedaan worden gemaakt."
+                            invisible="state not in ('draft', 'form_invullen') or not is_owner or is_drukwerk_team"
+                            groups="drukwerk.group_drukwerk_personeelslid"/>
 
                     <!-- Drukwerk: print PDF -->
                     <button name="action_download_pdf"
@@ -74,6 +84,7 @@
                     <field name="currency_id" invisible="1"/>
                     <field name="available_klas_ids" invisible="1"/>
                     <field name="is_owner" invisible="1"/>
+                    <field name="is_drukwerk_team" invisible="1"/>
                     <field name="can_select_color" invisible="1"/>
                     <field name="student_ids" invisible="1"/>
 
@@ -196,15 +207,6 @@
                                    invisible="drukwerk_type != 'gewoon'"/>
                         </group>
                     </group>
-
-                    <!-- PDF voorbeeld — toont het document inline tijdens afdrukfase -->
-                    <separator string="Document voorbeeld" invisible="not document_file"/>
-                    <field name="document_file"
-                           filename="document_filename"
-                           widget="pdf_viewer"
-                           nolabel="1"
-                           readonly="1"
-                           invisible="not document_file or state == 'form_invullen'"/>
 
                     <!-- Print options for afdrukken state — drukwerk team kan alles bewerken -->
                     <group string="Printerinstellingen"

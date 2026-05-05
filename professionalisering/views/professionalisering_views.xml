@@ -134,18 +134,6 @@
                                           invisible="address_id">— geen adres gekozen —</span>
                                 </div>
                             </div>
-                            <label for="afstand_km" string="Afstand"
-                                   invisible="location_type != 'address' or not address_id or (subtype_individueel != 'nascholing' and type != 'teamleren')"/>
-                            <div class="o_row"
-                                 invisible="location_type != 'address' or not address_id or (subtype_individueel != 'nascholing' and type != 'teamleren')">
-                                <field name="afstand_km" readonly="1" nolabel="1" class="oe_inline"/>
-                                <span class="text-muted">km (heen en terug)</span>
-                                <button name="action_recompute_afstand"
-                                        type="object"
-                                        icon="fa-refresh"
-                                        title="Afstand opnieuw berekenen"
-                                        class="btn-link ms-2"/>
-                            </div>
                             <field name="link"
                                    widget="url"
                                    placeholder="bv. https://youtube.com/..."
@@ -186,14 +174,15 @@
                                     Beheer de losse datums via <strong>Extra info beheren → Datums</strong>.
                                 </span>
                             </div>
-                            <!-- Carpool — alleen relevant voor opleidingen op locatie -->
-                            <field name="carpool"
+                            <!-- Vervoersmiddel — alleen relevant voor opleidingen op locatie -->
+                            <field name="vervoersmiddel"
                                    readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
                                    invisible="subtype_individueel in ('lezen', 'video', 'podcast') or location_type != 'address'"/>
+                            <field name="carpool" invisible="1"/>
                             <field name="carpool_employee_ids" widget="many2many_tags"
                                    options="{'no_create': True}"
                                    readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
-                                   invisible="not carpool or subtype_individueel in ('lezen', 'video', 'podcast') or location_type != 'address'"/>
+                                   invisible="vervoersmiddel != 'auto_carpool' or subtype_individueel in ('lezen', 'video', 'podcast') or location_type != 'address'"/>
                         </group>
 
                         <!-- RIGHT COLUMN: Beoordeling + Extra info (voor directie) -->
@@ -224,12 +213,14 @@
                                    invisible="state == 'selection_of_form' or not description or motivatie_aanleiding or motivatie_doelstelling or motivatie_toepassing or motivatie_effect"/>
                             <field name="description" nolabel="1" readonly="1"
                                    invisible="state == 'selection_of_form' or not description or motivatie_aanleiding or motivatie_doelstelling or motivatie_toepassing or motivatie_effect"/>
-                            <!-- Carpool — collega's met wie je samen rijdt -->
-                            <separator string="Carpool"
-                                       invisible="state == 'selection_of_form' or not carpool"/>
+                            <!-- Vervoersmiddel — getoond na indienen -->
+                            <separator string="Vervoer"
+                                       invisible="state == 'selection_of_form' or not vervoersmiddel"/>
+                            <field name="vervoersmiddel" readonly="1"
+                                   invisible="state == 'selection_of_form' or not vervoersmiddel"/>
                             <field name="carpool_employee_ids" widget="many2many_tags"
                                    readonly="1"
-                                   invisible="state == 'selection_of_form' or not carpool"/>
+                                   invisible="state == 'selection_of_form' or vervoersmiddel != 'auto_carpool'"/>
                             <label for="date_line_ids" string="Losse datums"
                                    invisible="state == 'selection_of_form' or not verschillende_dagen"/>
                             <field name="date_line_ids" nolabel="1"
@@ -369,19 +360,30 @@
                             Niet van toepassing — vink eerst <strong>"Niet-aaneensluitende dagen"</strong>
                             aan op het hoofdformulier om losstaande datums op te geven.
                         </p>
+                        <p class="text-muted mb-2"
+                           invisible="not verschillende_dagen">
+                            <i class="fa fa-info-circle me-1"/>
+                            Klik op <strong>"Voeg een datum toe"</strong> om een datum toe te voegen.
+                            Verwijderen via het vuilbakje rechts op elke regel.
+                        </p>
                         <field name="date_line_ids" nolabel="1"
                                invisible="not verschillende_dagen"
                                readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
                             <list editable="bottom">
-                                <field name="date"/>
+                                <field name="date" required="1"/>
                                 <field name="cost"/>
+                                <control>
+                                    <create string="Datum toevoegen"/>
+                                </control>
                             </list>
                         </field>
                     </div>
                     <!-- Stap 2: Motivatie (gestructureerd) -->
                     <div invisible="wizard_step != '2'" class="w-100">
                         <p class="text-muted mb-2">
-                            Beschrijf in 4 stappen waarom deze opleiding waardevol is.
+                            <i class="fa fa-info-circle me-1"/>
+                            Vul minstens <strong>één</strong> van de onderstaande velden in.
+                            Hoe meer je toelicht, hoe sneller de directie kan goedkeuren — maar het is niet verplicht alle 4 in te vullen.
                         </p>
                         <group>
                             <field name="motivatie_aanleiding"
@@ -476,7 +478,7 @@
                 <filter string="Goed te keuren" name="state_submitted" domain="[('state', 'in', ('fill_in_form_individueel', 'fill_in_form_teamleren'))]"/>
                 <filter string="Goedgekeurd" name="state_bevestiging" domain="[('state', '=', 'bevestiging')]"/>
                 <filter string="Bewijs" name="state_bewijs" domain="[('state', '=', 'bewijs')]"/>
-                <filter string="Geweigerd" name="state_weigering" domain="[('state', '=', 'weigering')]"/>
+                <filter string="Afgekeurd" name="state_weigering" domain="[('state', '=', 'weigering')]"/>
                 <filter string="Afgerond" name="state_done" domain="[('state', '=', 'done')]"/>
                 <separator/>
                 <filter string="Deze maand" name="date_this_month"

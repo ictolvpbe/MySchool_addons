@@ -407,7 +407,7 @@
                 <filter string="Vervanging openstaand" name="replacement_pending"
                         domain="[('state', '=', 'vervanging')]"/>
                 <separator/>
-                <filter string="Concept" name="state_draft"
+                <filter string="Concepten" name="state_draft"
                         domain="[('state', 'in', ('draft', 'form_invullen'))]"/>
                 <filter string="Bus geweigerd" name="state_bus_refused"
                         domain="[('state', '=', 'bus_refused')]"/>

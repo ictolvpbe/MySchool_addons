@@ -910,7 +910,15 @@ class Activiteiten(models.Model):
 
     def action_delete(self):
         self.unlink()
-        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+        # Generieke client-action die terugkeert naar de vorige controller
+        # zodat filters/sortering/scroll behouden blijven (zie myschool_core).
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'myschool_back_to_previous',
+            'params': {
+                'fallback_action': 'activiteiten.action_activiteiten_main',
+            },
+        }
 
     def _schedule_owner_approved_activity(self):
         activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)

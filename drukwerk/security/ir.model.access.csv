@@ -14,6 +14,8 @@ access_myschool_person_drukwerk,myschool.person.drukwerk,myschool_core.model_mys
 access_student_select_wizard,drukwerk.student.select.wizard,model_drukwerk_student_select_wizard,group_drukwerk_personeelslid,1,1,1,1
 access_student_select_line,drukwerk.student.select.line,model_drukwerk_student_select_line,group_drukwerk_personeelslid,1,1,1,1
 access_extra_klas_wizard,drukwerk.extra.klas.wizard,model_drukwerk_extra_klas_wizard,group_drukwerk_personeelslid,1,1,1,1
+access_count_e_export_wizard_boekhouding,drukwerk.count.e.export.wizard.boekhouding,model_drukwerk_count_e_export_wizard,group_drukwerk_boekhouding,1,1,1,1
+access_count_e_export_wizard_admin,drukwerk.count.e.export.wizard.admin,model_drukwerk_count_e_export_wizard,group_drukwerk_admin,1,1,1,1
 access_print_confirm_wizard_drukwerk,drukwerk.print.confirm.wizard.drukwerk,model_drukwerk_print_confirm_wizard,group_drukwerk_drukwerk,1,1,1,1
 access_print_confirm_wizard_admin,drukwerk.print.confirm.wizard.admin,model_drukwerk_print_confirm_wizard,group_drukwerk_admin,1,1,1,1
 access_drukwerk_config_user,drukwerk.config.user,model_drukwerk_config,group_drukwerk_personeelslid,1,0,0,0

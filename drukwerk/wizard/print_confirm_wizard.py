@@ -21,4 +21,4 @@ class DrukwerkPrintConfirmWizard(models.TransientModel):
     def action_confirm_printed(self):
         self.ensure_one()
         self.record_id.action_mark_printed()
-        return {'type': 'ir.actions.act_window_close'}
+        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
