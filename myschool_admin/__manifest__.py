@@ -57,6 +57,9 @@
         # Server Benchmark
         'views/server_benchmark_views.xml',
 
+        # Health Check
+        'views/health_check_views.xml',
+
         # Wizards (must load before menus that reference wizard actions)
         'views/wizard_views.xml',
 
