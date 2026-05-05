@@ -385,7 +385,12 @@ CAPTURED_LOGGERS = (
 
 
 class _LogCaptureHandler(logging.Handler):
-    """Collects log records emitted during a step run for display in the UI."""
+    """Collects log records emitted during a step run for display in the UI.
+
+    Each entry is stored as ``(levelno, formatted_line, exc_info_text)``
+    so the renderer can colorize errors/warnings and surface a short
+    summary at the top of the debug pane.
+    """
 
     def __init__(self):
         super().__init__(level=logging.DEBUG)
@@ -394,7 +399,11 @@ class _LogCaptureHandler(logging.Handler):
 
     def emit(self, record):
         try:
-            self.records.append(self.format(record))
+            line = self.format(record)
+            exc_text = ''
+            if record.exc_info:
+                exc_text = self.formatter.formatException(record.exc_info)
+            self.records.append((record.levelno, line, exc_text))
         except Exception:
             pass
 
@@ -2203,16 +2212,14 @@ class SyncTestStep(models.Model):
     def _finalize_step(self, started_at, debug_lines, log_handler, status):
         self.status = status
         self.last_run_at = started_at
-        debug_html = (
+        debug_html = self._render_error_summary(log_handler) + (
             '<pre style="white-space:pre-wrap;font-family:monospace;">'
             + self._escape_html('\n'.join(debug_lines))
             + '</pre>')
         if log_handler.records:
             debug_html += (
                 '<h5>Captured logs</h5>'
-                '<pre style="white-space:pre-wrap;font-family:monospace;font-size:90%;">'
-                + self._escape_html('\n'.join(log_handler.records))
-                + '</pre>')
+                + self._render_captured_logs(log_handler))
         self.debug_output = debug_html
         self.sync_events = self._render_sync_events(started_at)
         # update overall_status on session
@@ -2229,23 +2236,68 @@ class SyncTestStep(models.Model):
     def _render_sync_events(self, started_at):
         SysEvent = self.env['myschool.sys.event'].with_context(active_test=False)
         events = SysEvent.search([('create_date', '>=', started_at)], order='id asc')
+
+        # Highlight error-priority sys-events with red rows.
+        def _event_row_style(e):
+            prio = (e.priority or '').upper()
+            if prio in ('ERROR', 'PRO_ERROR') or 'ERROR' in prio:
+                return 'background:#ffeaea;color:#a30000;'
+            if prio == 'WARNING':
+                return 'background:#fff5e0;color:#a36b00;'
+            return ''
+
         rows = ''.join(
-            f'<tr><td>{e.id}</td><td>{e.eventcode or ""}</td>'
+            f'<tr style="{_event_row_style(e)}"><td>{e.id}</td>'
+            f'<td>{e.eventcode or ""}</td>'
             f'<td>{self._escape_html(e.name or "")}</td>'
             f'<td>{e.priority or ""}</td></tr>'
             for e in events)
 
         BeTask = self.env['myschool.betask']
         new_tasks = BeTask.search([('create_date', '>=', started_at)], order='id asc')
-        task_rows = ''.join(
-            f'<tr><td>{t.id}</td><td>{t.task_type_name or ""}</td>'
-            f'<td>{t.status or ""}</td>'
-            f'<td>{self._escape_html(t.name or "")}</td>'
-            f'<td><pre style="white-space:pre-wrap;margin:0;">'
-            f'{self._escape_html((t.changes or "").strip())[:400]}</pre></td></tr>'
-            for t in new_tasks)
+
+        def _task_row_style(t):
+            if t.status == 'error':
+                return 'background:#ffeaea;color:#a30000;'
+            return ''
+
+        task_rows_list = []
+        error_count = 0
+        for t in new_tasks:
+            err = getattr(t, 'error_description', '') or ''
+            changes = (t.changes or '').strip()
+            # Show error_description prominently when present.
+            if t.status == 'error':
+                error_count += 1
+                detail_html = (
+                    '<strong style="color:#a30000;">ERROR:</strong> '
+                    f'{self._escape_html(err) or "(no error_description)"}')
+                if changes:
+                    detail_html += (
+                        '<pre style="white-space:pre-wrap;margin:4px 0 0 0;'
+                        'font-size:85%;color:#555;">'
+                        + self._escape_html(changes)[:400] + '</pre>')
+            else:
+                detail_html = (
+                    '<pre style="white-space:pre-wrap;margin:0;">'
+                    + self._escape_html(changes)[:400] + '</pre>')
+            task_rows_list.append(
+                f'<tr style="{_task_row_style(t)}"><td>{t.id}</td>'
+                f'<td>{t.task_type_name or ""}</td>'
+                f'<td>{self._escape_html(t.status or "")}</td>'
+                f'<td>{self._escape_html(t.name or "")}</td>'
+                f'<td>{detail_html}</td></tr>')
+        task_rows = ''.join(task_rows_list)
 
         html = ''
+        if error_count:
+            html += (
+                '<div style="border:1px solid #d32f2f;background:#fff5f5;'
+                'color:#a30000;padding:8px 12px;border-radius:4px;'
+                'margin:0 0 10px 0;">'
+                f'<strong>⚠ {error_count} betask(s) finished with status=error</strong> '
+                '— scroll naar de rode rijen hieronder voor de '
+                '<code>error_description</code>.</div>')
         if rows:
             html += ('<h5>Sys events</h5>'
                      '<table class="table table-sm"><thead><tr>'
@@ -2254,7 +2306,7 @@ class SyncTestStep(models.Model):
         if task_rows:
             html += ('<h5>BeTasks created during step</h5>'
                      '<table class="table table-sm"><thead><tr>'
-                     '<th>id</th><th>type</th><th>status</th><th>name</th><th>changes</th>'
+                     '<th>id</th><th>type</th><th>status</th><th>name</th><th>changes / error</th>'
                      f'</tr></thead><tbody>{task_rows}</tbody></table>')
         return html or '<p><em>No sys events or betasks recorded.</em></p>'
 
@@ -2263,6 +2315,82 @@ class SyncTestStep(models.Model):
         if not s:
             return ''
         return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    # ------------------------------------------------------------------
+    # Log-pane rendering: colored lines per level + error summary
+    # ------------------------------------------------------------------
+
+    # Map logging level → CSS for the `<span>` that wraps the line.
+    _LOG_LEVEL_STYLE = {
+        logging.CRITICAL: 'color:#a30000;font-weight:bold;background:#ffe4e4;',
+        logging.ERROR:    'color:#a30000;font-weight:bold;',
+        logging.WARNING:  'color:#a36b00;',
+        logging.INFO:     '',
+        logging.DEBUG:    'color:#888;',
+    }
+
+    @classmethod
+    def _level_style(cls, levelno):
+        # Pick the style for the highest level <= levelno.
+        for lvl in (logging.CRITICAL, logging.ERROR,
+                    logging.WARNING, logging.INFO, logging.DEBUG):
+            if levelno >= lvl:
+                return cls._LOG_LEVEL_STYLE.get(lvl, '')
+        return ''
+
+    def _render_error_summary(self, log_handler):
+        """Render a short red banner listing every captured ERROR / CRITICAL
+        record (with traceback when present) so the user spots failures
+        before scrolling through the full log."""
+        errors = [
+            (lvl, line, exc) for (lvl, line, exc) in log_handler.records
+            if lvl >= logging.ERROR
+        ]
+        if not errors:
+            return ''
+        items = []
+        for lvl, line, exc in errors:
+            level_name = logging.getLevelName(lvl)
+            entry = (
+                f'<li><strong>{level_name}</strong> '
+                f'<code>{self._escape_html(line)}</code>')
+            if exc:
+                entry += (
+                    '<pre style="margin:4px 0 0 12px;'
+                    'white-space:pre-wrap;font-size:85%;'
+                    'color:#a30000;">'
+                    + self._escape_html(exc) + '</pre>')
+            entry += '</li>'
+            items.append(entry)
+        return (
+            '<div style="border:1px solid #d32f2f;background:#fff5f5;'
+            'color:#a30000;padding:10px 14px;border-radius:4px;'
+            'margin:0 0 10px 0;">'
+            f'<strong>⚠ {len(errors)} error/critical log record(s) '
+            'tijdens deze step</strong>'
+            f'<ul style="margin:6px 0 0 18px;padding:0;">{"".join(items)}</ul>'
+            '</div>')
+
+    def _render_captured_logs(self, log_handler):
+        """Per-line colored log block: red for ERROR/CRITICAL, orange for
+        WARNING, muted-gray for DEBUG."""
+        lines = []
+        for lvl, line, exc in log_handler.records:
+            style = self._level_style(lvl)
+            if style:
+                lines.append(
+                    f'<span style="{style}">{self._escape_html(line)}</span>')
+            else:
+                lines.append(self._escape_html(line))
+            if exc:
+                lines.append(
+                    f'<span style="color:#a30000;">'
+                    f'{self._escape_html(exc)}</span>')
+        return (
+            '<pre style="white-space:pre-wrap;font-family:monospace;'
+            'font-size:90%;line-height:1.35;">'
+            + '\n'.join(lines)
+            + '</pre>')
 
     # -------------------------------------------------------------------------
     # Expectation checks
