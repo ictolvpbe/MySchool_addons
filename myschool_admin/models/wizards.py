@@ -919,9 +919,16 @@ class AddChildOrgWizard(models.TransientModel):
     new_org_domain_internal = fields.Char(string='Internal Domain')
     new_org_domain_external = fields.Char(string='External Domain')
 
+    # Display name (UI label, falls back to name)
+    new_org_displayname = fields.Char(string='Weergavenaam',
+        help='Optioneel UI-label. Valt terug op ``name`` wanneer leeg.')
+
     # Boolean flags
     new_org_has_ou = fields.Boolean(string='Heeft OU', default=False)
-    
+    new_org_has_comgroup = fields.Boolean(string='Heeft Communicatiegroep', default=True)
+    new_org_has_secgroup = fields.Boolean(string='Heeft Securitygroep', default=True)
+    new_org_has_odoo_group = fields.Boolean(string='Heeft Odoo Groepen', default=False)
+
     @api.model
     def default_get(self, fields_list):
         """Set default values including parent_org_name, OU FQDN, and domain fields."""
@@ -1315,6 +1322,8 @@ class AddChildOrgWizard(models.TransientModel):
             data['name'] = self.new_org_name
             data['name_short'] = self.new_org_name_short.lower()
             data['inst_nr'] = self.new_org_inst_nr
+            if self.new_org_displayname:
+                data['displayname'] = self.new_org_displayname
 
             # Domain fields (inherited from school)
             if self.new_org_domain_internal:
@@ -1346,10 +1355,11 @@ class AddChildOrgWizard(models.TransientModel):
             if self.new_org_sec_group_fqdn_external:
                 data['sec_group_fqdn_external'] = self.new_org_sec_group_fqdn_external
 
-            # Boolean flags — always enable comgroup and secgroup
+            # Boolean flags
             data['has_ou'] = self.new_org_has_ou
-            data['has_comgroup'] = True
-            data['has_secgroup'] = True
+            data['has_comgroup'] = self.new_org_has_comgroup
+            data['has_secgroup'] = self.new_org_has_secgroup
+            data['has_odoo_group'] = self.new_org_has_odoo_group
 
             # name_tree
             if self.new_org_ou_fqdn_intern:
