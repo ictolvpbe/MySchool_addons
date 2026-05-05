@@ -3468,43 +3468,26 @@ class BeTaskProcessor(models.AbstractModel):
 
                 changes.append(f"Recalculated PERSON-TREE for {person.name}")
 
-            # Check if person should be deactivated (no more active proprelations)
-            # This check runs for ALL proprelation types, not just PPSBR
-            # Only auto-deactivate persons with automatic_sync=True
+            # Note: we no longer flip ``is_active=False`` here when the
+            # last proprelation drops away. The suspend pipeline owns
+            # that decision: the post-sync sweep flags
+            # ``deactivation_pending_since=today`` (transition guard
+            # via proprelation history), and the daily lifecycle cron
+            # — Phase 1 in ``cron_employee_account_lifecycle`` — flips
+            # ``is_active`` and queues ``LDAP/USER/DEL`` only after
+            # ``EmployeeSuspendPeriod`` has elapsed. Immediate
+            # deactivation here would short-circuit the entire grace
+            # period.
             if person and person.is_active and person.automatic_sync:
-                remaining_active_proprels = PropRelation.search([
+                remaining_active_proprels = PropRelation.search_count([
                     ('id_person', '=', person.id),
-                    ('is_active', '=', True)
+                    ('is_active', '=', True),
                 ])
-
-                _logger.info(f'Remaining active proprelations for {person.name}: {len(remaining_active_proprels)}')
-
-                if not remaining_active_proprels:
-                    _logger.info(f'No active proprelations left for {person.name} - deactivating person')
-                    changes.append(f"No active proprelations remaining - deactivating person")
-
-                    # Skip manual audit for backend task processing
-                    person_ctx = person.with_context(skip_manual_audit=True)
-
-                    # Create ODOO-PERSON-DEACT task if person has Odoo user
-                    if person.odoo_user_id:
-                        odoo_task_data = {
-                            'person_id': person.id,
-                            'personId': person.sap_person_uuid,
-                            'reason': 'No active proprelations'
-                        }
-                        self._create_betask_internal(
-                            'ODOO', 'PERSON', 'DEACT',
-                            json.dumps(odoo_task_data),
-                            None
-                        )
-                        _logger.info(f'Created ODOO-PERSON-DEACT task for {person.name}')
-                        changes.append(f"Created ODOO-PERSON-DEACT task")
-
-                    # Only deactivate the person, NOT their other proprelations
-                    person_ctx.write({'is_active': False})
-                    _logger.info(f"Deactivated person {person.name}")
-                    changes.append(f"Person {person.name} deactivated")
+                _logger.info(
+                    f'Remaining active proprelations for {person.name}: '
+                    f'{remaining_active_proprels} '
+                    f'(suspend pipeline handles deactivation; '
+                    f'no immediate is_active flip)')
 
             return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -6366,28 +6349,37 @@ class BeTaskProcessor(models.AbstractModel):
     def _sync_persongroup_memberships(self, person):
         """Sync persongroup PG-P memberships for a person.
 
-        Strategy: for every active PPSBR of the person, find the BRSO
-        whose ``id_role`` matches and whose ``id_org_parent`` lives in
-        the same school context (ORG-TREE ancestors of the PPSBR's
-        id_org plus orgs sharing the same ``inst_nr``). The BRSO's
-        ``id_org`` is the target — if its ``has_comgroup`` is set,
-        re-sync that target's persongroup.
+        Strategy: re-sync every persongroup that *should* host this
+        person (driven by their PPSBRs and PERSON-TREE) **plus** every
+        persongroup that *currently* hosts them via an active PG-P
+        record. Without the second set, deactivating the last PPSBR
+        leaves stale PG-P records — the BRSO-target lookup yields
+        zero entries (no live PPSBR to resolve a role from), so the
+        previously-hosting persongroups never get re-evaluated.
 
-        This replaces the older "role-based persongroup" path that
-        produced ``grp-{role}-{school}``-named persongroups, which
-        diverged from the target-org's persongroup created by
-        ``_handle_persongroup_flags``. There's now one persongroup per
-        target_org (the canonical one) and every relevant PPSBR
-        contributes to its membership.
-
-        Plus: the person's active PERSON-TREE org's persongroup is
-        always re-synced — that's the placement-anchored membership.
+        The set-based diff inside ``_sync_pg_p_members`` then handles
+        the remove half: a persongroup whose desired-member set no
+        longer contains this person deactivates the PG-P link.
         """
         if not person:
             return
 
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+
+        targets_to_sync = self.env['myschool.org']
+        synced_target_ids = set()
+
+        def _add_target(org_record):
+            if not org_record or org_record.id in synced_target_ids:
+                return
+            if not (org_record.has_comgroup or org_record.has_secgroup
+                    or org_record.has_odoo_group):
+                return
+            synced_target_ids.add(org_record.id)
+            nonlocal targets_to_sync
+            targets_to_sync |= org_record
 
         # 1. Placement-based — the org the person lives under via
         # PERSON-TREE.
@@ -6399,53 +6391,60 @@ class BeTaskProcessor(models.AbstractModel):
                 ('is_active', '=', True),
                 ('id_org', '!=', False),
             ], limit=1)
-            if pt_rel and pt_rel.id_org and (
-                    pt_rel.id_org.has_comgroup
-                    or pt_rel.id_org.has_secgroup
-                    or pt_rel.id_org.has_odoo_group):
-                self._sync_org_persongroup(pt_rel.id_org)
+            if pt_rel and pt_rel.id_org:
+                _add_target(pt_rel.id_org)
 
-        # 2. PPSBR-based — every BRSO target_org (with has_comgroup)
-        # that any of the person's PPSBRs maps to.
+        # 2. PPSBR-based — every BRSO target_org (with any group flag)
+        # that any of the person's currently-active PPSBRs maps to.
         ppsbr_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PPSBR)], limit=1)
         brso_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_BRSO)], limit=1)
-        if not ppsbr_type or not brso_type:
-            return
-        Org = self.env['myschool.org']
-        ppsbr_rels = PropRelation.search([
-            ('proprelation_type_id', '=', ppsbr_type.id),
-            ('id_person', '=', person.id),
-            ('is_active', '=', True),
-            ('id_role', '!=', False),
-            ('id_org', '!=', False),
-        ])
-        synced_target_ids = set()
-        for ppsbr in ppsbr_rels:
-            ancestor_ids = set(self._collect_org_ancestor_ids(ppsbr.id_org)) \
-                or {ppsbr.id_org.id}
-            inst_nrs = {o.inst_nr for o in Org.browse(list(ancestor_ids))
-                        if o.inst_nr}
-            if inst_nrs:
-                same_inst = Org.search([
-                    ('inst_nr', 'in', list(inst_nrs)),
+        if ppsbr_type and brso_type:
+            ppsbr_rels = PropRelation.search([
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('id_person', '=', person.id),
+                ('is_active', '=', True),
+                ('id_role', '!=', False),
+                ('id_org', '!=', False),
+            ])
+            for ppsbr in ppsbr_rels:
+                ancestor_ids = set(self._collect_org_ancestor_ids(ppsbr.id_org)) \
+                    or {ppsbr.id_org.id}
+                inst_nrs = {o.inst_nr for o in Org.browse(list(ancestor_ids))
+                            if o.inst_nr}
+                if inst_nrs:
+                    same_inst = Org.search([
+                        ('inst_nr', 'in', list(inst_nrs)),
+                        ('is_active', '=', True),
+                    ])
+                    ancestor_ids.update(same_inst.ids)
+                brsos = PropRelation.search([
+                    ('proprelation_type_id', '=', brso_type.id),
+                    ('id_role', '=', ppsbr.id_role.id),
+                    ('id_org_parent', 'in', list(ancestor_ids)),
                     ('is_active', '=', True),
+                    ('id_org', '!=', False),
                 ])
-                ancestor_ids.update(same_inst.ids)
-            brsos = PropRelation.search([
-                ('proprelation_type_id', '=', brso_type.id),
-                ('id_role', '=', ppsbr.id_role.id),
-                ('id_org_parent', 'in', list(ancestor_ids)),
+                for brso in brsos:
+                    _add_target(brso.id_org)
+
+        # 3. Currently-hosting persongroups — every PG-P record where
+        # this person is still listed as an active member. This catches
+        # persongroups that should drop the person now that their
+        # PPSBRs are gone but that the PPSBR-walk above can no longer
+        # discover.
+        pg_p_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
+        if pg_p_type:
+            current_pg_p = PropRelation.search([
+                ('proprelation_type_id', '=', pg_p_type.id),
+                ('id_person', '=', person.id),
                 ('is_active', '=', True),
                 ('id_org', '!=', False),
             ])
-            for brso in brsos:
-                target = brso.id_org
-                if not target or target.id in synced_target_ids:
-                    continue
-                synced_target_ids.add(target.id)
-                if (target.has_comgroup or target.has_secgroup
-                        or target.has_odoo_group):
-                    self._sync_org_persongroup(target)
+            for rel in current_pg_p:
+                _add_target(rel.id_org)
+
+        for target in targets_to_sync:
+            self._sync_org_persongroup(target)
 
     # =========================================================================
     # CRON JOB ENTRY POINT

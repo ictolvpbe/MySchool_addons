@@ -27,6 +27,7 @@ class OrgRoleLine(models.TransientModel):
     proprelation_id = fields.Many2one('myschool.proprelation', string='Relation')
     role_name = fields.Char(string='Role')
     role_label = fields.Char(string='Label')
+    school_name = fields.Char(string='School')
     is_active = fields.Boolean(string='Active', default=True)
     is_master = fields.Boolean(string='Is Master', default=False)
     automatic_sync = fields.Boolean(string='Auto Sync', default=True)

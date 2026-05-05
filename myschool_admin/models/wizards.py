@@ -2407,6 +2407,9 @@ class ManageOrgRolesWizard(models.TransientModel):
                     'proprelation_id': rel.id,
                     'role_name': role.name if role else '',
                     'role_label': role.label or role.name if role else '',
+                    'school_name': (
+                        rel.id_org_parent.display_name
+                        if rel.id_org_parent else ''),
                     'is_active': rel.is_active,
                     'is_master': rel.is_master,
                     'automatic_sync': rel.automatic_sync,

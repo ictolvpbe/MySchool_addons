@@ -327,6 +327,7 @@ action = {
             <list create="0" delete="0" editable="bottom">
                 <field name="role_label" string="Role" readonly="1"/>
                 <field name="role_name" string="System Name" readonly="1" optional="hide"/>
+                <field name="school_name" string="School" readonly="1"/>
                 <field name="is_active" string="Active" readonly="1" widget="boolean"/>
                 <field name="is_master" string="Master" widget="boolean_toggle"/>
                 <field name="automatic_sync" string="Auto Sync" widget="boolean_toggle"/>
@@ -344,14 +345,21 @@ action = {
                 <group>
                     <field name="org_id" invisible="1"/>
                     <field name="org_name" string="Organization"/>
-                    <field name="school_id" string="School" options="{'no_create': True}"/>
                 </group>
                 <separator string="Current Roles (BRSO)"/>
                 <field name="line_ids" nolabel="1" widget="one2many"/>
-                <separator string="Add New Role"/>
-                <group>
-                    <field name="new_role_id" string="Role" options="{'no_create': True, 'no_create_edit': True}"/>
-                    <button name="action_add_role" type="object" string="Add Role" class="btn-primary" icon="fa-plus"/>
+                <separator string="Add New Role — selecteer school én rol, klik dan Add"/>
+                <group string="Nieuwe BRSO" col="2">
+                    <field name="school_id" string="School"
+                           options="{'no_create': True}"
+                           placeholder="Kies de school waaronder de rol valt"/>
+                    <field name="new_role_id" string="Role"
+                           options="{'no_create': True, 'no_create_edit': True}"
+                           placeholder="Kies de rol om toe te voegen"/>
+                    <button name="action_add_role" type="object"
+                            string="Add Role" class="btn-primary"
+                            icon="fa-plus" colspan="2"
+                            invisible="not school_id or not new_role_id"/>
                 </group>
                 <p class="text-muted">
                     <small>Group flags live on the target org. Open the

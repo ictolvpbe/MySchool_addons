@@ -922,7 +922,9 @@ class InformatService(models.AbstractModel):
             # =====================================================
             self._create_sys_event("BETASK-001", "Phase 2: Syncing PPSBR PropRelation objects")
 
-            if not self._sync_employee_proprelations(all_imported_employee_assignments):
+            if not self._sync_employee_proprelations(
+                    all_imported_employee_assignments,
+                    all_imported_employee_data):
                 self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 2 (PPSBR sync)")
                 return False
 
@@ -1435,7 +1437,11 @@ class InformatService(models.AbstractModel):
     # PHASE 2: PropRelation Synchronization (UPDATED)
     # =========================================================================
 
-    def _sync_employee_proprelations(self, all_imported_employee_assignments: Dict[str, str]) -> bool:
+    def _sync_employee_proprelations(
+            self,
+            all_imported_employee_assignments: Dict[str, str],
+            all_imported_employee_data: Optional[Dict[str, str]] = None,
+    ) -> bool:
         """
         Phase 2: Synchronize PropRelation objects (PPSBR) for active employees.
 
@@ -1450,7 +1456,26 @@ class InformatService(models.AbstractModel):
           - CREATE new PPSBR for new assignments
           - DEACTIVATE PPSBR for removed assignments
 
+        Per-instnr deactivation guard
+        ------------------------------
+        Phase 1 (``_sync_employee_persons``) calls
+        ``_deactivate_employee_for_instnr`` for every (person_uuid, inst_nr)
+        where ``should_deactivate_instnr`` is True (pension > 1 month past,
+        ``isActive=false``, or ``isOverleden``). Those queue
+        PROPRELATION/DEACT tasks. Without the guard below, Phase 2 would
+        — using the very same assignments — queue PROPRELATION/ADD tasks
+        that get processed *before* the DEACT tasks (line 930 vs 932 in
+        ``_sync_employees``). The DEACT'd PPSBRs would silently be
+        replaced by fresh ones and the suspend pipeline never engages.
+
+        We therefore precompute the set of ``(person_uuid, inst_nr)``
+        tuples that Phase 1 flagged and skip them here.
+
         @param all_imported_employee_assignments: Dict with personId&instNr as key, assignment JSON as value
+        @param all_imported_employee_data: Dict with personId&instNr as key, employee JSON as value.
+            Used to recompute the per-instnr deactivation flag so Phase 2
+            does not re-create PPSBRs that Phase 1 has just queued for
+            DEACT.
         @return: True if successful
         """
         procedure_name = '_sync_employee_proprelations'
@@ -1471,6 +1496,35 @@ class InformatService(models.AbstractModel):
             today = datetime.now().date()
             one_month_ago = today - relativedelta(months=1)
             one_week_ago = today - relativedelta(weeks=1)
+
+            # Collect (person_uuid, inst_nr) pairs Phase 1 flagged for
+            # deactivation. We re-derive this here from the same
+            # employee_data instead of threading state through Phase 1
+            # — keeps the two phases independent and the rule visible
+            # in one place.
+            deactivated_keys = set()
+            if all_imported_employee_data:
+                for emp_key, emp_value in all_imported_employee_data.items():
+                    parts = emp_key.split('&')
+                    if len(parts) != 2:
+                        continue
+                    p_uuid, p_inst = parts[0], parts[1]
+                    try:
+                        emp_json = json.loads(emp_value)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    is_active_import = emp_json.get('isActive', True)
+                    is_overleden = emp_json.get('isOverleden', False)
+                    pension_date = self._parse_date_safe(emp_json.get('pensioendatum'))
+                    if ((not is_active_import)
+                            or is_overleden
+                            or (pension_date and pension_date < one_month_ago)):
+                        deactivated_keys.add((p_uuid, p_inst))
+            if deactivated_keys:
+                self._create_sys_event(
+                    "BETASK-001",
+                    f"Phase 2 will skip {len(deactivated_keys)} (person, "
+                    f"inst_nr) pair(s) flagged for deactivation in Phase 1.")
 
             # -----------------------------------------------------------------
             # Get PropRelation types
@@ -1584,6 +1638,16 @@ class InformatService(models.AbstractModel):
                         f"Person {person.name}: NO imported assignments found")
 
                 for inst_nr, assignments in imported_assignments.items():
+                    # Skip inst_nrs Phase 1 already flagged for
+                    # deactivation — see the docstring's "Per-instnr
+                    # deactivation guard" section.
+                    if (person_uuid, inst_nr) in deactivated_keys:
+                        self._create_sys_event(
+                            "BETASK-DEBUG",
+                            f"Person {person.name} @ inst_nr {inst_nr}: "
+                            f"skipped in Phase 2 (Phase 1 queued DEACT).")
+                        continue
+
                     # Find the school org for this instNr
                     school_org = Org.search([
                         ('inst_nr', '=', inst_nr),

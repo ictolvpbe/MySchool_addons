@@ -156,9 +156,14 @@ EXPECTATIONS = {
 
     '1- new 1 instnr no hoofdambt': {
         'description': (
-            'Nieuwe employee in 011007 zonder hoofd_ambt. Persoon wordt '
-            'aangemaakt en is actief; PersonDetails voor 011007 actief; '
-            'pending_since blijft leeg (assignments zijn aanwezig).'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: nieuwe employee bij inst 011007, hoofdAmbt=null, '
+            'assignments-file leeg. '
+            'Verwacht: persoon wordt aangemaakt en is actief; '
+            'PersonDetails voor 011007 actief; geen actieve proprelations '
+            '(zonder hoofdAmbt komt er geen PPSBR); '
+            'pending_since blijft leeg — een vers geïmporteerde '
+            'employee zonder voorgeschiedenis is dormant, niet in suspend.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -168,12 +173,18 @@ EXPECTATIONS = {
             {'type': 'person_details_inst',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
              'inst_nr': '011007'},
+            {'type': 'person_no_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '2-new 2de instnr geen hoofdambt': {
         'description': (
-            'Tweede instnr 143651 wordt toegevoegd (zonder hoofd_ambt). '
-            'PersonDetails voor 011007 én 143651 staan actief.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: tweede inst 143651 toegevoegd, ook zonder hoofdAmbt, '
+            'assignments-file leeg. '
+            'Verwacht: PersonDetails voor 011007 én 143651 actief; '
+            'persoon nog steeds dormant (geen proprelations, geen '
+            'voorgeschiedenis); pending_since blijft leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -186,13 +197,20 @@ EXPECTATIONS = {
             {'type': 'person_details_inst',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
              'inst_nr': '143651'},
+            {'type': 'person_no_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '3>-1ste+ 2de  instnr +hoofdambt': {
         'description': (
-            'Beide instnrs krijgen een hoofd_ambt: 011007=00000255 '
-            '(ict-coordinator), 143651=00000007 (Leraar). Persoon actief '
-            'met active proprelations.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: hoofdAmbt + assignments worden geleverd voor beide '
+            'instnrs — 011007 = 00000255 (ict-coordinator), '
+            '143651 = 00000007 (Leraar). '
+            'Verwacht: PersonDetails per instnr toont de nieuwe '
+            'hoofdAmbt-code; Phase 2 maakt PPSBR-proprelations aan; '
+            'persoon actief met minstens één actieve proprelation; '
+            'pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -205,13 +223,19 @@ EXPECTATIONS = {
              'inst_nr': '143651', 'code': '00000007'},
             {'type': 'person_pending_since_empty',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '4-2de instnr +hoofdambt wijzigt': {
         'description': (
-            'inst 143651 hoofd_ambt verandert van 00000007 (Leraar) naar '
-            '00000255 (ict-coordinator). Nieuwe actieve PersonDetails-versie '
-            'voor 143651 met de nieuwe code.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: inst 143651 hoofdAmbt wijzigt 00000007 (Leraar) → '
+            '00000255 (ict-coordinator); 011007 ongewijzigd. '
+            'Verwacht: nieuwe actieve PersonDetails-versie voor 143651 '
+            'met de nieuwe code; vorige versie wordt gedeactiveerd '
+            '(versionering); persoon actief, proprelations actief, '
+            'pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -221,48 +245,71 @@ EXPECTATIONS = {
              'inst_nr': '143651', 'code': '00000255'},
             {'type': 'person_pending_since_empty',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '5-change extradata': {
         'description': (
-            'Wijziging van bank/iban/adres-extradata zonder impact op '
-            'lifecycle. Persoon blijft actief, geen suspend.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: wijziging van bank/iban en adres-extradata '
+            '(geen impact op rol/assignments). '
+            'Verwacht: PersonDetails-versie wordt vernieuwd voor de '
+            'gewijzigde instnr(s); persoon blijft actief; geen '
+            'lifecycle-impact (geen suspend-clock).'
         ),
         'checks': [
             {'type': 'person_exists_active',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
             {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '6-change Persondata': {
         'description': (
-            'Wijziging van persoonsdata (initialen, geboortedatum, hoofdAmbt '
-            'naam …). Persoon blijft actief; PersonDetails-versies vernieuwd.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: wijziging van persoonsdata (initialen, geboortedatum, '
+            'hoofdAmbt-naam, …) zonder dat de hoofdAmbt-code zelf wijzigt. '
+            'Verwacht: PersonDetails-versies vernieuwd; persoon blijft '
+            'actief; proprelations actief; pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
             {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '7-change Persondata + persondata': {
         'description': (
-            'Combineerde wijziging persoonsdata + iban. Persoon blijft '
-            'actief en buiten de suspend-pipeline.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: gecombineerde wijziging persoonsdata + IBAN. '
+            'Verwacht: PersonDetails opnieuw verseerd; persoon actief, '
+            'proprelations actief, pending_since leeg — geen impact '
+            'op de suspend-pipeline.'
         ),
         'checks': [
             {'type': 'person_exists_active',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
             {'type': 'person_pending_since_empty',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '8-change inst1 hoofdambt': {
         'description': (
-            'inst 011007 hoofd_ambt verandert naar 00000007 (Leraar). '
-            'Persoon actief, PersonDetails voor 011007 toont nieuwe code.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: inst 011007 hoofdAmbt wijzigt 00000255 → 00000007 '
+            '(Leraar); 143651 ongewijzigd. '
+            'Verwacht: nieuwe actieve PersonDetails-versie voor 011007 '
+            'met de nieuwe code; oude versie inactief; PPSBR-proprelation '
+            'voor 011007 wordt door Phase 2 herzien; persoon actief, '
+            'proprelations actief, pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -272,14 +319,20 @@ EXPECTATIONS = {
              'inst_nr': '011007', 'code': '00000007'},
             {'type': 'person_pending_since_empty',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '9-inst1 assignment weg': {
         'description': (
-            'inst 011007 verliest zijn assignment (lege assignmentsfile). '
-            'inst 143651 heeft nog wel assignments → cross-instnr check ziet '
-            'actieve assignments → pending_since blijft leeg, persoon actief, '
-            'minstens 1 actieve proprelation.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: inst 011007 levert lege assignments-file; '
+            'inst 143651 heeft nog steeds assignments. '
+            'Verwacht: PPSBR voor 011007 wordt door Phase 2 '
+            'gedeactiveerd (geen assignment meer); PPSBR voor 143651 '
+            'blijft actief; cross-instnr check ziet nog assignments → '
+            'persoon actief, minstens één actieve proprelation, '
+            'pending_since blijft leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -292,9 +345,14 @@ EXPECTATIONS = {
     },
     '10-inst2 assignment weg': {
         'description': (
-            'Nu vallen ook de inst 143651 assignments weg → géén actieve '
-            'assignments meer. pending_since=today, alle proprelations '
-            'inactief, maar account zelf blijft actief (suspend-grace).'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: ook inst 143651 levert nu een lege assignments-file '
+            '(011007 nog steeds leeg uit stap 9). '
+            'Verwacht: alle PPSBRs gedeactiveerd; geen actieve '
+            'proprelations meer; voorgeschiedenis bestaat (DEACT\'d '
+            'proprelations) → post-sync sweep zet pending_since=today; '
+            'account blijft actief tot na EmployeeSuspendPeriod '
+            '(suspend-grace).'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -307,8 +365,12 @@ EXPECTATIONS = {
     },
     '11-inst1 + inst2 assignment terug': {
         'description': (
-            'Beide instnrs hebben opnieuw assignments → suspend-clock stopt '
-            '(pending_since geleegd). Phase 2 herstelt PPSBR-proprelations.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: beide instnrs leveren weer assignments. '
+            'Verwacht: Phase 2 maakt opnieuw PPSBR-proprelations aan; '
+            'post-sync sweep ziet actieve proprelations en wist '
+            'pending_since (recovery, suspend-clock stopt); persoon '
+            'actief, proprelations actief.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -321,11 +383,14 @@ EXPECTATIONS = {
     },
     '12-inst1 + inst2 pensioendatum niet in toekomst': {
         'description': (
-            'Beide instnrs krijgen een pensioendatum in het verleden '
-            '(2024-12-01). should_deactivate_instnr triggert per inst → '
-            'PROPRELATION/DEACT tasks. Na de post-sync sweep zit de persoon '
-            'in de suspend-pipeline (account nog actief, alle proprelations '
-            'inactief, pending_since gezet).'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: beide instnrs krijgen een pensioendatum in het '
+            'verleden (2024-12-01); assignments blijven aanwezig. '
+            'Verwacht: should_deactivate_instnr triggert per instnr → '
+            'PROPRELATION/DEACT-tasks deactiveren alle PPSBRs; PersonDetails '
+            'wordt niet herversioneerd (continue-pad); na post-sync sweep '
+            'staat de persoon in de suspend-pipeline (alle proprelations '
+            'inactief, pending_since=today, account zelf nog actief).'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -338,10 +403,13 @@ EXPECTATIONS = {
     },
     '13 -  inst1 + 2 pensioendatum weg': {
         'description': (
-            'Pensioendatum gewist op beide instnrs. Persoon is nooit '
-            'gedeactiveerd geweest (zat enkel in suspend), should_deactivate '
-            'triggert niet meer; pending_since wordt gewist; Phase 2 herstelt '
-            'PPSBR-proprelations vanuit de assignments.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: pensioendatum gewist op beide instnrs; assignments '
+            'aanwezig. '
+            'Verwacht: should_deactivate_instnr triggert niet meer; '
+            'Phase 2 herstelt PPSBR-proprelations vanuit de assignments; '
+            'post-sync sweep wist pending_since (recovery); persoon '
+            'actief, proprelations actief, pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -354,10 +422,14 @@ EXPECTATIONS = {
     },
     '14 -  inst1 + 2 isactive false': {
         'description': (
-            'Beide instnrs krijgen isActive=false. should_deactivate_instnr '
-            'triggert → PROPRELATION/DEACT tasks. Post-sync sweep zet de '
-            'suspend-clock; account zelf blijft actief tot de cron na '
-            'EmployeeSuspendPeriod.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: beide instnrs leveren isActive=false (assignments '
+            'aanwezig, pensioendatum niet relevant). '
+            'Verwacht: should_deactivate_instnr triggert per instnr → '
+            'PROPRELATION/DEACT-tasks deactiveren alle PPSBRs; post-sync '
+            'sweep zet pending_since=today; account zelf blijft actief '
+            'tot de lifecycle-cron na EmployeeSuspendPeriod is_active=False '
+            'zet en LDAP/USER/DEL queueet.'
         ),
         'checks': [
             {'type': 'person_exists_active',

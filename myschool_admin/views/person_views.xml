@@ -10,6 +10,8 @@
         <field name="model">myschool.person</field>
         <field name="arch" type="xml">
             <list decoration-muted="not is_active"
+                  decoration-warning="deactivation_pending_since and is_active"
+                  decoration-danger="not is_active and deactivation_date"
                   default_order="name">
                 <field name="name" string="Person"/>
                 <field name="last_name" optional="hide"/>
@@ -21,6 +23,14 @@
                 <field name="sap_ref" string="SAP Ref" optional="show"/>
                 <field name="tree_org_id" string="Organization" optional="show"/>
                 <field name="email_cloud" string="E-mail Cloud" optional="show"/>
+                <field name="deactivation_pending_since" optional="hide"
+                       string="Pending sinds"/>
+                <field name="account_deactivation_due_date" optional="hide"
+                       string="Suspend op"/>
+                <field name="deactivation_date" optional="hide"
+                       string="Suspended op"/>
+                <field name="google_account_delete_due_date" optional="hide"
+                       string="Google-delete op"/>
                 <field name="is_active" widget="boolean"/>
             </list>
         </field>
@@ -111,7 +121,10 @@
                             <field name="person_type_id"/>
                             <field name="is_active" widget="boolean_toggle"/>
                             <field name="automatic_sync" widget="boolean_toggle"/>
-                            <field name="deactivation_date" readonly="1"/>
+                            <field name="deactivation_pending_since" readonly="1"
+                                   invisible="not deactivation_pending_since"/>
+                            <field name="deactivation_date" readonly="1"
+                                   invisible="not deactivation_date"/>
                         </group>
                         <group string="Linked Accounts">
                             <field name="odoo_user_id" readonly="1"/>
@@ -198,7 +211,51 @@
                             </field>
                         </page>
 
-                        <!-- Tab 5: Details -->
+                        <!-- Tab 5: Account Lifecycle (suspend chain) -->
+                        <page string="Account Lifecycle" name="lifecycle"
+                              invisible="person_type_id.name != 'EMPLOYEE'">
+                            <div class="alert alert-info" role="alert">
+                                <p class="mb-1"><b>Suspend-chain</b> — vanaf het moment
+                                dat een employee geen actieve assignments meer heeft:</p>
+                                <ol class="mb-0">
+                                    <li><b>Day X</b> — <code>deactivation_pending_since</code>
+                                        wordt gezet, persoon wordt uit alle groepen
+                                        verwijderd; account blijft nog actief.</li>
+                                    <li><b>Day X + EmployeeSuspendPeriod</b> — de cron
+                                        zet <code>is_active=False</code>, stempelt
+                                        <code>deactivation_date</code> en queueet
+                                        <code>LDAP/USER/DEL</code> voor het AD-account.</li>
+                                    <li><b>Day X + EmployeeSuspendPeriod + EmployeeDeletePeriod</b>
+                                        — de cron queueet <code>CLOUD/USER/DEL</code> voor
+                                        Google-account-verwijdering en stempelt
+                                        <code>google_account_deletion_requested_date</code>.</li>
+                                </ol>
+                                <p class="mb-0 mt-2"><small>
+                                    Periodes zijn instelbaar via de CIs
+                                    <code>EmployeeSuspendPeriod</code> en
+                                    <code>EmployeeDeletePeriod</code>
+                                    (default 30 + 30 dagen).
+                                </small></p>
+                            </div>
+                            <group>
+                                <group string="Phase 1 — Pending (uit groepen)">
+                                    <field name="deactivation_pending_since" readonly="1"/>
+                                    <field name="account_deactivation_due_date" readonly="1"/>
+                                </group>
+                                <group string="Phase 2 — Suspended (account inactief, AD weg)">
+                                    <field name="deactivation_date" readonly="1"/>
+                                    <field name="google_account_delete_due_date" readonly="1"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Phase 3 — Google-deletion gevraagd">
+                                    <field name="google_account_deletion_requested_date"
+                                           readonly="1"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <!-- Tab 6: Details -->
                         <page string="Details" name="details">
                             <field name="person_details_set">
                                 <list decoration-muted="not is_active">
@@ -237,6 +294,28 @@
                 <separator/>
                 <filter string="Employees" name="employees" domain="[('person_type_id.name', '=', 'EMPLOYEE')]"/>
                 <filter string="Students" name="students" domain="[('person_type_id.name', '=', 'STUDENT')]"/>
+                <separator/>
+                <filter string="Suspend pending"
+                        name="suspend_pending"
+                        domain="[('deactivation_pending_since', '!=', False),
+                                 ('is_active', '=', True)]"/>
+                <filter string="Suspend due (≤ vandaag)"
+                        name="suspend_due"
+                        domain="[('account_deactivation_due_date', '!=', False),
+                                 ('account_deactivation_due_date', '&lt;=', context_today().strftime('%Y-%m-%d')),
+                                 ('is_active', '=', True)]"/>
+                <filter string="Suspended (account inactief)"
+                        name="suspended"
+                        domain="[('deactivation_date', '!=', False),
+                                 ('is_active', '=', False)]"/>
+                <filter string="Google-delete due (≤ vandaag)"
+                        name="google_delete_due"
+                        domain="[('google_account_delete_due_date', '!=', False),
+                                 ('google_account_delete_due_date', '&lt;=', context_today().strftime('%Y-%m-%d')),
+                                 ('google_account_deletion_requested_date', '=', False)]"/>
+                <filter string="Google-delete gequeued"
+                        name="google_delete_requested"
+                        domain="[('google_account_deletion_requested_date', '!=', False)]"/>
             </search>
         </field>
     </record>
