@@ -87,7 +87,7 @@ SYNC_MODELS = [
             'name', 'name_short', 'name_tree', 'inst_nr', 'is_active',
             'street', 'street_nr', 'postal_code', 'community', 'country',
             'is_administrative', 'domain_internal', 'domain_external',
-            'has_ou', 'has_role', 'has_comgroup', 'has_secgroup', 'has_accounts',
+            'has_ou', 'has_role', 'has_comgroup', 'has_secgroup', 'has_odoo_group',
             'ou_fqdn_internal', 'ou_fqdn_external',
             'com_group_fqdn_internal', 'com_group_fqdn_external',
             'sec_group_fqdn_internal', 'sec_group_fqdn_external',
@@ -106,8 +106,8 @@ SYNC_MODELS = [
         'model': 'myschool.role',
         'natural_key': ['shortname'],
         'fields': [
-            'name', 'shortname', 'is_active', 'has_ui_access', 'has_group',
-            'has_accounts', 'priority', 'description',
+            'name', 'shortname', 'is_active', 'has_ui_access',
+            'priority', 'description',
         ],
         'references': {
             'role_type_id': {'model': 'myschool.role.type', 'key_field': 'name'},

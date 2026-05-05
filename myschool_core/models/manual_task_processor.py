@@ -135,9 +135,14 @@ class ManualTaskProcessor(models.AbstractModel):
         PropRelation = self.env['myschool.proprelation']
 
         # Build person vals
+        first_name = data.get('first_name', '')
+        last_name = data.get('last_name', '')
+        composite_name = data.get('name') or (
+            f"{last_name}, {first_name}".strip(', ') if (last_name or first_name) else '')
         person_vals = {
-            'first_name': data.get('first_name', ''),
-            'name': data.get('name', ''),
+            'first_name': first_name,
+            'last_name': last_name,
+            'name': composite_name,
             'is_active': True,
         }
         if data.get('email_cloud'):
@@ -165,7 +170,7 @@ class ManualTaskProcessor(models.AbstractModel):
                 if existing_user:
                     return {'success': False, 'error': f"User with login '{login}' already exists"}
                 user = self.env['res.users'].create({
-                    'name': f"{data.get('first_name', '')} {data.get('name', '')}".strip(),
+                    'name': f"{first_name} {last_name}".strip(),
                     'login': login,
                     'email': data.get('email_cloud') or login,
                 })
@@ -190,6 +195,8 @@ class ManualTaskProcessor(models.AbstractModel):
 
         # PERSON-TREE relation
         org_id = data.get('org_id')
+        org = None
+        school_org = None
         if org_id:
             org = self.env['myschool.org'].browse(org_id).exists()
             if org:
@@ -203,6 +210,111 @@ class ManualTaskProcessor(models.AbstractModel):
                     'is_active': True,
                 })
                 changes.append(f"Created PERSON-TREE relation to {org.name_tree or org.name}")
+
+                # Resolve the parent SCHOOL — needed for backend role PPSBR
+                # and LDAP provisioning. Use the existing helper from the
+                # backend processor to walk up the ORG-TREE.
+                processor = self.env['myschool.betask.processor']
+                if hasattr(processor, '_resolve_parent_school_from_org'):
+                    school_org = processor._resolve_parent_school_from_org(org)
+
+                # Auto-complete email_cloud + LDAP DN fields. The helper
+                # uses the target org's ou_fqdn_internal/external; the
+                # school is the most reliable container for that.
+                # Use the directly-linked org (not the school) so the
+                # OU-FQDN of the leaf (department/class) is reflected in
+                # person_fqdn_internal/external. The CN-build and UPN/
+                # email_cloud generation walk up to the school internally
+                # for the per-school CI and domain values.
+                if org and hasattr(processor, '_populate_person_account_fields'):
+                    try:
+                        processor._populate_person_account_fields(person, org)
+                        if person.person_fqdn_internal:
+                            changes.append(
+                                f"Set person_fqdn_internal: {person.person_fqdn_internal}")
+                        if person.person_fqdn_external:
+                            changes.append(
+                                f"Set person_fqdn_external: {person.person_fqdn_external}")
+                    except Exception as e:
+                        changes.append(f"WARN: FQDN auto-complete failed: {e}")
+
+        # ---------------------------------------------------------------
+        # Backend role PPSBR (STUDENT or EMPLOYEE) at school level
+        # ---------------------------------------------------------------
+        person_type_name = (data.get('person_type_name') or '').upper().strip()
+        ppsbr_role_name = None
+        if person_type_name == 'EMPLOYEE':
+            ppsbr_role_name = 'EMPLOYEE'
+        elif person_type_name == 'STUDENT':
+            ppsbr_role_name = 'STUDENT'
+
+        if ppsbr_role_name and school_org:
+            Role = self.env['myschool.role']
+            PropRelationType = self.env['myschool.proprelation.type']
+            backend_role = Role.search([('name', '=', ppsbr_role_name)], limit=1)
+            ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+            if backend_role and ppsbr_type:
+                # Avoid duplicate
+                exists = PropRelation.search([
+                    ('proprelation_type_id', '=', ppsbr_type.id),
+                    ('id_person', '=', person.id),
+                    ('id_org', '=', school_org.id),
+                    ('id_role', '=', backend_role.id),
+                    ('is_active', '=', True),
+                ], limit=1)
+                if not exists:
+                    ppsbr_name = _build_proprelation_name(
+                        'PPSBR', id_person=person, id_role=backend_role, id_org=school_org)
+                    new_ppsbr = PropRelation.create({
+                        'name': ppsbr_name,
+                        'proprelation_type_id': ppsbr_type.id,
+                        'id_person': person.id,
+                        'id_role': backend_role.id,
+                        'id_org': school_org.id,
+                        'is_active': True,
+                        'is_organisational': True,
+                        'automatic_sync': True,
+                    })
+                    changes.append(
+                        f"Created {ppsbr_role_name} PPSBR at {school_org.name}")
+                    # Same cascade the sync flow runs after a PPSBR is
+                    # added: queue LDAP/GROUP/ADD + LDAP/GROUPMEMBER/ADD
+                    # for every BRSO target_org with has_comgroup /
+                    # has_secgroup. Without this, manually-added persons
+                    # land in the OU but never enter their role's groups.
+                    grp_changes = self._cascade_ppsbr_group_membership(
+                        new_ppsbr, action='ADD')
+                    if grp_changes:
+                        changes.extend(grp_changes)
+                    # And re-sync the DB-side persongroup memberships so
+                    # PG-P relations populate for the new PPSBR.
+                    try:
+                        self._sync_persongroup_memberships(person)
+                    except Exception as e:
+                        _logger.warning(
+                            '[MANUAL-ADD] persongroup sync failed for %s: %s',
+                            person.name, e)
+            elif not backend_role:
+                changes.append(
+                    f"WARN: backend role '{ppsbr_role_name}' not found — PPSBR skipped")
+
+        # ---------------------------------------------------------------
+        # LDAP/USER/ADD betask — only when the resolved school is set up
+        # for LDAP/AD provisioning (has_ou flag on the school or its
+        # OU-for-classes/groups parent).
+        # ---------------------------------------------------------------
+        if org and school_org:
+            wants_ldap = bool(
+                getattr(school_org, 'has_ou', False)
+                or getattr(org, 'has_ou', False)
+            )
+            if wants_ldap:
+                label = f"LDAP/USER/ADD for {person.first_name} {person.name}"
+                changes.append(f"Queued {label}")
+                self._create_and_run_task('LDAP', 'USER', 'ADD', {
+                    'person_id': person.id,
+                    'org_id': org.id,
+                }, changes, label=label)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -225,7 +337,16 @@ class ManualTaskProcessor(models.AbstractModel):
             if not person:
                 return {'success': False, 'error': f'Person {person_id} not found'}
             person.write(update_vals)
-            return {'success': True, 'changes': f"Updated person {person.name}: {update_vals}"}
+            changes = [f"Updated person {person.name}: {update_vals}"]
+            # Cascade: any change to LDAP-relevant attributes (display name,
+            # email, abbreviation, etc.) needs to be reflected in AD.
+            ldap_attrs = {
+                'first_name', 'last_name', 'name', 'short_name', 'abbreviation',
+                'email_cloud', 'email_private',
+            }
+            if any(k in update_vals for k in ldap_attrs):
+                self._emit_ldap_user_task(person, 'UPD', changes)
+            return {'success': True, 'changes': '\n'.join(changes)}
 
         # Move mode (legacy)
         new_org_id = data.get('new_org_id')
@@ -245,13 +366,17 @@ class ManualTaskProcessor(models.AbstractModel):
 
         pt_type = self._get_or_create_proprelation_type('PERSON-TREE')
 
-        # Deactivate old PERSON-TREE relations
+        # Capture the old PERSON-TREE org(s) BEFORE deactivation so we can
+        # detect whether the school changed and clean up old PPSBRs.
         old_rels = PropRelation.search([
             ('id_person', '=', person_id),
             ('id_org', '!=', False),
             ('is_active', '=', True),
             ('proprelation_type_id', '=', pt_type.id),
         ])
+        old_orgs = old_rels.mapped('id_org')
+
+        # Deactivate old PERSON-TREE relations
         if old_rels:
             old_rels.write({'is_active': False})
 
@@ -265,10 +390,140 @@ class ManualTaskProcessor(models.AbstractModel):
             'is_active': True,
         })
 
-        return {
-            'success': True,
-            'changes': f"Moved person {person.first_name} {person.name} to {new_org.name_tree or new_org.name}",
-        }
+        changes = [
+            f"Moved person {person.first_name} {person.name} to "
+            f"{new_org.name_tree or new_org.name}"
+        ]
+
+        # ---------------------------------------------------------------
+        # Cascade: re-sync school-level PPSBR + LDAP user when the school
+        # changes (e.g. moving from one school's department to another).
+        # ---------------------------------------------------------------
+        processor = self.env['myschool.betask.processor']
+        new_school = (processor._resolve_parent_school_from_org(new_org)
+                      if hasattr(processor, '_resolve_parent_school_from_org')
+                      else None)
+        old_schools = self.env['myschool.org']
+        if hasattr(processor, '_resolve_parent_school_from_org'):
+            for o in old_orgs:
+                s = processor._resolve_parent_school_from_org(o)
+                if s:
+                    old_schools |= s
+
+        # Schools that are no longer the active school: deactivate the
+        # backend role PPSBR (EMPLOYEE/STUDENT) at those schools.
+        ppsbr_role_name = self._get_person_backend_role_name(person)
+        if ppsbr_role_name:
+            stale_schools = old_schools - (new_school or self.env['myschool.org'])
+            ppsbr_changes = self._cleanup_school_ppsbr(
+                person, stale_schools, ppsbr_role_name)
+            changes.extend(ppsbr_changes)
+
+            # Make sure the new school has an active PPSBR.
+            if new_school:
+                created = self._ensure_school_ppsbr(person, new_school, ppsbr_role_name)
+                if created:
+                    changes.append(
+                        f"Created {ppsbr_role_name} PPSBR at {new_school.name}")
+
+        # LDAP cascade: emit USER/UPD so the AD account is moved/updated.
+        if new_school and self._school_wants_ldap(new_school, new_org):
+            label = f"LDAP/USER/UPD for {person.first_name} {person.name}"
+            changes.append(f"Queued {label}")
+            self._create_and_run_task('LDAP', 'USER', 'UPD', {
+                'person_id': person.id,
+                'org_id': new_org.id,
+            }, changes, label=label)
+
+        return {'success': True, 'changes': '\n'.join(changes)}
+
+    # ------------------------------------------------------------------
+    # Cascade helpers
+    # ------------------------------------------------------------------
+
+    @api.model
+    def _get_person_backend_role_name(self, person):
+        """Return 'EMPLOYEE' / 'STUDENT' / None based on person_type."""
+        if not person or not person.person_type_id:
+            return None
+        ptn = (person.person_type_id.name or '').upper().strip()
+        if ptn in ('EMPLOYEE', 'STUDENT'):
+            return ptn
+        return None
+
+    @api.model
+    def _school_wants_ldap(self, school_org, child_org=None):
+        """Heuristic: this school is configured for LDAP if either it or
+        the child org carries the has_ou flag."""
+        candidates = [school_org]
+        if child_org and child_org.id != school_org.id:
+            candidates.append(child_org)
+        return any(
+            getattr(o, 'has_ou', False)
+            for o in candidates if o
+        )
+
+    @api.model
+    def _ensure_school_ppsbr(self, person, school_org, role_name):
+        """Create a PPSBR for the given backend role at school if it doesn't
+        exist yet. Returns True if a relation was created, False if one was
+        already active."""
+        Role = self.env['myschool.role']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        backend_role = Role.search([('name', '=', role_name)], limit=1)
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if not backend_role or not ppsbr_type:
+            return False
+        existing = PropRelation.search([
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('id_person', '=', person.id),
+            ('id_org', '=', school_org.id),
+            ('id_role', '=', backend_role.id),
+            ('is_active', '=', True),
+        ], limit=1)
+        if existing:
+            return False
+        PropRelation.create({
+            'name': _build_proprelation_name(
+                'PPSBR', id_person=person, id_role=backend_role, id_org=school_org),
+            'proprelation_type_id': ppsbr_type.id,
+            'id_person': person.id,
+            'id_role': backend_role.id,
+            'id_org': school_org.id,
+            'is_active': True,
+            'is_organisational': True,
+            'automatic_sync': True,
+        })
+        return True
+
+    @api.model
+    def _cleanup_school_ppsbr(self, person, schools, role_name):
+        """Deactivate any active PPSBR for `role_name` linking this person
+        to one of the given schools. Returns a list of change-log lines."""
+        Role = self.env['myschool.role']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        changes = []
+        if not schools:
+            return changes
+        backend_role = Role.search([('name', '=', role_name)], limit=1)
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if not backend_role or not ppsbr_type:
+            return changes
+        stale = PropRelation.search([
+            ('proprelation_type_id', '=', ppsbr_type.id),
+            ('id_person', '=', person.id),
+            ('id_org', 'in', schools.ids),
+            ('id_role', '=', backend_role.id),
+            ('is_active', '=', True),
+        ])
+        if stale:
+            stale.write({'is_active': False})
+            for r in stale:
+                changes.append(
+                    f"Deactivated stale {role_name} PPSBR at {r.id_org.name}")
+        return changes
 
     @api.model
     def process_manual_person_deact(self, task):
@@ -288,6 +543,10 @@ class ManualTaskProcessor(models.AbstractModel):
 
         changes = []
         person_name = f"{person.first_name} {person.name}" if person.first_name else person.name
+
+        # LDAP cascade — emit BEFORE we deactivate, so the handler still
+        # has access to the person record.
+        self._emit_ldap_user_task(person, 'DEACT', changes)
 
         person.write({'is_active': False, 'automatic_sync': False})
         changes.append(f"Deactivated person: {person_name}")
@@ -309,6 +568,114 @@ class ManualTaskProcessor(models.AbstractModel):
         return {'success': True, 'changes': '\n'.join(changes)}
 
     @api.model
+    def _create_and_run_task(self, target, obj, action, data, changes, label=None):
+        """Create a betask AND immediately try to process it.
+
+        Cascade tasks generated from inside a manual task should not be
+        left dangling for the user to start manually — they must run as
+        part of the same logical operation. We catch processing errors so
+        a downstream LDAP failure doesn't roll back the parent operation;
+        the failing task stays in the betask list with status='error' so
+        it can be inspected/retried.
+        """
+        service = self.env['myschool.betask.service']
+        processor = self.env['myschool.betask.processor']
+        task = service.create_task(target, obj, action, data=data, auto_sync=True)
+        prefix = label or f"{target}/{obj}/{action}"
+        try:
+            processor.process_single_task(task)
+        except Exception as e:
+            _logger.exception('Cascade task %s failed', prefix)
+            changes.append(f"  {prefix} task FAILED: {e}")
+            return task
+        if task.status == 'completed_ok':
+            changes.append(f"  {prefix} → completed_ok")
+        else:
+            changes.append(f"  {prefix} → {task.status}: {task.error_description or task.changes or ''}")
+        return task
+
+    @api.model
+    def _emit_ldap_user_task(self, person, action, changes):
+        """Queue *and run* an LDAP/USER/<action> betask if any of the
+        person's active PERSON-TREE orgs is in an LDAP-enabled school.
+        Skips silently when no LDAP school is found."""
+        if not person:
+            return
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        pt_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        if not pt_type:
+            return
+        pt_rel = PropRelation.search([
+            ('proprelation_type_id', '=', pt_type.id),
+            ('id_person', '=', person.id),
+            ('id_org', '!=', False),
+            ('is_active', '=', True),
+        ], limit=1)
+        org = pt_rel.id_org if pt_rel else False
+        if not org:
+            return
+        processor = self.env['myschool.betask.processor']
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        label = f"LDAP/USER/{action} for {person.first_name} {person.name}"
+        changes.append(f"Queued {label}")
+        self._create_and_run_task('LDAP', 'USER', action, {
+            'person_id': person.id,
+            'org_id': org.id,
+        }, changes, label=label)
+
+    @api.model
+    def _emit_ldap_group_renames(self, org, old_name, new_name, kind, changes):
+        """Emit LDAP/GROUP/UPD when a COM/SEC group's name has changed on
+        the org. The handler is expected to perform the AD modifyDN/rename.
+        kind: 'COM' or 'SEC'.
+        """
+        if not old_name or not new_name or old_name == new_name:
+            return
+        processor = self.env['myschool.betask.processor']
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        label = f"LDAP/GROUP/UPD ({kind}: {old_name} -> {new_name})"
+        changes.append(f"Queued {label}")
+        self._create_and_run_task('LDAP', 'GROUP', 'UPD', {
+            'org_id': org.id,
+            'group_kind': kind,
+            'old_name': old_name,
+            'new_name': new_name,
+        }, changes, label=label)
+
+    @api.model
+    def _emit_ldap_group_del_for_org(self, org, changes):
+        """Emit LDAP/GROUP/DEL for any COM/SEC group attached to the org
+        when its parent school is LDAP-enabled. Skip silently otherwise."""
+        if not org:
+            return
+        processor = self.env['myschool.betask.processor']
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        com_name = org.com_group_name if 'com_group_name' in org._fields else None
+        sec_name = org.sec_group_name if 'sec_group_name' in org._fields else None
+        for group_name, kind in ((com_name, 'COM'), (sec_name, 'SEC')):
+            if group_name:
+                label = f"LDAP/GROUP/DEL ({kind}: {group_name})"
+                changes.append(f"Queued {label}")
+                self._create_and_run_task('LDAP', 'GROUP', 'DEL', {
+                    'org_id': org.id,
+                    'group_name': group_name,
+                    'group_kind': kind,
+                }, changes, label=label)
+
+    @api.model
     def process_manual_person_del(self, task):
         """Delete a person and all related proprelations."""
         data = self._get_manual_data(task)
@@ -326,6 +693,11 @@ class ManualTaskProcessor(models.AbstractModel):
 
         changes = []
         person_name = f"{person.first_name} {person.name}" if person.first_name else person.name
+
+        # LDAP cascade — emit BEFORE we delete the proprelations so the
+        # handler can still resolve the person's org context. The actual
+        # AD account removal will run when the LDAP betask is processed.
+        self._emit_ldap_user_task(person, 'DEL', changes)
 
         # Delete proprelations first
         PropRelation = self.env['myschool.proprelation']
@@ -386,7 +758,7 @@ class ManualTaskProcessor(models.AbstractModel):
                         'com_group_fqdn_internal', 'com_group_fqdn_external',
                         'sec_group_name', 'sec_group_fqdn_internal', 'sec_group_fqdn_external',
                         'domain_internal', 'domain_external',
-                        'name_tree', 'has_ou', 'has_role', 'has_comgroup', 'has_secgroup'):
+                        'name_tree', 'has_ou', 'has_comgroup', 'has_secgroup'):
                 if data.get(key) is not None:
                     org_vals[key] = data[key]
             if data.get('org_type_id'):
@@ -460,7 +832,41 @@ class ManualTaskProcessor(models.AbstractModel):
             self._sync_org_persongroup(child_org)
             changes.append(f"Synced persongroup for {child_org.name}")
 
+        # LDAP cascade — provision the OU container in AD so subsequent
+        # user/group creations in this org succeed without _ensure_ou_path
+        # having to backfill.
+        self._emit_ldap_org_add(child_org, changes)
+
         return {'success': True, 'changes': '\n'.join(changes)}
+
+    @api.model
+    def _emit_ldap_org_add(self, org, changes):
+        """Queue *and run* an LDAP/ORG/ADD task for the org if its parent
+        school is LDAP-enabled and the org has either an
+        ``ou_fqdn_internal`` (regular org → OU) or a group FQDN
+        (persongroup → AD group)."""
+        if not org:
+            return
+        org_type_name = (org.org_type_id.name or '').upper()
+        is_persongroup = org_type_name == 'PERSONGROUP'
+        has_target_dn = (
+            bool(getattr(org, 'ou_fqdn_internal', '')) if not is_persongroup
+            else (bool(getattr(org, 'com_group_fqdn_internal', ''))
+                  or bool(getattr(org, 'sec_group_fqdn_internal', '')))
+        )
+        if not has_target_dn:
+            return
+        processor = self.env['myschool.betask.processor']
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        label = f"LDAP/ORG/ADD for {org.name}"
+        changes.append(f"Queued {label}")
+        self._create_and_run_task('LDAP', 'ORG', 'ADD', {
+            'org_id': org.id,
+        }, changes, label=label)
 
     @api.model
     def process_manual_org_upd(self, task):
@@ -480,8 +886,24 @@ class ManualTaskProcessor(models.AbstractModel):
             org = Org.browse(org_id).exists()
             if not org:
                 return {'success': False, 'error': f'Org {org_id} not found'}
+
+            # Snapshot LDAP-relevant attributes BEFORE write so we know
+            # which AD groups must be renamed.
+            old_com_name = org.com_group_name if 'com_group_name' in org._fields else None
+            old_sec_name = org.sec_group_name if 'sec_group_name' in org._fields else None
+            old_name = org.name
+
             org.write(update_vals)
-            return {'success': True, 'changes': f"Updated org {org.name}: {update_vals}"}
+            changes = [f"Updated org {org.name}: {update_vals}"]
+
+            # Cascade: COM/SEC group renames in AD.
+            new_com_name = org.com_group_name if 'com_group_name' in org._fields else None
+            new_sec_name = org.sec_group_name if 'sec_group_name' in org._fields else None
+            self._emit_ldap_group_renames(
+                org, old_com_name, new_com_name, 'COM', changes)
+            self._emit_ldap_group_renames(
+                org, old_sec_name, new_sec_name, 'SEC', changes)
+            return {'success': True, 'changes': '\n'.join(changes)}
 
         # Move mode (legacy)
         new_parent_id = data.get('new_parent_id')
@@ -604,6 +1026,11 @@ class ManualTaskProcessor(models.AbstractModel):
         changes = []
         org_name = org.name
 
+        # LDAP cascade — emit GROUP/DEL betasks BEFORE unlink so the
+        # handler can still resolve the org context when the AD groups
+        # are deleted. Captures both COM and SEC group names if present.
+        self._emit_ldap_group_del_for_org(org, changes)
+
         # Delete all proprelations referencing this org
         all_rels = PropRelation.search([
             '|', '|',
@@ -694,34 +1121,109 @@ class ManualTaskProcessor(models.AbstractModel):
                 return {'success': True, 'changes': f"Reactivated {rel_type_name} relation (ID: {inactive.id})"}
             return {'success': False, 'error': f'{rel_type_name} relation already exists'}
 
-        # Set group flags from data (BRSO only)
-        for bool_field in ('has_accounts', 'has_ldap_com_group', 'has_ldap_sec_group', 'has_odoo_group'):
-            if data.get(bool_field):
-                proprel_vals[bool_field] = True
-
         # Build name
         proprel_vals['name'] = _build_proprelation_name(rel_type_name, **name_kwargs)
 
         new_rel = PropRelation.create(proprel_vals)
         changes = [f"Created {rel_type_name} relation: {proprel_vals['name']}"]
 
-        # Create groups and sync members for BRSO with group flags
-        if rel_type_name == 'BRSO':
-            group_changes = self._process_brso_groups(new_rel, data)
-            if group_changes:
-                changes.extend(group_changes)
+        # BRSO setup-intent: when the wizard ticks "this role gets a
+        # COM/SEC group at this org" or "accounts here", we *promote*
+        # those flags onto the **target org**. The org-flag-flip handler
+        # (``_handle_persongroup_flags``) then provisions the persongroup
+        # + AD groups. No more BRSO-level flags.
+        if rel_type_name == 'BRSO' and new_rel.id_org:
+            target_promote = {}
+            if data.get('has_comgroup') or data.get('has_ldap_com_group') \
+                    or data.get('has_odoo_group'):
+                if not new_rel.id_org.has_comgroup:
+                    target_promote['has_comgroup'] = True
+            if data.get('has_secgroup') or data.get('has_ldap_sec_group'):
+                if not new_rel.id_org.has_secgroup:
+                    target_promote['has_secgroup'] = True
+            if data.get('has_odoo_group') and not new_rel.id_org.has_odoo_group:
+                target_promote['has_odoo_group'] = True
+            if target_promote:
+                new_rel.id_org.write(target_promote)
+                changes.append(
+                    f"Promoted setup intent to {new_rel.id_org.name}: "
+                    f"{list(target_promote)}")
+
+        # Cascade for PPSBR (person-role-school link): if the role has any
+        # COM/SEC LDAP groups attached at this school via BRSO, emit
+        # GROUPMEMBER/ADD tasks so the AD groups get the new member.
+        if rel_type_name == 'PPSBR':
+            grp_changes = self._cascade_ppsbr_group_membership(new_rel, action='ADD')
+            if grp_changes:
+                changes.extend(grp_changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
     @api.model
+    def _cascade_ppsbr_group_membership(self, ppsbr, action='ADD'):
+        """When a PPSBR is (de)activated, queue LDAP/GROUPMEMBER tasks for
+        every COM/SEC group that exists for the same role at the same
+        school (or any ORG-TREE ancestor of the PPSBR's org) via an
+        active BRSO with has_ldap_com_group / has_ldap_sec_group.
+        action: 'ADD' or 'REMOVE'.
+        """
+        changes = []
+        if not ppsbr.id_person or not ppsbr.id_role or not ppsbr.id_org:
+            return changes
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+        if not brso_type:
+            return changes
+        # BRSOs are typically defined on a koepel/parent school while
+        # PPSBRs live at the concrete sub-school. Match against the
+        # entire ORG-TREE chain so a PPSBR at SO2 finds the BRSO that's
+        # registered at SO.
+        org_ancestors = self._collect_org_ancestor_ids(ppsbr.id_org)
+        if not org_ancestors:
+            org_ancestors = [ppsbr.id_org.id]
+        brso = PropRelation.search([
+            ('proprelation_type_id', '=', brso_type.id),
+            ('id_role', '=', ppsbr.id_role.id),
+            ('id_org_parent', 'in', org_ancestors),
+            ('is_active', '=', True),
+        ], limit=1)
+        if not brso or not brso.id_org:
+            return changes
+        # Source of truth = the target org's group-flags (post-migration).
+        target_org = brso.id_org
+        for org_flag, kind in (('has_comgroup', 'COM'),
+                               ('has_secgroup', 'SEC')):
+            if getattr(target_org, org_flag, False):
+                lbl = (f"LDAP/GROUPMEMBER/{action} ({kind}) for "
+                       f"{ppsbr.id_person.name}")
+                changes.append(f"Queued {lbl}")
+                self._create_and_run_task(
+                    'LDAP', 'GROUPMEMBER', action,
+                    {
+                        'person_id': ppsbr.id_person.id,
+                        'brso_id': brso.id,
+                        'org_id': target_org.id,
+                        'group_kind': kind,
+                    },
+                    changes, label=lbl)
+        return changes
+
     @api.model
     def process_manual_proprelation_upd(self, task):
-        """Update proprelation fields (is_master, automatic_sync, name, etc.)."""
+        """Update proprelation fields (is_master, automatic_sync, name, etc.).
+
+        For PPSBR records whose `id_role` or `id_org` change, this also
+        emits LDAP/GROUPMEMBER REMOVE on the old role/org context and ADD
+        on the new one — effectively a member-move in the AD groups.
+        """
         data = self._get_manual_data(task)
         if not data:
             return {'success': False, 'error': 'No data in task'}
 
         PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
         changes = []
 
         proprelation_id = data.get('proprelation_id')
@@ -731,20 +1233,53 @@ class ManualTaskProcessor(models.AbstractModel):
         if not update_vals:
             return {'success': False, 'error': 'No vals to update'}
 
+        # Determine whether the update will move a PPSBR member between
+        # groups (changes id_role or id_org).
+        relation_move_keys = {'id_role', 'id_org'}
+        is_member_move = bool(set(update_vals.keys()) & relation_move_keys)
+
+        target_ids = []
         if proprelation_id:
-            rel = PropRelation.browse(proprelation_id).exists()
-            if rel:
-                rel.write(update_vals)
-                changes.append(f"Updated proprelation {rel.name} (ID: {rel.id}): {update_vals}")
-
+            target_ids.append(proprelation_id)
         if proprelation_ids:
-            rels = PropRelation.browse(proprelation_ids).exists()
-            if rels:
-                rels.write(update_vals)
-                changes.append(f"Updated {len(rels)} proprelation(s): {update_vals}")
+            target_ids.extend(proprelation_ids)
 
-        if not changes:
+        if not target_ids:
+            return {'success': False, 'error': 'No proprelations specified'}
+
+        rels = PropRelation.browse(target_ids).exists()
+        if not rels:
             return {'success': False, 'error': 'No proprelations found to update'}
+
+        # Snapshot old PPSBRs before write so we can emit REMOVE for the
+        # old role+org combination.
+        old_ppsbrs = []
+        if is_member_move and ppsbr_type:
+            for r in rels.filtered(lambda x: x.proprelation_type_id.id == ppsbr_type.id):
+                old_ppsbrs.append({
+                    'id': r.id,
+                    'person_id': r.id_person.id if r.id_person else None,
+                    'role_id': r.id_role.id if r.id_role else None,
+                    'org_id': r.id_org.id if r.id_org else None,
+                })
+            for snap in old_ppsbrs:
+                # Build a virtual ppsbr-like browse record with old fields by
+                # browsing the relation and emitting cascade based on its
+                # current values (still old before write).
+                ppsbr_rec = PropRelation.browse(snap['id'])
+                grp_changes = self._cascade_ppsbr_group_membership(
+                    ppsbr_rec, action='REMOVE')
+                changes.extend(grp_changes)
+
+        rels.write(update_vals)
+        changes.append(f"Updated {len(rels)} proprelation(s): {update_vals}")
+
+        # After write, emit ADD for the new role+org context on the same
+        # PPSBR records.
+        if is_member_move and ppsbr_type:
+            for r in rels.filtered(lambda x: x.proprelation_type_id.id == ppsbr_type.id):
+                grp_changes = self._cascade_ppsbr_group_membership(r, action='ADD')
+                changes.extend(grp_changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -755,19 +1290,27 @@ class ManualTaskProcessor(models.AbstractModel):
             return {'success': False, 'error': 'No data in task'}
 
         PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
         changes = []
 
-        # Collect affected org IDs for flag update
-        affected_org_ids = set()
+        # Capture PPSBRs we'll deactivate so we can emit LDAP cascades
+        # BEFORE the records are written inactive.
+        affected_ppsbrs = self.env['myschool.proprelation']
 
         # Mode 1: explicit IDs
         proprelation_ids = data.get('proprelation_ids')
         if proprelation_ids:
             rels = PropRelation.browse(proprelation_ids).exists()
             if rels:
-                for r in rels:
-                    if r.id_org:
-                        affected_org_ids.add(r.id_org.id)
+                if ppsbr_type:
+                    affected_ppsbrs |= rels.filtered(
+                        lambda r: r.proprelation_type_id.id == ppsbr_type.id)
+                # Emit LDAP cascade BEFORE deactivation.
+                for ppsbr in affected_ppsbrs:
+                    grp_changes = self._cascade_ppsbr_group_membership(
+                        ppsbr, action='REMOVE')
+                    changes.extend(grp_changes)
                 rels.write({'is_active': False})
                 changes.append(f"Deactivated {len(rels)} proprelation(s) by ID")
 
@@ -784,17 +1327,17 @@ class ManualTaskProcessor(models.AbstractModel):
                 ('is_active', '=', True),
             ])
             if rels:
+                # Cascade for PPSBR before deactivation
+                if rel_type_name == 'PPSBR':
+                    for ppsbr in rels:
+                        grp_changes = self._cascade_ppsbr_group_membership(
+                            ppsbr, action='REMOVE')
+                        changes.extend(grp_changes)
                 rels.write({'is_active': False})
-                affected_org_ids.add(org_id)
                 changes.append(f"Deactivated {len(rels)} {rel_type_name} relation(s) for person {person_id} in org {org_id}")
 
         if not changes:
             return {'success': False, 'error': 'No proprelations found to deactivate'}
-
-        # Update org feature flags after BRSO deactivation
-        if affected_org_ids:
-            orgs = self.env['myschool.org'].browse(list(affected_org_ids)).exists()
-            orgs.update_org_flags()
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -916,12 +1459,12 @@ class ManualTaskProcessor(models.AbstractModel):
 
     @api.model
     def _get_brso_member_ids(self, brso_rel):
-        """Get the person IDs for a BRSO based on has_accounts flag.
+        """Get the person IDs covered by a BRSO: every person that has
+        an active PPSBR for the BRSO's role at the BRSO's school.
 
-        has_accounts=True:  persons in the OU ∩ persons with role
-                            (accounts live in this org, so OU-scoped)
-        has_accounts=False: all persons with the role in school-context
-                            (role-based membership, not OU-scoped)
+        The old has_accounts split (OU-scoped vs role-scoped) is gone;
+        the role-scoped reading is the right default — everyone with
+        the role belongs in the resulting group/tree position.
         """
         org = brso_rel.id_org
         role = brso_rel.id_role
@@ -931,306 +1474,8 @@ class ManualTaskProcessor(models.AbstractModel):
 
         processor = self.env['myschool.betask.processor']
         school_org = processor._resolve_school_org(school_org)
+        return self._find_role_persons_at_school(role, school_org)
 
-        if brso_rel.has_accounts:
-            # OU-scoped: persons in this org WITH the role
-            persons_in_ou = set(self._find_persons_in_ou(org))
-            persons_with_role = set(self._find_role_persons_at_school(role, school_org))
-            return list(persons_in_ou & persons_with_role)
-        else:
-            # School-context: all persons with the role at the school
-            return self._find_role_persons_at_school(role, school_org)
-
-    @api.model
-    def _process_brso_groups(self, brso_rel, data):
-        """Create LDAP/Odoo groups for a BRSO and add members.
-
-        Uses org.com_group_name and org.sec_group_name for naming.
-        Uses com_group_name as Odoo group name.
-
-        Membership strategy (from brso_rel.has_accounts):
-          True:  persons in the OU with the role (PERSON-TREE ∩ PPSBR)
-          False: persons with the role in school-context (PPSBR)
-
-        Args:
-            brso_rel: The BRSO proprelation record.
-            data: Dict with flags being enabled (has_ldap_com_group, etc.).
-
-        Returns:
-            List of change description strings.
-        """
-        changes = []
-
-        has_accounts = data.get('has_accounts', False)
-        has_ldap_com = data.get('has_ldap_com_group', False)
-        has_ldap_sec = data.get('has_ldap_sec_group', False)
-        has_odoo = data.get('has_odoo_group', False)
-
-        if not (has_accounts or has_ldap_com or has_ldap_sec or has_odoo):
-            return changes
-
-        org = brso_rel.id_org
-        role = brso_rel.id_role
-        school_org = brso_rel.id_org_parent
-        if not org or not role:
-            _logger.warning('[BRSO-GRP] Missing org or role on BRSO %s', brso_rel.name)
-            return changes
-
-        # Resolve school
-        processor = self.env['myschool.betask.processor']
-        if school_org:
-            school_org = processor._resolve_school_org(school_org)
-
-        # Use org's group name fields; fallback to name_tree-based if not set
-        com_name = org.com_group_name
-        sec_name = org.sec_group_name
-        if not com_name or not sec_name:
-            built_com, built_sec = self._build_org_tree_group_names(org, school_org)
-            if not com_name:
-                com_name = built_com
-            if not sec_name:
-                sec_name = built_sec
-            if not com_name:
-                _logger.warning('[BRSO-GRP] No group name for org %s', org.name)
-                return changes
-            # Persist the computed names
-            org.write({'com_group_name': com_name, 'sec_group_name': sec_name})
-            changes.append(f'Set org group names: {com_name} / {sec_name}')
-
-        service = self.env['myschool.betask.service']
-
-        # --- Create accounts and update tree positions when has_accounts enabled ---
-        if has_accounts:
-            person_ids = self._get_brso_member_ids(brso_rel)
-            for person_id in person_ids:
-                # LDAP account
-                service.create_task('LDAP', 'USER', 'ADD', data={
-                    'person_id': person_id,
-                    'org_id': org.id,
-                })
-                # Odoo account
-                service.create_task('ODOO', 'PERSON', 'ADD', data={
-                    'person_id': person_id,
-                })
-            if person_ids:
-                changes.append(f'Queued account creation (LDAP+Odoo) for {len(person_ids)} person(s)')
-
-            # Update PERSON-TREE positions and FQDN fields
-            self._update_tree_positions_for_brso(brso_rel)
-            changes.append(f'Updated tree positions for persons in {org.name}')
-
-        # --- Create LDAP COM group + persongroup ---
-        if has_ldap_com:
-            service.create_task('LDAP', 'GROUP', 'ADD', data={
-                'group_name': com_name,
-                'org_id': org.id,
-                'description': f'COM group for role {role.name} at {org.name}',
-            })
-            changes.append(f'Queued LDAP COM group: {com_name}')
-
-            # Create persongroup with COM naming convention
-            pg, pg_created = processor._find_or_create_persongroup(
-                com_name, com_name, school_org,
-                source_label=f'brso-com:{role.name}',
-                group_name_override=com_name)
-            if pg:
-                pg.write({
-                    'has_comgroup': True,
-                    'com_group_name': com_name,
-                })
-                action = 'Created' if pg_created else 'Found'
-                changes.append(f'{action} COM persongroup: {pg.name} (ID: {pg.id})')
-
-                # Sync PG-P members
-                person_ids = self._get_brso_member_ids(brso_rel)
-                if person_ids:
-                    result = processor._sync_pg_p_members(pg, person_ids,
-                                                          source_label=f'brso-com:{role.name}')
-                    changes.append(f'PG-P sync: +{result.get("added", 0)} -{result.get("removed", 0)} members')
-            else:
-                changes.append(f'WARNING: Could not create COM persongroup for {com_name}')
-
-        # --- Create LDAP SEC group + persongroup ---
-        if has_ldap_sec:
-            service.create_task('LDAP', 'GROUP', 'ADD', data={
-                'group_name': sec_name,
-                'org_id': org.id,
-                'description': f'SEC group for role {role.name} at {org.name}',
-            })
-            changes.append(f'Queued LDAP SEC group: {sec_name}')
-
-            # Create persongroup with SEC naming convention
-            _logger.info(f'[BRSO-GRP] Creating SEC persongroup: name={sec_name}, school={school_org.name}')
-            pg, pg_created = processor._find_or_create_persongroup(
-                sec_name, sec_name, school_org,
-                source_label=f'brso-sec:{role.name}',
-                group_name_override=sec_name)
-            _logger.info(f'[BRSO-GRP] _find_or_create_persongroup returned: pg={pg}, created={pg_created}')
-            if pg:
-                # Ensure correct group fields on persongroup
-                pg.write({
-                    'has_secgroup': True,
-                    'sec_group_name': sec_name,
-                    'com_group_name': sec_name,
-                })
-                _logger.info(f'[BRSO-GRP] Updated persongroup {pg.id}: name={pg.name}, '
-                             f'name_short={pg.name_short}, com_group_name={pg.com_group_name}, '
-                             f'sec_group_name={pg.sec_group_name}')
-                action = 'Created' if pg_created else 'Found'
-                changes.append(f'{action} persongroup: {pg.name} (ID: {pg.id})')
-
-                # Sync PG-P members for the persongroup
-                person_ids = self._get_brso_member_ids(brso_rel)
-                if person_ids:
-                    result = processor._sync_pg_p_members(pg, person_ids,
-                                                          source_label=f'brso-sec:{role.name}')
-                    changes.append(f'PG-P sync: +{result.get("added", 0)} -{result.get("removed", 0)} members')
-            else:
-                changes.append(f'WARNING: Could not create persongroup for {sec_name}')
-
-        # --- Create Odoo group (using COM naming convention) + persongroup ---
-        odoo_group = None
-        if has_odoo:
-            ResGroups = self.env['res.groups']
-            odoo_group = ResGroups.search([('name', '=', com_name)], limit=1)
-            if not odoo_group:
-                odoo_group = ResGroups.create({'name': com_name})
-                changes.append(f'Created Odoo group: {com_name}')
-            else:
-                changes.append(f'Odoo group already exists: {com_name}')
-
-            # Create persongroup with COM naming convention
-            pg, pg_created = processor._find_or_create_persongroup(
-                com_name, com_name, school_org,
-                source_label=f'brso-odoo:{role.name}',
-                group_name_override=com_name)
-            if pg:
-                pg.write({'has_comgroup': True, 'com_group_name': com_name})
-                action = 'Created' if pg_created else 'Found'
-                changes.append(f'{action} Odoo persongroup: {pg.name} (ID: {pg.id})')
-
-                person_ids = self._get_brso_member_ids(brso_rel)
-                if person_ids:
-                    result = processor._sync_pg_p_members(pg, person_ids,
-                                                          source_label=f'brso-odoo:{role.name}')
-                    changes.append(f'PG-P sync: +{result.get("added", 0)} -{result.get("removed", 0)} members')
-            else:
-                changes.append(f'WARNING: Could not create Odoo persongroup for {com_name}')
-
-        # --- Add members to groups ---
-        person_ids = self._get_brso_member_ids(brso_rel)
-        strategy = 'OU-based' if brso_rel.has_accounts else 'role-based'
-        if person_ids:
-            changes.append(f'Found {len(person_ids)} person(s) ({strategy}) for {org.name}')
-            for person_id in person_ids:
-                if has_ldap_com:
-                    service.create_task('LDAP', 'GROUPMEMBER', 'ADD', data={
-                        'group_name': com_name,
-                        'person_id': person_id,
-                        'org_id': org.id,
-                    })
-                if has_ldap_sec:
-                    service.create_task('LDAP', 'GROUPMEMBER', 'ADD', data={
-                        'group_name': sec_name,
-                        'person_id': person_id,
-                        'org_id': org.id,
-                    })
-                if has_odoo and odoo_group:
-                    task = service.create_task('ODOO', 'GROUPMEMBER', 'ADD', data={
-                        'person_id': person_id,
-                        'group_id': odoo_group.id,
-                    })
-                    # Execute immediately and mark completed
-                    person = self.env['myschool.person'].browse(person_id)
-                    if person.exists() and person.odoo_user_id:
-                        person.odoo_user_id.write({'groups_id': [(4, odoo_group.id)]})
-                        task.write({'status': 'completed_ok', 'changes': f'Added {person.odoo_user_id.login} to {odoo_group.name}'})
-        else:
-            changes.append(f'No persons found ({strategy}) for {org.name}')
-
-        # Update org feature flags
-        org.update_org_flags()
-
-        return changes
-
-    @api.model
-    def _remove_brso_groups(self, brso_rel, flags):
-        """Delete groups entirely when has_* flags become false on a BRSO.
-
-        Deletes: persongroup org, LDAP group, Odoo res.groups.
-        All via betasks, executed immediately and marked completed.
-
-        Args:
-            brso_rel: The BRSO proprelation record.
-            flags: Dict of flag names being disabled (e.g. {'has_ldap_com_group': True}).
-
-        Returns:
-            List of change description strings.
-        """
-        changes = []
-
-        org = brso_rel.id_org
-        role = brso_rel.id_role
-        school_org = brso_rel.id_org_parent
-        if not org or not role:
-            return changes
-
-        processor = self.env['myschool.betask.processor']
-        if school_org:
-            school_org = processor._resolve_school_org(school_org)
-
-        com_name = org.com_group_name
-        sec_name = org.sec_group_name
-        if not com_name and not sec_name:
-            return changes
-
-        service = self.env['myschool.betask.service']
-        Org = self.env['myschool.org']
-
-        # --- Delete COM group (LDAP + persongroup) ---
-        if flags.get('has_ldap_com_group') and com_name:
-            # Delete LDAP group
-            service.create_task('LDAP', 'GROUP', 'DEL', data={
-                'group_name': com_name,
-                'org_id': org.id,
-            })
-            changes.append(f'Queued LDAP COM group deletion: {com_name}')
-
-            # Delete persongroup org
-            self._delete_persongroup_by_name(com_name, school_org, changes)
-
-        # --- Delete SEC group (LDAP + persongroup) ---
-        if flags.get('has_ldap_sec_group') and sec_name:
-            service.create_task('LDAP', 'GROUP', 'DEL', data={
-                'group_name': sec_name,
-                'org_id': org.id,
-            })
-            changes.append(f'Queued LDAP SEC group deletion: {sec_name}')
-
-            self._delete_persongroup_by_name(sec_name, school_org, changes)
-
-        # --- Delete Odoo group ---
-        if flags.get('has_odoo_group') and com_name:
-            odoo_group = self.env['res.groups'].search([('name', '=', com_name)], limit=1)
-            if odoo_group:
-                # Remove all users from group first
-                for user in self.env['res.users'].search([('groups_id', 'in', [odoo_group.id])]):
-                    user.write({'groups_id': [(3, odoo_group.id)]})
-                task = service.create_task('ODOO', 'GROUP', 'DEL', data={
-                    'group_name': com_name,
-                    'group_id': odoo_group.id,
-                })
-                odoo_group.unlink()
-                task.write({'status': 'completed_ok', 'changes': f'Deleted Odoo group: {com_name}'})
-                changes.append(f'Deleted Odoo group: {com_name}')
-
-            # Also delete the Odoo persongroup if different from COM
-            self._delete_persongroup_by_name(com_name, school_org, changes)
-
-        # Update org feature flags
-        org.update_org_flags()
-
-        return changes
 
     @api.model
     def _delete_persongroup_by_name(self, group_name, school_org, changes):
@@ -1299,105 +1544,33 @@ class ManualTaskProcessor(models.AbstractModel):
     # =========================================================================
 
     @api.model
-    def _resolve_person_target_org(self, person):
-        """Determine the target org for a person's PERSON-TREE based on roles.
-
-        Logic:
-        1. Find all active PPSBR for this person
-        2. For each PPSBR, find the BRSO with has_accounts=True for that role
-        3. If PPSBR.is_master=True → that role's org wins
-        4. Otherwise → use role with highest priority
-        5. Return the target org (from BRSO.id_org)
-        """
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-
-        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
-        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
-        if not ppsbr_type or not brso_type:
-            return None
-
-        # Find all active PPSBR for this person
-        ppsbr_rels = PropRelation.search([
-            ('proprelation_type_id', '=', ppsbr_type.id),
-            ('id_person', '=', person.id),
-            ('is_active', '=', True),
-            ('id_role', '!=', False),
-        ])
-        if not ppsbr_rels:
-            return None
-
-        best_org = None
-        best_priority = -1
-
-        for ppsbr in ppsbr_rels:
-            role = ppsbr.id_role
-            school_org = ppsbr.id_org_parent
-
-            # Find BRSO with has_accounts=True for this role+school
-            brso = PropRelation.search([
-                ('proprelation_type_id', '=', brso_type.id),
-                ('id_role', '=', role.id),
-                ('id_org_parent', '=', school_org.id) if school_org else ('id_org_parent', '!=', False),
-                ('has_accounts', '=', True),
-                ('is_active', '=', True),
-            ], limit=1)
-            if not brso:
-                continue
-
-            # IsMaster wins immediately
-            if ppsbr.is_master:
-                return brso.id_org
-
-            # Otherwise track by role priority
-            role_priority = role.priority or 0
-            if role_priority > best_priority:
-                best_priority = role_priority
-                best_org = brso.id_org
-
-        return best_org
-
-    @api.model
     def _update_person_tree_position(self, person):
         """Update a person's PERSON-TREE and FQDN fields based on role assignments.
 
-        Determines target org via _resolve_person_target_org, then:
-        - Creates/updates PERSON-TREE proprelation
-        - Updates person_fqdn_internal/external
+        ``manual_task_processor`` extends ``myschool.betask.processor``
+        via ``_inherit`` (single model, two files), so the canonical
+        priority-driven resolver lives in ``betask_processor`` and we
+        reach it with ``super()``. Calling
+        ``self.env['myschool.betask.processor']._update_person_tree_position``
+        would re-enter this very override and recurse.
         """
-        target_org = self._resolve_person_target_org(person)
-        if not target_org:
-            return
+        super()._update_person_tree_position(person)
 
+        # Pull the resulting target org back off the active PERSON-TREE
+        # so we can recompute the FQDN strings against it.
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         pt_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
         if not pt_type:
             return
-
-        # Find existing active PERSON-TREE
         existing_pt = PropRelation.search([
             ('proprelation_type_id', '=', pt_type.id),
             ('id_person', '=', person.id),
             ('is_active', '=', True),
         ], limit=1)
-
-        if existing_pt and existing_pt.id_org.id == target_org.id:
-            # Already in correct position
-            pass
-        elif existing_pt:
-            # Move to new org
-            existing_pt.write({'id_org': target_org.id})
-            _logger.info(f'[TREE] Moved {person.name} to {target_org.name}')
-        else:
-            # Create new PERSON-TREE
-            service = self.env['myschool.manual.task.service']
-            service.create_manual_task('PROPRELATION', 'ADD', {
-                'type': 'PERSON-TREE',
-                'person_id': person.id,
-                'org_id': target_org.id,
-            })
-            _logger.info(f'[TREE] Created PERSON-TREE for {person.name} at {target_org.name}')
+        target_org = existing_pt.id_org if existing_pt else None
+        if not target_org:
+            return
 
         # Update FQDN fields
         email_account = person.email_cloud.split('@')[0] if person.email_cloud and '@' in person.email_cloud else ''
@@ -1412,10 +1585,7 @@ class ManualTaskProcessor(models.AbstractModel):
 
     @api.model
     def _update_tree_positions_for_brso(self, brso_rel):
-        """Update PERSON-TREE for all persons affected by a BRSO with has_accounts=True."""
-        if not brso_rel.has_accounts:
-            return
-
+        """Recompute PERSON-TREE for all persons covered by this BRSO."""
         person_ids = self._get_brso_member_ids(brso_rel)
         Person = self.env['myschool.person']
         for pid in person_ids:

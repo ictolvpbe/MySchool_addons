@@ -765,7 +765,8 @@ class CreatePersonWizard(models.TransientModel):
 
         data = {
             'first_name': self.first_name,
-            'name': self.last_name,
+            'last_name': self.last_name,
+            'name': f"{self.last_name}, {self.first_name}".strip(', '),
             'org_id': self.org_id.id,
         }
         if email_cloud:
@@ -1099,6 +1100,39 @@ class AddChildOrgWizard(models.TransientModel):
             self._update_com_group_fqdns()
             self._update_sec_group_fqdns()
     
+    def _get_school_org_for_parent(self):
+        """Walk up the ORG-TREE from ``parent_org_id`` to find the
+        ancestor of type SCHOOL (non-administrative). Used to anchor
+        com/sec group FQDNs on the school's OU — groups must live
+        immediately under the school, not under whatever intermediate
+        org the wizard is creating the new org under."""
+        if not self.parent_org_id:
+            return None
+        if 'myschool.proprelation' not in self.env:
+            return None
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        current = self.parent_org_id
+        visited = set()
+        while current and current.id not in visited:
+            visited.add(current.id)
+            ot = getattr(current, 'org_type_id', None)
+            if (ot and ot.name == 'SCHOOL'
+                    and not getattr(current, 'is_administrative', False)):
+                return current
+            search_domain = [
+                ('id_org', '=', current.id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ]
+            if org_tree_type:
+                search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+            parent_rel = PropRelation.search(search_domain, limit=1)
+            current = parent_rel.id_org_parent if parent_rel else None
+        return None
+
     def _get_ou_for_groups(self):
         """Get the OuForGroups CI value from the organization hierarchy.
         
@@ -1166,82 +1200,82 @@ class AddChildOrgWizard(models.TransientModel):
     
     def _update_com_group_fqdns(self):
         """Update communication group FQDNs based on group name and OU paths.
-        
-        Format: cn={group_name},ou={OuForGroups},{parent_ou_fqdn}
+
+        Format: cn={group_name},ou={OuForGroups},{school.ou_fqdn}
         Example: cn=grp-lkr-bawa,ou=grp,ou=bawa,dc=olvp,dc=test
-        
-        Note: Groups are placed under the PARENT org's OU, not the new org's OU.
-        All values are lowercase.
+
+        Groups always live in the OuForGroups OU directly under the
+        SCHOOL — not under the wizard's ``parent_org_id`` (which may be
+        an admin/intermediate container that would yield nested or
+        wrong-anchored DNs). All values are lowercase.
         """
         if self.new_org_com_group_name and self.parent_org_id:
             group_name = self.new_org_com_group_name.lower()
             ou_for_groups = self._get_ou_for_groups()
-            
-            # Get parent's OU FQDN (not the new org's)
-            parent_ou_internal = ''
-            parent_ou_external = ''
-            if hasattr(self.parent_org_id, 'ou_fqdn_internal') and self.parent_org_id.ou_fqdn_internal:
-                parent_ou_internal = self.parent_org_id.ou_fqdn_internal.lower()
-            if hasattr(self.parent_org_id, 'ou_fqdn_external') and self.parent_org_id.ou_fqdn_external:
-                parent_ou_external = self.parent_org_id.ou_fqdn_external.lower()
-            
+            school = self._get_school_org_for_parent()
+
+            school_ou_internal = ''
+            school_ou_external = ''
+            if school:
+                school_ou_internal = (school.ou_fqdn_internal or '').lower()
+                school_ou_external = (school.ou_fqdn_external or '').lower()
+
             # Build internal FQDN
-            if parent_ou_internal:
+            if school_ou_internal:
                 if ou_for_groups:
-                    self.new_org_com_group_fqdn_internal = f"cn={group_name},ou={ou_for_groups.lower()},{parent_ou_internal}"
+                    self.new_org_com_group_fqdn_internal = f"cn={group_name},ou={ou_for_groups.lower()},{school_ou_internal}"
                 else:
-                    self.new_org_com_group_fqdn_internal = f"cn={group_name},{parent_ou_internal}"
+                    self.new_org_com_group_fqdn_internal = f"cn={group_name},{school_ou_internal}"
             else:
                 self.new_org_com_group_fqdn_internal = False
-            
+
             # Build external FQDN
-            if parent_ou_external:
+            if school_ou_external:
                 if ou_for_groups:
-                    self.new_org_com_group_fqdn_external = f"cn={group_name},ou={ou_for_groups.lower()},{parent_ou_external}"
+                    self.new_org_com_group_fqdn_external = f"cn={group_name},ou={ou_for_groups.lower()},{school_ou_external}"
                 else:
-                    self.new_org_com_group_fqdn_external = f"cn={group_name},{parent_ou_external}"
+                    self.new_org_com_group_fqdn_external = f"cn={group_name},{school_ou_external}"
             else:
                 self.new_org_com_group_fqdn_external = False
         else:
             self.new_org_com_group_fqdn_internal = False
             self.new_org_com_group_fqdn_external = False
-    
+
     def _update_sec_group_fqdns(self):
         """Update security group FQDNs based on group name and OU paths.
-        
-        Format: cn={group_name},ou={OuForGroups},{parent_ou_fqdn}
+
+        Format: cn={group_name},ou={OuForGroups},{school.ou_fqdn}
         Example: cn=bgrp-lkr-bawa,ou=grp,ou=bawa,dc=olvp,dc=test
-        
-        Note: Groups are placed under the PARENT org's OU, not the new org's OU.
-        All values are lowercase.
+
+        Anchored on the SCHOOL ancestor of ``parent_org_id``. See
+        ``_update_com_group_fqdns`` for the rationale.
         """
         if self.new_org_sec_group_name and self.parent_org_id:
             group_name = self.new_org_sec_group_name.lower()
             ou_for_groups = self._get_ou_for_groups()
-            
-            # Get parent's OU FQDN (not the new org's)
-            parent_ou_internal = ''
-            parent_ou_external = ''
-            if hasattr(self.parent_org_id, 'ou_fqdn_internal') and self.parent_org_id.ou_fqdn_internal:
-                parent_ou_internal = self.parent_org_id.ou_fqdn_internal.lower()
-            if hasattr(self.parent_org_id, 'ou_fqdn_external') and self.parent_org_id.ou_fqdn_external:
-                parent_ou_external = self.parent_org_id.ou_fqdn_external.lower()
-            
+            school = self._get_school_org_for_parent()
+
+            school_ou_internal = ''
+            school_ou_external = ''
+            if school:
+                school_ou_internal = (school.ou_fqdn_internal or '').lower()
+                school_ou_external = (school.ou_fqdn_external or '').lower()
+
             # Build internal FQDN
-            if parent_ou_internal:
+            if school_ou_internal:
                 if ou_for_groups:
-                    self.new_org_sec_group_fqdn_internal = f"cn={group_name},ou={ou_for_groups.lower()},{parent_ou_internal}"
+                    self.new_org_sec_group_fqdn_internal = f"cn={group_name},ou={ou_for_groups.lower()},{school_ou_internal}"
                 else:
-                    self.new_org_sec_group_fqdn_internal = f"cn={group_name},{parent_ou_internal}"
+                    self.new_org_sec_group_fqdn_internal = f"cn={group_name},{school_ou_internal}"
             else:
                 self.new_org_sec_group_fqdn_internal = False
-            
+
             # Build external FQDN
-            if parent_ou_external:
+            if school_ou_external:
                 if ou_for_groups:
-                    self.new_org_sec_group_fqdn_external = f"cn={group_name},ou={ou_for_groups.lower()},{parent_ou_external}"
+                    self.new_org_sec_group_fqdn_external = f"cn={group_name},ou={ou_for_groups.lower()},{school_ou_external}"
                 else:
-                    self.new_org_sec_group_fqdn_external = f"cn={group_name},{parent_ou_external}"
+                    self.new_org_sec_group_fqdn_external = f"cn={group_name},{school_ou_external}"
             else:
                 self.new_org_sec_group_fqdn_external = False
         else:
@@ -1314,7 +1348,6 @@ class AddChildOrgWizard(models.TransientModel):
 
             # Boolean flags — always enable comgroup and secgroup
             data['has_ou'] = self.new_org_has_ou
-            data['has_role'] = True
             data['has_comgroup'] = True
             data['has_secgroup'] = True
 
@@ -2306,10 +2339,10 @@ class ManageOrgRolesWizard(models.TransientModel):
         string='Add Role',
         domain="[('role_type_id.name', '=', 'BACKEND')]",
     )
-    new_has_accounts = fields.Boolean(string='Accounts', default=False)
-    new_has_ldap_com_group = fields.Boolean(string='LDAP COM Group', default=False)
-    new_has_ldap_sec_group = fields.Boolean(string='LDAP SEC Group', default=False)
-    new_has_odoo_group = fields.Boolean(string='Odoo Group', default=False)
+    # Group/account flags moved to the target org (``has_comgroup`` /
+    # ``has_secgroup`` / ``has_accounts``). The wizard now only manages
+    # the BRSO mapping itself; tick the org-level flags on the target
+    # org's form to provision groups / accounts.
 
     @api.model
     def action_open(self, org_id, org_name):
@@ -2367,10 +2400,6 @@ class ManageOrgRolesWizard(models.TransientModel):
                     'is_active': rel.is_active,
                     'is_master': rel.is_master,
                     'automatic_sync': rel.automatic_sync,
-                    'has_accounts': rel.has_accounts,
-                    'has_ldap_com_group': rel.has_ldap_com_group,
-                    'has_ldap_sec_group': rel.has_ldap_sec_group,
-                    'has_odoo_group': rel.has_odoo_group,
                 }))
 
         wizard_vals = {
@@ -2392,7 +2421,12 @@ class ManageOrgRolesWizard(models.TransientModel):
         }
 
     def action_add_role(self):
-        """Add the selected role to the organization via betask."""
+        """Add the selected role to the organization via betask.
+
+        Group / account flags are no longer set on the BRSO — manage
+        ``has_comgroup`` / ``has_secgroup`` / ``has_accounts`` on the
+        target org's form view.
+        """
         self.ensure_one()
 
         if not self.new_role_id:
@@ -2400,49 +2434,12 @@ class ManageOrgRolesWizard(models.TransientModel):
         if not self.school_id:
             raise UserError("Please select a school organization.")
 
-        # Check: has_accounts role may only be linked to one org per school
-        if self.new_has_accounts:
-            PropRelation = self.env['myschool.proprelation']
-            PropRelationType = self.env['myschool.proprelation.type']
-            Org = self.env['myschool.org']
-            brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
-            if brso_type:
-                # Match all school variants (admin + non-admin) by inst_nr
-                school_org_ids = {self.school_id.id}
-                if self.school_id.inst_nr:
-                    same_inst = Org.search([
-                        ('inst_nr', '=', self.school_id.inst_nr),
-                        ('is_active', '=', True),
-                    ])
-                    school_org_ids.update(same_inst.ids)
-
-                existing = PropRelation.search([
-                    ('proprelation_type_id', '=', brso_type.id),
-                    ('id_role', '=', self.new_role_id.id),
-                    ('id_org_parent', 'in', list(school_org_ids)),
-                    ('id_org', '!=', self.org_id.id),
-                    ('has_accounts', '=', True),
-                    ('is_active', '=', True),
-                ], limit=1)
-                if existing:
-                    org_name = existing.id_org.name if existing.id_org else '?'
-                    role_label = self.new_role_id.label or self.new_role_id.name
-                    raise UserError(
-                        f"Rol '{role_label}' is al gekoppeld aan '{org_name}' "
-                        f"met Has Accounts binnen school '{self.school_id.name}'. "
-                        f"Per school mag een rol met Has Accounts maar aan één organisatie gekoppeld zijn."
-                    )
-
         service = self.env['myschool.manual.task.service']
         service.create_manual_task('PROPRELATION', 'ADD', {
             'type': 'BRSO',
             'role_id': self.new_role_id.id,
             'org_id': self.org_id.id,
             'org_parent_id': self.school_id.id,
-            'has_accounts': self.new_has_accounts,
-            'has_ldap_com_group': self.new_has_ldap_com_group,
-            'has_ldap_sec_group': self.new_has_ldap_sec_group,
-            'has_odoo_group': self.new_has_odoo_group,
         })
 
         # Reopen wizard with saved records
@@ -2452,40 +2449,6 @@ class ManageOrgRolesWizard(models.TransientModel):
         """Save changes and reopen the wizard."""
         self.ensure_one()
         return self.action_open(self.org_id.id, self.org_name)
-
-    def action_update_all_groups(self):
-        """Update groups for all attached roles based on their boolean flags."""
-        self.ensure_one()
-        processor = self.env['myschool.betask.processor']
-
-        school_org = self.school_id
-        if not school_org:
-            raise UserError("Please select a school organization first.")
-
-        count = 0
-        for line in self.line_ids:
-            rel = line.proprelation_id
-            if not rel or not rel.id_role:
-                continue
-            data = {
-                'has_ldap_com_group': rel.has_ldap_com_group,
-                'has_ldap_sec_group': rel.has_ldap_sec_group,
-                'has_odoo_group': rel.has_odoo_group,
-            }
-            if any(data.values()):
-                processor._process_brso_groups(rel, data)
-                count += 1
-
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': 'Update All',
-                'message': f'Updated groups for {count} role(s).',
-                'type': 'success',
-                'next': self.action_open(self.org_id.id, self.org_name),
-            },
-        }
 
     def action_close(self):
         """Close the wizard."""
@@ -2511,6 +2474,12 @@ class ManagePersonRolesWizard(models.TransientModel):
         'myschool.role',
         string='Add Role',
     )
+    new_org_id = fields.Many2one(
+        'myschool.org',
+        string='School',
+        domain="[('org_type_id.name', '=', 'SCHOOL'), ('is_active', '=', True)]",
+        help='School waarvoor de rol toegekend wordt (PPSBR.id_org).',
+    )
 
     @api.model
     def action_open(self, person_id, person_name):
@@ -2531,6 +2500,7 @@ class ManagePersonRolesWizard(models.TransientModel):
                 lines.append((0, 0, {
                     'proprelation_id': rel.id,
                     'role_name': rel.id_role.name if rel.id_role else '',
+                    'school_name': rel.id_org.name if rel.id_org else '',
                     'is_active': rel.is_active,
                     'is_master': rel.is_master,
                     'automatic_sync': rel.automatic_sync,
@@ -2544,6 +2514,7 @@ class ManagePersonRolesWizard(models.TransientModel):
 
         return {
             'type': 'ir.actions.act_window',
+            'name': 'Beheer persoon-rollen',
             'res_model': self._name,
             'res_id': wizard.id,
             'views': [(False, 'form')],
@@ -2556,12 +2527,15 @@ class ManagePersonRolesWizard(models.TransientModel):
 
         if not self.new_role_id:
             raise UserError("Please select a role to add.")
+        if not self.new_org_id:
+            raise UserError("Please select a school for the role.")
 
         service = self.env['myschool.manual.task.service']
         service.create_manual_task('PROPRELATION', 'ADD', {
             'type': 'PPSBR',
             'person_id': self.person_id.id,
             'role_id': self.new_role_id.id,
+            'org_id': self.new_org_id.id,
         })
 
         # Reopen wizard with saved records
@@ -3725,7 +3699,6 @@ class CreatePersongroupWizard(models.TransientModel):
             'has_ou': True,
             'has_comgroup': True,
             'has_secgroup': False,
-            'has_role': False,
             'com_group_name': com_group_name,
             'domain_internal': school_org.domain_internal or '',
             'domain_external': school_org.domain_external or '',
@@ -3808,21 +3781,64 @@ class CreatePersongroupWizard(models.TransientModel):
 # ==========================================================================
 
 class ManagePersongroupMembersWizard(models.TransientModel):
-    """Wizard to manage members (persons) of a persongroup."""
+    """Wizard to manage members (persons) of a persongroup.
+
+    Two-pane layout:
+    - Left  ─ current members: searchable many2many; ticked rows can
+              be removed in one click.
+    - Right ─ candidates: filter the org-tree to narrow the picker, then
+              tick one or more persons to add. The picker auto-excludes
+              persons that are already members.
+    """
     _name = 'myschool.manage.persongroup.members.wizard'
     _description = 'Manage Persongroup Members'
 
-    persongroup_id = fields.Many2one('myschool.org', string='Persongroup', required=True)
+    persongroup_id = fields.Many2one(
+        'myschool.org', string='Persongroup', required=True)
     persongroup_name = fields.Char(string='Persongroup', readonly=True)
+
+    # ── Pane 1: current members ────────────────────────────────────────
     current_member_ids = fields.Many2many(
         'myschool.person', 'persongroup_wizard_current_members_rel',
         string='Current Members', readonly=True)
-    add_member_ids = fields.Many2many(
-        'myschool.person', 'persongroup_wizard_add_members_rel',
-        string='Add Members')
     remove_member_ids = fields.Many2many(
         'myschool.person', 'persongroup_wizard_remove_members_rel',
-        string='Remove Members')
+        string='Te verwijderen',
+        domain="[('id', 'in', current_member_ids)]",
+        help='Selecteer hier de leden die je wilt verwijderen, '
+             'klik daarna "Verwijder geselecteerden".')
+
+    # ── Pane 2: add candidates ─────────────────────────────────────────
+    candidate_filter_org_id = fields.Many2one(
+        'myschool.org', string='Filter op organisatie',
+        help='Beperk de kandidatenlijst tot personen die onder deze '
+             'organisatie vallen (incl. onderliggende takken indien '
+             'aangevinkt).')
+    candidate_include_descendants = fields.Boolean(
+        string='Inclusief onderliggende takken', default=True,
+        help='True: kandidaten van deze org en alle child-orgs in de tree.')
+    candidate_filter_pattern = fields.Char(
+        compute='_compute_candidate_filter_pattern',
+        help='Internal: =ilike pattern op person.tree_org_name_tree. '
+             '"%" = geen filter; "<name_tree>" = exact één org; '
+             '"<name_tree>%" = die org + descendants.')
+    add_member_ids = fields.Many2many(
+        'myschool.person', 'persongroup_wizard_add_members_rel',
+        string='Toe te voegen',
+        help='Selecteer hier personen om toe te voegen, klik daarna '
+             '"Voeg geselecteerden toe".')
+
+    @api.depends('candidate_filter_org_id', 'candidate_filter_org_id.name_tree',
+                 'candidate_include_descendants')
+    def _compute_candidate_filter_pattern(self):
+        for wiz in self:
+            org = wiz.candidate_filter_org_id
+            if not org or not org.name_tree:
+                wiz.candidate_filter_pattern = '%'
+                continue
+            wiz.candidate_filter_pattern = (
+                f'{org.name_tree}%' if wiz.candidate_include_descendants
+                else org.name_tree)
 
     @api.model
     def default_get(self, fields_list):
@@ -3832,51 +3848,76 @@ class ManagePersongroupMembersWizard(models.TransientModel):
             pg = self.env['myschool.org'].browse(pg_id)
             if pg.exists():
                 res['persongroup_name'] = pg.name_tree or pg.name
-
-                # Load current members from active PG-P proprelations
-                PropRelation = self.env['myschool.proprelation']
-                PropRelationType = self.env['myschool.proprelation.type']
-                pg_p_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
-                if pg_p_type:
-                    rels = PropRelation.search([
-                        ('proprelation_type_id', '=', pg_p_type.id),
-                        ('id_org', '=', pg_id),
-                        ('is_active', '=', True),
-                    ])
-                    member_ids = [r.id_person.id for r in rels if r.id_person]
-                    res['current_member_ids'] = [(6, 0, member_ids)]
+                res['current_member_ids'] = [(6, 0, self._load_current_members(pg_id))]
         return res
 
-    def action_apply(self):
-        """Create betasks for adding/removing members."""
+    @staticmethod
+    def _load_current_members_static(env, pg_id):
+        PropRelation = env['myschool.proprelation']
+        PropRelationType = env['myschool.proprelation.type']
+        pg_p_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
+        if not pg_p_type:
+            return []
+        rels = PropRelation.search([
+            ('proprelation_type_id', '=', pg_p_type.id),
+            ('id_org', '=', pg_id),
+            ('is_active', '=', True),
+        ])
+        return [r.id_person.id for r in rels if r.id_person]
+
+    def _load_current_members(self, pg_id):
+        return self._load_current_members_static(self.env, pg_id)
+
+    # ─── Actions ───────────────────────────────────────────────────────
+
+    def action_remove_selected(self):
+        """Deactivate PG-P for every person ticked in `remove_member_ids`."""
         self.ensure_one()
-
+        if not self.remove_member_ids:
+            raise UserError("Selecteer minstens één lid om te verwijderen.")
         service = self.env['myschool.manual.task.service']
-        pg_id = self.persongroup_id.id
-        changes = []
-
-        # Add new members
-        for person in self.add_member_ids:
-            service.create_manual_task('PROPRELATION', 'ADD', {
-                'type': 'PG-P',
-                'org_id': pg_id,
-                'person_id': person.id,
-            })
-            changes.append(f"Adding {person.name}")
-
-        # Remove members
         for person in self.remove_member_ids:
             service.create_manual_task('PROPRELATION', 'DEACT', {
                 'type': 'PG-P',
-                'org_id': pg_id,
+                'org_id': self.persongroup_id.id,
                 'person_id': person.id,
             })
-            changes.append(f"Removing {person.name}")
+        self.write({
+            'current_member_ids': [(6, 0, self._load_current_members(self.persongroup_id.id))],
+            'remove_member_ids': [(5, 0, 0)],
+        })
+        return self._reopen()
 
-        return {'type': 'ir.actions.act_window_close'}
+    def action_add_selected(self):
+        """Create PG-P for every person ticked in `add_member_ids`."""
+        self.ensure_one()
+        if not self.add_member_ids:
+            raise UserError("Selecteer minstens één persoon om toe te voegen.")
+        service = self.env['myschool.manual.task.service']
+        for person in self.add_member_ids:
+            service.create_manual_task('PROPRELATION', 'ADD', {
+                'type': 'PG-P',
+                'org_id': self.persongroup_id.id,
+                'person_id': person.id,
+            })
+        self.write({
+            'current_member_ids': [(6, 0, self._load_current_members(self.persongroup_id.id))],
+            'add_member_ids': [(5, 0, 0)],
+        })
+        return self._reopen()
 
     def action_close(self):
         return {'type': 'ir.actions.act_window_close'}
+
+    def _reopen(self):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': self.persongroup_name or 'Persongroup',
+            'res_model': self._name,
+            'res_id': self.id,
+            'views': [(False, 'form')],
+            'target': 'new',
+        }
 
 
 class CleanupWizard(models.TransientModel):
@@ -4065,4 +4106,223 @@ class CleanupWizard(models.TransientModel):
                 'sticky': False,
                 'next': action,
             },
+        }
+
+
+class ResetSyncDataWizard(models.TransientModel):
+    """Wipe sync-created persons/groups so a Full sync can start from a clean slate.
+
+    Targets only records that were created by sync (`automatic_sync=True` for
+    persons; CLASSGROUP/PERSONGROUP org_type for orgs). Bypasses the betask
+    pipeline because the goal here is administrative data-reset, not a
+    business mutation — going through betasks would create thousands of
+    audit tasks and likely time out.
+    """
+    _name = 'myschool.reset.sync.data.wizard'
+    _description = 'Reset Auto-Sync Data'
+
+    delete_persons = fields.Boolean(
+        string='Delete sync persons',
+        default=True,
+        help='Delete every person with automatic_sync=True (active and inactive).')
+    delete_classgroups = fields.Boolean(
+        string='Delete classgroups',
+        default=True,
+        help='Delete every org of type CLASSGROUP (active and inactive).')
+    delete_persongroups = fields.Boolean(
+        string='Delete persongroups',
+        default=False,
+        help='Delete every org of type PERSONGROUP (active and inactive).')
+    delete_classgroup_roles = fields.Boolean(
+        string='Delete classgroup BACKEND roles',
+        default=True,
+        help='Delete BACKEND roles auto-created with the same name as a '
+             'classgroup org. Only roles whose name matches a classgroup '
+             'being deleted in this run are removed.')
+
+    person_count = fields.Integer(string='Persons to delete',
+                                  compute='_compute_counts')
+    classgroup_count = fields.Integer(string='Classgroups to delete',
+                                      compute='_compute_counts')
+    persongroup_count = fields.Integer(string='Persongroups to delete',
+                                       compute='_compute_counts')
+    role_count = fields.Integer(string='Roles to delete',
+                                compute='_compute_counts')
+    proprelation_count = fields.Integer(string='Proprelations to delete',
+                                        compute='_compute_counts')
+
+    state = fields.Selection([
+        ('confirm', 'Confirm'),
+        ('done', 'Done'),
+    ], default='confirm')
+    result_text = fields.Text(string='Result', readonly=True)
+
+    # ------------------------------------------------------------------
+    # Target-set helpers
+    # ------------------------------------------------------------------
+
+    def _target_persons(self):
+        return self.env['myschool.person'].with_context(active_test=False).search([
+            ('automatic_sync', '=', True),
+        ]) if self.delete_persons else self.env['myschool.person']
+
+    def _target_orgs(self):
+        OrgType = self.env['myschool.org.type']
+        type_names = []
+        if self.delete_classgroups:
+            type_names.append('CLASSGROUP')
+        if self.delete_persongroups:
+            type_names.append('PERSONGROUP')
+        if not type_names:
+            return self.env['myschool.org']
+        types = OrgType.search([('name', 'in', type_names)])
+        if not types:
+            return self.env['myschool.org']
+        return self.env['myschool.org'].with_context(active_test=False).search([
+            ('org_type_id', 'in', types.ids),
+        ])
+
+    def _target_roles(self, classgroup_orgs):
+        if not self.delete_classgroup_roles or not classgroup_orgs:
+            return self.env['myschool.role']
+        names = [o.name for o in classgroup_orgs if o.name]
+        if not names:
+            return self.env['myschool.role']
+        Role = self.env['myschool.role'].with_context(active_test=False)
+        RoleType = self.env['myschool.role.type']
+        backend_type = RoleType.search([('name', '=', 'BACKEND')], limit=1)
+        domain = [('name', 'in', names)]
+        if backend_type:
+            domain.append(('role_type_id', '=', backend_type.id))
+        return Role.search(domain)
+
+    def _target_proprelations(self, persons, orgs, roles):
+        if not (persons or orgs or roles):
+            return self.env['myschool.proprelation']
+        domain = []
+        operands = 0
+        if persons:
+            domain += [
+                ('id_person', 'in', persons.ids),
+                ('id_person_parent', 'in', persons.ids),
+                ('id_person_child', 'in', persons.ids),
+            ]
+            operands += 3
+        if orgs:
+            domain += [
+                ('id_org', 'in', orgs.ids),
+                ('id_org_parent', 'in', orgs.ids),
+                ('id_org_child', 'in', orgs.ids),
+            ]
+            operands += 3
+        if roles:
+            domain += [
+                ('id_role', 'in', roles.ids),
+                ('id_role_parent', 'in', roles.ids),
+                ('id_role_child', 'in', roles.ids),
+            ]
+            operands += 3
+        # OR all leaf conditions together.
+        domain = ['|'] * (operands - 1) + domain
+        return self.env['myschool.proprelation'].with_context(
+            active_test=False).search(domain)
+
+    @api.depends('delete_persons', 'delete_classgroups', 'delete_persongroups',
+                 'delete_classgroup_roles')
+    def _compute_counts(self):
+        for wiz in self:
+            persons = wiz._target_persons()
+            orgs = wiz._target_orgs()
+            classgroups = orgs.filtered(
+                lambda o: o.org_type_id and o.org_type_id.name == 'CLASSGROUP')
+            persongroups = orgs.filtered(
+                lambda o: o.org_type_id and o.org_type_id.name == 'PERSONGROUP')
+            roles = wiz._target_roles(classgroups)
+            proprels = wiz._target_proprelations(persons, orgs, roles)
+            wiz.person_count = len(persons)
+            wiz.classgroup_count = len(classgroups)
+            wiz.persongroup_count = len(persongroups)
+            wiz.role_count = len(roles)
+            wiz.proprelation_count = len(proprels)
+
+    # ------------------------------------------------------------------
+    # Action
+    # ------------------------------------------------------------------
+
+    def action_reset(self):
+        self.ensure_one()
+        if not (self.delete_persons or self.delete_classgroups
+                or self.delete_persongroups):
+            raise UserError("Select at least one category to delete.")
+
+        persons = self._target_persons()
+        orgs = self._target_orgs()
+        classgroups = orgs.filtered(
+            lambda o: o.org_type_id and o.org_type_id.name == 'CLASSGROUP')
+        roles = self._target_roles(classgroups)
+        proprels = self._target_proprelations(persons, orgs, roles)
+
+        n_persons = len(persons)
+        n_orgs = len(orgs)
+        n_roles = len(roles)
+        n_proprels = len(proprels)
+
+        ctx = {'skip_manual_audit': True, 'active_test': False}
+        report = []
+
+        # Order matters: kill proprelations first so FK constraints don't
+        # block the person/org/role deletes that follow. person_details
+        # cascades on person.unlink so no manual cleanup needed there.
+        if proprels:
+            try:
+                proprels.with_context(**ctx).unlink()
+                report.append(f'Deleted {n_proprels} proprelation(s).')
+            except Exception as e:
+                self.env.cr.rollback()
+                raise UserError(f'Failed to delete proprelations: {e}')
+
+        if persons:
+            try:
+                # Detach from Odoo users / HR employees so unlink doesn't
+                # trip on related-record write protection. We don't delete
+                # the user/employee — that's a separate concern.
+                persons.with_context(**ctx).write({
+                    'odoo_user_id': False,
+                    'odoo_employee_id': False,
+                })
+                persons.with_context(**ctx).unlink()
+                report.append(f'Deleted {n_persons} person(s).')
+            except Exception as e:
+                self.env.cr.rollback()
+                raise UserError(f'Failed to delete persons: {e}')
+
+        if roles:
+            try:
+                roles.with_context(**ctx).unlink()
+                report.append(f'Deleted {n_roles} BACKEND role(s).')
+            except Exception as e:
+                self.env.cr.rollback()
+                raise UserError(f'Failed to delete roles: {e}')
+
+        if orgs:
+            try:
+                orgs.with_context(**ctx).unlink()
+                report.append(f'Deleted {n_orgs} org(s).')
+            except Exception as e:
+                self.env.cr.rollback()
+                raise UserError(f'Failed to delete orgs: {e}')
+
+        self.env.cr.commit()
+        _logger.info('[RESET-SYNC-DATA] %s', ' | '.join(report))
+
+        self.write({
+            'state': 'done',
+            'result_text': '\n'.join(report) if report else 'Nothing to delete.',
+        })
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self._name,
+            'res_id': self.id,
+            'views': [(False, 'form')],
+            'target': 'new',
         }

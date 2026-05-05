@@ -36,3 +36,5 @@ access_log_viewer,myschool.log.viewer,model_myschool_log_viewer,myschool_core.gr
 access_data_exchange,myschool.data.exchange,model_myschool_data_exchange,myschool_core.group_myschool_core_admin,1,1,1,1
 access_server_benchmark,myschool.server.benchmark,model_myschool_server_benchmark,myschool_core.group_myschool_core_admin,1,1,1,1
 access_create_filialen_wizard,myschool.create.filialen.wizard,model_myschool_create_filialen_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_reset_sync_data_wizard,myschool.reset.sync.data.wizard,model_myschool_reset_sync_data_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_persongroup_member_browser,myschool.persongroup.member.browser,model_myschool_persongroup_member_browser,myschool_core.group_myschool_core_admin,1,1,1,1

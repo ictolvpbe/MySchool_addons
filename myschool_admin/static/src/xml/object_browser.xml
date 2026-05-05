@@ -629,7 +629,7 @@
                     onPasswordClick="onPasswordClick"
                     selectedMemberId="state.activeNode?.id"
                     selectedMemberType="state.activeNode?.type"
-                    selectedIds="state.selectedIds"/>
+                    selectedMemberIds="state.selectedMemberIds"/>
                 
                 <!-- Details Panel -->
                 <DetailsPanel node="state.activeNode"

@@ -261,6 +261,13 @@
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_field_template"
+              name="Field Templates"
+              parent="menu_integrations"
+              action="action_field_template"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <!-- ========================================= -->
     <!-- CONFIG ITEMS (sequence: 60) -->
     <!-- ========================================= -->
@@ -321,6 +328,13 @@
               parent="menu_tools"
               action="action_recalculate_all_person_trees"
               sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_sync_all_persongroups"
+              name="Sync persongroups (org settings)"
+              parent="menu_tools"
+              action="action_sync_all_persongroups"
+              sequence="45"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_update_person_properties"
@@ -391,6 +405,13 @@
               parent="menu_tools"
               action="action_server_benchmark"
               sequence="130"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_reset_sync_data"
+              name="Reset Auto-Sync Data"
+              parent="menu_tools"
+              action="action_reset_sync_data_wizard"
+              sequence="200"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- ========================================= -->

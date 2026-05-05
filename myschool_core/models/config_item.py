@@ -157,13 +157,29 @@ class ConfigItem(models.Model):
     def find_by_name(self, name: str) -> 'ConfigItem':
         """
         Find ConfigItems by name.
-        
+
         Equivalent to Java: ConfigItemServiceImpl.findByName()
-        
+
         @param name: Name of the config item
         @return: Recordset of matching ConfigItems
         """
         return self.search([('name', '=', name)])
+
+    @api.model
+    def get_int(self, name, default=0):
+        """Lookup an integer-valued CI by name. Returns ``default`` when
+        the CI is missing, inactive, or has no integer value set.
+
+        Use this for global policy parameters (e.g. EmployeeSuspendPeriod)
+        where per-org overrides are not needed.
+        """
+        ci = self.search([('name', '=', name), ('is_active', '=', True)],
+                         limit=1)
+        if not ci:
+            return default
+        # `integer_value` is 0 by default — distinguish "not set" from "0"
+        # by treating any value <= 0 as default.
+        return ci.integer_value if ci.integer_value else default
 
     @api.model
     def find_all(self) -> 'ConfigItem':

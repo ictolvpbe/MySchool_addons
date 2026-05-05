@@ -2,6 +2,7 @@
 from . import app
 from . import dashboard
 from . import object_browser
+from . import persongroup_member_browser
 from . import org_extension
 from . import person_extension
 from . import proprelation_extension

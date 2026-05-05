@@ -236,7 +236,29 @@ class BeTask(models.Model):
         for vals in vals_list:
             if vals.get('status', _('new')) == _('new'):
                 vals['status'] = self.env['ir.sequence'].next_by_code('myschool.betask') or _('new')
+            self._sanitize_text_vals(vals)
         return super().create(vals_list)
+
+    def write(self, vals):
+        self._sanitize_text_vals(vals)
+        return super().write(vals)
+
+    @staticmethod
+    def _sanitize_text_vals(vals):
+        """Strip NUL (0x00) characters from any string value being written.
+
+        ldap3 + Active Directory occasionally surface raw byte fragments
+        (e.g. binary attribute values from the rootDSE) inside their
+        response messages. PostgreSQL refuses NUL chars in text columns,
+        so persisting them as-is into `changes`, `error_description` or
+        `data` fields would crash any subsequent flush. Replacing them
+        with a space keeps the message readable without the crash.
+        """
+        if not vals:
+            return
+        for key, value in list(vals.items()):
+            if isinstance(value, str) and '\x00' in value:
+                vals[key] = value.replace('\x00', ' ')
     
     # ==========================================================================
     # Action Methods (Status Transitions)
