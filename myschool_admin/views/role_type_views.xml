@@ -41,8 +41,6 @@
                                     <field name="shortname"/>
                                     <field name="priority"/>
                                     <field name="has_ui_access"/>
-                                    <field name="has_group"/>
-                                    <field name="has_accounts"/>
                                     <field name="is_active"/>
                                 </list>
                             </field>

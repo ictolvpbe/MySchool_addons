@@ -14,6 +14,7 @@
             <list decoration-muted="not is_active"
                   default_order="name">
                 <field name="name"/>
+                <field name="displayname" string="Weergavenaam" optional="show"/>
                 <field name="name_short" optional="show"/>
                 <field name="name_tree" string="Tree Path" optional="show"/>
                 <field name="inst_nr" optional="show"/>
@@ -82,10 +83,33 @@
                                 <group string="Identity">
                                     <field name="name"/>
                                     <field name="name_short"/>
+                                    <field name="displayname" placeholder="Optioneel — UI-label"/>
                                     <field name="inst_nr"/>
                                 </group>
                                 <group string="Tree Position">
                                     <field name="name_tree" readonly="1" class="ms-field-mono"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Features">
+                                    <!-- Persongroups represent the group itself
+                                         and never spawn children — their flags
+                                         stay False and read-only. Departments
+                                         that *contain* persongroups (groups
+                                         containers) likewise can't carry the
+                                         group flags — those belong on the
+                                         children. Other org types control
+                                         their group/account setup directly. -->
+                                    <field name="org_type_id" invisible="1"/>
+                                    <field name="is_groups_container" invisible="1"/>
+                                    <field name="has_ou" widget="boolean_toggle"
+                                           readonly="org_type_id and org_type_id.name == 'PERSONGROUP'"/>
+                                    <field name="has_comgroup" widget="boolean_toggle"
+                                           readonly="(org_type_id and org_type_id.name == 'PERSONGROUP') or is_groups_container"/>
+                                    <field name="has_secgroup" widget="boolean_toggle"
+                                           readonly="(org_type_id and org_type_id.name == 'PERSONGROUP') or is_groups_container"/>
+                                    <field name="has_odoo_group" widget="boolean_toggle"
+                                           readonly="(org_type_id and org_type_id.name == 'PERSONGROUP') or is_groups_container"/>
                                 </group>
                             </group>
                         </page>
@@ -113,13 +137,6 @@
                                     <field name="domain_internal"/>
                                     <field name="domain_external"/>
                                 </group>
-                                <group string="Features">
-                                    <field name="has_ou" widget="boolean_toggle"/>
-                                    <field name="has_accounts" widget="boolean" readonly="1"/>
-                                    <field name="has_role" widget="boolean" readonly="1"/>
-                                    <field name="has_comgroup" widget="boolean" readonly="1"/>
-                                    <field name="has_secgroup" widget="boolean" readonly="1"/>
-                                </group>
                             </group>
                             <group>
                                 <group string="OU FQDN">
@@ -139,6 +156,13 @@
                                     <field name="sec_group_fqdn_internal" class="ms-field-mono"/>
                                     <field name="sec_group_fqdn_external" class="ms-field-mono"/>
                                 </group>
+                            </group>
+                            <group string="Odoo Groups" invisible="not has_odoo_group">
+                                <field name="odoo_group_ids"
+                                       widget="many2many_tags"
+                                       options="{'no_create': True}"
+                                       domain="[('privilege_id', '!=', False)]"
+                                       nolabel="1" colspan="2"/>
                             </group>
                         </page>
 
@@ -247,6 +271,28 @@ if result and isinstance(result, dict):
         </field>
     </record>
 
+    <!-- Sync persongroups from org settings (menu action) -->
+    <record id="action_sync_all_persongroups" model="ir.actions.server">
+        <field name="name">Sync persongroups (org settings)</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="state">code</field>
+        <field name="code">
+result = env['myschool.org'].sync_all_persongroups()
+err_count = len(result.get('errors', []))
+err_detail = (' First error: ' + result['errors'][0]) if err_count else ''
+action = {
+    'type': 'ir.actions.client',
+    'tag': 'display_notification',
+    'params': {
+        'title': 'Persongroups Sync Complete',
+        'message': f"Processed {result.get('orgs_processed', 0)} org(s). {err_count} error(s).{err_detail}",
+        'type': 'success' if not err_count else 'warning',
+        'sticky': bool(err_count),
+    }
+}
+        </field>
+    </record>
+
     <!-- Update Classgroup Properties (menu action) -->
     <record id="action_recalculate_all_org_trees" model="ir.actions.server">
         <field name="name">Update classgroup properties</field>
@@ -282,10 +328,6 @@ action = {
                 <field name="is_active" string="Active" readonly="1" widget="boolean"/>
                 <field name="is_master" string="Master" widget="boolean_toggle"/>
                 <field name="automatic_sync" string="Auto Sync" widget="boolean_toggle"/>
-                <field name="has_accounts" string="Accounts" widget="boolean_toggle"/>
-                <field name="has_ldap_com_group" string="LDAP COM" widget="boolean_toggle"/>
-                <field name="has_ldap_sec_group" string="LDAP SEC" widget="boolean_toggle"/>
-                <field name="has_odoo_group" string="Odoo Group" widget="boolean_toggle"/>
                 <button name="action_remove" type="object" string="Remove" icon="fa-trash"/>
             </list>
         </field>
@@ -306,20 +348,17 @@ action = {
                 <field name="line_ids" nolabel="1" widget="one2many"/>
                 <separator string="Add New Role"/>
                 <group>
-                    <group>
-                        <field name="new_role_id" string="Role" options="{'no_create': True, 'no_create_edit': True}"/>
-                        <button name="action_add_role" type="object" string="Add Role" class="btn-primary" icon="fa-plus"/>
-                    </group>
-                    <group string="Options">
-                        <field name="new_has_accounts" widget="boolean_toggle"/>
-                        <field name="new_has_ldap_com_group" widget="boolean_toggle"/>
-                        <field name="new_has_ldap_sec_group" widget="boolean_toggle"/>
-                        <field name="new_has_odoo_group" widget="boolean_toggle"/>
-                    </group>
+                    <field name="new_role_id" string="Role" options="{'no_create': True, 'no_create_edit': True}"/>
+                    <button name="action_add_role" type="object" string="Add Role" class="btn-primary" icon="fa-plus"/>
                 </group>
+                <p class="text-muted">
+                    <small>Group flags live on the target org. Open the
+                    org's form and tick <code>has_comgroup</code> /
+                    <code>has_secgroup</code> / <code>has_odoo_group</code>
+                    there.</small>
+                </p>
                 <footer>
                     <button name="action_save" type="object" string="Save" class="btn-primary"/>
-                    <button name="action_update_all_groups" type="object" string="Update All Groups" class="btn-warning" icon="fa-refresh"/>
                     <button name="action_close" type="object" string="Close" class="btn-secondary"/>
                 </footer>
             </form>
@@ -332,6 +371,7 @@ action = {
         <field name="arch" type="xml">
             <list create="0" delete="0" editable="bottom">
                 <field name="role_name" string="Role" readonly="1"/>
+                <field name="school_name" string="School" readonly="1"/>
                 <field name="is_active" string="Active" readonly="1" widget="boolean"/>
                 <field name="is_master" string="Master" widget="boolean_toggle"/>
                 <field name="automatic_sync" string="Auto Sync" widget="boolean_toggle"/>
@@ -344,8 +384,8 @@ action = {
         <field name="name">myschool.manage.person.roles.wizard.form</field>
         <field name="model">myschool.manage.person.roles.wizard</field>
         <field name="arch" type="xml">
-            <form string="Manage Person Roles">
-                <div class="text-muted small mb-2"><em>Manage Person Roles</em></div>
+            <form string="Beheer persoon-rollen">
+                <div class="text-muted small mb-2"><em>Beheer persoon-rollen</em></div>
                 <group>
                     <field name="person_id" invisible="1"/>
                     <field name="person_name" string="Person"/>
@@ -355,6 +395,7 @@ action = {
                 <separator string="Add New Role"/>
                 <group>
                     <field name="new_role_id" string="Role" options="{'no_create': True}"/>
+                    <field name="new_org_id" string="School" options="{'no_create': True}"/>
                     <button name="action_add_role" type="object" string="Add Role" class="btn-primary" icon="fa-plus"/>
                 </group>
                 <separator/>

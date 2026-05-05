@@ -19,10 +19,6 @@
                 <field name="is_active" widget="boolean"/>
                 <field name="is_master" widget="boolean" optional="show"/>
                 <field name="automatic_sync" widget="boolean" optional="show"/>
-                <field name="has_accounts" widget="boolean" optional="hide"/>
-                <field name="has_ldap_com_group" widget="boolean" optional="hide"/>
-                <field name="has_ldap_sec_group" widget="boolean" optional="hide"/>
-                <field name="has_odoo_group" widget="boolean" optional="hide"/>
             </list>
         </field>
     </record>
@@ -53,10 +49,6 @@
                             <field name="is_organisational"/>
                             <field name="is_master"/>
                             <field name="automatic_sync" widget="boolean_toggle"/>
-                            <field name="has_accounts" widget="boolean_toggle"/>
-                            <field name="has_ldap_com_group" widget="boolean_toggle"/>
-                            <field name="has_ldap_sec_group" widget="boolean_toggle"/>
-                            <field name="has_odoo_group" widget="boolean_toggle"/>
                         </group>
                     </group>
 
@@ -131,11 +123,6 @@
                 <separator/>
                 <filter string="Auto Sync" name="auto_sync" domain="[('automatic_sync', '=', True)]"/>
                 <filter string="Manual" name="manual_sync" domain="[('automatic_sync', '=', False)]"/>
-                <separator/>
-                <filter string="Has Accounts" name="has_accounts" domain="[('has_accounts', '=', True)]"/>
-                <filter string="LDAP COM Group" name="ldap_com" domain="[('has_ldap_com_group', '=', True)]"/>
-                <filter string="LDAP SEC Group" name="ldap_sec" domain="[('has_ldap_sec_group', '=', True)]"/>
-                <filter string="Odoo Group" name="odoo_group" domain="[('has_odoo_group', '=', True)]"/>
 <!--                <group expand="0" string="Groepeer op">-->
 <!--                    <filter string="Type" name="group_type" context="{'group_by': 'proprelation_type_id'}"/>-->
 <!--                    <filter string="Persoon" name="group_person" context="{'group_by': 'id_person'}"/>-->

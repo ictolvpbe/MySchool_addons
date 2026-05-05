@@ -19,6 +19,21 @@ class Org(models.Model):
 
     name = fields.Char(string='Naam', required=True)
     name_short = fields.Char(string='Korte Naam', required=True)
+    displayname = fields.Char(
+        string='Weergavenaam',
+        help='Naam zoals getoond in de UI. Valt terug op ``name`` '
+             'wanneer leeg. Wordt door Odoo\'s ``display_name`` '
+             'opgepikt zodat dropdowns, breadcrumbs en relaties de '
+             'override automatisch tonen.')
+
+    @api.depends('displayname', 'name')
+    def _compute_display_name(self):
+        """Override Odoo's standard ``display_name`` to prefer the
+        admin-overridable ``displayname`` field. Falls back to ``name``
+        when ``displayname`` is empty so existing data and freshly
+        created orgs without an override keep working."""
+        for rec in self:
+            rec.display_name = (rec.displayname or rec.name or '').strip()
     name_tree = fields.Char(string='Full Tree name', required=False)
 
     @api.depends('name')
@@ -54,10 +69,27 @@ class Org(models.Model):
     domain_internal = fields.Char(string='Intern Domein')
     domain_external = fields.Char(string='Extern Domein')
     has_ou = fields.Boolean(string='Heeft OU', default=False)
-    has_role = fields.Boolean(string='Heeft Role', default=False)
     has_comgroup = fields.Boolean(string='Heeft Communicatiegroep', default=False)
     has_secgroup = fields.Boolean(string='Heeft Securitygroep', default=False)
-    has_accounts = fields.Boolean(string='Heeft Accounts', default=False)
+    has_odoo_group = fields.Boolean(
+        string='Heeft Odoo Groepen', default=False,
+        help='If enabled, persons placed under this org get added to '
+             'the Odoo res.groups listed in odoo_group_ids.')
+    is_groups_container = fields.Boolean(
+        string='Bevat groepen',
+        compute='_compute_is_groups_container',
+        help='True wanneer deze org één of meer actieve PERSONGROUP '
+             'children heeft (via ORG-TREE). Een container voor groepen '
+             'mag zelf geen has_comgroup/has_secgroup/has_odoo_group '
+             'dragen — die flags horen op de groepen, niet op het '
+             'department dat ze bevat.')
+    odoo_group_ids = fields.Many2many(
+        'res.groups',
+        'myschool_org_res_groups_rel',
+        'org_id', 'group_id',
+        string='Odoo Groups',
+        help='Odoo res.groups that members of this org get added to. '
+             'Only consulted when has_odoo_group is True.')
     ou_fqdn_internal = fields.Char(string='OU FQDN Intern')
     ou_fqdn_external = fields.Char(string='OU FQDN Extern')
     com_group_fqdn_internal = fields.Char(string='Com Groep FQDN Intern')
@@ -72,30 +104,211 @@ class Org(models.Model):
     orggroup_working_period = fields.Char(string='Werktijd Periode', size=30)
     richting = fields.Char(string='Richting', size=30)
 
-    def update_org_flags(self):
-        """Recalculate has_role, has_accounts, has_comgroup, has_secgroup from BRSO state."""
+    # Non-stored: depending on PropRelation children means we'd need a
+    # stored compute with cross-model invalidation, which doesn't justify
+    # the complexity. Form-view reads recompute on each open, which is
+    # the only place this field is consulted.
+    _GROUPS_CONTAINER_FLAGS = ('has_comgroup', 'has_secgroup', 'has_odoo_group')
+
+    def _compute_is_groups_container(self):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
-        if not brso_type:
+        OrgType = self.env['myschool.org.type']
+        org_tree = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+        pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+        if not org_tree or not pg_type:
+            for rec in self:
+                rec.is_groups_container = False
             return
-
-        for org in self:
-            brso_rels = PropRelation.search([
-                ('proprelation_type_id', '=', brso_type.id),
-                ('id_org', '=', org.id),
+        for rec in self:
+            if not rec.id:  # NewId / not yet saved
+                rec.is_groups_container = False
+                continue
+            child_count = PropRelation.search_count([
+                ('proprelation_type_id', '=', org_tree.id),
+                ('id_org_parent', '=', rec.id),
                 ('is_active', '=', True),
+                ('id_org.org_type_id', '=', pg_type.id),
+                ('id_org.is_active', '=', True),
             ])
-            vals = {
-                'has_role': bool(brso_rels),
-                'has_accounts': any(r.has_accounts for r in brso_rels),
-                'has_comgroup': any(r.has_ldap_com_group or r.has_odoo_group for r in brso_rels) or bool(org.com_group_name),
-                'has_secgroup': any(r.has_ldap_sec_group for r in brso_rels) or bool(org.sec_group_name),
-            }
-            org.with_context(skip_pg_flag_handling=True).write(vals)
+            rec.is_groups_container = child_count > 0
+
+    @api.model
+    def _migrate_group_flags_from_legacy(self):
+        """One-shot migration. Reads the legacy raw SQL columns (which
+        only still exist on an upgrading database):
+
+        - ``BRSO.has_ldap_com_group`` / ``has_ldap_sec_group`` /
+          ``has_odoo_group`` → target org's ``has_comgroup`` /
+          ``has_secgroup`` / ``has_odoo_group``.
+        - ``role.has_group`` → all of the role's BRSO target orgs get
+          ``has_comgroup=True``.
+        - ``role.has_odoo_group`` + ``role.odoo_group_ids`` → propagate
+          to every BRSO target org of that role: ``has_odoo_group=True``
+          and merge ``odoo_group_ids``.
+
+        Idempotent. ORs onto existing org-flags; never downgrades.
+        """
+        cr = self.env.cr
+        flags_set = {'has_comgroup': 0, 'has_secgroup': 0,
+                     'has_odoo_group': 0, 'odoo_groups_linked': 0}
+
+        # Detect column presence — on a fresh install the columns are
+        # already gone and migration is a no-op.
+        cr.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'myschool_proprelation'
+        """)
+        pr_cols = {r[0] for r in cr.fetchall()}
+        cr.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'myschool_role'
+        """)
+        role_cols = {r[0] for r in cr.fetchall()}
+
+        legacy_pr = pr_cols & {
+            'has_ldap_com_group', 'has_ldap_sec_group', 'has_odoo_group',
+        }
+        legacy_role = role_cols & {'has_group', 'has_odoo_group'}
+
+        if not legacy_pr and not legacy_role:
+            _logger.info('[FLAG-MIGRATE] no legacy columns present — skip')
+            return {'orgs_updated': 0, 'flags_set': flags_set}
+
+        # Build SQL that ORs the flags, scoped to the BRSO type.
+        select_parts = ['pr.id_org']
+        if 'has_ldap_com_group' in legacy_pr:
+            select_parts.append('bool_or(COALESCE(pr.has_ldap_com_group, false)) AS pr_com')
+        else:
+            select_parts.append('false AS pr_com')
+        if 'has_ldap_sec_group' in legacy_pr:
+            select_parts.append('bool_or(COALESCE(pr.has_ldap_sec_group, false)) AS pr_sec')
+        else:
+            select_parts.append('false AS pr_sec')
+        if 'has_odoo_group' in legacy_pr:
+            select_parts.append('bool_or(COALESCE(pr.has_odoo_group, false)) AS pr_pr_odoo')
+        else:
+            select_parts.append('false AS pr_pr_odoo')
+        if 'has_group' in legacy_role:
+            select_parts.append('bool_or(COALESCE(r.has_group, false)) AS r_group')
+        else:
+            select_parts.append('false AS r_group')
+        if 'has_odoo_group' in legacy_role:
+            select_parts.append('bool_or(COALESCE(r.has_odoo_group, false)) AS r_odoo')
+        else:
+            select_parts.append('false AS r_odoo')
+
+        cr.execute(f"""
+            SELECT {', '.join(select_parts)}
+            FROM myschool_proprelation pr
+            JOIN myschool_proprelation_type prt ON prt.id = pr.proprelation_type_id
+            LEFT JOIN myschool_role r ON r.id = pr.id_role
+            WHERE prt.name = 'BRSO'
+              AND pr.is_active = true
+              AND pr.id_org IS NOT NULL
+            GROUP BY pr.id_org
+        """)
+        rows = cr.fetchall()
+        orgs_updated = 0
+        for row in rows:
+            org_id, pr_com, pr_sec, pr_pr_odoo, r_group, r_odoo = row
+            org = self.browse(org_id).exists()
+            if not org:
+                continue
+            update = {}
+            if (pr_com or r_group) and not org.has_comgroup:
+                update['has_comgroup'] = True
+                flags_set['has_comgroup'] += 1
+            if pr_sec and not org.has_secgroup:
+                update['has_secgroup'] = True
+                flags_set['has_secgroup'] += 1
+            if (pr_pr_odoo or r_odoo) and not org.has_odoo_group:
+                update['has_odoo_group'] = True
+                flags_set['has_odoo_group'] += 1
+            if update:
+                org.with_context(
+                    skip_pg_flag_handling=True,
+                    skip_manual_audit=True).write(update)
+                orgs_updated += 1
+
+        # Copy role.odoo_group_ids → org.odoo_group_ids on every BRSO
+        # target_org. Done with raw SQL because role.odoo_group_ids has
+        # been removed from the model — but the relation table still
+        # exists during this upgrade.
+        cr.execute("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_name = 'myschool_role_odoo_groups_rel'
+        """)
+        if cr.fetchall():
+            cr.execute("""
+                INSERT INTO myschool_org_res_groups_rel (org_id, group_id)
+                SELECT DISTINCT pr.id_org, rel.group_id
+                FROM myschool_proprelation pr
+                JOIN myschool_proprelation_type prt
+                  ON prt.id = pr.proprelation_type_id
+                JOIN myschool_role_odoo_groups_rel rel
+                  ON rel.role_id = pr.id_role
+                WHERE prt.name = 'BRSO'
+                  AND pr.is_active = true
+                  AND pr.id_org IS NOT NULL
+                ON CONFLICT DO NOTHING
+            """)
+            flags_set['odoo_groups_linked'] = cr.rowcount or 0
+
+        _logger.info('[FLAG-MIGRATE] %d org(s) updated; %s', orgs_updated, flags_set)
+        return {'orgs_updated': orgs_updated, 'flags_set': flags_set}
 
     # =========================================================================
     # Audit Trail - Create backend tasks for manual changes
+    # =========================================================================
+
+    @api.model
+    def sync_all_persongroups(self):
+        """Sweep every active org with one of the group flags set
+        (``has_comgroup`` / ``has_secgroup`` / ``has_odoo_group``) and
+        re-sync its persongroup.
+
+        For each such org:
+        - Skip if it's a PERSONGROUP itself (never re-spawns from itself).
+        - Call ``betask_processor._sync_org_persongroup`` which
+          creates/finds the persongroup under the parent SCHOOL's
+          OuForGroups, then rebuilds the PG-P member set from
+          PERSON-TREE + every PPSBR reachable via BRSOs targeting this
+          org.
+
+        Returns a dict ``{'orgs_processed': N, 'errors': [...]}``.
+        Idempotent — safe to run repeatedly.
+        """
+        processor = self.env['myschool.betask.processor']
+        OrgType = self.env['myschool.org.type']
+        pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+
+        domain = [
+            ('is_active', '=', True),
+            '|', '|',
+            ('has_comgroup', '=', True),
+            ('has_secgroup', '=', True),
+            ('has_odoo_group', '=', True),
+        ]
+        if pg_type:
+            domain.append(('org_type_id', '!=', pg_type.id))
+
+        candidates = self.search(domain)
+        errors = []
+        processed = 0
+        for org in candidates:
+            try:
+                processor._sync_org_persongroup(org)
+                processed += 1
+            except Exception as e:
+                _logger.exception(
+                    '[PG-SYNC-ALL] failed for %s: %s', org.name, e)
+                errors.append(f'{org.name} (id={org.id}): {e}')
+        _logger.info(
+            '[PG-SYNC-ALL] processed %d org(s), %d error(s)',
+            processed, len(errors))
+        return {'orgs_processed': processed, 'errors': errors}
+
     # =========================================================================
 
     # Fields to track for audit
@@ -107,7 +320,23 @@ class Org(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Override create to log audit trail."""
+        """Override create to log audit trail and enforce invariants.
+
+        PERSONGROUP invariant: ``name_short`` mirrors ``name`` so the
+        AD CN, the persongroup display name, and the search-key all
+        carry the same canonical group string. For other org types
+        ``name_short`` stays whatever the caller provided (the short
+        slug is meaningful there).
+        """
+        OrgType = self.env['myschool.org.type']
+        for vals in vals_list:
+            ot_id = vals.get('org_type_id')
+            if ot_id and OrgType.browse(ot_id).name == 'PERSONGROUP':
+                # Force name_short = name when both can be derived.
+                if vals.get('name'):
+                    vals['name_short'] = vals['name']
+                elif vals.get('name_short'):
+                    vals['name'] = vals['name_short']
         records = super().create(vals_list)
 
         for record in records:
@@ -117,13 +346,43 @@ class Org(models.Model):
 
     def write(self, vals):
         """Override write to log audit trail and handle persongroup flags."""
+        # PERSONGROUP invariant: name_short follows name. Apply when the
+        # caller is updating either side on a persongroup record.
+        if 'name' in vals or 'name_short' in vals:
+            for record in self:
+                if not (record.org_type_id and record.org_type_id.name == 'PERSONGROUP'):
+                    continue
+                if 'name' in vals:
+                    vals = {**vals, 'name_short': vals['name']}
+                elif 'name_short' in vals:
+                    vals = {**vals, 'name': vals['name_short']}
+                # Only need to compute the merge once — same target
+                # value for every persongroup in the recordset.
+                break
+
+        # Groups-container invariant: a department that has PERSONGROUP
+        # children may not carry has_comgroup / has_secgroup /
+        # has_odoo_group itself — those flags belong on the groups, not
+        # on the OU that contains them. Force them to False here as a
+        # backstop; the form view also marks them readonly so the user
+        # can't toggle them in the first place.
+        truthy_container_flags = [
+            f for f in self._GROUPS_CONTAINER_FLAGS if vals.get(f)
+        ]
+        if truthy_container_flags and self.filtered('is_groups_container'):
+            _logger.warning(
+                '[ORG] Forcing %s = False on groups-container org(s): %s',
+                truthy_container_flags,
+                self.filtered('is_groups_container').mapped('name'))
+            vals = {**vals, **{f: False for f in truthy_container_flags}}
+
         # Capture old values before write
         old_values_map = {}
         for record in self:
             old_values_map[record.id] = record._get_audit_values()
 
         # Capture old persongroup flags before write
-        _PG_FLAG_FIELDS = ('has_comgroup', 'has_secgroup', 'has_accounts', 'has_role')
+        _PG_FLAG_FIELDS = ('has_comgroup', 'has_secgroup')
         old_pg_flags = {}
         if not self.env.context.get('skip_pg_flag_handling') and \
                 any(f in vals for f in _PG_FLAG_FIELDS):
@@ -131,8 +390,6 @@ class Org(models.Model):
                 old_pg_flags[record.id] = {
                     'has_comgroup': record.has_comgroup,
                     'has_secgroup': record.has_secgroup,
-                    'has_accounts': record.has_accounts,
-                    'has_role': record.has_role,
                 }
 
         # Check if this is a deactivation
@@ -302,8 +559,18 @@ class Org(models.Model):
           3. Sync PG-P members
         When a flag turns OFF:
           Deactivate the persongroup and its PG-P / ORG-TREE relations.
+
+        **Guard against self-recursion**: a PERSONGROUP itself never
+        spawns another persongroup. Without this guard, creating a
+        persongroup with ``has_comgroup=True`` re-entered this handler,
+        which then re-applied the ``grp-`` prefix to the already-prefixed
+        name (e.g. ``grp-ict-bawa`` → ``grp-grp-ict-bawa-bawa``) and
+        kicked off another `_find_or_create_persongroup` chain — an
+        infinite cascade producing ever-longer names.
         """
         self.ensure_one()
+        if (self.org_type_id and self.org_type_id.name == 'PERSONGROUP'):
+            return
         processor = self.env['myschool.betask.processor']
 
         flag_pairs = [
@@ -320,19 +587,6 @@ class Org(models.Model):
 
             if not old_val and new_val:
                 # ── Flag turned ON ──────────────────────────────────────
-                if not self.has_accounts and not self.has_role:
-                    msg = (f'{self.name}: {flag_field}=True but has_accounts=False '
-                           f'and has_role=False — skipping persongroup creation')
-                    _logger.warning(f'[PG-SYNC] {msg}')
-                    try:
-                        self.env['myschool.sys.event.service'].create_sys_error(
-                            code='PG-SYNC-SKIP', data=msg,
-                            error_type='ERROR-NONBLOCKING',
-                            log_to_screen=True, source='BE')
-                    except Exception:
-                        pass
-                    continue
-
                 # Resolve school and OuForGroups
                 school_org = processor._resolve_parent_school_from_org(self)
                 if not school_org:
@@ -347,10 +601,19 @@ class Org(models.Model):
                 if not group_name:
                     continue
 
-                # Step 2 — create persongroup via betask
+                # Step 2 — create persongroup via betask. Pass the
+                # already-canonicalised string as ``group_name_override``
+                # so ``_find_or_create_persongroup`` uses it verbatim;
+                # otherwise its default formula (``grp-{name_short}-{school}``)
+                # would re-prefix and re-append the school short, e.g.
+                # ``grp-boekhouding-adm-pers-bawa`` →
+                # ``grp-grp-boekhouding-adm-pers-bawa-bawa``.
                 pg, _created = processor._find_or_create_persongroup(
                     group_name, group_name, school_org,
-                    source_label=f'org:{self.name}:{flag_field}')
+                    source_label=f'org:{self.name}:{flag_field}',
+                    group_name_override=group_name,
+                    has_comgroup=(flag_field == 'has_comgroup'),
+                    has_secgroup=(flag_field == 'has_secgroup'))
                 if not pg:
                     continue
 
@@ -432,32 +695,27 @@ class Org(models.Model):
             school_org.name_short, 'OuForGroups') if school_org else None
         ou_for_groups_lower = (ou_for_groups or '').lower()
 
-        # Parent FQDNs (from the ORG-TREE parent, not this org)
-        parent_fqdn_int = ''
-        parent_fqdn_ext = ''
-        parent_rel = PropRelation.search([
-            ('proprelation_type_id', '=', org_tree_type.id),
-            ('id_org', '=', self.id),
-            ('id_org_parent', '!=', False),
-            ('is_active', '=', True),
-        ], limit=1)
-        if parent_rel and parent_rel.id_org_parent:
-            parent_fqdn_int = (parent_rel.id_org_parent.ou_fqdn_internal or '').lower()
-            parent_fqdn_ext = (parent_rel.id_org_parent.ou_fqdn_external or '').lower()
+        # The OU that holds groups sits *immediately under the SCHOOL*,
+        # not under this org's ORG-TREE parent. Earlier code used the
+        # ORG-TREE parent's ou_fqdn — which for a persongroup placed under
+        # the OuForGroups-org produced doubled segments
+        # (cn=…,ou=cgroup,ou=cgroup,dc=…). Anchor on the school directly.
+        school_fqdn_int = (school_org.ou_fqdn_internal or '').lower() if school_org else ''
+        school_fqdn_ext = (school_org.ou_fqdn_external or '').lower() if school_org else ''
 
         # Build update dict
         org_update = {name_field: group_name}
         grp_lower = group_name.lower()
 
-        for direction, parent_fqdn, fqdn_field in [
-            ('internal', parent_fqdn_int, fqdn_int_field),
-            ('external', parent_fqdn_ext, fqdn_ext_field),
+        for direction, school_fqdn, fqdn_field in [
+            ('internal', school_fqdn_int, fqdn_int_field),
+            ('external', school_fqdn_ext, fqdn_ext_field),
         ]:
-            if parent_fqdn:
+            if school_fqdn:
                 if ou_for_groups_lower:
-                    org_update[fqdn_field] = f"cn={grp_lower},ou={ou_for_groups_lower},{parent_fqdn}"
+                    org_update[fqdn_field] = f"cn={grp_lower},ou={ou_for_groups_lower},{school_fqdn}"
                 else:
-                    org_update[fqdn_field] = f"cn={grp_lower},{parent_fqdn}"
+                    org_update[fqdn_field] = f"cn={grp_lower},{school_fqdn}"
 
         # Email (only for com_group)
         if email_field and group_name and school_org.domain_external:
@@ -468,53 +726,71 @@ class Org(models.Model):
         return group_name
 
     def _sync_persongroup_members(self, pg, processor, flag_field):
-        """Sync PG-P members after persongroup creation."""
+        """Sync PG-P members after persongroup creation.
+
+        Members = the union of persons placed in this org via
+        PERSON-TREE *and* persons that have an active PPSBR for any of
+        the roles whose BRSO targets this org. The has_accounts split
+        was removed — both sets are typically wanted, and the BRSO-set
+        captures every assignment that drove the group's existence in
+        the first place.
+        """
         self.ensure_one()
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         source = f'org:{self.name}:{flag_field}'
 
-        if self.has_accounts:
-            # has_accounts=True: persons from PERSON-TREE on this org
-            pt_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
-            if pt_type:
-                pt_rels = PropRelation.search([
-                    ('proprelation_type_id', '=', pt_type.id),
-                    ('id_org', '=', self.id),
-                    ('is_active', '=', True),
-                    ('id_person', '!=', False),
-                ])
-                processor._sync_pg_p_members(
-                    pg, [r.id_person.id for r in pt_rels], source_label=source)
-        else:
-            # has_accounts=False, has_role=True: persons from BRSO roles
-            brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
-            ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
-            if brso_type and ppsbr_type:
-                brso_rels = PropRelation.search([
-                    ('proprelation_type_id', '=', brso_type.id),
-                    ('id_org_parent', '=', self.id),
-                    ('is_active', '=', True),
-                    ('id_role', '!=', False),
-                ])
-                if brso_rels:
-                    org_ids = {self.id}
-                    if self.inst_nr:
-                        same_inst = self.env['myschool.org'].search([
-                            ('inst_nr', '=', self.inst_nr),
-                            ('is_active', '=', True),
-                        ])
-                        org_ids.update(same_inst.ids)
-                    role_ids = list(set(r.id_role.id for r in brso_rels))
+        person_ids = set()
+
+        # Persons placed under this org via PERSON-TREE.
+        pt_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        if pt_type:
+            pt_rels = PropRelation.search([
+                ('proprelation_type_id', '=', pt_type.id),
+                ('id_org', '=', self.id),
+                ('is_active', '=', True),
+                ('id_person', '!=', False),
+            ])
+            person_ids.update(r.id_person.id for r in pt_rels if r.id_person)
+
+        # Persons reachable through BRSOs that target this org as the
+        # role's anchor (typical setup: org='leerkrachten' under SO; PPSBRs
+        # of TEACHER@SO drive membership).
+        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        if brso_type and ppsbr_type:
+            brso_rels = PropRelation.search([
+                ('proprelation_type_id', '=', brso_type.id),
+                ('id_org', '=', self.id),
+                ('is_active', '=', True),
+                ('id_role', '!=', False),
+            ])
+            if brso_rels:
+                role_ids = list({r.id_role.id for r in brso_rels})
+                # Match PPSBRs against every school where any of these
+                # BRSOs is anchored (id_org_parent), plus all admin/sub
+                # variants sharing the same inst_nr.
+                school_ids = set()
+                for b in brso_rels:
+                    if b.id_org_parent:
+                        school_ids.add(b.id_org_parent.id)
+                        if b.id_org_parent.inst_nr:
+                            same_inst = self.env['myschool.org'].search([
+                                ('inst_nr', '=', b.id_org_parent.inst_nr),
+                                ('is_active', '=', True),
+                            ])
+                            school_ids.update(same_inst.ids)
+                if school_ids:
                     ppsbr_rels = PropRelation.search([
                         ('proprelation_type_id', '=', ppsbr_type.id),
                         ('id_role', 'in', role_ids),
-                        ('id_org_parent', 'in', list(org_ids)),
+                        ('id_org_parent', 'in', list(school_ids)),
                         ('is_active', '=', True),
                         ('id_person', '!=', False),
                     ])
-                    person_ids = list(set(r.id_person.id for r in ppsbr_rels))
-                    processor._sync_pg_p_members(pg, person_ids, source_label=source)
+                    person_ids.update(r.id_person.id for r in ppsbr_rels if r.id_person)
+
+        processor._sync_pg_p_members(pg, list(person_ids), source_label=source)
 
     def _deactivate_persongroup_by_name(self, group_name):
         """Find and delete a persongroup via MANUAL/ORG/DEL betask."""

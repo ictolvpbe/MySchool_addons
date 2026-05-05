@@ -57,6 +57,14 @@ class Person(models.Model):
         string='Voornaam',
         help='Voornaam van de persoon'
     )
+
+    last_name = fields.Char(
+        string='Achternaam',
+        size=100,
+        index=True,
+        help='Achternaam (Achternaam, Voornaam)'
+    )
+
     short_name = fields.Char(
         string='Roepnaam',
         help='Informele naam / roepnaam'
@@ -219,11 +227,58 @@ class Person(models.Model):
         required=True,
         help='Automatisch synchroniseren met externe systemen'
     )
+    # ------------------------------------------------------------------
+    # Account-lifecycle dates
+    # ------------------------------------------------------------------
+    # Day X       : deactivation_pending_since wordt gezet zodra er geen
+    #               actieve assignments meer zijn — de persoon wordt op
+    #               dat moment ook uit alle groepen verwijderd.
+    # Day X + EmployeeSuspendPeriod : account_deactivation_due_date —
+    #               de cron deactiveert dan is_active en plaatst een
+    #               LDAP/USER/DEL betask. ``deactivation_date`` legt het
+    #               moment van de werkelijke deactivatie vast.
+    # Day X + EmployeeSuspendPeriod + EmployeeDeletePeriod :
+    #               google_account_delete_due_date — de cron stelt dan
+    #               een CLOUD/USER/DEL betask in (placeholder, handler
+    #               nog te implementeren). google_account_deletion_requested_date
+    #               wordt geset op het moment van enqueue zodat we niet
+    #               dubbel queueen.
+    deactivation_pending_since = fields.Date(
+        string='Deactivatie hangende sinds',
+        index=True,
+        help='Datum waarop alle actieve assignments wegvielen. Vanaf '
+             'deze dag start de suspend-periode (EmployeeSuspendPeriod). '
+             'Wordt automatisch gewist bij reactivatie.'
+    )
+    account_deactivation_due_date = fields.Date(
+        string='Account-deactivatie vervaldatum',
+        compute='_compute_lifecycle_due_dates',
+        store=True,
+        index=True,
+        help='deactivation_pending_since + EmployeeSuspendPeriod (CI). '
+             'De cron deactiveert het account zodra deze datum bereikt is.'
+    )
+    google_account_delete_due_date = fields.Date(
+        string='Google-account verwijderen vervaldatum',
+        compute='_compute_lifecycle_due_dates',
+        store=True,
+        index=True,
+        help='account_deactivation_due_date + EmployeeDeletePeriod (CI). '
+             'De cron plaatst een CLOUD/USER/DEL betask zodra deze datum '
+             'bereikt is.'
+    )
     deactivation_date = fields.Date(
         string='Deactivatiedatum',
         index=True,
-        help='Datum waarop alle actieve assignments wegvielen. '
-             'Gebruikt voor account lifecycle management.'
+        help='Datum waarop is_active op False is gezet (door de '
+             'lifecycle-cron of manueel). Vóór deze datum bestond het '
+             'account nog, na deze datum is het in suspend.'
+    )
+    google_account_deletion_requested_date = fields.Date(
+        string='Google-deletion ingediend op',
+        index=True,
+        help='Datum waarop de CLOUD/USER/DEL betask aangemaakt werd. '
+             'Voorkomt dubbele queueing door de lifecycle-cron.'
     )
 
     # =========================================================================
@@ -510,7 +565,11 @@ class Person(models.Model):
         """Get formatted display name."""
         self.ensure_one()
         if self.first_name:
-            return f"{self.first_name} {self.name.split(',')[0].strip() if ',' in self.name else self.name}"
+            last = self.last_name or (
+                self.name.split(',')[0].strip()
+                if self.name and ',' in self.name
+                else self.name)
+            return f"{self.first_name} {last}"
         return self.name
     
     def is_employee(self):
@@ -529,12 +588,36 @@ class Person(models.Model):
 
     # Fields to track for audit
     _AUDIT_FIELDS = [
-        'name', 'first_name', 'short_name', 'abbreviation',
+        'name', 'first_name', 'last_name', 'short_name', 'abbreviation',
         'person_type_id', 'is_active', 'gender', 'insz', 'birth_date',
         'sap_ref', 'sap_person_uuid', 'stam_boek_nr',
         'email_cloud', 'email_private',
         'reg_start_date', 'reg_end_date', 'reg_inst_nr', 'reg_group_code',
+        'deactivation_pending_since', 'deactivation_date',
+        'google_account_deletion_requested_date',
     ]
+
+    # ------------------------------------------------------------------
+    # Lifecycle due-date compute
+    # ------------------------------------------------------------------
+    @api.depends('deactivation_pending_since', 'deactivation_date')
+    def _compute_lifecycle_due_dates(self):
+        from datetime import timedelta
+        ConfigItem = self.env['myschool.config.item']
+        suspend_days = ConfigItem.get_int('EmployeeSuspendPeriod', 30)
+        delete_days = ConfigItem.get_int('EmployeeDeletePeriod', 30)
+        for rec in self:
+            if rec.deactivation_pending_since:
+                rec.account_deactivation_due_date = (
+                    rec.deactivation_pending_since + timedelta(days=suspend_days))
+            else:
+                rec.account_deactivation_due_date = False
+            base = rec.deactivation_date or rec.account_deactivation_due_date
+            if base:
+                rec.google_account_delete_due_date = (
+                    base + timedelta(days=delete_days))
+            else:
+                rec.google_account_delete_due_date = False
 
     @api.model_create_multi
     def create(self, vals_list):

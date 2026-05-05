@@ -14,6 +14,7 @@ from . import proprelation
 from . import proprelation_service
 from . import config_item
 from . import ci_relation
+from . import field_template
 from . import betask_type
 from . import betask_type_service
 from . import betask

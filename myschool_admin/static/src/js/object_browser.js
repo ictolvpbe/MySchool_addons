@@ -24,7 +24,7 @@ export class TreeNode extends Component {
         onDrop: { type: Function, optional: true },
         selectedIds: { type: Object, optional: true },
         selectionMode: { type: Boolean, optional: true },
-        draggedNode: { type: Object, optional: true },
+        draggedNode: { type: [Object, Boolean], optional: true },
         expandedIds: { type: Object, optional: true },
         onToggleExpand: { type: Function, optional: true },
     };
@@ -291,6 +291,7 @@ export class MembersPanel extends Component {
         onPasswordClick: { type: Function, optional: true },
         selectedMemberId: { type: Number, optional: true },
         selectedMemberType: { type: String, optional: true },
+        selectedMemberIds: { type: Object, optional: true },
     };
     
     setup() {
@@ -337,7 +338,7 @@ export class MembersPanel extends Component {
         const id = parseInt(ev.currentTarget.dataset.id);
         const name = ev.currentTarget.dataset.name;
         const type = ev.currentTarget.dataset.type;
-        
+
         if (this.props.onMemberSelect && id) {
             // Create a node object and select it to show in details panel
             const node = {
@@ -347,7 +348,10 @@ export class MembersPanel extends Component {
                 model: model,
                 org_id: this.props.node?.id,
             };
-            this.props.onMemberSelect(node);
+            this.props.onMemberSelect(node, {
+                ctrlKey: ev.ctrlKey || ev.metaKey,
+                shiftKey: ev.shiftKey,
+            });
         }
     }
     
@@ -392,6 +396,11 @@ export class MembersPanel extends Component {
      */
     isMemberMultiSelected(memberId, memberType) {
         return false;
+    }
+
+    isMemberMultiSelected(memberId, memberType) {
+        const key = `${memberType}_${memberId}`;
+        return !!(this.props.selectedMemberIds && this.props.selectedMemberIds[key]);
     }
 }
 
@@ -490,12 +499,17 @@ export class ObjectBrowserClient extends Component {
             selectedIds: {},
             expandedIds: {},
             contextMenu: null,
-            draggedNode: null,
+            draggedNode: false,
             activeNode: null,
             activeOrgNode: null,  // Keep track of selected org for members panel
             activeTab: 'orgs',  // 'orgs' or 'roles'
             membersData: { persons: [], persongroups: [] },
             membersLoading: false,
+            // Multi-select set for the members pane (ctrl/shift+click).
+            // Keys: `${type}_${id}` where type is 'person' or 'persongroup'.
+            selectedMemberIds: {},
+            // Anchor for shift+click range select on members pane.
+            lastSelectedMemberKey: null,
         });
         
         // Bind methods that are passed as props
@@ -646,8 +660,63 @@ export class ObjectBrowserClient extends Component {
         // For persons, don't clear members data - keep showing the org's members
     }
     
-    // Member selection from members panel - shows details without clearing members
-    onMemberSelect(node) {
+    // Flat list of members shown in the panel (persons then persongroups,
+    // matching template order). Used for shift+click range selection.
+    flattenVisibleMembers() {
+        const result = [];
+        const m = this.state.membersData || {};
+        for (const p of (m.persons || [])) {
+            result.push({ id: p.id, type: 'person' });
+        }
+        for (const g of (m.persongroups || [])) {
+            result.push({ id: g.id, type: 'persongroup' });
+        }
+        return result;
+    }
+
+    // Member selection from members panel — supports plain, ctrl+ and
+    // shift+click. Single click resets the multi-set; ctrl toggles a key;
+    // shift adds the range from the last anchor.
+    onMemberSelect(node, mods) {
+        const memberKey = `${node.type}_${node.id}`;
+        const ctrl = !!(mods && mods.ctrlKey);
+        const shift = !!(mods && mods.shiftKey);
+
+        if (ctrl) {
+            const next = { ...this.state.selectedMemberIds };
+            if (next[memberKey]) {
+                delete next[memberKey];
+            } else {
+                next[memberKey] = true;
+            }
+            this.state.selectedMemberIds = next;
+            this.state.lastSelectedMemberKey = memberKey;
+            return;
+        }
+
+        if (shift && this.state.lastSelectedMemberKey) {
+            const flat = this.flattenVisibleMembers();
+            const anchorIdx = flat.findIndex(
+                n => `${n.type}_${n.id}` === this.state.lastSelectedMemberKey);
+            const thisIdx = flat.findIndex(
+                n => `${n.type}_${n.id}` === memberKey);
+            if (anchorIdx >= 0 && thisIdx >= 0) {
+                const [start, end] = anchorIdx <= thisIdx
+                    ? [anchorIdx, thisIdx]
+                    : [thisIdx, anchorIdx];
+                const next = { ...this.state.selectedMemberIds };
+                for (let i = start; i <= end; i++) {
+                    const n = flat[i];
+                    next[`${n.type}_${n.id}`] = true;
+                }
+                this.state.selectedMemberIds = next;
+                return;
+            }
+        }
+
+        // Plain click — reset multi-set, focus this one in the details pane.
+        this.state.selectedMemberIds = {};
+        this.state.lastSelectedMemberKey = memberKey;
         this.state.activeNode = node;
         // Don't change activeOrgNode or membersData - keep members panel showing
     }
@@ -973,10 +1042,12 @@ export class ObjectBrowserClient extends Component {
         const orgId = node.org_id || node.id;
         if (orgId) this.expandPathToOrg(orgId);
         this.action.doAction({
-            type: 'ir.actions.act_window',
-            res_model: 'myschool.manage.persongroup.members.wizard',
-            views: [[false, 'form']],
+            type: 'ir.actions.client',
+            tag: 'myschool_persongroup_member_browser',
             target: 'new',
+            params: {
+                persongroup_id: node.id,
+            },
             context: {
                 default_persongroup_id: node.id,
             },
@@ -1411,7 +1482,7 @@ export class ObjectBrowserClient extends Component {
             console.error('Drop error:', error);
             this.notification.add('Error moving item', { type: 'danger' });
         } finally {
-            this.state.draggedNode = null;
+            this.state.draggedNode = false;
         }
     }
     

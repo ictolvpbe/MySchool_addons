@@ -1434,7 +1434,9 @@ class InformatService(models.AbstractModel):
                 ('is_active', '=', True),
                 ('automatic_sync', '=', True),
                 ('person_type_id.name', '=', 'EMPLOYEE'),
-                ('deactivation_date', '=', False),
+                # Skip employees that are already in the suspend pipeline
+                # (no active assignments, awaiting account deactivation).
+                ('deactivation_pending_since', '=', False),
             ])
 
             self._create_sys_event("BETASK-001",
@@ -1508,6 +1510,12 @@ class InformatService(models.AbstractModel):
                         assignment_end_date = self._parse_date_safe(assignment.get('einddatum'))
                         if assignment_end_date and assignment_end_date < one_week_ago:
                             _logger.info(f"Assignment for {person.name} has end date {assignment_end_date} (> 1 week ago) - skipping")
+                            self._create_sys_event(
+                                "BETASK-DEBUG",
+                                f"Skipping assignment for {person.name} @ inst_nr {inst_nr} "
+                                f"(ambtCode={hoofd_ambt_code}): einddatum {assignment_end_date} "
+                                f"is more than 1 week before today — no PPSBR will be created."
+                            )
                             continue
 
                         # Find the SAP Role TODO: REQUIRED?????
@@ -2559,6 +2567,7 @@ class InformatService(models.AbstractModel):
         # Map of Python field names to JSON field names (must match Informat keys)
         field_mapping = {
             'first_name': 'voornaam',
+            'last_name': 'naam',
             'birth_date': 'geboortedatum',
             'gender': 'geslacht',
             'insz': 'rijksregisternr',

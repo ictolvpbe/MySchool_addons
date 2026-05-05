@@ -68,3 +68,5 @@ access_myschool_asset_checkout_user,myschool.asset.checkout.user,model_myschool_
 access_myschool_asset_checkout_admin,myschool.asset.checkout.admin,model_myschool_asset_checkout,myschool_core.group_myschool_core_admin,1,1,1,1
 access_myschool_access_policy_user,myschool.access.policy.user,model_myschool_access_policy,myschool_core.group_myschool_core_user,1,0,0,0
 access_myschool_access_policy_admin,myschool.access.policy.admin,model_myschool_access_policy,myschool_core.group_myschool_core_admin,1,1,1,1
+access_myschool_field_template_user,myschool.field.template.user,model_myschool_field_template,myschool_core.group_myschool_core_user,1,0,0,0
+access_myschool_field_template_admin,myschool.field.template.admin,model_myschool_field_template,myschool_core.group_myschool_core_admin,1,1,1,1
