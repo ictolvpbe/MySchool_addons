@@ -11,7 +11,7 @@
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
-    'depends': ['base', 'mail', 'hr', 'myschool_core', 'myschool_admin'],
+    'depends': ['base', 'mail', 'hr', 'myschool_core'],
     'data': [
         'security/security_groups.xml',
         'security/ir.model.access.csv',
@@ -22,8 +22,10 @@
         'data/vak_data.xml',
         'wizard/add_date_wizard_views.xml',
         'views/professionalisering_views.xml',
-        'views/vak_views.xml',
+        # Root menu must exist before vak_views.xml hangs Configuratie
+        # under it.
         'views/professionalisering_menu.xml',
+        'views/vak_views.xml',
     ],
     'assets': {
         'web.assets_backend': [
