@@ -189,6 +189,8 @@
                                     <field name="id_person" optional="show"/>
                                     <field name="id_role" optional="show"/>
                                     <field name="id_org_parent" optional="show"/>
+                                    <field name="start_date" optional="hide"/>
+                                    <field name="end_date" optional="show"/>
                                     <field name="is_active" widget="boolean"/>
                                     <field name="is_master" widget="boolean" optional="show"/>
                                     <field name="automatic_sync" widget="boolean" optional="show"/>

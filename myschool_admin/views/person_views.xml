@@ -193,7 +193,7 @@
                                     <field name="is_master" widget="boolean" optional="show"/>
                                     <field name="automatic_sync" widget="boolean" optional="show"/>
                                     <field name="start_date" optional="hide"/>
-                                    <field name="end_date" optional="hide"/>
+                                    <field name="end_date" optional="show"/>
                                 </list>
                             </field>
                         </page>

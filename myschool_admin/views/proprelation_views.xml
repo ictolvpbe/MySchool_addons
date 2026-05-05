@@ -16,6 +16,8 @@
                 <field name="id_org" optional="show"/>
                 <field name="id_org_parent" optional="hide"/>
                 <field name="id_period" optional="hide"/>
+                <field name="start_date" optional="hide"/>
+                <field name="end_date" optional="show"/>
                 <field name="is_active" widget="boolean"/>
                 <field name="is_master" widget="boolean" optional="show"/>
                 <field name="automatic_sync" widget="boolean" optional="show"/>
@@ -42,6 +44,8 @@
                         <group string="Relation">
                             <field name="proprelation_type_id"/>
                             <field name="start_date"/>
+                            <field name="end_date" readonly="is_active"
+                                   help="Auto-stamped wanneer is_active naar False geflipt wordt; leeggemaakt bij heractivatie."/>
                             <field name="is_active" widget="boolean_toggle"/>
                         </group>
                         <group string="Flags">
@@ -107,9 +111,16 @@
                 <field name="id_role"/>
                 <field name="id_org"/>
                 <field name="id_period"/>
+                <field name="start_date"/>
+                <field name="end_date"/>
                 <separator/>
                 <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
                 <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
+                <separator/>
+                <filter string="Met einddatum" name="has_end_date"
+                        domain="[('end_date', '!=', False)]"/>
+                <filter string="Zonder einddatum" name="no_end_date"
+                        domain="[('end_date', '=', False)]"/>
                 <separator/>
                 <filter string="ORG-TREE" name="type_org_tree" domain="[('proprelation_type_id.name', '=', 'ORG-TREE')]"/>
                 <filter string="PERSON-TREE" name="type_person_tree" domain="[('proprelation_type_id.name', '=', 'PERSON-TREE')]"/>

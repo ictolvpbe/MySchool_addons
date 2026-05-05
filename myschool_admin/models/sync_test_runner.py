@@ -65,87 +65,83 @@ EXPECTATIONS = {
             {'type': 'person_reg_inst_nr', 'uuid': 'a65d06d9-7250-4660-b0b1-6b319d1ca286', 'inst_nr': '038281'},
         ],
     },
-    '2 - Class move to other instnr': {
+    # ------------------------------------------------------------------
+    # Students-mode lifecycle — followed leerling: Wagenaar Lukas
+    #   uuid    : 07e582c9-4182-474e-9473-a0e4f6bc3ba9
+    #   inst    : 038281
+    # Klas-deactivatie en klas-verhuizing tussen instellingen worden
+    # apart getest (bewaard onder _deferred-class-tests/).
+    # ------------------------------------------------------------------
+
+    '2 - Student data added (Wagenaar)': {
         'description': (
-            'De klas 5BEORb (met enig lid Ouchan) verhuist van 038307 naar '
-            '038281. De klas blijft bestaan (geen DEACT/ADD), enkel inst_nr '
-            'wijzigt. Ouchan (b163d052…) krijgt reg_inst_nr=038281.'
+            'Leerling: Wagenaar Lukas (07e582c9…). '
+            'Verwacht: Wagenaar bestaat al uit stap 1 met enkel reg-data. '
+            'Stap 2 levert dev-students-038281.json met zijn volledige '
+            'persoonsdata (naam, voornaam, geboortedatum, adres, e-mail, '
+            'relatie). Persoon actief, reg_end_date leeg, actieve klas '
+            'blijft 1DOEa, en first_name/last_name worden bijgewerkt.'
         ),
         'checks': [
-            {'type': 'classgroup_active', 'name_short': '5BEORb', 'inst_nr': '038281'},
-            {'type': 'classgroup_inactive_at', 'name_short': '5BEORb', 'inst_nr': '038307'},
-            {'type': 'person_reg_inst_nr', 'uuid': 'b163d052-d88f-4972-a74a-6ac689f8fdf0', 'inst_nr': '038281'},
-            {'type': 'person_active_class', 'uuid': 'b163d052-d88f-4972-a74a-6ac689f8fdf0', 'klas_code': '5BEORb'},
+            {'type': 'person_exists_active',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_reg_end_empty',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_active_class',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'klas_code': '1DOEa'},
         ],
     },
-    '3 - class deact': {
+    '3 - Student class change (Wagenaar)': {
         'description': (
-            'Buysse (a90bd8f1…) verhuist van 3GRLA naar 3ECWE4. 3GRLA raakt '
-            'leeg maar blijft actief (auto-deact gebeurt niet — opruiming '
-            'volgt bij schooljaar-init). 3ECWE4 actief en bevat Buysse.'
+            'Leerling: Wagenaar Lukas (07e582c9…). '
+            'Verwacht: Wagenaar verhuist binnen instelling 038281 van '
+            'klas 1DOEa naar 1DOEb. De inschrKlassen-entry voor 1DOEa '
+            'krijgt een einddatum, 1DOEb staat open. Persoon blijft '
+            'actief; actieve klas = 1DOEb; niet meer lid van 1DOEa.'
         ),
         'checks': [
-            {'type': 'classgroup_active', 'name_short': '3ECWE4'},
-            {'type': 'person_active_class', 'uuid': 'a90bd8f1-e497-4b7a-87ba-6b27e7c6c049', 'klas_code': '3ECWE4'},
-            {'type': 'person_not_in_class', 'uuid': 'a90bd8f1-e497-4b7a-87ba-6b27e7c6c049', 'klas_code': '3GRLA'},
+            {'type': 'person_exists_active',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_reg_inst_nr',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'inst_nr': '038281'},
+            {'type': 'person_active_class',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'klas_code': '1DOEb'},
+            {'type': 'person_not_in_class',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'klas_code': '1DOEa'},
         ],
     },
-    '4 - add students': {
+    '4 - Student deactivated (Wagenaar)': {
         'description': (
-            'Twee nieuwe leerlingen — Jansen Emma in 038281/1ONTAa en '
-            'De Smet Lars in 038307/3BEORb. Beide moeten bestaan en aan '
-            'hun klas gekoppeld zijn.'
+            'Leerling: Wagenaar Lukas (07e582c9…). '
+            'Verwacht: registratie krijgt een einddatum (2026-05-05). '
+            'De sync moet een DB/PERSON/DEACT-task aanmaken — Wagenaar '
+            'wordt inactief óf zijn reg_end_date wordt gezet. Klas-rel '
+            'wordt afgesloten.'
         ),
         'checks': [
-            {'type': 'person_exists_active', 'uuid': 'c1111111-0000-4000-8000-000000000281'},
-            {'type': 'person_exists_active', 'uuid': 'c2222222-0000-4000-8000-000000000307'},
-            {'type': 'person_active_class', 'uuid': 'c1111111-0000-4000-8000-000000000281', 'klas_code': '1ONTAa'},
-            {'type': 'person_active_class', 'uuid': 'c2222222-0000-4000-8000-000000000307', 'klas_code': '3BEORb'},
+            {'type': 'person_inactive_or_ended',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
         ],
     },
-    '5 - classmove-to-other-instnr': {
+    '5 - Student reactivated (Wagenaar)': {
         'description': (
-            'Karpenko (a8aac5cc…) verhuist individueel van 038307/3BEORb '
-            'naar 038281/3ECWE4. Beide reg_inst_nr en klas wijzigen. '
-            '3BEORb in 038307 kan leeg raken maar blijft actief.'
+            'Leerling: Wagenaar Lukas (07e582c9…). '
+            'Verwacht: einddatum op de registratie wordt geleegd, '
+            'Wagenaar wordt heractiveerd. Persoon actief, '
+            'reg_end_date leeg, actieve klas = 1DOEb.'
         ),
         'checks': [
-            {'type': 'person_reg_inst_nr', 'uuid': 'a8aac5cc-2e07-4766-9228-2d7dd1d7b193', 'inst_nr': '038281'},
-            {'type': 'person_active_class', 'uuid': 'a8aac5cc-2e07-4766-9228-2d7dd1d7b193', 'klas_code': '3ECWE4'},
-            {'type': 'person_not_in_class', 'uuid': 'a8aac5cc-2e07-4766-9228-2d7dd1d7b193', 'klas_code': '3BEORb'},
-        ],
-    },
-    '5 - reactivate student in other class': {
-        'description': (
-            'Belhaj (4c8b3375…) was uitgeschreven (reg_end_date gezet). '
-            'Nieuwe JSON haalt de einddatum weg en zet hem in 3BEORb. '
-            'Persoon actief, reg_end_date leeg, actieve klas=3BEORb.'
-        ),
-        'checks': [
-            {'type': 'person_exists_active', 'uuid': '4c8b3375-c9a8-442f-b88a-c6e2fa03b786'},
-            {'type': 'person_reg_end_empty', 'uuid': '4c8b3375-c9a8-442f-b88a-c6e2fa03b786'},
-            {'type': 'person_active_class', 'uuid': '4c8b3375-c9a8-442f-b88a-c6e2fa03b786', 'klas_code': '3BEORb'},
-        ],
-    },
-    '6 - classmove-in-same-instnr': {
-        'description': (
-            'Wagenaar (07e582c9…) verhuist binnen 038281 van 1DOEa naar 1DOEb. '
-            'Actieve klas=1DOEb, niet meer als lid van 1DOEa.'
-        ),
-        'checks': [
-            {'type': 'person_active_class', 'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9', 'klas_code': '1DOEb'},
-            {'type': 'person_not_in_class', 'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9', 'klas_code': '1DOEa'},
-            {'type': 'classgroup_active', 'name_short': '1DOEb'},
-        ],
-    },
-    '7 -  deactivate student': {
-        'description': (
-            'Zirjaoui (6e32356f…) wordt uitgeschreven met einddatum '
-            '2026-02-28. Persoon moet inactief zijn of reg_end_date '
-            'gezet hebben.'
-        ),
-        'checks': [
-            {'type': 'person_inactive_or_ended', 'uuid': '6e32356f-790a-44c8-86d4-595b8880c088'},
+            {'type': 'person_exists_active',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_reg_end_empty',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_active_class',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'klas_code': '1DOEb'},
         ],
     },
 
@@ -646,12 +642,23 @@ class SyncTestSession(models.Model):
             'success')
 
     def action_force_reload_from_disk(self):
-        """Re-read every step file from disk into the DB, regardless of
-        the per-file ``user_edited`` flag. Use after editing testset
-        files outside the UI (e.g. shell-based bulk update) — otherwise
-        ``_flush_files_to_disk`` would overwrite your disk changes with
-        the (now-stale) DB content on the next run."""
+        """Full sync between disk and DB:
+        1. Rescan testset folders → create new step records, delete
+           records whose folder vanished (delegates to
+           ``action_refresh_steps``).
+        2. For every remaining step, re-read every file from disk into
+           the DB regardless of the per-file ``user_edited`` flag.
+
+        Use after editing testset files / folders outside the UI (e.g.
+        shell-based bulk update or moving folders around). Without the
+        rescan step you'd only see content updates on already-known
+        steps; new/removed folders would be invisible until the next
+        ``action_refresh_steps`` run.
+        """
         self.ensure_one()
+        # Step 1: pick up folder add/remove first.
+        self.action_refresh_steps()
+        # Step 2: force every file's content to match disk.
         reloaded = skipped = 0
         for step in self.step_ids:
             for frec in step.file_ids:
@@ -678,9 +685,13 @@ class SyncTestSession(models.Model):
             'tag': 'display_notification',
             'params': {
                 'title': 'Force reload from disk',
-                'message': f'Reloaded {reloaded} file(s), skipped {skipped} unreadable.',
+                'message': (
+                    f'Folder-rescan + content reload: {reloaded} file(s) '
+                    f'updated, {skipped} unreadable. '
+                    f'{len(self.step_ids)} step(s) on disk.'),
                 'type': 'success' if reloaded or not skipped else 'warning',
                 'sticky': False,
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
             },
         }
 
@@ -1820,6 +1831,13 @@ class SyncTestSession(models.Model):
                 n = len(related)
                 related.unlink()
                 log.append(f'BETASK: removed {n} reference(s) to {pid}')
+
+        # Sweep up persongroup orgs auto-created by the student sync.
+        # Same rationale as in the employees-mode branch above: PG orgs
+        # are not tracked per session, so once the test persons and
+        # classgroups are gone the PERSONGROUPs left behind are orphans
+        # and must be removed for the next run to start clean.
+        self._cleanup_orphan_persongroups(log, ctx, _purge_proprelations_for, _try_unlink)
 
         self._save_cleanup_log(log)
         return log

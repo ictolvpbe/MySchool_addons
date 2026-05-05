@@ -627,26 +627,19 @@ class BeTaskProcessor(models.AbstractModel):
             )
             _logger.info(f'Created ODOO-PERSON-ADD task for {new_person.name}')
         else:
-            # No active assignments — skip account creation; flag the
-            # suspend-clock so the lifecycle cron picks it up later.
-            new_person.write({
-                'deactivation_pending_since': fields.Date.context_today(self),
-            })
-            # Deactivate any proprelations for this person
-            PropRelation = self.env['myschool.proprelation']
-            active_proprels = PropRelation.search([
-                '|', '|',
-                ('id_person', '=', new_person.id),
-                ('id_person_parent', '=', new_person.id),
-                ('id_person_child', '=', new_person.id),
-                ('is_active', '=', True),
-            ])
-            if active_proprels:
-                active_proprels.write({'is_active': False})
+            # No active assignments — skip account creation. We do NOT
+            # start the suspend-clock here: ``deactivation_pending_since``
+            # marks a *transition* from "had assignments" to "has none",
+            # not a permanent "never had any". A brand-new employee
+            # imported without assignments has simply not been
+            # provisioned yet; if/when they later acquire an assignment
+            # the regular flow takes over, and if they never do they'll
+            # remain dormant — which is the same end-state without
+            # racing the lifecycle cron.
             _logger.info(
                 f'No active assignments for {new_person.name} — '
-                f'skipping account creation, deactivation_pending_since set, '
-                f'{len(active_proprels)} proprelation(s) deactivated'
+                f'skipping account creation; not starting suspend-clock '
+                f'(no prior active state to transition from)'
             )
 
         # Only create PPSBR if employee has active assignments
@@ -883,22 +876,13 @@ class BeTaskProcessor(models.AbstractModel):
                 )
                 _logger.info(f'Created ODOO-PERSON-UPD task for {person.name}')
         else:
-            # No active assignments anywhere — start the suspend-clock
-            # (if not already running) and remove the person from all
-            # groups. Account-deactivation + AD-removal happen later,
-            # via the lifecycle cron, when account_deactivation_due_date
-            # arrives.
-            if not person.deactivation_pending_since:
-                person.write({
-                    'deactivation_pending_since': fields.Date.context_today(self),
-                })
-                field_changes.append(
-                    "Set deactivation_pending_since — no active assignments remaining"
-                )
-                _logger.info(
-                    f'Set deactivation_pending_since for {person.name} — '
-                    f'no active assignments remaining'
-                )
+            # No active assignments in this iteration — deactivate any
+            # remaining proprelations and let the post-sync sweep
+            # decide whether the suspend-clock should start. The sweep
+            # has the full picture (across all instnrs and after Phase
+            # 2) and applies the "transition-only" rule that
+            # distinguishes a real active→inactive transition from a
+            # never-active import.
             # Deactivate proprelations for this person
             PropRelation = self.env['myschool.proprelation']
             active_proprels = PropRelation.search([
@@ -1501,6 +1485,29 @@ class BeTaskProcessor(models.AbstractModel):
             field_changes.append(f"Created first PersonDetails version for instNr {inst_nr}")
             _logger.info(f"Created first PersonDetails for {person.name}, instNr {inst_nr}")
 
+        # ---- Class / school relation (re-)sync ------------------------
+        # The registration's inschrKlassen drives PERSON-TREE membership
+        # at the leaf class-org and the per-class backend-role PPSBR.
+        # Without this call an existing student moving from class A to
+        # class B kept the old PERSON-TREE pointing at A — only the
+        # ``reg_group_code`` field updated. ``_create_student_relations``
+        # is idempotent: it updates the existing PERSON-TREE in place
+        # and deactivates old class-role PPSBRs/trees automatically.
+        # On REACTIVATE the registration carries a full inschrKlassen
+        # snapshot, so the same call restores the active class-link
+        # that ``_deactivate_person`` had wiped earlier.
+        effective_inst_nr = inst_nr or registration_json.get('instelnr', '')
+        try:
+            self._create_student_relations(
+                person, registration_json, effective_inst_nr)
+            field_changes.append(
+                "Class relations re-synced from inschrKlassen")
+        except Exception as e:
+            _logger.exception(
+                '[STUDENT-REL] re-sync failed for %s: %s', person.name, e)
+            field_changes.append(
+                f"WARN: class-relation re-sync failed: {e}")
+
         return {'success': True, 'field_changes': field_changes}
 
     # =========================================================================
@@ -2090,7 +2097,12 @@ class BeTaskProcessor(models.AbstractModel):
             return False
 
         inst_nr = data.get('instelnr', '') or data.get('instNr', '')
-        person_uuid = data.get('persoonId') or data.get('personId')
+        # Accept all three uuid spellings — historic tasks used 'uuid',
+        # the canonical sender now emits 'persoonId', and 'personId' is
+        # the spelling used elsewhere in the codebase.
+        person_uuid = (data.get('persoonId')
+                       or data.get('personId')
+                       or data.get('uuid'))
 
         # Skip manual audit for backend task processing
         Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
@@ -6499,9 +6511,22 @@ class BeTaskProcessor(models.AbstractModel):
             ('person_type_id.name', '=', 'EMPLOYEE'),
         ])
         flagged_count = 0
+        # Transition-only guard: only flag persons whose proprelation
+        # history shows they were once linked to a school. A
+        # brand-new import without proprelations is dormant, not in
+        # suspend.
+        AllPropRelation = PropRelation.with_context(active_test=False)
         for person in candidates:
             try:
                 if self._person_has_active_assignments(person):
+                    continue
+                ever_had = bool(AllPropRelation.search_count([
+                    '|', '|',
+                    ('id_person', '=', person.id),
+                    ('id_person_parent', '=', person.id),
+                    ('id_person_child', '=', person.id),
+                ]))
+                if not ever_had:
                     continue
                 person.write({'deactivation_pending_since': today})
                 rels = PropRelation.search([

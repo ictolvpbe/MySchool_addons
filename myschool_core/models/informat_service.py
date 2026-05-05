@@ -360,6 +360,14 @@ class InformatService(models.AbstractModel):
                     self._analyze_data_and_create_student_tasks(all_imported_registrations, all_imported_students)
                     self._process_betasks('DB', 'PERSON', 'ADD')
                     self._process_betasks('DB', 'PERSON', 'UPD')
+                    # DEACT was missing — student sync queued
+                    # DB/PERSON/DEACT tasks (e.g. when a registration's
+                    # ``einddatum`` is set, see _analyze_data_and_create_student_tasks
+                    # line ~2110) but never executed them. Without this
+                    # call a student with a fresh registration end-date
+                    # stays is_active=True until something else picks
+                    # the task up.
+                    self._process_betasks('DB', 'PERSON', 'DEACT')
 
 
 
@@ -1263,39 +1271,102 @@ class InformatService(models.AbstractModel):
         return current_org
 
     def _post_sync_flag_pending_employees(self):
-        """Sweep at end of employee-sync: every active sap-managed
-        employee with no remaining active proprelations starts the
-        suspend-clock (``deactivation_pending_since``). Idempotent —
-        skips employees that are already pending or that still hold
-        active relations.
+        """Sweep at end of employee-sync. Reconciles the suspend-clock
+        with the final post-Phase-2 state, in both directions.
+
+        Definition of "actively employed" (must match the per-task
+        decision in ``_update_person_from_employee_json``): the
+        employee has at least one **active assignment in
+        PersonDetails** *or* at least one **active proprelation**.
+        Either signal is enough — a brand-new employee imported
+        without ``hoofd_ambt`` has assignments but no PPSBR yet, and
+        must not be dropped into suspend just because the role-derived
+        proprelation is still missing.
+
+        * **Enter suspend** — active sap-managed employee with neither
+          active assignments nor active proprelations and
+          ``deactivation_pending_since=False`` starts the
+          suspend-clock (set to today).
+        * **Leave suspend** — active sap-managed employee with
+          assignments or proprelations restored, but still carrying a
+          stale ``deactivation_pending_since`` — gets the field
+          cleared so the lifecycle cron does not eventually deactivate
+          a person whose state has already returned to "active".
+
+        Idempotent in both directions.
         """
         Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
-        PropRelation = self.env['myschool.proprelation']
+        PropRelation = self.env['myschool.proprelation'].with_context(active_test=False)
 
-        candidates = Person.search([
-            ('is_active', '=', True),
-            ('automatic_sync', '=', True),
-            ('person_type_id.name', '=', 'EMPLOYEE'),
-            ('deactivation_pending_since', '=', False),
-        ])
-        today = fields.Date.context_today(self)
-        flagged = 0
-        for person in candidates:
-            has_active = PropRelation.search_count([
+        def _has_active_proprel(person):
+            return bool(PropRelation.search_count([
                 '|', '|',
                 ('id_person', '=', person.id),
                 ('id_person_parent', '=', person.id),
                 ('id_person_child', '=', person.id),
                 ('is_active', '=', True),
-            ])
-            if not has_active:
-                person.write({'deactivation_pending_since': today})
-                flagged += 1
+            ]))
+
+        def _ever_had_proprel(person):
+            """True iff any proprelation ever existed for this person
+            (active or deactivated). Distinguishes a brand-new import
+            (never linked to a school → "dormant") from a real
+            transition active→inactive (DEACT'd proprelations remain
+            as history → "in suspend"). Only the latter should start
+            the suspend-clock."""
+            return bool(PropRelation.search_count([
+                '|', '|',
+                ('id_person', '=', person.id),
+                ('id_person_parent', '=', person.id),
+                ('id_person_child', '=', person.id),
+            ]))
+
+        today = fields.Date.context_today(self)
+
+        # Direction 1 — enter suspend. Only flag persons whose
+        # proprelation history shows they were once linked to a school
+        # (active or DEACT'd). A brand-new import without any
+        # proprelations is dormant, not in suspend.
+        to_flag = Person.search([
+            ('is_active', '=', True),
+            ('automatic_sync', '=', True),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+            ('deactivation_pending_since', '=', False),
+        ])
+        flagged = 0
+        for person in to_flag:
+            if _has_active_proprel(person):
+                continue
+            if not _ever_had_proprel(person):
+                continue
+            person.write({'deactivation_pending_since': today})
+            flagged += 1
         if flagged:
             self._create_sys_event(
                 "BETASK-001",
                 f"Post-sync sweep: {flagged} employee(s) entered suspend "
                 f"pipeline (deactivation_pending_since={today}).")
+
+        # Direction 2 — leave suspend (recovery). When an active
+        # proprelation reappears (Phase 2 restored a PPSBR, or a
+        # manual relation was added), the suspend-clock is stale.
+        to_clear = Person.search([
+            ('is_active', '=', True),
+            ('automatic_sync', '=', True),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+            ('deactivation_pending_since', '!=', False),
+        ])
+        cleared = 0
+        for person in to_clear:
+            if _has_active_proprel(person):
+                person.write({'deactivation_pending_since': False})
+                cleared += 1
+        if cleared:
+            self._create_sys_event(
+                "BETASK-001",
+                f"Post-sync sweep: {cleared} employee(s) left suspend "
+                f"pipeline (active assignments restored — "
+                f"deactivation_pending_since cleared).")
 
     def _deactivate_employee_for_instnr(self, person, inst_nr: str, employee_json: dict = None):
         """
@@ -1338,31 +1409,10 @@ class InformatService(models.AbstractModel):
         if not proprelations:
             self._create_sys_event("BETASK-001",
                 f"No active proprelations found for {person.name} at instNr {inst_nr}")
-            # Check if person has any remaining active proprelations
-            remaining = PropRelation.search([
-                ('id_person', '=', person.id),
-                ('is_active', '=', True)
-            ], limit=1)
-            if not remaining and person.is_active:
-                # No active proprelations anywhere — start the suspend-
-                # clock instead of deactivating immediately. The lifecycle
-                # cron flips is_active and queues LDAP/USER/DEL once the
-                # EmployeeSuspendPeriod has elapsed.
-                if not person.deactivation_pending_since:
-                    person.with_context(skip_manual_audit=True).write({
-                        'deactivation_pending_since': fields.Date.context_today(self),
-                    })
-                    self._create_sys_event(
-                        "BETASK-001",
-                        f"No active proprelations for {person.name} — "
-                        f"deactivation_pending_since set; account suspends "
-                        f"after EmployeeSuspendPeriod.")
-                else:
-                    self._create_sys_event(
-                        "BETASK-001",
-                        f"No active proprelations for {person.name} — "
-                        f"deactivation_pending_since already set on "
-                        f"{person.deactivation_pending_since}; nothing to do.")
+            # The post-sync sweep is the single source of truth for
+            # ``deactivation_pending_since``. It runs at the end of
+            # ``_run_employee_sync`` with the final post-Phase-2 state
+            # and applies the transition-only rule.
             return
 
         # Create DEACT tasks for each proprelation
@@ -2075,9 +2125,17 @@ class InformatService(models.AbstractModel):
                     # Check for deactivation (new end date appeared)
                     if reg_end_date and not person_in_db.reg_end_date:
                         task_data = {
+                            # Both keys included so the downstream
+                            # processor (process_db_student_deact, which
+                            # reads 'persoonId' / 'personId') can find
+                            # the person. The legacy 'uuid' key was the
+                            # original spelling and is kept for tasks
+                            # that may already be in-flight.
                             'uuid': person_in_db.sap_person_uuid,
+                            'persoonId': person_in_db.sap_person_uuid,
                             'regEndDate': reg_end_date,
                             'einddatum': reg_end_date,
+                            'instelnr': registration.get('instelnr', ''),
                             'person_type': 'STUDENT',
                         }
                         self._create_betask('DB', 'PERSON', 'DEACT', json.dumps(task_data), '')
@@ -2213,7 +2271,7 @@ class InformatService(models.AbstractModel):
     def _analyze_employee_assignments_and_create_roles(self, all_assignments: Dict[str, str]) -> bool:
         """
         Analyze employee assignments and create new roles if needed.
-        
+
         For informat: just create the SapRoles via a DB-ADD-ROLE Task. When a new role is added, create a sysevent
         informing the admin that a new SAPROLE is create and that is should be linked to a BackendRole
 
@@ -2222,10 +2280,16 @@ class InformatService(models.AbstractModel):
         @return: True if successful
         """
         procedure_name = '_analyze_employee_assignments_and_create_roles'
-        
+
+        # An empty assignments dict is a valid input — it just means
+        # there are no SAP roles to discover this run (e.g. employees
+        # exist but none have an assignment yet, like step 1 of the
+        # employee testset). Log it as info, not as an error.
         if not all_assignments:
-            self._create_sys_error("BETASK-900", f"{procedure_name}: parameter is empty")
-            return False
+            self._create_sys_event(
+                "BETASK-001",
+                f"{procedure_name}: no assignments in import — nothing to analyze.")
+            return True
         
         try:
             Role = self.env['myschool.role']
