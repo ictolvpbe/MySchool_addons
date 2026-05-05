@@ -11,8 +11,8 @@ def migrate(cr, version):
     records = env['drukwerk.record'].search([])
     if not records:
         return
-    _logger.info('[drukwerk 2.5] recomputing aantal_paginas on %d records', len(records))
+    _logger.info('[drukwerk 2.6] recounting pages on %d records', len(records))
     for record in records:
-        record._compute_aantal_paginas()
+        record._recount_pages()
     records._compute_totals()
     records._compute_cost_per_student()
