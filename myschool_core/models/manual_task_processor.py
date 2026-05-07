@@ -836,6 +836,11 @@ class ManualTaskProcessor(models.AbstractModel):
         # user/group creations in this org succeed without _ensure_ou_path
         # having to backfill.
         self._emit_ldap_org_add(child_org, changes)
+        # CLOUD cascade — same idea on the Workspace side: ensure the
+        # Google OU exists (and the persongroup's mail-enabled Group)
+        # so subsequent CLOUD/USER/ADD calls find a target OU and
+        # CLOUD/GROUPMEMBER/ADD finds the group.
+        self._emit_cloud_org_add(child_org, changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -867,6 +872,51 @@ class ManualTaskProcessor(models.AbstractModel):
         self._create_and_run_task('LDAP', 'ORG', 'ADD', {
             'org_id': org.id,
         }, changes, label=label)
+
+    @api.model
+    def _emit_cloud_org_add(self, org, changes):
+        """Workspace counterpart of ``_emit_ldap_org_add``.
+
+        Routing mirrors LDAP:
+          - PERSONGROUP orgs → CLOUD/GROUP/ADD (mail-enabled Google
+            Group) using ``com_group_email``
+          - Other orgs → CLOUD/ORG/ADD (Google Org Unit) when the org
+            maps to an OU path
+
+        Skips silently when no active Workspace tenant exists.
+        """
+        if not org:
+            return
+        processor = self.env['myschool.betask.processor']
+        if not processor._cloud_provisioning_enabled():
+            return
+        # Re-use the same school-level gate as LDAP.
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        org_type_name = (org.org_type_id.name or '').upper()
+        if org_type_name == 'PERSONGROUP':
+            group_email = (org.com_group_email or '').strip()
+            if not group_email:
+                return
+            label = f"CLOUD/GROUP/ADD for {group_email}"
+            changes.append(f"Queued {label}")
+            self._create_and_run_task('CLOUD', 'GROUP', 'ADD', {
+                'group_email': group_email,
+                'group_name': org.com_group_name or org.name_short,
+                'description': org.name,
+                'org_id': org.id,
+            }, changes, label=label)
+        else:
+            # Regular org → OU. We intentionally always queue (the
+            # CLOUD/ORG/ADD handler is idempotent + walks the OU path).
+            label = f"CLOUD/ORG/ADD for {org.name}"
+            changes.append(f"Queued {label}")
+            self._create_and_run_task('CLOUD', 'ORG', 'ADD', {
+                'org_id': org.id,
+            }, changes, label=label)
 
     @api.model
     def process_manual_org_upd(self, task):

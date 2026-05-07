@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            CLOUD (Google Workspace) BeTask types.
+            Pre-registered so the BeTaskService.create_task('CLOUD',...)
+            calls in the betask processor + lifecycle cron resolve to a
+            real betask.type record without admin intervention.
+        -->
+
+        <!-- USER -->
+        <record id="cloud_user_add" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">USER</field>
+            <field name="action">ADD</field>
+            <field name="description">Create user in Google Workspace</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_user_upd" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">USER</field>
+            <field name="action">UPD</field>
+            <field name="description">Update user attributes in Google Workspace</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_user_deact" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">USER</field>
+            <field name="action">DEACT</field>
+            <field name="description">Suspend user in Google Workspace</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_user_del" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">USER</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete user from Google Workspace</field>
+            <field name="priority">30</field>
+            <field name="requires_confirmation" eval="True"/>
+        </record>
+        <record id="cloud_user_move" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">USER</field>
+            <field name="action">MOVE</field>
+            <field name="description">Move user to another Org Unit</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="cloud_user_pwd" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">USER</field>
+            <field name="action">PWD</field>
+            <field name="description">Set / rotate user password in Google Workspace</field>
+            <field name="priority">25</field>
+        </record>
+
+        <!-- ORG (= OU) -->
+        <record id="cloud_org_add" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">ORG</field>
+            <field name="action">ADD</field>
+            <field name="description">Create Org Unit in Google Workspace</field>
+            <field name="priority">10</field>
+        </record>
+        <record id="cloud_org_upd" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">ORG</field>
+            <field name="action">UPD</field>
+            <field name="description">Update Org Unit in Google Workspace</field>
+            <field name="priority">10</field>
+        </record>
+        <record id="cloud_org_del" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">ORG</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete Org Unit in Google Workspace</field>
+            <field name="priority">30</field>
+            <field name="requires_confirmation" eval="True"/>
+        </record>
+
+        <!-- GROUP / GROUPMEMBER -->
+        <record id="cloud_group_add" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">GROUP</field>
+            <field name="action">ADD</field>
+            <field name="description">Create Google Group</field>
+            <field name="priority">15</field>
+        </record>
+        <record id="cloud_group_upd" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">GROUP</field>
+            <field name="action">UPD</field>
+            <field name="description">Update Google Group</field>
+            <field name="priority">15</field>
+        </record>
+        <record id="cloud_group_del" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">GROUP</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete Google Group</field>
+            <field name="priority">30</field>
+            <field name="requires_confirmation" eval="True"/>
+        </record>
+        <record id="cloud_groupmember_add" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">GROUPMEMBER</field>
+            <field name="action">ADD</field>
+            <field name="description">Add member to Google Group</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_groupmember_remove" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">GROUPMEMBER</field>
+            <field name="action">REMOVE</field>
+            <field name="description">Remove member from Google Group</field>
+            <field name="priority">20</field>
+        </record>
+
+        <!-- DEVICE (ChromeOS) -->
+        <record id="cloud_device_move" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">DEVICE</field>
+            <field name="action">MOVE</field>
+            <field name="description">Move ChromeOS device(s) to another OU</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_device_upd" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">DEVICE</field>
+            <field name="action">UPD</field>
+            <field name="description">ChromeOS device update (alias of MOVE)</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_device_deact" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">DEVICE</field>
+            <field name="action">DEACT</field>
+            <field name="description">Disable ChromeOS device</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="cloud_device_del" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">DEVICE</field>
+            <field name="action">DEL</field>
+            <field name="description">Deprovision ChromeOS device (remove from fleet)</field>
+            <field name="priority">30</field>
+            <field name="requires_confirmation" eval="True"/>
+        </record>
+
+        <!-- DRIVE (Shared Drive) -->
+        <record id="cloud_drive_add" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">DRIVE</field>
+            <field name="action">ADD</field>
+            <field name="description">Create Shared Drive</field>
+            <field name="priority">15</field>
+        </record>
+        <record id="cloud_drive_upd" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">DRIVE</field>
+            <field name="action">UPD</field>
+            <field name="description">Update Shared Drive</field>
+            <field name="priority">15</field>
+        </record>
+        <record id="cloud_drive_arc" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">DRIVE</field>
+            <field name="action">ARC</field>
+            <field name="description">Hide (archive) Shared Drive</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="cloud_drive_del" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">DRIVE</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete Shared Drive</field>
+            <field name="priority">30</field>
+            <field name="requires_confirmation" eval="True"/>
+        </record>
+
+        <!-- COURSE (Classroom) -->
+        <record id="cloud_course_add" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">COURSE</field>
+            <field name="action">ADD</field>
+            <field name="description">Create Classroom course</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_course_upd" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">COURSE</field>
+            <field name="action">UPD</field>
+            <field name="description">Update Classroom course</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_course_arc" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">COURSE</field>
+            <field name="action">ARC</field>
+            <field name="description">Archive Classroom course</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="cloud_course_del" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">COURSE</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete Classroom course (must be archived)</field>
+            <field name="priority">30</field>
+            <field name="requires_confirmation" eval="True"/>
+        </record>
+
+        <!-- LICENSE -->
+        <record id="cloud_license_add" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">LICENSE</field>
+            <field name="action">ADD</field>
+            <field name="description">Assign Google Workspace license to user</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_license_upd" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">LICENSE</field>
+            <field name="action">UPD</field>
+            <field name="description">Reassign license SKU within product</field>
+            <field name="priority">20</field>
+        </record>
+        <record id="cloud_license_del" model="myschool.betask.type">
+            <field name="target">CLOUD</field>
+            <field name="object">LICENSE</field>
+            <field name="action">DEL</field>
+            <field name="description">Revoke Google Workspace license from user</field>
+            <field name="priority">25</field>
+        </record>
+
+    </data>
+</odoo>

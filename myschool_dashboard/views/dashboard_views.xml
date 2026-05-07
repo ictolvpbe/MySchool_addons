@@ -35,7 +35,7 @@
                                         <button name="action_new_professionalisering" type="object"
                                                 class="ms-qa-btn"
                                                 invisible="not has_professionalisering_access">
-                                            <div class="ms-qa-icon c2"><i class="fa fa-plus"/></div>
+                                            <div class="ms-qa-icon c2"><i class="fa fa-plus" title="Nieuwe professionalisering"/></div>
                                             <div class="ms-qa-text">
                                                 <strong>Nieuwe professionalisering</strong>
                                                 <span>Aanvraag indienen</span>
@@ -45,7 +45,7 @@
                                                 context="{'search_default_my_requests': 1}"
                                                 class="ms-qa-btn"
                                                 invisible="not has_professionalisering_access">
-                                            <div class="ms-qa-icon c4"><i class="fa fa-list"/></div>
+                                            <div class="ms-qa-icon c4"><i class="fa fa-list" title="Mijn professionalisering"/></div>
                                             <div class="ms-qa-text">
                                                 <strong>Mijn professionalisering</strong>
                                                 <span>Overzicht bekijken</span>
@@ -54,7 +54,7 @@
                                         <button name="action_new_activiteit" type="object"
                                                 class="ms-qa-btn"
                                                 invisible="not has_activiteiten_access">
-                                            <div class="ms-qa-icon c1"><i class="fa fa-plus"/></div>
+                                            <div class="ms-qa-icon c1"><i class="fa fa-plus" title="Nieuwe activiteit"/></div>
                                             <div class="ms-qa-text">
                                                 <strong>Nieuwe activiteit</strong>
                                                 <span>Aanvraag indienen</span>
@@ -64,7 +64,7 @@
                                                 context="{'search_default_my_requests': 1}"
                                                 class="ms-qa-btn"
                                                 invisible="not has_activiteiten_access">
-                                            <div class="ms-qa-icon c3"><i class="fa fa-list"/></div>
+                                            <div class="ms-qa-icon c3"><i class="fa fa-list" title="Mijn activiteiten"/></div>
                                             <div class="ms-qa-text">
                                                 <strong>Mijn activiteiten</strong>
                                                 <span>Overzicht bekijken</span>
@@ -73,7 +73,7 @@
                                         <button name="action_new_drukwerk" type="object"
                                                 class="ms-qa-btn"
                                                 invisible="not has_drukwerk_access">
-                                            <div class="ms-qa-icon c1"><i class="fa fa-plus"/></div>
+                                            <div class="ms-qa-icon c1"><i class="fa fa-plus" title="Nieuw drukwerk"/></div>
                                             <div class="ms-qa-text">
                                                 <strong>Nieuw drukwerk</strong>
                                                 <span>Aanvraag indienen</span>
@@ -83,7 +83,7 @@
                                                 context="{'search_default_my_requests': 1}"
                                                 class="ms-qa-btn"
                                                 invisible="not has_drukwerk_access">
-                                            <div class="ms-qa-icon c3"><i class="fa fa-list"/></div>
+                                            <div class="ms-qa-icon c3"><i class="fa fa-list" title="Mijn drukwerk"/></div>
                                             <div class="ms-qa-text">
                                                 <strong>Mijn drukwerk</strong>
                                                 <span>Overzicht bekijken</span>
@@ -116,7 +116,7 @@
                                     <button type="object" name="action_open_professionalisering"
                                             class="ms-action-banner"
                                             invisible="prof_action_count == 0">
-                                        <i class="fa fa-bolt"/>
+                                        <i class="fa fa-bolt" title="Actie vereist"/>
                                         <field name="prof_action_label" class="d-inline"/>
                                     </button>
                                     <div class="d-flex gap-2 flex-wrap mb-3">
@@ -177,7 +177,7 @@
                                     <button type="object" name="action_open_activiteiten_list"
                                             class="ms-action-banner"
                                             invisible="act_action_count == 0">
-                                        <i class="fa fa-bolt"/>
+                                        <i class="fa fa-bolt" title="Actie vereist"/>
                                         <field name="act_action_label" class="d-inline"/>
                                     </button>
                                     <div class="d-flex gap-2 flex-wrap mb-3">
@@ -244,7 +244,7 @@
                                     <button type="object" name="action_open_drukwerk_list"
                                             class="ms-action-banner"
                                             invisible="druk_action_count == 0">
-                                        <i class="fa fa-bolt"/>
+                                        <i class="fa fa-bolt" title="Actie vereist"/>
                                         <field name="druk_action_label" class="d-inline"/>
                                     </button>
                                     <div class="d-flex gap-2 flex-wrap mb-3">

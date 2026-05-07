@@ -1824,6 +1824,46 @@ class BeTaskProcessor(models.AbstractModel):
 
             # LDAP ORG (=OU) handlers
             ('LDAP', 'ORG', 'ADD'): self.process_ldap_org_add,
+
+            # =========================================================
+            # CLOUD (Google Workspace) handlers
+            # =========================================================
+            # USER lifecycle
+            ('CLOUD', 'USER', 'ADD'): self.process_cloud_user_add,
+            ('CLOUD', 'USER', 'UPD'): self.process_cloud_user_upd,
+            ('CLOUD', 'USER', 'DEACT'): self.process_cloud_user_deact,
+            ('CLOUD', 'USER', 'DEL'): self.process_cloud_user_del,
+            ('CLOUD', 'USER', 'MOVE'): self.process_cloud_user_move,
+            ('CLOUD', 'USER', 'PWD'): self.process_cloud_user_pwd,
+            # ORG (= OU) lifecycle
+            ('CLOUD', 'ORG', 'ADD'): self.process_cloud_org_add,
+            ('CLOUD', 'ORG', 'UPD'): self.process_cloud_org_upd,
+            ('CLOUD', 'ORG', 'DEL'): self.process_cloud_org_del,
+            # GROUP + GROUPMEMBER
+            ('CLOUD', 'GROUP', 'ADD'): self.process_cloud_group_add,
+            ('CLOUD', 'GROUP', 'UPD'): self.process_cloud_group_upd,
+            ('CLOUD', 'GROUP', 'DEL'): self.process_cloud_group_del,
+            ('CLOUD', 'GROUPMEMBER', 'ADD'): self.process_cloud_groupmember_add,
+            ('CLOUD', 'GROUPMEMBER', 'REMOVE'): self.process_cloud_groupmember_remove,
+            # DEVICE (ChromeOS)
+            ('CLOUD', 'DEVICE', 'MOVE'): self.process_cloud_device_move,
+            ('CLOUD', 'DEVICE', 'UPD'): self.process_cloud_device_move,  # alias
+            ('CLOUD', 'DEVICE', 'DEACT'): self.process_cloud_device_deact,
+            ('CLOUD', 'DEVICE', 'DEL'): self.process_cloud_device_del,
+            # DRIVE (Shared Drive)
+            ('CLOUD', 'DRIVE', 'ADD'): self.process_cloud_drive_add,
+            ('CLOUD', 'DRIVE', 'UPD'): self.process_cloud_drive_upd,
+            ('CLOUD', 'DRIVE', 'ARC'): self.process_cloud_drive_arc,
+            ('CLOUD', 'DRIVE', 'DEL'): self.process_cloud_drive_del,
+            # COURSE (Classroom)
+            ('CLOUD', 'COURSE', 'ADD'): self.process_cloud_course_add,
+            ('CLOUD', 'COURSE', 'UPD'): self.process_cloud_course_upd,
+            ('CLOUD', 'COURSE', 'ARC'): self.process_cloud_course_arc,
+            ('CLOUD', 'COURSE', 'DEL'): self.process_cloud_course_del,
+            # LICENSE assignments
+            ('CLOUD', 'LICENSE', 'ADD'): self.process_cloud_license_add,
+            ('CLOUD', 'LICENSE', 'UPD'): self.process_cloud_license_upd,
+            ('CLOUD', 'LICENSE', 'DEL'): self.process_cloud_license_del,
         }
         
         handler = handler_map.get((target, obj, action))
@@ -2814,6 +2854,7 @@ class BeTaskProcessor(models.AbstractModel):
                 self._update_person_tree_position(person)
                 self._sync_persongroup_memberships(person)
                 self._emit_ldap_user_add_for_person(person, changes)
+                self._emit_cloud_user_add_for_person(person, changes)
                 self._cascade_ppsbr_group_membership_safe(existing, 'ADD', changes)
                 changes.append(f"PPSBR already exists for {person.name}")
                 changes.append(f"Updated PERSON-TREE position")
@@ -2872,6 +2913,7 @@ class BeTaskProcessor(models.AbstractModel):
             self._update_person_tree_position(person)
             self._sync_persongroup_memberships(person)
             self._emit_ldap_user_add_for_person(person, changes)
+            self._emit_cloud_user_add_for_person(person, changes)
             # Mirror the manual-flow cascade: queue LDAP/GROUPMEMBER/ADD
             # for every COM/SEC group the new PPSBR's role is mapped to
             # at this school via an active BRSO. Without this, sync-driven
@@ -3072,7 +3114,13 @@ class BeTaskProcessor(models.AbstractModel):
         """Queue LDAP/GROUP/ADD + LDAP/GROUPMEMBER/<action> for one
         ``target_org``. Idempotent / dedupe-aware via
         ``_has_pending_task``. Both COM and SEC sides are handled when
-        the corresponding org-flag is set."""
+        the corresponding org-flag is set.
+
+        When Workspace is configured we additionally queue the
+        matching CLOUD/GROUP/ADD + CLOUD/GROUPMEMBER/<action>. Only the
+        COM side maps to a real Google Group (security groups are an
+        AD concept; in Workspace ACLs are expressed via OU + group
+        membership of the same mail-enabled group)."""
         for org_flag, kind, name_field, fqdn_field in (
                 ('has_comgroup', 'COM', 'com_group_name', 'com_group_fqdn_internal'),
                 ('has_secgroup', 'SEC', 'sec_group_name', 'sec_group_fqdn_internal')):
@@ -3129,6 +3177,84 @@ class BeTaskProcessor(models.AbstractModel):
                 f'Queued LDAP/GROUPMEMBER/{action} ({kind}) '
                 f'{group_name or group_dn} for {person.name}')
 
+            # CLOUD cascade — only the COM side has an email-addressable
+            # Google Group counterpart. We need both a group email
+            # (target_org.com_group_email) and a member email
+            # (person.email_cloud) — skip silently when either is
+            # absent, since CLOUD/GROUPMEMBER/ADD requires both.
+            if kind == 'COM' and self._cloud_provisioning_enabled():
+                self._queue_cloud_group_tasks_for_target(
+                    target_org, person, action, changes, BeTask)
+
+    def _queue_cloud_group_tasks_for_target(self, target_org, person, action,
+                                            changes, BeTask):
+        """Mirror of ``_queue_group_tasks_for_target`` for Workspace.
+
+        Only the COM (mail-enabled) side has a Workspace counterpart
+        — security-group semantics don't map cleanly to Google Groups.
+        We require both ``target_org.com_group_email`` and
+        ``person.email_cloud`` because CLOUD/GROUPMEMBER tasks
+        identify members by email (Google has no DN equivalent).
+        """
+        BeTaskType = self.env['myschool.betask.type']
+        group_email = (target_org.com_group_email or '').strip()
+        member_email = (person.email_cloud or '').strip()
+        if not group_email or not member_email:
+            # No email_cloud yet → CLOUD/USER/ADD hasn't run / hasn't
+            # populated person.email_cloud. The next sync pass will hit
+            # this same code path once it is set. Skip silently.
+            return
+        cloud_grp_add = BeTaskType.search([
+            ('target', '=', 'CLOUD'),
+            ('object', '=', 'GROUP'),
+            ('action', '=', 'ADD'),
+        ], limit=1)
+        cloud_gm_action = 'ADD' if action == 'ADD' else 'REMOVE'
+        cloud_gm = BeTaskType.search([
+            ('target', '=', 'CLOUD'),
+            ('object', '=', 'GROUPMEMBER'),
+            ('action', '=', cloud_gm_action),
+        ], limit=1)
+        if not cloud_gm:
+            _logger.warning(
+                '[CLOUD-CASCADE] CLOUD/GROUPMEMBER/%s task type missing',
+                cloud_gm_action)
+            return
+        # 1) Ensure Google Group exists.
+        if action == 'ADD' and cloud_grp_add and not self._has_pending_task(
+                BeTask, cloud_grp_add, [f'"group_email": "{group_email}"']):
+            BeTask.create({
+                'name': f'CLOUD/GROUP/ADD {group_email}',
+                'betasktype_id': cloud_grp_add.id,
+                'status': 'new',
+                'data': json.dumps({
+                    'group_email': group_email,
+                    'group_name': target_org.com_group_name or target_org.name_short,
+                    'description': target_org.name,
+                    'org_id': target_org.id,
+                }),
+            })
+            changes.append(f'Queued CLOUD/GROUP/ADD {group_email}')
+        # 2) Membership (ADD or REMOVE).
+        if self._has_pending_task(BeTask, cloud_gm, [
+                f'"group_email": "{group_email}"',
+                f'"member_email": "{member_email}"',
+        ]):
+            return
+        BeTask.create({
+            'name': f'CLOUD/GROUPMEMBER/{cloud_gm_action} {group_email} / {person.name}',
+            'betasktype_id': cloud_gm.id,
+            'status': 'new',
+            'data': json.dumps({
+                'group_email': group_email,
+                'member_email': member_email,
+                'org_id': target_org.id,
+            }),
+        })
+        changes.append(
+            f'Queued CLOUD/GROUPMEMBER/{cloud_gm_action} '
+            f'{group_email} for {person.name}')
+
     def _has_pending_task(self, BeTask, task_type, ilike_terms):
         """Return True if there's already a pending task of ``task_type``
         whose ``data`` contains all of the given substrings."""
@@ -3162,6 +3288,64 @@ class BeTaskProcessor(models.AbstractModel):
             ('id_org', '!=', False),
         ], limit=1)
         return rec.id_org if rec else None
+
+    def _cloud_provisioning_enabled(self):
+        """Cheap gate for the CLOUD cascade.
+
+        Returns True only when at least one active Google Workspace
+        configuration exists. This lets us call ``_emit_cloud_*`` from
+        every LDAP cascade site unconditionally — when no Workspace
+        tenant is configured the calls are no-ops, so installs that
+        only use AD don't spawn dead-end CLOUD/* tasks.
+        """
+        try:
+            return bool(self.env['myschool.google.workspace.config'].sudo().search_count(
+                [('active', '=', True)]))
+        except Exception:
+            # Model may not be installed yet during a fresh upgrade.
+            return False
+
+    def _emit_cloud_user_add_for_person(self, person, changes):
+        """Mirror of ``_emit_ldap_user_add_for_person`` for Workspace.
+
+        Same dedupe + queue-only philosophy: the actual provisioning
+        runs via ``process_cloud_user_add``, which re-resolves the
+        PERSON-TREE org at execution time so the highest-priority
+        role's OU still wins. Skips silently when Workspace isn't
+        configured or when the school doesn't want LDAP-style
+        provisioning (we re-use ``_school_wants_ldap_for_person`` as
+        the gate — schools that want AD also want Workspace today).
+        """
+        if not person:
+            return
+        if not self._cloud_provisioning_enabled():
+            return
+        if not self._school_wants_ldap_for_person(person):
+            return
+        BeTask = self.env['myschool.betask']
+        BeTaskType = self.env['myschool.betask.type']
+        task_type = BeTaskType.search([
+            ('target', '=', 'CLOUD'),
+            ('object', '=', 'USER'),
+            ('action', '=', 'ADD'),
+        ], limit=1)
+        if not task_type:
+            _logger.warning('[CLOUD-CASCADE] CLOUD/USER/ADD task type missing')
+            return
+        existing = BeTask.search([
+            ('betasktype_id', '=', task_type.id),
+            ('status', '=', 'new'),
+            ('data', 'ilike', f'"person_id": {person.id}'),
+        ], limit=1)
+        if existing:
+            return
+        BeTask.create({
+            'name': f'CLOUD/USER/ADD for {person.name}',
+            'betasktype_id': task_type.id,
+            'status': 'new',
+            'data': json.dumps({'person_id': person.id}),
+        })
+        changes.append(f'Queued CLOUD/USER/ADD for {person.name}')
 
     def _emit_ldap_user_add_for_person(self, person, changes):
         """Queue (do **not** inline-run) an LDAP/USER/ADD for a
@@ -4702,6 +4886,833 @@ class BeTaskProcessor(models.AbstractModel):
             changes.append(
                 f"Skipped: persongroup {org.name} has no com/sec group "
                 f"flags or FQDNs set")
+
+    # =========================================================================
+    # CLOUD (Google Workspace) TASK PROCESSORS
+    # =========================================================================
+    #
+    # Mirrors the LDAP layout: each handler resolves a Workspace
+    # config via ``_get_google_config_for_task``, dispatches to the
+    # corresponding service method, and records ``message`` / errors
+    # in ``task.changes``. The services are AbstractModels — see
+    # ``myschool.google.directory.service`` etc.
+    # =========================================================================
+
+    @api.model
+    def _get_google_config_for_task(self, task, org_id=None):
+        """Resolve the Google Workspace config for a task.
+
+        Same fallback chain as ``_get_ldap_config_for_task``: explicit
+        org_id → org_id parsed from task.data → first active config.
+        """
+        cfg_model = self.env['myschool.google.workspace.config']
+        cfg = None
+        if org_id:
+            cfg = cfg_model.get_server_for_org(org_id)
+        else:
+            data = self._parse_task_data(task.data)
+            if isinstance(data, dict) and data.get('org_id'):
+                cfg = cfg_model.get_server_for_org(data['org_id'])
+            if not cfg:
+                cfg = cfg_model.search(
+                    [('active', '=', True)], limit=1, order='sequence')
+        if not cfg:
+            raise ValidationError(_(
+                'No Google Workspace configuration is active. Configure '
+                'one under Settings → Integrations → Google Workspace.'))
+        return cfg
+
+    def _record_cloud_result(self, task, changes, result):
+        """Append the service result to ``changes`` and persist on task.
+
+        Returns True on success; raises ValidationError otherwise so
+        the betask processor flips the task to ``error`` with the
+        message visible in the UI.
+        """
+        if result.get('success'):
+            if result.get('id'):
+                changes.append(f"id: {result['id']}")
+            changes.append(result.get('message') or 'OK')
+            task.write({'changes': '\n'.join(changes)})
+            return True
+        changes.append(f"ERROR: {result.get('message') or 'Unknown error'}")
+        task.write({'changes': '\n'.join(changes)})
+        raise ValidationError(result.get('message') or 'Unknown error')
+
+    # ----- USER ---------------------------------------------------------
+
+    @api.model
+    def process_cloud_user_add(self, task):
+        """CLOUD/USER/ADD — provision a Google Workspace user.
+
+        Re-resolves the target org from the current PERSON-TREE, just
+        like the LDAP path does, so a higher-priority role queued
+        afterwards still wins. Pushes the password from
+        ``person.password`` (generating one if missing) so AD and
+        Google share the same plaintext.
+        """
+        _logger.info(f'Processing CLOUD_USER_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person_id = data.get('person_id')
+            if not person_id:
+                raise ValidationError(_('person_id is required in task data'))
+            person = self.env['myschool.person'].browse(person_id).exists()
+            if not person:
+                raise ValidationError(_('Person %s not found') % person_id)
+
+            current_tree_org = self._resolve_current_person_tree_org(person)
+            org_id = data.get('org_id')
+            if current_tree_org:
+                if org_id and current_tree_org.id != org_id:
+                    changes.append(
+                        f"Org override: queued org_id={org_id} replaced by "
+                        f"current PERSON-TREE org={current_tree_org.name}")
+                org_id = current_tree_org.id
+            org = self.env['myschool.org'].browse(org_id) if org_id else None
+
+            cfg = self._get_google_config_for_task(task, org_id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+
+            svc = self.env['myschool.google.directory.service']
+            result = svc.create_user(
+                cfg, person, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_upd(self, task):
+        _logger.info(f'Processing CLOUD_USER_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].browse(
+                data.get('person_id', 0)).exists()
+            if not person:
+                raise ValidationError(_('person_id required'))
+            org = self.env['myschool.org'].browse(data['org_id']) \
+                if data.get('org_id') else None
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.update_user(
+                cfg, person, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_deact(self, task):
+        """CLOUD/USER/DEACT — suspend (Google's equivalent of disable)."""
+        _logger.info(f'Processing CLOUD_USER_DEACT: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].browse(
+                data.get('person_id', 0)).exists()
+            if not person:
+                raise ValidationError(_('person_id required'))
+            org = self.env['myschool.org'].browse(data['org_id']) \
+                if data.get('org_id') else self._resolve_current_person_tree_org(person)
+            cfg = self._get_google_config_for_task(
+                task, org.id if org else None)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.suspend_user(
+                cfg, person, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_DEACT failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_del(self, task):
+        """CLOUD/USER/DEL — replaces the placeholder in lifecycle phase 2."""
+        _logger.info(f'Processing CLOUD_USER_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].with_context(
+                active_test=False).browse(data.get('person_id', 0)).exists()
+            if not person:
+                raise ValidationError(_('person_id required'))
+            org = self.env['myschool.org'].browse(data['org_id']) \
+                if data.get('org_id') else None
+            cfg = self._get_google_config_for_task(
+                task, org.id if org else None)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.delete_user(
+                cfg, person, org=org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_move(self, task):
+        """CLOUD/USER/MOVE — relocate a user to another OU.
+
+        Expected data: {'person_id', 'target_org_id'}.
+        """
+        _logger.info(f'Processing CLOUD_USER_MOVE: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].browse(
+                data.get('person_id', 0)).exists()
+            target_org = self.env['myschool.org'].browse(
+                data.get('target_org_id', 0)).exists()
+            if not person or not target_org:
+                raise ValidationError(_(
+                    'person_id and target_org_id required'))
+            cfg = self._get_google_config_for_task(task, target_org.id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.move_user_ou(
+                cfg, person, target_org,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_MOVE failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_pwd(self, task):
+        """CLOUD/USER/PWD — push (or rotate) the user's password.
+
+        Reuses ``person.password`` so AD and Google end up with the
+        same plaintext. ``change_at_next_login`` defaults to False
+        (post-create cascade) but admins triggering a manual reset
+        should pass True via task data.
+        """
+        _logger.info(f'Processing CLOUD_USER_PWD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].browse(
+                data.get('person_id', 0)).exists()
+            if not person:
+                raise ValidationError(_('person_id required'))
+            org = None
+            if data.get('org_id'):
+                org = self.env['myschool.org'].browse(data['org_id']).exists()
+            cfg = self._get_google_config_for_task(
+                task, org.id if org else None)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+
+            # Resolve plaintext exactly like LDAP create_user does.
+            plaintext = (person.password or '').strip()
+            ldap_svc = self.env['myschool.ldap.service']
+            if not plaintext or not ldap_svc._is_ad_complex_password(plaintext):
+                plaintext = ldap_svc._generate_ad_complex_password()
+                person.sudo().write({'password': plaintext})
+                changes.append(
+                    'Generated new complex password (persisted on person.password)')
+
+            svc = self.env['myschool.google.directory.service']
+            result = svc.set_user_password(
+                cfg, person, plaintext, org=org,
+                change_at_next_login=bool(data.get('change_at_next_login', False)),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_PWD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- ORG (= OU) ---------------------------------------------------
+
+    @api.model
+    def process_cloud_org_add(self, task):
+        _logger.info(f'Processing CLOUD_ORG_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            org = self.env['myschool.org'].browse(
+                data.get('org_id', 0)).exists()
+            if not org:
+                raise ValidationError(_('org_id required'))
+            cfg = self._get_google_config_for_task(task, org.id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.create_orgunit(
+                cfg, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_ORG_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_org_upd(self, task):
+        _logger.info(f'Processing CLOUD_ORG_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            org = self.env['myschool.org'].browse(
+                data.get('org_id', 0)).exists()
+            if not org:
+                raise ValidationError(_('org_id required'))
+            cfg = self._get_google_config_for_task(task, org.id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.update_orgunit(
+                cfg, org,
+                new_name=data.get('new_name'),
+                new_description=data.get('new_description'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_ORG_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_org_del(self, task):
+        _logger.info(f'Processing CLOUD_ORG_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            org = self.env['myschool.org'].with_context(
+                active_test=False).browse(data.get('org_id', 0)).exists()
+            if not org:
+                raise ValidationError(_('org_id required'))
+            cfg = self._get_google_config_for_task(task, org.id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.delete_orgunit(
+                cfg, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_ORG_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- GROUP --------------------------------------------------------
+
+    @api.model
+    def process_cloud_group_add(self, task):
+        """CLOUD/GROUP/ADD — accepts either a persongroup ``org_id`` or
+        explicit ``group_email``/``group_name``."""
+        _logger.info(f'Processing CLOUD_GROUP_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            group_name = data.get('group_name')
+            description = data.get('description')
+            org_id = data.get('org_id')
+            if not group_email and org_id:
+                org = self.env['myschool.org'].browse(org_id).exists()
+                if org:
+                    group_email = org.com_group_email
+                    group_name = group_name or org.com_group_name or org.name_short
+                    description = description or org.name
+            if not group_email:
+                raise ValidationError(_(
+                    'group_email required (or supply an org_id with com_group_email)'))
+            cfg = self._get_google_config_for_task(task, org_id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.create_group(
+                cfg, group_email,
+                group_name=group_name,
+                description=description,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUP_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_group_upd(self, task):
+        _logger.info(f'Processing CLOUD_GROUP_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            if not group_email:
+                raise ValidationError(_('group_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.update_group(
+                cfg, group_email,
+                name=data.get('name'),
+                description=data.get('description'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUP_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_group_del(self, task):
+        _logger.info(f'Processing CLOUD_GROUP_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            if not group_email:
+                raise ValidationError(_('group_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.delete_group(
+                cfg, group_email, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUP_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_groupmember_add(self, task):
+        _logger.info(f'Processing CLOUD_GROUPMEMBER_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            member_email = data.get('member_email')
+            if not group_email or not member_email:
+                raise ValidationError(_(
+                    'group_email and member_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.add_group_member(
+                cfg, group_email, member_email,
+                role=data.get('role') or 'MEMBER',
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUPMEMBER_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_groupmember_remove(self, task):
+        _logger.info(f'Processing CLOUD_GROUPMEMBER_REMOVE: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            member_email = data.get('member_email')
+            if not group_email or not member_email:
+                raise ValidationError(_(
+                    'group_email and member_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.remove_group_member(
+                cfg, group_email, member_email,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUPMEMBER_REMOVE failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- DEVICE (Chromebook) -----------------------------------------
+
+    @api.model
+    def process_cloud_device_move(self, task):
+        """CLOUD/DEVICE/MOVE (and UPD alias) — move ChromeOS devices.
+
+        Two ways to identify devices:
+          - ``device_ids``: list of Google deviceIds (opaque GUIDs)
+          - ``asset_ids``: list of myschool.asset ids — each must
+            carry ``cloud_device_id`` (synced via the inventory cron)
+
+        Target OU comes from ``target_org_id`` (preferred) or the
+        explicit ``ou_path`` payload key when no org maps cleanly.
+        """
+        _logger.info(f'Processing CLOUD_DEVICE_MOVE: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            target_org = None
+            ou_path = data.get('ou_path')
+            if data.get('target_org_id'):
+                target_org = self.env['myschool.org'].browse(
+                    data['target_org_id']).exists()
+            cfg = self._get_google_config_for_task(
+                task, target_org.id if target_org else None)
+            svc = self.env['myschool.google.directory.service']
+
+            if not ou_path and target_org:
+                ou_path = svc.org_to_google_path(target_org, cfg)
+            if not ou_path:
+                raise ValidationError(_(
+                    'target_org_id or ou_path required'))
+            changes.append(f"Target OU: {ou_path}")
+
+            device_ids = list(data.get('device_ids') or [])
+            asset_ids = data.get('asset_ids') or []
+            if asset_ids:
+                assets = self.env['myschool.asset'].browse(asset_ids)
+                resolved = []
+                for a in assets:
+                    cdid = getattr(a, 'cloud_device_id', None)
+                    if cdid:
+                        resolved.append(cdid)
+                    else:
+                        changes.append(
+                            f"Skipped asset {a.id}: no cloud_device_id")
+                device_ids.extend(resolved)
+
+            result = svc.move_chromeos_devices(
+                cfg, ou_path, device_ids,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DEVICE_MOVE failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_device_deact(self, task):
+        """CLOUD/DEVICE/DEACT — disable a single Chromebook."""
+        _logger.info(f'Processing CLOUD_DEVICE_DEACT: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            device_id = data.get('device_id')
+            if not device_id:
+                raise ValidationError(_('device_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.action_chromeos_device(
+                cfg, device_id, 'disable',
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DEVICE_DEACT failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_device_del(self, task):
+        """CLOUD/DEVICE/DEL — deprovision (= remove from fleet)."""
+        _logger.info(f'Processing CLOUD_DEVICE_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            device_id = data.get('device_id')
+            if not device_id:
+                raise ValidationError(_('device_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.action_chromeos_device(
+                cfg, device_id, 'deprovision',
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DEVICE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- DRIVE (Shared Drive) ----------------------------------------
+
+    @api.model
+    def process_cloud_drive_add(self, task):
+        _logger.info(f'Processing CLOUD_DRIVE_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            name = data.get('name')
+            if not name:
+                raise ValidationError(_('name required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.drive.service']
+            result = svc.create_shared_drive(
+                cfg, name,
+                request_id=data.get('request_id'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DRIVE_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_drive_upd(self, task):
+        _logger.info(f'Processing CLOUD_DRIVE_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            drive_id = data.get('drive_id')
+            if not drive_id:
+                raise ValidationError(_('drive_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.drive.service']
+            result = svc.update_shared_drive(
+                cfg, drive_id,
+                name=data.get('name'),
+                hidden=data.get('hidden'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DRIVE_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_drive_arc(self, task):
+        """ARC = hide. Convenience wrapper around UPD with hidden=True."""
+        _logger.info(f'Processing CLOUD_DRIVE_ARC: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            drive_id = data.get('drive_id')
+            if not drive_id:
+                raise ValidationError(_('drive_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.drive.service']
+            result = svc.update_shared_drive(
+                cfg, drive_id, hidden=True,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DRIVE_ARC failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_drive_del(self, task):
+        _logger.info(f'Processing CLOUD_DRIVE_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            drive_id = data.get('drive_id')
+            if not drive_id:
+                raise ValidationError(_('drive_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.drive.service']
+            result = svc.delete_shared_drive(
+                cfg, drive_id, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DRIVE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- COURSE (Classroom) ------------------------------------------
+
+    @api.model
+    def process_cloud_course_add(self, task):
+        _logger.info(f'Processing CLOUD_COURSE_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            name = data.get('name')
+            owner_email = data.get('owner_email')
+            if not name or not owner_email:
+                raise ValidationError(_(
+                    'name and owner_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.classroom.service']
+            result = svc.create_course(
+                cfg, name=name, owner_email=owner_email,
+                section=data.get('section'),
+                description=data.get('description'),
+                room=data.get('room'),
+                course_state=data.get('course_state') or 'ACTIVE',
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_COURSE_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_course_upd(self, task):
+        _logger.info(f'Processing CLOUD_COURSE_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            course_id = data.get('course_id')
+            if not course_id:
+                raise ValidationError(_('course_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.classroom.service']
+            result = svc.update_course(
+                cfg, course_id,
+                name=data.get('name'),
+                section=data.get('section'),
+                description=data.get('description'),
+                room=data.get('room'),
+                course_state=data.get('course_state'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_COURSE_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_course_arc(self, task):
+        _logger.info(f'Processing CLOUD_COURSE_ARC: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            course_id = data.get('course_id')
+            if not course_id:
+                raise ValidationError(_('course_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.classroom.service']
+            result = svc.archive_course(
+                cfg, course_id, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_COURSE_ARC failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_course_del(self, task):
+        _logger.info(f'Processing CLOUD_COURSE_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            course_id = data.get('course_id')
+            if not course_id:
+                raise ValidationError(_('course_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.classroom.service']
+            result = svc.delete_course(
+                cfg, course_id, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_COURSE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- LICENSE -----------------------------------------------------
+
+    @api.model
+    def process_cloud_license_add(self, task):
+        _logger.info(f'Processing CLOUD_LICENSE_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            product_id = data.get('product_id')
+            sku_id = data.get('sku_id')
+            user_email = data.get('user_email')
+            if not (product_id and sku_id and user_email):
+                raise ValidationError(_(
+                    'product_id, sku_id and user_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.license.service']
+            result = svc.assign_license(
+                cfg, product_id, sku_id, user_email,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_LICENSE_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_license_upd(self, task):
+        """UPD = reassign within the same product (SKU change)."""
+        _logger.info(f'Processing CLOUD_LICENSE_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            product_id = data.get('product_id')
+            old_sku = data.get('old_sku_id')
+            new_sku = data.get('new_sku_id')
+            user_email = data.get('user_email')
+            if not (product_id and old_sku and new_sku and user_email):
+                raise ValidationError(_(
+                    'product_id, old_sku_id, new_sku_id and user_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.license.service']
+            result = svc.reassign_license(
+                cfg, product_id, old_sku, new_sku, user_email,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_LICENSE_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_license_del(self, task):
+        _logger.info(f'Processing CLOUD_LICENSE_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            product_id = data.get('product_id')
+            sku_id = data.get('sku_id')
+            user_email = data.get('user_email')
+            if not (product_id and sku_id and user_email):
+                raise ValidationError(_(
+                    'product_id, sku_id and user_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.license.service']
+            result = svc.revoke_license(
+                cfg, product_id, sku_id, user_email,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_LICENSE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
 
     # =========================================================================
     # ODOO PERSON TASK PROCESSORS (User/Employee Management)
@@ -6577,6 +7588,22 @@ class BeTaskProcessor(models.AbstractModel):
                         '[LIFECYCLE-1] LDAP/USER/DEL queue failed for %s: %s',
                         person.name, e)
 
+                # Also suspend the Workspace account (= Google's "disable").
+                # Mailbox + Drive content stay intact — the hard-delete
+                # follows in Phase 2 once google_account_delete_due_date
+                # has elapsed. Skip silently when Workspace isn't
+                # configured so AD-only installs aren't affected.
+                if self._cloud_provisioning_enabled():
+                    try:
+                        BeTaskService.create_task('CLOUD', 'USER', 'DEACT', data={
+                            'person_id': person.id,
+                            'reason': 'Account suspend: EmployeeSuspendPeriod elapsed',
+                        })
+                    except Exception as e:
+                        _logger.error(
+                            '[LIFECYCLE-1] CLOUD/USER/DEACT queue failed for %s: %s',
+                            person.name, e)
+
                 person.write({
                     'is_active': False,
                     'deactivation_date': today,
@@ -6627,4 +7654,115 @@ class BeTaskProcessor(models.AbstractModel):
             'flagged': flagged_count,
             'suspended': suspended_count,
             'google_queued': google_queued_count,
+        }
+
+    @api.model
+    def cron_sync_chromeos_inventory(self):
+        """Daily sync of ChromeOS devices from Workspace into ``myschool.asset``.
+
+        Strategy:
+            1. Pull every Chromebook in the tenant via the Directory
+               API (``chromeosdevices.list`` with ``projection=FULL``).
+            2. For each device try, in order, to find a matching asset:
+                   a. ``cloud_device_id`` matches the Google deviceId
+                      (already linked — refresh OU + last_sync only).
+                   b. ``serial_number`` matches the device's
+                      ``serialNumber`` (newly discovered link — set
+                      cloud_device_id + cloud_serial).
+                   c. No match → log; we do NOT auto-create a
+                      myschool.asset because asset_type_id is required
+                      and the right type is project-specific. Admins
+                      can pre-create draft assets keyed by serial.
+            3. Stamp ``cloud_last_sync`` on every touched asset.
+
+        Idempotent: runs nightly are cheap because step 2a is the
+        common case after the first sync.
+        """
+        _logger.info('Cron started: ChromeOS Inventory Sync')
+
+        WorkspaceConfig = self.env['myschool.google.workspace.config']
+        cfg = WorkspaceConfig.search(
+            [('active', '=', True)], limit=1, order='sequence')
+        if not cfg:
+            _logger.info('[CHROMEOS-SYNC] No active Workspace config — skipping')
+            return {'matched': 0, 'updated': 0, 'unmatched': 0}
+
+        if not cfg.scope_directory_device:
+            _logger.warning(
+                '[CHROMEOS-SYNC] Workspace config %s does not have the '
+                'directory.device.chromeos scope enabled — skipping',
+                cfg.name)
+            return {'matched': 0, 'updated': 0, 'unmatched': 0}
+
+        Asset = self.env['myschool.asset']
+        directory_svc = self.env['myschool.google.directory.service']
+
+        try:
+            devices = directory_svc.list_chromeos_devices(cfg)
+        except Exception as e:
+            _logger.exception('[CHROMEOS-SYNC] list_chromeos_devices failed')
+            self._log_error(
+                'BETASK-820',
+                f'ChromeOS sync failed during list: {e}',
+                blocking=False)
+            return False
+
+        now = fields.Datetime.now()
+        matched = 0
+        updated = 0
+        unmatched = 0
+
+        for dev in devices:
+            device_id = dev.get('deviceId')
+            serial = (dev.get('serialNumber') or '').strip()
+            ou_path = dev.get('orgUnitPath') or ''
+            if not device_id:
+                continue
+
+            # Step 2a — already linked.
+            asset = Asset.search(
+                [('cloud_device_id', '=', device_id)], limit=1)
+            link_status = 'refresh'
+
+            if not asset and serial:
+                # Step 2b — first-time link via serial.
+                asset = Asset.search(
+                    [('serial_number', '=', serial),
+                     ('cloud_device_id', '=', False)], limit=1)
+                if asset:
+                    link_status = 'newlink'
+
+            if not asset:
+                unmatched += 1
+                _logger.info(
+                    '[CHROMEOS-SYNC] No asset for deviceId=%s serial=%s '
+                    '(OU=%s) — pre-create the asset to enable cascade',
+                    device_id, serial, ou_path)
+                continue
+
+            vals = {
+                'cloud_org_unit_path': ou_path,
+                'cloud_last_sync': now,
+            }
+            if link_status == 'newlink':
+                vals['cloud_device_id'] = device_id
+                vals['cloud_serial'] = serial or asset.serial_number
+                _logger.info(
+                    '[CHROMEOS-SYNC] Linked asset %s (id=%d) → device %s',
+                    asset.name, asset.id, device_id)
+
+            asset.sudo().write(vals)
+            matched += 1
+            if link_status == 'newlink':
+                updated += 1
+
+        _logger.info(
+            'Cron completed: ChromeOS Inventory Sync — '
+            'matched=%d, newly-linked=%d, unmatched=%d (total=%d)',
+            matched, updated, unmatched, len(devices))
+        return {
+            'matched': matched,
+            'updated': updated,
+            'unmatched': unmatched,
+            'total': len(devices),
         }

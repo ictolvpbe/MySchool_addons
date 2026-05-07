@@ -296,4 +296,27 @@
         <field name="domain">[('status', '=', 'processing')]</field>
     </record>
 
+    <!-- ========================================= -->
+    <!-- LIST-VIEW BULK ACTIONS                      -->
+    <!-- ========================================= -->
+
+    <data>
+        <!-- Server action: process all selected NEW tasks. The
+             ``binding_model_id`` + ``binding_view_types`` make it
+             appear in the Action dropdown of every list view of
+             myschool.betask (All Tasks, Pending Tasks, Error Tasks,
+             …). -->
+        <record id="action_betask_process_selected_new" model="ir.actions.server">
+            <field name="name">Verwerk geselecteerde NEW tasks</field>
+            <field name="model_id" ref="myschool_core.model_myschool_betask"/>
+            <field name="binding_model_id" ref="myschool_core.model_myschool_betask"/>
+            <field name="binding_view_types">list,form</field>
+            <field name="state">code</field>
+            <field name="code">
+if records:
+    action = records.action_process_selected_new()
+            </field>
+        </record>
+    </data>
+
 </odoo>

@@ -43,13 +43,13 @@ class AppfoundryProject(models.Model):
         domain="[('project_id', '=', id), ('state', '!=', 'cancelled')]",
     )
     process_map_ids = fields.Many2many('process.map', string='Process Maps')
-    process_map_count = fields.Integer(compute='_compute_process_map_count', string='Process Maps')
+    process_map_count = fields.Integer(compute='_compute_process_map_count', string='Process Map Count')
     module_ids = fields.Many2many(
         'ir.module.module', 'appfoundry_project_module_rel',
         string='Linked Modules',
     )
     test_item_ids = fields.One2many('appfoundry.test.item', 'project_id', string='Test Items')
-    test_item_count = fields.Integer(compute='_compute_test_item_count', string='Test Items')
+    test_item_count = fields.Integer(compute='_compute_test_item_count', string='Test Item Count')
     test_progress = fields.Float(compute='_compute_test_progress', string='Test Progress')
     phase = fields.Selection([
         ('idea', 'Idea'),

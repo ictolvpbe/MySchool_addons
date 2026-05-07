@@ -346,6 +346,58 @@ class BeTask(models.Model):
             'view_mode': 'form',
             'target': 'current',
         }
+
+    def action_process_selected_new(self):
+        """Bulk-process every record in ``self`` whose status is ``new``.
+
+        Wired up as a server action with ``binding_model_id`` so it
+        appears in the Action dropdown of any list view of
+        ``myschool.betask`` (All Tasks, Pending Tasks, …). Tasks in
+        other states are silently skipped — the user expectation is
+        "process the new ones I've selected", not "force-rerun
+        everything".
+
+        Returns a notification with ok / skipped / error counts.
+        """
+        processor = self.env['myschool.betask.processor']
+        ok = err = skipped = 0
+        for task in self:
+            if task.status != 'new':
+                skipped += 1
+                continue
+            try:
+                processor.process_single_task(task)
+                if task.status == 'completed_ok':
+                    ok += 1
+                else:
+                    err += 1
+            except Exception as exc:
+                _logger.exception('[BETASK-BULK] failed to process %s', task.name)
+                err += 1
+                # process_single_task usually persists the error in
+                # task.error_description — keep going so other selected
+                # tasks still get a chance.
+
+        msg_parts = [_('Verwerkt: %(ok)s OK') % {'ok': ok}]
+        if err:
+            msg_parts.append(_('%(err)s met fout') % {'err': err})
+        if skipped:
+            msg_parts.append(
+                _('%(skipped)s overgeslagen (status ≠ new)') % {
+                    'skipped': skipped})
+        message = ' — '.join(msg_parts)
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Backend tasks verwerkt'),
+                'message': message,
+                'type': 'success' if not err else 'warning',
+                'sticky': bool(err),
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+            },
+        }
     
     def action_view_sys_events(self):
         """View related system events"""

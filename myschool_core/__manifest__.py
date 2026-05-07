@@ -1,6 +1,6 @@
 {
     'name': 'MySchool Core Module',
-    'version': '0.3',
+    'version': '0.4',
     'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, and periods',
     'description': """
@@ -19,7 +19,7 @@
     'license': 'LGPL-3',
     'depends': ['base', 'mail','hr'],
     'external_dependencies': {
-        'python': ['ldap3'],
+        'python': ['ldap3', 'google-api-python-client', 'google-auth'],
     },
     'post_init_hook': '_migrate_legacy_group_flags_post_init',
     'data': [
@@ -60,12 +60,17 @@
         'data/config_item_data.xml',
         #'data/users_data.xml',
         # 'data/ldap_task_types.xml',
+        'data/cloud_task_types.xml',
+        'data/cloud_cron.xml',
 
         #Services
         #'services/data/ir_cron_data.xml',
 
         # User form extension
         'views/res_users_views.xml',
+
+        # Google Workspace integration
+        'views/google_workspace_config_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

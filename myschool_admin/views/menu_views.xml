@@ -247,6 +247,13 @@
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_google_connector"
+              name="Google Connector"
+              parent="menu_integrations"
+              action="myschool_core.action_google_workspace_config"
+              sequence="15"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <menuitem id="menu_informat_sync"
               name="Informat Sync"
               parent="menu_integrations"

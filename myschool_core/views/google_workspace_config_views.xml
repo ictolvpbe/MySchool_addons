@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Form view -->
+    <record id="view_google_workspace_config_form" model="ir.ui.view">
+        <field name="name">myschool.google.workspace.config.form</field>
+        <field name="model">myschool.google.workspace.config</field>
+        <field name="arch" type="xml">
+            <form string="Google Workspace Configuration">
+                <header>
+                    <button name="action_test_connection"
+                            string="Test Connection"
+                            type="object"
+                            class="btn-primary"/>
+                    <field name="last_test_result"
+                           widget="badge"
+                           decoration-success="last_test_result == 'success'"
+                           decoration-danger="last_test_result == 'failed'"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_organizations"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-building">
+                            <field name="org_count" widget="statinfo" string="Orgs"/>
+                        </button>
+                    </div>
+                    <widget name="web_ribbon"
+                            title="Archived"
+                            bg_color="bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="e.g. OLVP Workspace"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Tenant">
+                            <field name="domain"/>
+                            <field name="customer_id"/>
+                            <field name="subject_email"
+                                   groups="base.group_system"/>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Service Account Key"
+                               groups="base.group_system">
+                            <field name="key_file_path"/>
+                            <field name="key_json"
+                                   placeholder='Paste service-account JSON only when no file path is set'/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Scopes" name="scopes">
+                            <group>
+                                <group string="Directory API">
+                                    <field name="scope_directory_user"/>
+                                    <field name="scope_directory_group"/>
+                                    <field name="scope_directory_orgunit"/>
+                                    <field name="scope_directory_device"/>
+                                </group>
+                                <group string="Other APIs">
+                                    <field name="scope_drive"/>
+                                    <field name="scope_classroom"/>
+                                    <field name="scope_licensing"/>
+                                </group>
+                            </group>
+                            <div class="alert alert-info" role="alert">
+                                Each scope must also be granted to the
+                                service account in the Workspace admin
+                                console under <em>Security → API
+                                Controls → Domain-wide Delegation</em>.
+                                Toggling a scope here does not change
+                                that grant.
+                            </div>
+                        </page>
+                        <page string="Organizations" name="orgs">
+                            <field name="org_ids" widget="many2many_tags"/>
+                        </page>
+                        <page string="Last Test" name="test">
+                            <group>
+                                <field name="last_test_date" readonly="1"/>
+                                <field name="last_test_result" readonly="1"/>
+                                <field name="last_test_message" readonly="1"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- List view -->
+    <record id="view_google_workspace_config_list" model="ir.ui.view">
+        <field name="name">myschool.google.workspace.config.list</field>
+        <field name="model">myschool.google.workspace.config</field>
+        <field name="arch" type="xml">
+            <list string="Google Workspace Configurations">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="domain"/>
+                <field name="customer_id"/>
+                <field name="org_count"/>
+                <field name="last_test_result" widget="badge"
+                       decoration-success="last_test_result == 'success'"
+                       decoration-danger="last_test_result == 'failed'"/>
+                <field name="last_test_date"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_google_workspace_config_search" model="ir.ui.view">
+        <field name="name">myschool.google.workspace.config.search</field>
+        <field name="model">myschool.google.workspace.config</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="domain"/>
+                <field name="customer_id"/>
+                <filter string="Active"
+                        name="active"
+                        domain="[('active', '=', True)]"/>
+                <filter string="Archived"
+                        name="inactive"
+                        domain="[('active', '=', False)]"/>
+                <separator/>
+                <filter string="Test OK"
+                        name="test_ok"
+                        domain="[('last_test_result', '=', 'success')]"/>
+                <filter string="Test failed"
+                        name="test_failed"
+                        domain="[('last_test_result', '=', 'failed')]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_google_workspace_config" model="ir.actions.act_window">
+        <field name="name">Google Workspace</field>
+        <field name="res_model">myschool.google.workspace.config</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_google_workspace_config_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+</odoo>

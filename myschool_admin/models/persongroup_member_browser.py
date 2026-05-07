@@ -113,8 +113,12 @@ class PersongroupMemberBrowser(models.AbstractModel):
 
     @staticmethod
     def _person_display(p):
+        # "Lastname, Firstname" format — keeps the visible string and
+        # the alphabetical sort key in sync. Other formats (e.g.
+        # "Firstname Lastname") would visibly look unsorted because
+        # both panes sort on lastname.
         if p.first_name and p.name:
-            return f'{p.first_name} {p.name}'
+            return f'{p.name}, {p.first_name}'
         return p.name or p.first_name or f'#{p.id}'
 
     # ------------------------------------------------------------------

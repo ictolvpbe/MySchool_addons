@@ -33,6 +33,11 @@ from . import informat_dto
 from . import smartschool_service
 from . import ldap_server_config
 from . import ldap_service
+from . import google_workspace_config
+from . import google_directory_service
+from . import google_drive_service
+from . import google_classroom_service
+from . import google_license_service
 from . import res_company
 from . import res_users
 

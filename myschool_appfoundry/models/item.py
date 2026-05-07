@@ -36,7 +36,7 @@ class AppfoundryItem(models.Model):
     release_id = fields.Many2one('appfoundry.release', string='Release', required=True)
     parent_id = fields.Many2one('appfoundry.item', string='Parent Item')
     child_ids = fields.One2many('appfoundry.item', 'parent_id', string='Sub-items')
-    child_count = fields.Integer(compute='_compute_child_count', string='Sub-items')
+    child_count = fields.Integer(compute='_compute_child_count', string='Sub-item Count')
     tag_ids = fields.Many2many('appfoundry.tag', string='Tags')
     depends_on_ids = fields.Many2many(
         'appfoundry.item', 'appfoundry_item_dependency_rel',
@@ -48,7 +48,7 @@ class AppfoundryItem(models.Model):
     )
     process_map_ids = fields.Many2many('process.map', string='Process Maps')
     test_item_ids = fields.One2many('appfoundry.test.item', 'item_id', string='Test Items')
-    test_item_count = fields.Integer(compute='_compute_test_item_count', string='Test Items')
+    test_item_count = fields.Integer(compute='_compute_test_item_count', string='Test Item Count')
     date_deadline = fields.Date(string='Deadline')
     kanban_color = fields.Integer(string='Color')
 

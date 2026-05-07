@@ -25,15 +25,26 @@ from contextlib import contextmanager
 _logger = logging.getLogger(__name__)
 
 try:
-    from ldap3 import (
-        Server, Connection, ALL, NONE as LDAP_INFO_NONE, NTLM, SIMPLE,
-        SUBTREE, MODIFY_ADD, MODIFY_DELETE, MODIFY_REPLACE,
-        ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES, Tls
-    )
-    from ldap3.core.exceptions import (
-        LDAPException, LDAPBindError, LDAPSocketOpenError,
-        LDAPEntryAlreadyExistsResult,
-    )
+    # ldap3 ≤ 2.9.1 imports tagMap/typeMap from pyasn1, which were
+    # renamed to TAG_MAP/TYPE_MAP in pyasn1 0.6.x. The old aliases
+    # still work but emit DeprecationWarning on every Odoo startup.
+    # Suppress only that specific warning during the ldap3 import —
+    # narrow scope so genuine deprecation warnings elsewhere keep
+    # showing up.
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            'ignore', category=DeprecationWarning,
+            module=r'pyasn1\.codec\.ber\.encoder')
+        from ldap3 import (
+            Server, Connection, ALL, NONE as LDAP_INFO_NONE, NTLM, SIMPLE,
+            SUBTREE, MODIFY_ADD, MODIFY_DELETE, MODIFY_REPLACE,
+            ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES, Tls
+        )
+        from ldap3.core.exceptions import (
+            LDAPException, LDAPBindError, LDAPSocketOpenError,
+            LDAPEntryAlreadyExistsResult,
+        )
     import ssl
     LDAP3_AVAILABLE = True
 except ImportError:
@@ -490,6 +501,29 @@ class LdapService(models.AbstractModel):
                 'dn': dn,
                 'attributes': attributes,
                 'message': 'Dry run - user would be created',
+            }
+
+        # Pre-check: does this person already have an AD account under
+        # *any* DN (matched by sAMAccountName / employeeID / cn)? If so
+        # we skip the create entirely — never touching the password,
+        # which is the contract for sync-driven re-runs against an
+        # already-provisioned account. This catches the case where the
+        # user lives under a different OU than the freshly computed
+        # ``dn`` (e.g. moved to a new class/department) — without this
+        # pre-check ``conn.add`` would raise an error that's not
+        # always ``LDAPEntryAlreadyExistsResult`` (AD returns various
+        # codes depending on which collision attribute trips first),
+        # and we'd lose the idempotency guarantee.
+        existing_dn = self._find_user_dn(config, person)
+        if existing_dn:
+            _logger.info(
+                'LDAP user already exists at %s — skipping create '
+                '(no password rotation)', existing_dn)
+            return {
+                'success': True,
+                'dn': existing_dn,
+                'message': (f'User already existed in AD: {existing_dn} '
+                            f'(no change, password preserved)'),
             }
 
         try:
@@ -1590,8 +1624,17 @@ class LdapService(models.AbstractModel):
                 suffix = '@' + suffix
             attributes['userPrincipalName'] = f"{cn}{suffix}"
 
-        if hasattr(person, 'email') and person.email:
-            attributes['mail'] = person.email
+        # mail = the cloud-mailbox address (myschool.person.email_cloud).
+        # `person.email` doesn't exist on this model — it was a stale
+        # reference that silently produced an empty mail attribute.
+        if person.email_cloud:
+            attributes['mail'] = person.email_cloud
+
+        # employeeID = SAP reference. Acts as the stable cross-system
+        # link to the upstream HR system; useful for downstream tooling
+        # (e.g. provisioning checks, audits) that join on this attribute.
+        if person.sap_ref:
+            attributes['employeeID'] = str(person.sap_ref)
 
         return attributes
 
@@ -1620,8 +1663,11 @@ class LdapService(models.AbstractModel):
         if person.name:
             changes['sn'] = [(MODIFY_REPLACE, [person.name])]
 
-        if hasattr(person, 'email') and person.email:
-            changes['mail'] = [(MODIFY_REPLACE, [person.email])]
+        if person.email_cloud:
+            changes['mail'] = [(MODIFY_REPLACE, [person.email_cloud])]
+
+        if person.sap_ref:
+            changes['employeeID'] = [(MODIFY_REPLACE, [str(person.sap_ref)])]
 
         return changes
 
@@ -1633,7 +1679,13 @@ class LdapService(models.AbstractModel):
             if result:
                 return result['dn']
 
-        # Try by employee ID
+        # Try by employeeID. The CREATE/UPD paths write sap_ref into AD's
+        # `employeeID`, so prefer that. stam_boek_nr is a fallback for
+        # legacy AD entries provisioned before this alignment.
+        if person.sap_ref:
+            result = self.find_user_by_attribute(config, 'employeeID', str(person.sap_ref))
+            if result:
+                return result['dn']
         if person.stam_boek_nr:
             result = self.find_user_by_attribute(config, 'employeeID', person.stam_boek_nr)
             if result:

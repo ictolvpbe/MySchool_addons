@@ -952,6 +952,43 @@ class InformatService(models.AbstractModel):
             self._process_betasks('ODOO', 'GROUPMEMBER', 'ADD')
             self._process_betasks('ODOO', 'GROUPMEMBER', 'REMOVE')
 
+            # =====================================================
+            # PHASE 3: Sync Active Directory / LDAP
+            # =====================================================
+            # The DB-PROPRELATION-ADD cascade queues LDAP tasks
+            # (USER/ADD, GROUP/ADD, GROUPMEMBER/ADD) but does not
+            # run them inline — see ``_emit_ldap_user_add_for_person``
+            # for the why (PPSBR settles after multiple ADDs; user
+            # must be created at the highest-priority role's OU). We
+            # therefore drain the LDAP queue here, in dependency
+            # order:
+            #   3a. ORG  → create OUs first so user/group DNs resolve.
+            #   3b. USER → ADD/UPD before DEACT/DEL so a same-cycle
+            #       create+modify still results in a present account.
+            #   3c. GROUP→ create/update before adding members.
+            #   3d. GROUPMEMBER → finally add/remove members.
+            self._create_sys_event(
+                "BETASK-001", "Phase 3: Syncing Active Directory")
+
+            # 3a — OUs
+            self._process_betasks('LDAP', 'ORG', 'ADD')
+
+            # 3b — Users
+            self._process_betasks('LDAP', 'USER', 'ADD')
+            self._process_betasks('LDAP', 'USER', 'UPD')
+            self._process_betasks('LDAP', 'USER', 'DEACT')
+            self._process_betasks('LDAP', 'USER', 'DEL')
+
+            # 3c — Groups
+            self._process_betasks('LDAP', 'GROUP', 'ADD')
+            self._process_betasks('LDAP', 'GROUP', 'UPD')
+            self._process_betasks('LDAP', 'GROUP', 'DEACT')
+            self._process_betasks('LDAP', 'GROUP', 'DEL')
+
+            # 3d — Group memberships
+            self._process_betasks('LDAP', 'GROUPMEMBER', 'ADD')
+            self._process_betasks('LDAP', 'GROUPMEMBER', 'REMOVE')
+
             self._create_sys_event("BETASK-001", f"{procedure_name} completed successfully")
             return True
 
@@ -1829,6 +1866,58 @@ class InformatService(models.AbstractModel):
                         )
                         self._create_sys_event("BETASK-001",
                             f"PPSBR DEACT task for {person.name}, ppsbr_id: {ppsbr.id}, org: {ppsbr.id_org.name if ppsbr.id_org else 'N/A'}")
+
+                # -----------------------------------------------------
+                # Master PPSBR lifecycle check
+                # The main existing_ppsbr loop above filters
+                # automatic_sync=True and so never sees master records
+                # (is_master=True forces automatic_sync=False — see
+                # proprelation.py). A master must still be deactivated
+                # when its underlying Informat assignment disappears,
+                # otherwise the master keeps overriding PERSON-TREE
+                # placement for a role the person no longer holds.
+                # The PROPRELATION/DEACT cascade re-runs
+                # _update_person_tree_position so priority-based
+                # selection takes over automatically.
+                # -----------------------------------------------------
+                master_ppsbrs = PropRelation.search([
+                    ('id_person', '=', person.id),
+                    ('proprelation_type_id', '=', ppsbr_type.id),
+                    ('is_active', '=', True),
+                    ('is_master', '=', True),
+                ])
+                for master in master_ppsbrs:
+                    master_role_id = master.id_role.id if master.id_role else None
+                    if master_role_id and master_role_id == employee_role_id:
+                        continue
+                    master_key = (
+                        f"{master.id_person.id}_"
+                        f"{master.id_org.id if master.id_org else ''}_"
+                        f"{master_role_id or ''}"
+                    )
+                    if master_key in processed_ppsbr_keys:
+                        continue
+                    deact_data = {
+                        'proprelation_id': master.id,
+                        'personId': person_uuid,
+                        'reason': 'Master assignment removed from import',
+                    }
+                    self._create_betask(
+                        'DB', 'PROPRELATION', 'DEACT',
+                        json.dumps(deact_data),
+                        None,
+                    )
+                    role_label = master.id_role.name if master.id_role else 'unknown'
+                    org_label = master.id_org.name if master.id_org else 'unknown'
+                    self._create_sys_error(
+                        "SYNC.MASTER.LOST",
+                        f"Master PPSBR for {person.name} "
+                        f"(role={role_label}, org={org_label}, "
+                        f"ppsbr_id={master.id}) has no matching Informat "
+                        f"assignment — deactivating. Person tree position "
+                        f"will revert to priority-based selection.",
+                        'ERROR-NONBLOCKING',
+                    )
 
             self._create_sys_event("BETASK-001", f"{procedure_name} completed")
             return True
