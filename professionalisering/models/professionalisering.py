@@ -384,8 +384,11 @@ class ProfessionaliseringRecord(models.Model):
         string='Afstand (km)',
         compute='_compute_afstand_km',
         store=True,
+        readonly=False,
         digits=(10, 1),
-        help='Wegafstand heen en terug tussen de school en de locatie (via OSRM).',
+        help='Wegafstand heen en terug tussen de school en de locatie. '
+             'Wordt automatisch berekend via OSRM, maar je mag handmatig '
+             'overschrijven indien de berekende afstand niet klopt.',
     )
     link = fields.Char(
         string='Link',
@@ -494,6 +497,16 @@ class ProfessionaliseringRecord(models.Model):
         ('namiddag', 'Namiddag'),
         ('meerdere_dagen', 'Meerdere dagen'),
     ], string='Duur', default='hele_dag', required=True)
+    start_uur = fields.Float(
+        string='Van',
+        help='Startuur van de opleiding (bv. 09:00). Wordt gebruikt voor de '
+             'planning van studie en vervangingen.',
+    )
+    eind_uur = fields.Float(
+        string='Tot',
+        help='Einduur van de opleiding (bv. 12:30). Wordt gebruikt voor de '
+             'planning van studie en vervangingen.',
+    )
     verschillende_dagen = fields.Boolean(
         string='Niet-aaneensluitende dagen',
         help='Vink aan voor losstaande dagen, bv. 4 woensdagen verspreid over enkele weken.',
@@ -792,7 +805,9 @@ class ProfessionaliseringRecord(models.Model):
 
     def action_open_details(self):
         self.ensure_one()
-        self.wizard_step = '1'
+        # Sla stap 1 (Datums) over wanneer verschillende_dagen niet aanstaat —
+        # die tab is dan toch niet van toepassing.
+        self.wizard_step = '1' if self.verschillende_dagen else '2'
         return self._get_details_action()
 
     def action_wizard_next(self):
@@ -1051,6 +1066,21 @@ class ProfessionaliseringRecord(models.Model):
                 'fallback_action': 'professionalisering.action_professionalisering_main',
             },
         }
+
+    def unlink(self):
+        # Bescherming: niet-admin gebruikers mogen enkel hun eigen, nog niet
+        # ingediende aanvragen verwijderen. Admin/directie kunnen altijd.
+        is_admin = self.env.user.has_group('professionalisering.group_professionalisering_admin')
+        if not is_admin:
+            for record in self:
+                if record.state != 'selection_of_form':
+                    raise UserError(
+                        "Een ingediende of goedgekeurde aanvraag kan niet meer verwijderd worden. "
+                        "Vraag een beheerder als dit toch nodig is."
+                    )
+                if record.employee_id and record.employee_id.user_id.id != self.env.uid:
+                    raise UserError("Je kan enkel je eigen aanvragen verwijderen.")
+        return super().unlink()
 
     def action_open_add_date_wizard(self):
         """Open een eenvoudige datum-dialog om snel een losse datum toe te voegen."""

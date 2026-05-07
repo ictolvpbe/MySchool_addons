@@ -512,6 +512,20 @@ class Person(models.Model):
         if self.first_name:
             return f"{self.first_name} {self.name.split(',')[0].strip() if ',' in self.name else self.name}"
         return self.name
+
+    @api.depends('name', 'first_name')
+    def _compute_display_name(self):
+        """Toon "Voornaam Achternaam" in m2o-widgets en lijsten zodat collega's
+        herkenbaar zijn aan hun voornaam (testers vroegen hierom)."""
+        for record in self:
+            last = record.name or ''
+            # 'Achternaam, Voornaam' splitten — neem alleen het achternaam-deel
+            if ',' in last:
+                last = last.split(',', 1)[0].strip()
+            if record.first_name:
+                record.display_name = f"{record.first_name} {last}".strip()
+            else:
+                record.display_name = record.name or ''
     
     def is_employee(self):
         """Check if this person is an employee."""

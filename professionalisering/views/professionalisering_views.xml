@@ -134,6 +134,20 @@
                                           invisible="address_id">— geen adres gekozen —</span>
                                 </div>
                             </div>
+                            <label for="afstand_km" string="Afstand (km)"
+                                   invisible="location_type != 'address' or not address_id or (subtype_individueel != 'nascholing' and type != 'teamleren')"/>
+                            <div class="o_row"
+                                 invisible="location_type != 'address' or not address_id or (subtype_individueel != 'nascholing' and type != 'teamleren')">
+                                <field name="afstand_km" nolabel="1" class="oe_inline"
+                                       readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                                <span class="text-muted">km (heen en terug)</span>
+                                <button name="action_recompute_afstand"
+                                        type="object"
+                                        icon="fa-refresh"
+                                        title="Afstand opnieuw berekenen via OSRM"
+                                        class="btn-link ms-2"
+                                        invisible="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            </div>
                             <field name="link"
                                    widget="url"
                                    placeholder="bv. https://youtube.com/..."
@@ -154,6 +168,16 @@
                                        invisible="subtype_individueel in ('lezen', 'video', 'podcast')"/>
                             <field name="duur" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
                                    invisible="subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <label for="start_uur" string="Uren"
+                                   invisible="duur not in ('voormiddag', 'namiddag') or subtype_individueel in ('lezen', 'video', 'podcast')"/>
+                            <div class="o_row"
+                                 invisible="duur not in ('voormiddag', 'namiddag') or subtype_individueel in ('lezen', 'video', 'podcast')">
+                                <field name="start_uur" nolabel="1" widget="float_time" class="oe_inline"
+                                       readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                                <span class="text-muted mx-1">tot</span>
+                                <field name="eind_uur" nolabel="1" widget="float_time" class="oe_inline"
+                                       readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            </div>
                             <field name="verschillende_dagen"
                                    readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
                                    invisible="duur != 'meerdere_dagen' or subtype_individueel in ('lezen', 'video', 'podcast')"/>
@@ -349,7 +373,7 @@
                 <field name="verschillende_dagen" invisible="1"/>
                 <field name="type" invisible="1"/>
                 <header>
-                    <field name="wizard_step" widget="statusbar" options="{'clickable': '0'}"/>
+                    <field name="wizard_step" widget="statusbar" options="{'clickable': False}"/>
                 </header>
                 <sheet>
                     <!-- Stap 1: Datums -->
@@ -357,8 +381,11 @@
                         <p class="text-muted mb-2"
                            invisible="verschillende_dagen">
                             <i class="fa fa-info-circle me-1"/>
-                            Niet van toepassing — vink eerst <strong>"Niet-aaneensluitende dagen"</strong>
-                            aan op het hoofdformulier om losstaande datums op te geven.
+                            Voor een normale opleiding met aaneensluitende dagen volstaan
+                            <strong>startdatum</strong> en <strong>einddatum</strong> op het hoofdformulier.
+                            Deze tab is enkel nodig wanneer je <strong>losse, niet-aaneensluitende
+                            datums</strong> wil opgeven (bv. "elke woensdag van januari") — vink in dat
+                            geval <strong>"Niet-aaneensluitende dagen"</strong> aan op het hoofdformulier.
                         </p>
                         <p class="text-muted mb-2"
                            invisible="not verschillende_dagen">
@@ -368,7 +395,7 @@
                         </p>
                         <field name="date_line_ids" nolabel="1"
                                invisible="not verschillende_dagen"
-                               readonly="state != 'selection_of_form' or (not is_owner and not is_admin)">
+                               readonly="state not in ('selection_of_form', 'fill_in_form_individueel', 'fill_in_form_teamleren') or (not is_owner and not is_admin)">
                             <list editable="bottom">
                                 <field name="date" required="1"/>
                                 <field name="cost"/>
@@ -406,7 +433,7 @@
                             string="Vorige"
                             type="object"
                             class="btn-secondary"
-                            invisible="wizard_step == '1'"/>
+                            invisible="wizard_step == '1' or not verschillende_dagen"/>
                     <button name="action_wizard_next"
                             string="Volgende"
                             type="object"
@@ -664,7 +691,7 @@
         <field name="arch" type="xml">
             <form string="Geavanceerd kiezen" class="o_professionalisering_wizard_form o_professionalisering_address_picker">
                 <header>
-                    <field name="step" widget="statusbar" options="{'clickable': '0'}"/>
+                    <field name="step" widget="statusbar" options="{'clickable': False}"/>
                 </header>
                 <sheet>
                     <!-- ============================================================

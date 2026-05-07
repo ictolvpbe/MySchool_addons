@@ -12,8 +12,11 @@ class ActiviteitenKostenLine(models.Model):
     )
     omschrijving = fields.Char(string='Omschrijving', required=True)
     bedrag = fields.Monetary(
-        string='Bedrag',
+        string='Bedrag (totaal)',
         currency_field='currency_id',
+        help='Totaalbedrag voor de volledige activiteit, niet per leerling. '
+             'Bijvoorbeeld: voor een busrit van € 250 vul je 250 in, niet 10 '
+             '(per leerling). De kost-per-leerling wordt automatisch berekend.',
     )
     currency_id = fields.Many2one(
         related='activiteit_id.currency_id',

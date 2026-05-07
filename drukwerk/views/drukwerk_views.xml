@@ -94,6 +94,11 @@
                                    widget="radio"
                                    required="1"
                                    readonly="not can_edit_content"/>
+                            <field name="examen_variant"
+                                   widget="radio"
+                                   required="drukwerk_type == 'examen'"
+                                   invisible="drukwerk_type != 'examen'"
+                                   readonly="not can_edit_content"/>
                         </group>
                     </group>
 
@@ -105,6 +110,7 @@
                                    placeholder="bv. Werkbladen wiskunde H3"
                                    readonly="not can_edit_content"/>
                             <field name="print_deadline"
+                                   required="1"
                                    readonly="not can_edit_content"/>
                             <field name="school_id"
                                    options="{'no_open': True}"
@@ -122,6 +128,12 @@
                                         class="btn-link ps-0 mt-1"
                                         icon="fa-plus"
                                         invisible="not can_edit_content"/>
+                                <div class="text-muted small fst-italic mt-1"
+                                     invisible="klas_ids or kopie_leerkracht">
+                                    <i class="fa fa-info-circle me-1"/>
+                                    Geen klas? Vink hieronder <strong>"Kopie leerkracht"</strong> aan
+                                    om enkel voor jezelf af te drukken.
+                                </div>
                             </div>
                             <label for="student_count" string="Leerlingen"
                                    invisible="not klas_ids"/>
@@ -167,16 +179,51 @@
                         </group>
                     </group>
 
-                    <!-- Volgende-knop onderaan de form (links uitgelijnd) -->
+                    <!-- Afdrukopties + Toelichting inline tijdens invullen, geen
+                         aparte wizard-dialog meer (UX-verzoek beta-team). -->
+                    <group string="Afdrukopties"
+                           invisible="state != 'form_invullen'">
+                        <group>
+                            <field name="dubbelzijdig"
+                                   readonly="not can_edit_content"/>
+                            <field name="nieten"
+                                   readonly="not can_edit_content"/>
+                            <field name="perforeren"
+                                   readonly="not can_edit_content"/>
+                            <field name="liggend" readonly="1"
+                                   help="Automatisch gedetecteerd uit de PDF"/>
+                            <field name="sorteren"
+                                   readonly="not can_edit_content"/>
+                        </group>
+                        <group>
+                            <field name="a3_plooien"
+                                   readonly="not can_edit_content"/>
+                            <field name="boekje_a4"
+                                   readonly="not can_edit_content"/>
+                            <field name="papier_kleur"
+                                   readonly="not can_edit_content"/>
+                            <field name="gekleurd_papier"
+                                   invisible="papier_kleur == 'geen'"
+                                   readonly="not can_edit_content"/>
+                        </group>
+                    </group>
+                    <group string="Toelichting"
+                           invisible="state != 'form_invullen'">
+                        <field name="description" nolabel="1"
+                               placeholder="Eventuele extra informatie voor de drukkerij..."
+                               readonly="not can_edit_content"/>
+                    </group>
+
+                    <!-- Direct indienen-knop, geen tussenstap -->
                     <div class="d-flex justify-content-start mt-3 mb-3"
                          invisible="state != 'form_invullen'">
-                        <button name="action_open_details"
-                                string="Volgende"
+                        <button name="action_submit"
+                                string="Indienen &amp; bevestigen"
                                 type="object"
                                 class="btn-primary"/>
                     </div>
 
-                    <!-- Extra info knop: opent dialoog (alleen als "Volgende" niet meer zichtbaar is) -->
+                    <!-- Extra info knop: opent dialoog voor drukker/admin in afdrukken-fase -->
                     <div class="d-flex justify-content-end mt-3 mb-3"
                          invisible="not drukwerk_type or state in ('form_invullen', 'afdrukken')">
                         <button name="action_open_details"
@@ -311,7 +358,9 @@
         <field name="name">drukwerk.record.list</field>
         <field name="model">drukwerk.record</field>
         <field name="arch" type="xml">
-            <list>
+            <!-- Standaard volgorde: type (examen/gewoon apart), dan deadline
+                 oudste boven zodat de drukker de meest dringende job eerst ziet. -->
+            <list default_order="drukwerk_type, print_deadline asc, create_date asc">
                 <header>
                     <button name="action_stockeren"
                             type="object"
@@ -329,7 +378,7 @@
                 <field name="klas_ids" widget="many2many_tags" optional="show"/>
                 <field name="student_count" string="Leerlingen"/>
                 <field name="total_pages" string="Pagina's"/>
-                <field name="total_cost" string="Kost"/>
+                <field name="total_cost" string="Totale kost"/>
                 <field name="cost_per_student" string="Kost / leerling" optional="show"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"

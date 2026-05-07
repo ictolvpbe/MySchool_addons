@@ -28,6 +28,15 @@ class DrukwerkRecord(models.Model):
         ('gewoon', 'Gewoon drukwerk'),
         ('examen', 'Examen drukwerk'),
     ], string='Type drukwerk', tracking=True)
+    examen_variant = fields.Selection([
+        ('wit', 'Wit — geen hulpmiddelen'),
+        ('groen', 'Groen — met hulpmiddelen'),
+        ('geel', 'Geel — vergrote tekst / specifieke hulpmiddelen'),
+    ], string='Examen-versie',
+       help='Kleurcode van het examenpapier afhankelijk van het toegestane '
+            'gebruik van hulpmiddelen. Wit = geen hulpmiddelen, '
+            'Groen = met hulpmiddelen, Geel = vergrote tekst of specifieke '
+            'aanpassingen voor leerlingen met bv. dyslexie.')
     titel = fields.Char(string='Omschrijving')
     description = fields.Text(string='Toelichting')
     print_deadline = fields.Date(
@@ -79,7 +88,12 @@ class DrukwerkRecord(models.Model):
         ('a4', 'A4'),
         ('a3', 'A3'),
     ], string='Formaat', default='a4', required=True)
-    kopie_leerkracht = fields.Boolean(string='Kopie leerkracht', default=False)
+    kopie_leerkracht = fields.Boolean(
+        string='Kopie leerkracht',
+        default=False,
+        help='Aanvinken voor 1 extra exemplaar voor de leerkracht zelf '
+             '(bovenop het totaal voor de leerlingen).',
+    )
     papier_kleur = fields.Selection([
         ('geen', 'Wit (standaard)'),
         ('groen', 'Groen'),
@@ -170,12 +184,15 @@ class DrukwerkRecord(models.Model):
         for record in self:
             record.is_drukwerk_team = in_team
 
-    @api.depends('state', 'is_owner')
+    @api.depends('state', 'is_owner', 'is_drukwerk_team')
     def _compute_can_edit_content(self):
         for record in self:
             record.can_edit_content = (
                 record.state in ('draft', 'form_invullen')
                 or (record.state == 'afdrukken' and record.is_owner)
+                # Drukkerij-team / admin moet ook na indienen kleine
+                # correcties kunnen doen (typo's, papierkleur, ...).
+                or (record.state == 'afdrukken' and record.is_drukwerk_team)
             )
 
     @api.depends_context('uid')
@@ -198,10 +215,13 @@ class DrukwerkRecord(models.Model):
 
     @api.depends('dubbelzijdig', 'nieten', 'perforeren', 'liggend',
                  'sorteren', 'a3_plooien', 'boekje_a4',
-                 'gekleurd_papier', 'papier_kleur')
+                 'gekleurd_papier', 'papier_kleur',
+                 'drukwerk_type', 'examen_variant')
     def _compute_printer_code(self):
         for record in self:
             codes = []
+            if record.drukwerk_type == 'examen' and record.examen_variant:
+                codes.append(f'EXAMEN-{record.examen_variant.upper()}')
             if record.dubbelzijdig:
                 codes.append('R/V')
             if record.nieten:
@@ -526,6 +546,8 @@ class DrukwerkRecord(models.Model):
                 raise UserError("Kan alleen vanuit de invulfase ingediend worden.")
             if not record.titel:
                 raise UserError("Vul een omschrijving in.")
+            if not record.print_deadline:
+                raise UserError("Vul de gewenste afdrukdatum in.")
             if not record.klas_ids and not record.kopie_leerkracht:
                 raise UserError(
                     "Selecteer minstens één klas, of vink "

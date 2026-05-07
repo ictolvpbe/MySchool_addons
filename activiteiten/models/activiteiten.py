@@ -89,7 +89,7 @@ class Activiteiten(models.Model):
     ], string='Status', default='draft', required=True, tracking=True)
 
     vervoer_type = fields.Selection([
-        ('bus', 'Schoolbus'),
+        ('bus', 'Bus (gehuurd via privé-maatschappij)'),
         ('openbaar_vervoer', 'Openbaar vervoer'),
         ('te_voet', 'Te voet'),
         ('fiets', 'Fiets'),
@@ -97,7 +97,8 @@ class Activiteiten(models.Model):
         ('anders', 'Anders'),
     ], string='Vervoer', default='bus',
        help='Hoe verplaatst de groep zich tijdens deze activiteit. '
-            'Selectie van "Schoolbus" triggert de bus-controle-flow.')
+            'Selectie van "Bus (gehuurd via privé-maatschappij)" triggert '
+            'de bus-controle-flow met aankoop.')
     bus_nodig = fields.Boolean(string='Bus nodig', default=False)
 
     @api.onchange('vervoer_type')
@@ -118,6 +119,12 @@ class Activiteiten(models.Model):
     )
     document_ids = fields.Many2many(
         'ir.attachment', string='Documenten',
+    )
+    document_notitie = fields.Html(
+        string='Notitie bij documenten',
+        sanitize=True,
+        help='Vrije tekst — bv. een korte uitleg, of een link naar een '
+             'Google Drive document of spreadsheet.',
     )
     s_code_name = fields.Char(string='S-Code')
     s_code_price = fields.Monetary(
