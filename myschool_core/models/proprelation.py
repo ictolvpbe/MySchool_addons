@@ -56,6 +56,47 @@ class PropRelation(models.Model):
     # Constraints
     # -------------------------------------------------------------------------
 
+    @api.constrains('proprelation_type_id', 'id_org', 'id_org_child', 'is_active')
+    def _check_pg_g_no_cycle(self):
+        """For PG-G (Persongroup-in-Persongroup) relations, prevent
+        cycles. A PG-G says "id_org contains id_org_child as a member".
+        Walking the membership graph upward from id_org must never
+        reach id_org_child."""
+        for rec in self:
+            ptype = rec.proprelation_type_id
+            if not ptype or ptype.name != 'PG-G':
+                continue
+            if not rec.is_active or not rec.id_org or not rec.id_org_child:
+                continue
+            if rec.id_org.id == rec.id_org_child.id:
+                raise ValidationError(
+                    f'PG-G: een groep kan zichzelf niet bevatten '
+                    f'({rec.id_org.name}).')
+            # Walk upward: which groups already contain id_org? If
+            # id_org_child appears among those ancestors, we'd close a
+            # loop.
+            visited = set()
+            frontier = {rec.id_org.id}
+            while frontier:
+                next_frontier = set()
+                for parent_id in frontier:
+                    if parent_id in visited:
+                        continue
+                    visited.add(parent_id)
+                    if parent_id == rec.id_org_child.id:
+                        raise ValidationError(
+                            f'PG-G: cyclus gedetecteerd — '
+                            f'{rec.id_org.name} bevat (via een ander '
+                            f'pad) al {rec.id_org_child.name}.')
+                    parents = self.search([
+                        ('proprelation_type_id', '=', ptype.id),
+                        ('id_org_child', '=', parent_id),
+                        ('is_active', '=', True),
+                    ])
+                    next_frontier.update(p.id_org.id for p in parents
+                                         if p.id_org)
+                frontier = next_frontier - visited
+
     @api.constrains('is_master', 'id_person', 'is_active')
     def _check_single_master(self):
         """Only one active is_master=True proprelation per person."""

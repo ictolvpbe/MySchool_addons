@@ -822,13 +822,6 @@
                                widget="many2many_tags" nolabel="1" colspan="2"
                                placeholder="Klik en kies leden om te verwijderen…"
                                options="{'no_create': True, 'no_create_edit': True}"/>
-                        <button name="action_remove_selected"
-                                type="object"
-                                string="Verwijder geselecteerden"
-                                class="btn-danger"
-                                icon="fa-trash"
-                                invisible="not remove_member_ids"
-                                colspan="2"/>
                     </group>
 
                     <!-- ── Pane 2: toevoegen via tree-filter ──────────── -->
@@ -848,14 +841,47 @@
                                ]"
                                placeholder="Klik en kies personen om toe te voegen…"
                                options="{'no_create': True, 'no_create_edit': True}"/>
-                        <button name="action_add_selected"
-                                type="object"
-                                string="Voeg geselecteerden toe"
-                                class="btn-primary"
-                                icon="fa-plus"
-                                invisible="not add_member_ids"
-                                colspan="2"/>
                     </group>
+
+                    <!-- ── Pane 3: huidige geneste groepen ────────────── -->
+                    <group string="Huidige geneste groepen">
+                        <field name="current_group_member_ids"
+                               widget="many2many_tags" nolabel="1" colspan="2"
+                               readonly="1"
+                               options="{'no_open': True}"/>
+                        <field name="remove_group_ids"
+                               widget="many2many_tags" nolabel="1" colspan="2"
+                               placeholder="Klik en kies geneste groepen om te verwijderen…"
+                               options="{'no_create': True, 'no_create_edit': True}"/>
+                    </group>
+
+                    <!-- ── Pane 4: groepen toevoegen ────────────────────── -->
+                    <group string="Groepen toevoegen">
+                        <field name="add_group_ids"
+                               widget="many2many_tags" nolabel="1" colspan="2"
+                               domain="[
+                                   ('org_type_id.name', '=', 'PERSONGROUP'),
+                                   ('id', '!=', persongroup_id),
+                                   ('id', 'not in', current_group_member_ids),
+                                   ('is_active', '=', True),
+                               ]"
+                               placeholder="Klik en kies persongroups om te nesten…"
+                               options="{'no_create': True, 'no_create_edit': True}"/>
+                    </group>
+                </group>
+                <group>
+                    <button name="action_remove_selected"
+                            type="object"
+                            string="Verwijder geselecteerden"
+                            class="btn-danger"
+                            icon="fa-trash"
+                            invisible="not remove_member_ids and not remove_group_ids"/>
+                    <button name="action_add_selected"
+                            type="object"
+                            string="Voeg geselecteerden toe"
+                            class="btn-primary"
+                            icon="fa-plus"
+                            invisible="not add_member_ids and not add_group_ids"/>
                 </group>
                 <footer>
                     <button name="action_close" type="object" string="Sluiten"
@@ -980,6 +1006,7 @@
         <field name="view_mode">form</field>
         <field name="target">new</field>
     </record>
+
 
     <!-- ========================================= -->
     <!-- RESET AUTO-SYNC DATA WIZARD -->

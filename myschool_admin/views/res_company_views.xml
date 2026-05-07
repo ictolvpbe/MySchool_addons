@@ -9,6 +9,11 @@
                 <field name="short_name" placeholder="Verkorte naam voor bedrijfskiezer"/>
                 <field name="school_id"/>
             </field>
+            <!-- Parent (Hoofdbedrijf) must be a SCHOOLBOARD-linked company.
+                 Schools are auto-linked as branches via the org-tree sync. -->
+            <field name="parent_id" position="attributes">
+                <attribute name="domain">[('school_id.org_type_id.name', '=', 'SCHOOLBOARD')]</attribute>
+            </field>
         </field>
     </record>
 </odoo>

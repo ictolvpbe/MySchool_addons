@@ -7,7 +7,7 @@ User-editable letter templates with field placeholders. The body is
 HTML edited through Odoo's web_editor (rich text + images via the
 toolbar). Placeholders use the standard Odoo inline-template syntax
 ``{{ object.<field> }}`` so dot-traversal of related records works
-("{{ object.id_org_main.name }}" for school name).
+("{{ object.current_school_id.name }}" for school name).
 
 Renders to PDF through a generic QWeb wrapper (``report_letter_document``)
 that injects the substituted body inside ``web.external_layout`` —
@@ -28,6 +28,15 @@ from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
+
+try:
+    from weasyprint import HTML as WeasyHTML
+    WEASYPRINT_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    WEASYPRINT_AVAILABLE = False
+    _logger.warning(
+        'weasyprint is not installed. Letter PDFs cannot be generated. '
+        'Install with: pip install weasyprint')
 
 
 class LetterTemplate(models.Model):
@@ -63,6 +72,28 @@ class LetterTemplate(models.Model):
     model = fields.Char(related='model_id.model', store=True, readonly=True,
                        string='Model Technical Name')
 
+    # ---------------------------------------------------------------- workflow trigger
+    # Drives auto-selection by the cascade. Each lifecycle event has
+    # its own pool of templates; resolution is scoped by trigger first,
+    # then by person_type, then to the catch-all per-trigger fallback.
+    trigger_event = fields.Selection(
+        selection=[
+            ('account_created', 'Account Created (welcome)'),
+            ('account_suspended', 'Account Suspended (employee leaves)'),
+            ('account_deleted', 'Account Deleted (final farewell)'),
+            ('password_reset', 'Password Reset'),
+            ('manual', 'Manual (admin trigger only)'),
+        ],
+        string='Trigger Event',
+        required=True,
+        default='account_created',
+        index=True,
+        help='When this template fires automatically. "manual" is '
+             'only used via the explicit "Generate Letter" button on '
+             'the person form. Templates with no trigger match for an '
+             'event simply skip — no error, no fallback to a different '
+             'event.')
+
     # ---------------------------------------------------------------- person-type binding (auto-select)
     person_type_ids = fields.Many2many(
         comodel_name='myschool.person.type',
@@ -89,7 +120,11 @@ class LetterTemplate(models.Model):
         domain="[('model_id', '=', model_id), ('name', '!=', 'id')]",
         help='Pick a field to see its placeholder syntax in the box '
              'below. Copy it into the body where you want the value.',
-        store=False)
+        ondelete='set null',
+        copy=False)
+    # Note: stored as a regular Many2one. Odoo 19's webclient won't
+    # render a non-stored non-computed M2O, so the cleanest path is
+    # to persist the picker selection — costs one extra int column.
 
     field_placeholder = fields.Char(
         string='Placeholder Syntax',
@@ -105,12 +140,55 @@ class LetterTemplate(models.Model):
         string='Paper Format',
         help='Defaults to the company paper format when empty.')
 
+    # ---------------------------------------------------------------- email delivery
+    # Auto-send the rendered PDF as an email attachment. When False the
+    # cascade still generates+attaches the PDF to the target record but
+    # leaves notification to the admin (manual download / print).
+    auto_send_email = fields.Boolean(
+        string='Auto-Send Email',
+        default=False,
+        help='When checked, the betask cascade emails the PDF to the '
+             'address resolved through ``email_to_field`` after '
+             'generation. Only honoured when the email subject/body '
+             'are filled in.')
+
+    email_to_field = fields.Char(
+        string='Recipient Field',
+        default='email_cloud',
+        help='Field name on the target model to read the recipient '
+             'email address from. Dot-traversal supported '
+             '(e.g. "current_school_id.email") for related records.')
+
+    email_subject = fields.Char(
+        string='Email Subject',
+        translate=True,
+        help='Rendered with the same {{ object.<field> }} placeholders '
+             'as the body. Required for auto-send.')
+
+    email_body_html = fields.Html(
+        string='Email Body',
+        translate=True,
+        sanitize=True,
+        help='Body of the cover email that ships the PDF. Use the '
+             'same {{ object.<field> }} placeholder syntax as the '
+             'letter body. The PDF is always attached automatically.')
+
+    email_from = fields.Char(
+        string='From',
+        help='Sender address. Defaults to the company email when empty.')
+
     # ---------------------------------------------------------------- preview record
-    preview_record_ref = fields.Reference(
-        selection='_selection_preview_record',
+    # Many2oneReference renders as a Many2one widget but uses the value
+    # of ``model_field`` to choose which model to query at runtime.
+    # That gives the picker a single dropdown of *records* of the
+    # template's target model — no two-step "first pick model, then
+    # record" dance like fields.Reference forces.
+    preview_record_id = fields.Many2oneReference(
         string='Preview Record',
-        help='Pick a real record to test rendering. Used by the '
-             '"Preview PDF" button — does NOT affect production rendering.')
+        model_field='model',
+        help='Pick a real record of the target model to test rendering. '
+             'Used by the "Preview PDF" button — does NOT affect '
+             'production rendering.')
 
     # =========================================================================
     # Computes
@@ -118,20 +196,28 @@ class LetterTemplate(models.Model):
 
     @api.depends('field_picker_id')
     def _compute_field_placeholder(self):
-        for tpl in self:
-            if tpl.field_picker_id:
-                tpl.field_placeholder = (
-                    '{{ object.' + tpl.field_picker_id.name + ' }}')
-            else:
-                tpl.field_placeholder = ''
+        """Build the placeholder syntax for the picked field.
 
-    @api.model
-    def _selection_preview_record(self):
-        # Limit the Reference to myschool.* models so we don't expose
-        # every model in the database in the picker.
-        models_ = self.env['ir.model'].sudo().search(
-            [('model', 'like', 'myschool.%')])
-        return [(m.model, m.name) for m in models_]
+        - Binary fields → wrap in ``<img src="{{ image_url(...) }}" />``
+          so admins can paste a ready-to-use image tag.
+        - Anything else → plain ``{{ object.<field> }}``.
+
+        The ``image_url`` helper is injected into the render context
+        by ``_letter_render_context``; admins don't need to import or
+        configure anything.
+        """
+        for tpl in self:
+            f = tpl.field_picker_id
+            if not f:
+                tpl.field_placeholder = ''
+                continue
+            if f.ttype == 'binary':
+                tpl.field_placeholder = (
+                    '<img src="{{ image_url(object.' + f.name +
+                    ') }}" alt="' + (f.field_description or f.name) +
+                    '" style="max-width: 200px;" />')
+            else:
+                tpl.field_placeholder = '{{ object.' + f.name + ' }}'
 
     # =========================================================================
     # Constraints
@@ -155,7 +241,8 @@ class LetterTemplate(models.Model):
         Uses Odoo's ``inline_template`` engine (Jinja-flavoured) via
         ``mail.render.mixin._render_template`` — same evaluator
         ``mail.template`` uses. Supports dot-traversal and the helpers
-        ``user``, ``ctx`` etc.
+        ``user``, ``ctx`` etc., plus our injected ``image_url`` helper
+        for embedding Binary fields as ``data:`` URLs.
         """
         self.ensure_one()
         if not record:
@@ -168,40 +255,128 @@ class LetterTemplate(models.Model):
             return ''
         rendered = self._render_template(
             self.body_html, record._name, [record.id],
-            engine='inline_template')
+            engine='inline_template',
+            add_context=self._letter_render_context())
         return rendered.get(record.id, '') or ''
+
+    def _letter_render_context(self):
+        """Extra helpers injected into inline_template eval context.
+
+        ``image_url(value)`` — turn a Binary field value into a
+        self-contained ``data:image/...;base64,...`` URL. Auto-detects
+        the MIME type from the magic-byte prefix (PNG / JPEG / GIF /
+        WebP / SVG). Returns an empty string when ``value`` is falsy
+        so a missing logo just collapses the surrounding ``<img>``
+        instead of injecting garbage.
+        """
+        return {
+            'image_url': self._helper_image_url,
+        }
+
+    @staticmethod
+    def _helper_image_url(value):
+        """Convert a Binary field value to a data URL.
+
+        Accepts both raw bytes (Odoo returns ``bytes`` for Binary
+        fields stored inline) and base64-encoded ``str`` (when
+        ``attachment=True`` the framework can hand back a string).
+        Falls back gracefully on unknown formats.
+        """
+        if not value:
+            return ''
+        # Normalise to bytes for magic-byte sniffing.
+        if isinstance(value, str):
+            try:
+                raw = base64.b64decode(value)
+            except Exception:
+                return ''
+            b64_payload = value
+        else:
+            raw = value
+            b64_payload = base64.b64encode(value).decode('ascii')
+        mime = 'image/png'
+        if raw.startswith(b'\x89PNG'):
+            mime = 'image/png'
+        elif raw.startswith(b'\xff\xd8\xff'):
+            mime = 'image/jpeg'
+        elif raw.startswith(b'GIF8'):
+            mime = 'image/gif'
+        elif raw.startswith(b'RIFF') and raw[8:12] == b'WEBP':
+            mime = 'image/webp'
+        elif raw.lstrip().startswith(b'<svg') or raw.lstrip().startswith(b'<?xml'):
+            mime = 'image/svg+xml'
+        return f'data:{mime};base64,{b64_payload}'
 
     def render_pdf(self, record):
         """Render the template for ``record`` and return PDF bytes.
 
-        Uses the generic ``ir.actions.report`` registered at
-        ``myschool_core.action_report_letter_template``. The QWeb
-        wrapper view (``report_letter_document``) calls back into
-        ``render_html`` so the same substitution logic is used in
-        preview and production paths.
+        Uses **WeasyPrint** for HTML→PDF conversion — pure Python, no
+        wkhtmltopdf system binary required. Pages, margins and page
+        size are controlled through ``@page`` CSS injected from
+        ``paperformat_id`` (when set) or hard-coded A4 defaults.
         """
         self.ensure_one()
-        report = self.env.ref(
-            'myschool_core.action_report_letter_template',
-            raise_if_not_found=False)
-        if not report:
+        if not WEASYPRINT_AVAILABLE:
             raise UserError(_(
-                'Letter report action is missing. Re-install / upgrade '
-                'myschool_core to seed it.'))
-        # The wrapper view reads target_model + target_record_id from
-        # the data dict to call back into render_html.
-        report_sudo = report.sudo()
-        if self.paperformat_id:
-            report_sudo = report_sudo.with_context(
-                paperformat_id=self.paperformat_id.id)
-        pdf_content, _content_type = report_sudo._render_qweb_pdf(
-            report.report_name,
-            res_ids=[self.id],
-            data={
-                'target_model': record._name,
-                'target_record_id': record.id,
-            })
-        return pdf_content
+                'WeasyPrint is not installed on the Odoo host. '
+                'Install with: pip install weasyprint'))
+        body = self.render_html(record) or ''
+        full_html = self._wrap_html_document(body, record)
+        return WeasyHTML(string=full_html).write_pdf()
+
+    def _wrap_html_document(self, body_html, record):
+        """Wrap the rendered body in a full HTML5 document with @page
+        CSS for paper format / margins.
+
+        WeasyPrint reads CSS from ``<style>`` blocks (and from
+        ``@page`` rules in particular) — that's the canonical way to
+        set page size and margins in a Python-only PDF pipeline.
+        Falls back to A4 with 2cm margins when no paperformat is set.
+        """
+        page_css = self._build_page_css()
+        # Pull base CSS from ir.qweb (mostly font definitions) only if
+        # we want to mirror Odoo's report look — for v1 we keep the
+        # output minimal so the template's own <style> drives the
+        # layout. Admins who want the corporate header/footer layout
+        # can paste it into the body.
+        return f"""<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8"/>
+<title>{self.code}</title>
+<style>{page_css}</style>
+</head>
+<body>{body_html}</body>
+</html>"""
+
+    def _build_page_css(self):
+        """Translate the linked ``report.paperformat`` (if any) to
+        ``@page`` CSS that WeasyPrint understands.
+
+        The Odoo paperformat record stores dimensions in mm and
+        margins as numeric (also mm). WeasyPrint accepts ``cm``,
+        ``mm``, ``in`` etc. directly. Defaults: A4 portrait + 2cm
+        margins.
+        """
+        pf = self.paperformat_id
+        if pf and pf.format == 'custom':
+            size = f'{pf.page_width or 210}mm {pf.page_height or 297}mm'
+        elif pf and pf.format:
+            size = pf.format  # 'A4', 'Letter', etc — valid CSS values
+        else:
+            size = 'A4'
+        orientation = (pf.orientation or 'Portrait').lower() if pf else 'portrait'
+        if orientation == 'landscape':
+            size += ' landscape'
+        margin_top = (pf.margin_top if pf else None) or 20
+        margin_bottom = (pf.margin_bottom if pf else None) or 20
+        margin_left = (pf.margin_left if pf else None) or 20
+        margin_right = (pf.margin_right if pf else None) or 20
+        return (
+            f'@page {{ size: {size}; '
+            f'margin: {margin_top}mm {margin_right}mm '
+            f'{margin_bottom}mm {margin_left}mm; }}'
+        )
 
     def generate_letter_attachment(self, record, attach=True):
         """Generate the PDF and (optionally) attach it to ``record``.
@@ -249,25 +424,116 @@ class LetterTemplate(models.Model):
         return f'{self.code}_{safe}_{date.today().strftime("%Y%m%d")}.pdf'
 
     # =========================================================================
+    # Email delivery
+    # =========================================================================
+
+    def _resolve_recipient_email(self, record):
+        """Resolve the recipient email for ``record``.
+
+        Walks the ``email_to_field`` path on the record using
+        dot-traversal so ``"current_school_id.email"`` looks up the org's
+        email address. Returns the empty string when the value is
+        missing — the caller decides whether to skip or warn.
+        """
+        self.ensure_one()
+        path = (self.email_to_field or '').strip()
+        if not path:
+            return ''
+        target = record
+        for part in path.split('.'):
+            if not target:
+                return ''
+            target = getattr(target, part, None)
+        return (target or '').strip() if isinstance(target, str) else ''
+
+    def _render_inline(self, source, record):
+        """Render ``source`` (HTML or plain text) for ``record`` using
+        the same ``inline_template`` engine ``render_html`` uses.
+
+        Same helper context (``image_url``) is injected so the email
+        body can embed images alongside the body of the letter.
+        """
+        self.ensure_one()
+        if not source or not record:
+            return source or ''
+        rendered = self._render_template(
+            source, record._name, [record.id], engine='inline_template',
+            add_context=self._letter_render_context())
+        return rendered.get(record.id, '') or ''
+
+    def send_email(self, record, attachment=None):
+        """Send the rendered PDF as a cover email.
+
+        Generates a fresh attachment if none is provided. Sends a
+        ``mail.mail`` rather than threading on the record so the
+        send is independent of the record's mail-thread settings —
+        admins can still see the message through the message archive.
+
+        Returns the ``mail.mail`` record (not yet sent — outbound is
+        scheduled by the standard mail cron).
+        """
+        self.ensure_one()
+        recipient = self._resolve_recipient_email(record)
+        if not recipient:
+            raise UserError(_(
+                'No recipient email could be resolved on field "%(f)s" '
+                'of record %(r)s.'
+            ) % {'f': self.email_to_field, 'r': record.display_name})
+        if not (self.email_subject or '').strip():
+            raise UserError(_(
+                'Letter template %s has no email subject — fill it in '
+                'before enabling auto-send.') % self.code)
+
+        if attachment is None:
+            attachment = self.generate_letter_attachment(record, attach=True)
+
+        subject = self._render_inline(self.email_subject, record)
+        body = self._render_inline(self.email_body_html or '', record)
+        sender = (self.email_from or '').strip() \
+            or (self.env.company.email or '').strip() \
+            or self.env.user.email or ''
+
+        Mail = self.env['mail.mail'].sudo()
+        mail = Mail.create({
+            'subject': subject or self.code,
+            'body_html': body or '',
+            'email_from': sender,
+            'email_to': recipient,
+            'attachment_ids': [(4, attachment.id)],
+            'auto_delete': False,
+        })
+        mail.send()
+        _logger.info(
+            '[LETTER] Sent email mail_id=%s template=%s to=%s record=%s/%s',
+            mail.id, self.code, recipient, record._name, record.id)
+        return mail
+
+    # =========================================================================
     # Selection helpers used by the cascade
     # =========================================================================
 
     @api.model
-    def find_for_person(self, person):
-        """Pick the right template for a given person.
+    def find_for_person(self, person, trigger_event='account_created'):
+        """Pick the right template for ``person`` and ``trigger_event``.
 
-        Resolution order:
-          1. Active template targeting ``myschool.person`` whose
-             ``person_type_ids`` includes the person's type.
-          2. Active template targeting ``myschool.person`` with empty
-             ``person_type_ids`` (acts as fallback).
+        Resolution order (per ``trigger_event``):
+          1. Template whose ``person_type_ids`` includes the person's
+             type (most specific).
+          2. Template with empty ``person_type_ids`` (fallback for all
+             types within this trigger).
           3. ``False`` — caller decides whether to skip or warn.
+
+        No cross-trigger fallback: if no ``account_suspended`` template
+        exists for an EMPLOYEE, the cascade skips silently rather than
+        falling back to ``account_created``. Sending a "welcome" email
+        when someone leaves would be incorrect.
         """
         if not person:
             return self.browse()
         Tpl = self.search([
             ('active', '=', True),
             ('model', '=', 'myschool.person'),
+            ('trigger_event', '=', trigger_event),
         ], order='sequence')
         if person.person_type_id:
             specific = Tpl.filtered(
@@ -282,13 +548,17 @@ class LetterTemplate(models.Model):
     # =========================================================================
 
     def action_preview_pdf(self):
-        """Generate a one-off preview using ``preview_record_ref``."""
+        """Generate a one-off preview using ``preview_record_id``."""
         self.ensure_one()
-        if not self.preview_record_ref:
+        if not self.preview_record_id or not self.model:
             raise UserError(_(
                 'Pick a Preview Record on this template before previewing.'))
-        attachment = self.generate_letter_attachment(
-            self.preview_record_ref, attach=False)
+        record = self.env[self.model].browse(self.preview_record_id).exists()
+        if not record:
+            raise UserError(_(
+                'Preview Record %(rid)s of model %(model)s no longer exists.'
+            ) % {'rid': self.preview_record_id, 'model': self.model})
+        attachment = self.generate_letter_attachment(record, attach=False)
         return {
             'type': 'ir.actions.act_url',
             'url': f'/web/content/{attachment.id}?download=true',

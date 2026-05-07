@@ -1,6 +1,6 @@
 {
     'name': 'MySchool Core Module',
-    'version': '0.4',
+    'version': '0.6',
     'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, and periods',
     'description': """
@@ -19,7 +19,7 @@
     'license': 'LGPL-3',
     'depends': ['base', 'mail','hr'],
     'external_dependencies': {
-        'python': ['ldap3', 'google-api-python-client', 'google-auth'],
+        'python': ['ldap3', 'google-api-python-client', 'google-auth', 'weasyprint'],
     },
     'post_init_hook': '_migrate_legacy_group_flags_post_init',
     'data': [
@@ -65,7 +65,8 @@
         'data/company_sync_cron.xml',
         'data/letter_task_types.xml',
         'data/letter_template_data.xml',
-        'report/letter_report_templates.xml',
+        # report/letter_report_templates.xml — dropped in v0.5
+        # (replaced by direct WeasyPrint rendering, see letter_template.render_pdf)
 
         #Services
         #'services/data/ir_cron_data.xml',

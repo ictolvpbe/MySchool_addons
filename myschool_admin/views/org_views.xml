@@ -43,6 +43,10 @@
                 <header>
                     <button name="action_update_name_tree" type="object"
                             string="Update Name Tree" class="btn-secondary" icon="fa-refresh"/>
+                    <button name="action_verify_groups" type="object"
+                            string="Verify AD/Cloud groups"
+                            class="btn-secondary" icon="fa-shield"
+                            title="Ensure the AD groups + Workspace group / OU exist for this org. Idempotent."/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -279,6 +283,16 @@ if result and isinstance(result, dict):
         <field name="model_id" ref="myschool_core.model_myschool_org"/>
         <field name="state">code</field>
         <field name="code">action = env['myschool.org'].action_sync_companies()</field>
+    </record>
+
+    <!-- Verify all AD/Cloud groups (menu action). Idempotent sweep
+         that ensures every PERSONGROUP and SCHOOL has its backend
+         groups / OUs in place. Useful after a fresh setup or as audit. -->
+    <record id="action_verify_all_groups" model="ir.actions.server">
+        <field name="name">Verify all AD/Cloud groups</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="state">code</field>
+        <field name="code">action = env['myschool.org'].action_verify_all_groups()</field>
     </record>
 
     <!-- Sync persongroups from org settings (menu action) -->

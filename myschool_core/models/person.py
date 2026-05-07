@@ -65,6 +65,28 @@ class Person(models.Model):
         help='Achternaam (Achternaam, Voornaam)'
     )
 
+    current_school_id = fields.Many2one(
+        comodel_name='myschool.org',
+        string='Huidige School',
+        compute='_compute_current_school_id',
+        store=False,
+        help='Resolved via PERSON-TREE → first non-administrative '
+             'SCHOOL ancestor. Convenience field for letter templates: '
+             '``{{ object.current_school_id.logo }}`` works without '
+             'knowing the proprelation graph. Recomputed each read.'
+    )
+
+    @api.depends()
+    def _compute_current_school_id(self):
+        processor = self.env['myschool.betask.processor']
+        for person in self:
+            tree_org = processor._resolve_current_person_tree_org(person)
+            if not tree_org:
+                person.current_school_id = False
+                continue
+            school = processor._resolve_parent_school_from_org(tree_org)
+            person.current_school_id = school or tree_org
+
     short_name = fields.Char(
         string='Roepnaam',
         help='Informele naam / roepnaam'
@@ -538,27 +560,35 @@ class Person(models.Model):
             }
 
     def action_generate_welcome_letter(self):
-        """Render and attach the welcome-letter PDF for this person.
+        """Render the ``account_created`` (welcome) letter for this person.
 
-        Picks the right template via ``letter_template.find_for_person``
-        (matches person_type, falls back to the catch-all) and stores
-        the result as an ``ir.attachment`` on the person record. Opens
-        the PDF in the browser so the admin can print/download it
-        immediately.
+        Manual button — admin-initiated. Picks the active ``account_created``
+        template via ``letter_template.find_for_person`` and stores the
+        result as an ``ir.attachment`` on the person record.
+        """
+        return self._action_generate_letter('account_created')
+
+    def _action_generate_letter(self, trigger_event):
+        """Common implementation behind the per-event letter buttons.
+
+        Returns a download URL when a template was found, else a
+        notification telling the admin to seed one. Centralised so each
+        new event button is a one-line wrapper.
         """
         self.ensure_one()
         Tpl = self.env['myschool.letter.template']
-        template = Tpl.find_for_person(self)
+        template = Tpl.find_for_person(self, trigger_event=trigger_event)
         if not template:
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
-                    'title': _('Welcome Letter'),
+                    'title': _('Letter'),
                     'message': _(
-                        'No active letter template targeting myschool.person '
-                        'is configured. Add one under Settings → Letter '
-                        'Templates first.'),
+                        'No active letter template found for trigger '
+                        '"%(t)s" on myschool.person. Add one under '
+                        'Settings → Letter Templates.'
+                    ) % {'t': trigger_event},
                     'type': 'warning',
                     'sticky': True,
                 },

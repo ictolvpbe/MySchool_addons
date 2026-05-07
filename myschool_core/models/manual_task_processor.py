@@ -1135,6 +1135,7 @@ class ManualTaskProcessor(models.AbstractModel):
             'person_id': ('id_person', 'myschool.person'),
             'org_id': ('id_org', 'myschool.org'),
             'org_parent_id': ('id_org_parent', 'myschool.org'),
+            'org_child_id': ('id_org_child', 'myschool.org'),
             'role_id': ('id_role', 'myschool.role'),
             'role_parent_id': ('id_role_parent', 'myschool.role'),
         }
@@ -1207,6 +1208,14 @@ class ManualTaskProcessor(models.AbstractModel):
             if grp_changes:
                 changes.extend(grp_changes)
 
+        # Cascade for PG-G (group-in-group): emit GROUPMEMBER/ADD on
+        # every shared (com/sec) flag-pair so AD/Cloud nest the child
+        # group inside the parent.
+        if rel_type_name == 'PG-G':
+            grp_changes = self._cascade_pg_g_group_membership(new_rel, action='ADD')
+            if grp_changes:
+                changes.extend(grp_changes)
+
         return {'success': True, 'changes': '\n'.join(changes)}
 
     @api.model
@@ -1257,6 +1266,77 @@ class ManualTaskProcessor(models.AbstractModel):
                         'group_kind': kind,
                     },
                     changes, label=lbl)
+        return changes
+
+    @api.model
+    def _cascade_pg_g_group_membership(self, pg_g, action='ADD'):
+        """When a PG-G (group-in-group) relation is (de)activated, queue
+        LDAP/GROUPMEMBER and CLOUD/GROUPMEMBER tasks so AD/Workspace nest
+        the child group inside the parent. One queued task per
+        flag-pair (COM, SEC) that BOTH parent and child carry — that's
+        the natural mapping: a com-group nests inside a com-group, a
+        sec-group inside a sec-group.
+
+        action: 'ADD' or 'REMOVE'.
+        """
+        changes = []
+        if not pg_g.id_org or not pg_g.id_org_child:
+            return changes
+        parent = pg_g.id_org
+        child = pg_g.id_org_child
+
+        flag_specs = [
+            ('has_comgroup', 'COM',
+             'com_group_fqdn_internal', 'com_group_email'),
+            ('has_secgroup', 'SEC',
+             'sec_group_fqdn_internal', None),  # SEC groups are AD-only
+        ]
+        cloud_enabled = False
+        try:
+            cloud_enabled = bool(self.env['myschool.google.workspace.config']
+                                 .sudo().search_count([('active', '=', True)]))
+        except Exception:
+            cloud_enabled = False
+
+        for flag, kind, fqdn_field, email_field in flag_specs:
+            if not getattr(parent, flag, False) or not getattr(child, flag, False):
+                continue
+
+            parent_dn = getattr(parent, fqdn_field, None)
+            child_dn = getattr(child, fqdn_field, None)
+            if parent_dn and child_dn:
+                lbl = (f"LDAP/GROUPMEMBER/{action} ({kind}) nested "
+                       f"{child.name} → {parent.name}")
+                self._create_and_run_task(
+                    'LDAP', 'GROUPMEMBER', action,
+                    {
+                        'group_dn': parent_dn,
+                        'member_dn': child_dn,
+                        'org_id': parent.id,
+                        'group_kind': kind,
+                        'pg_g_id': pg_g.id,
+                    },
+                    changes, label=lbl)
+                changes.append(f"Queued {lbl}")
+
+            # CLOUD path — only for COM (mail-enabled groups)
+            if cloud_enabled and kind == 'COM' and email_field:
+                parent_email = getattr(parent, email_field, None)
+                child_email = getattr(child, email_field, None)
+                if parent_email and child_email:
+                    cloud_lbl = (f"CLOUD/GROUPMEMBER/{action} nested "
+                                 f"{child.name} → {parent.name}")
+                    self._create_and_run_task(
+                        'CLOUD', 'GROUPMEMBER', action,
+                        {
+                            'group_email': parent_email,
+                            'member_email': child_email,
+                            'org_id': parent.id,
+                            'pg_g_id': pg_g.id,
+                        },
+                        changes, label=cloud_lbl)
+                    changes.append(f"Queued {cloud_lbl}")
+
         return changes
 
     @api.model
@@ -1342,11 +1422,13 @@ class ManualTaskProcessor(models.AbstractModel):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        pg_g_type = PropRelationType.search([('name', '=', 'PG-G')], limit=1)
         changes = []
 
         # Capture PPSBRs we'll deactivate so we can emit LDAP cascades
         # BEFORE the records are written inactive.
         affected_ppsbrs = self.env['myschool.proprelation']
+        affected_pg_g = self.env['myschool.proprelation']
 
         # Mode 1: explicit IDs
         proprelation_ids = data.get('proprelation_ids')
@@ -1356,10 +1438,17 @@ class ManualTaskProcessor(models.AbstractModel):
                 if ppsbr_type:
                     affected_ppsbrs |= rels.filtered(
                         lambda r: r.proprelation_type_id.id == ppsbr_type.id)
+                if pg_g_type:
+                    affected_pg_g |= rels.filtered(
+                        lambda r: r.proprelation_type_id.id == pg_g_type.id)
                 # Emit LDAP cascade BEFORE deactivation.
                 for ppsbr in affected_ppsbrs:
                     grp_changes = self._cascade_ppsbr_group_membership(
                         ppsbr, action='REMOVE')
+                    changes.extend(grp_changes)
+                for pg_g in affected_pg_g:
+                    grp_changes = self._cascade_pg_g_group_membership(
+                        pg_g, action='REMOVE')
                     changes.extend(grp_changes)
                 rels.write({'is_active': False})
                 changes.append(f"Deactivated {len(rels)} proprelation(s) by ID")
@@ -1385,6 +1474,26 @@ class ManualTaskProcessor(models.AbstractModel):
                         changes.extend(grp_changes)
                 rels.write({'is_active': False})
                 changes.append(f"Deactivated {len(rels)} {rel_type_name} relation(s) for person {person_id} in org {org_id}")
+
+        # Mode 3: PG-G by parent + child org (no person involved)
+        org_child_id = data.get('org_child_id')
+        if rel_type_name == 'PG-G' and org_id and org_child_id:
+            rel_type = self._get_or_create_proprelation_type('PG-G')
+            rels = PropRelation.search([
+                ('proprelation_type_id', '=', rel_type.id),
+                ('id_org', '=', org_id),
+                ('id_org_child', '=', org_child_id),
+                ('is_active', '=', True),
+            ])
+            if rels:
+                for pg_g in rels:
+                    grp_changes = self._cascade_pg_g_group_membership(
+                        pg_g, action='REMOVE')
+                    changes.extend(grp_changes)
+                rels.write({'is_active': False})
+                changes.append(
+                    f"Deactivated {len(rels)} PG-G relation(s) "
+                    f"(parent={org_id}, child={org_child_id})")
 
         if not changes:
             return {'success': False, 'error': 'No proprelations found to deactivate'}

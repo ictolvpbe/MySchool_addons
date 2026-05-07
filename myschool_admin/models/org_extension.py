@@ -29,7 +29,7 @@ class OrgProprelations(models.Model):
 
     proprelation_count = fields.Integer(
         compute='_compute_proprelation_count',
-        string='Relations',
+        string='Relations Count',
     )
 
     pgp_member_ids = fields.One2many(
@@ -37,6 +37,7 @@ class OrgProprelations(models.Model):
         compute='_compute_pgp_member_ids',
         string='Members (PG-P)',
     )
+
 
     def _compute_proprelation_all_ids(self):
         """All proprelations where this org appears (as id_org or id_org_parent)."""
@@ -61,6 +62,7 @@ class OrgProprelations(models.Model):
                 ])
             else:
                 rec.pgp_member_ids = PropRelation
+
 
     def _compute_proprelation_count(self):
         PropRelation = self.env['myschool.proprelation']

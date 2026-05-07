@@ -11,6 +11,11 @@ class ResCompany(models.Model):
         help='Verkorte naam voor de bedrijfskiezer (rechts bovenaan). '
              'Indien leeg wordt de volledige naam gebruikt.',
     )
+    email_domain = fields.Char(
+        string='E-mail domein',
+        help='Extern e-maildomein van de gekoppelde organisatie. '
+             'Beheerd door de bedrijfssync (myschool.org.domain_external).',
+    )
 
     def write(self, vals):
         # Lock the company name when it is sync-managed: the linked

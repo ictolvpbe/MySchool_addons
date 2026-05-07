@@ -1663,7 +1663,7 @@ class AddCiRelationWizard(models.TransientModel):
     _description = 'Add Configuration Item'
 
     org_id = fields.Many2one('myschool.org', string='Organization', required=True)
-    org_name = fields.Char(string='Organization', compute='_compute_org_name')
+    org_name = fields.Char(string='Organization Name', compute='_compute_org_name')
     
     # Option 1: Select existing CI
     use_existing_ci = fields.Boolean(string='Use Existing Config Item', default=True)
@@ -2131,7 +2131,7 @@ class LinkRoleToOrgWizard(models.TransientModel):
         readonly=True,
         help='The organization to link the role to'
     )
-    org_name = fields.Char(string='Organization', compute='_compute_org_info')
+    org_name = fields.Char(string='Organization Name', compute='_compute_org_info')
     org_type_name = fields.Char(string='Organization Type', compute='_compute_org_info')
     
     school_id = fields.Many2one(
@@ -3502,7 +3502,7 @@ class CreatePersongroupWizard(models.TransientModel):
     _description = 'Create Persongroup'
 
     parent_org_id = fields.Many2one('myschool.org', string='Parent Organization', required=True)
-    parent_org_name = fields.Char(string='Parent Organization', readonly=True)
+    parent_org_name = fields.Char(string='Parent Organization Name', readonly=True)
     group_name = fields.Char(string='Group Name', required=True,
         help='Human-readable name for the persongroup')
     group_name_short = fields.Char(string='Short Name (auto)', readonly=True,
@@ -3808,7 +3808,7 @@ class ManagePersongroupMembersWizard(models.TransientModel):
 
     persongroup_id = fields.Many2one(
         'myschool.org', string='Persongroup', required=True)
-    persongroup_name = fields.Char(string='Persongroup', readonly=True)
+    persongroup_name = fields.Char(string='Persongroup Name', readonly=True)
 
     # ── Pane 1: current members ────────────────────────────────────────
     current_member_ids = fields.Many2many(
@@ -3841,6 +3841,23 @@ class ManagePersongroupMembersWizard(models.TransientModel):
         help='Selecteer hier personen om toe te voegen, klik daarna '
              '"Voeg geselecteerden toe".')
 
+    # ── Pane 3: nested groups (PG-G) — analoog aan PG-P maar met
+    #            persongroup-orgs als child. Hetzelfde knoppenpaar:
+    #            verwijderen/toevoegen runs in dezelfde actions.
+    current_group_member_ids = fields.Many2many(
+        'myschool.org', 'persongroup_wizard_current_groups_rel',
+        string='Huidige geneste groepen', readonly=True)
+    remove_group_ids = fields.Many2many(
+        'myschool.org', 'persongroup_wizard_remove_groups_rel',
+        string='Te verwijderen groepen',
+        domain="[('id', 'in', current_group_member_ids)]",
+        help='Selecteer hier de geneste groepen die je wilt verwijderen.')
+    add_group_ids = fields.Many2many(
+        'myschool.org', 'persongroup_wizard_add_groups_rel',
+        string='Groepen toe te voegen',
+        help='Selecteer hier andere persongroups om als geneste groep '
+             'toe te voegen.')
+
     @api.depends('candidate_filter_org_id', 'candidate_filter_org_id.name_tree',
                  'candidate_include_descendants')
     def _compute_candidate_filter_pattern(self):
@@ -3862,6 +3879,8 @@ class ManagePersongroupMembersWizard(models.TransientModel):
             if pg.exists():
                 res['persongroup_name'] = pg.name_tree or pg.name
                 res['current_member_ids'] = [(6, 0, self._load_current_members(pg_id))]
+                res['current_group_member_ids'] = [
+                    (6, 0, self._load_current_group_members(pg_id))]
         return res
 
     @staticmethod
@@ -3881,13 +3900,32 @@ class ManagePersongroupMembersWizard(models.TransientModel):
     def _load_current_members(self, pg_id):
         return self._load_current_members_static(self.env, pg_id)
 
+    @staticmethod
+    def _load_current_group_members_static(env, pg_id):
+        PropRelation = env['myschool.proprelation']
+        PropRelationType = env['myschool.proprelation.type']
+        pg_g_type = PropRelationType.search([('name', '=', 'PG-G')], limit=1)
+        if not pg_g_type:
+            return []
+        rels = PropRelation.search([
+            ('proprelation_type_id', '=', pg_g_type.id),
+            ('id_org', '=', pg_id),
+            ('is_active', '=', True),
+        ])
+        return [r.id_org_child.id for r in rels if r.id_org_child]
+
+    def _load_current_group_members(self, pg_id):
+        return self._load_current_group_members_static(self.env, pg_id)
+
     # ─── Actions ───────────────────────────────────────────────────────
 
     def action_remove_selected(self):
-        """Deactivate PG-P for every person ticked in `remove_member_ids`."""
+        """Deactivate PG-P / PG-G for every member ticked in
+        ``remove_member_ids`` (persons) or ``remove_group_ids`` (nested
+        groups). Both pipelines are routed through manual betasks."""
         self.ensure_one()
-        if not self.remove_member_ids:
-            raise UserError("Selecteer minstens één lid om te verwijderen.")
+        if not (self.remove_member_ids or self.remove_group_ids):
+            raise UserError("Selecteer minstens één lid of groep om te verwijderen.")
         service = self.env['myschool.manual.task.service']
         for person in self.remove_member_ids:
             service.create_manual_task('PROPRELATION', 'DEACT', {
@@ -3895,17 +3933,28 @@ class ManagePersongroupMembersWizard(models.TransientModel):
                 'org_id': self.persongroup_id.id,
                 'person_id': person.id,
             })
+        for grp in self.remove_group_ids:
+            service.create_manual_task('PROPRELATION', 'DEACT', {
+                'type': 'PG-G',
+                'org_id': self.persongroup_id.id,
+                'org_child_id': grp.id,
+            })
+        pg_id = self.persongroup_id.id
         self.write({
-            'current_member_ids': [(6, 0, self._load_current_members(self.persongroup_id.id))],
+            'current_member_ids': [(6, 0, self._load_current_members(pg_id))],
             'remove_member_ids': [(5, 0, 0)],
+            'current_group_member_ids': [(6, 0, self._load_current_group_members(pg_id))],
+            'remove_group_ids': [(5, 0, 0)],
         })
         return self._reopen()
 
     def action_add_selected(self):
-        """Create PG-P for every person ticked in `add_member_ids`."""
+        """Create PG-P / PG-G for every entry ticked in
+        ``add_member_ids`` (persons) or ``add_group_ids`` (nested
+        groups). Both pipelines are routed through manual betasks."""
         self.ensure_one()
-        if not self.add_member_ids:
-            raise UserError("Selecteer minstens één persoon om toe te voegen.")
+        if not (self.add_member_ids or self.add_group_ids):
+            raise UserError("Selecteer minstens één persoon of groep om toe te voegen.")
         service = self.env['myschool.manual.task.service']
         for person in self.add_member_ids:
             service.create_manual_task('PROPRELATION', 'ADD', {
@@ -3913,9 +3962,22 @@ class ManagePersongroupMembersWizard(models.TransientModel):
                 'org_id': self.persongroup_id.id,
                 'person_id': person.id,
             })
+        for grp in self.add_group_ids:
+            if grp.id == self.persongroup_id.id:
+                # Self-loop is rejected by the cycle constraint anyway,
+                # but skip eagerly so we don't queue a doomed betask.
+                continue
+            service.create_manual_task('PROPRELATION', 'ADD', {
+                'type': 'PG-G',
+                'org_id': self.persongroup_id.id,
+                'org_child_id': grp.id,
+            })
+        pg_id = self.persongroup_id.id
         self.write({
-            'current_member_ids': [(6, 0, self._load_current_members(self.persongroup_id.id))],
+            'current_member_ids': [(6, 0, self._load_current_members(pg_id))],
             'add_member_ids': [(5, 0, 0)],
+            'current_group_member_ids': [(6, 0, self._load_current_group_members(pg_id))],
+            'add_group_ids': [(5, 0, 0)],
         })
         return self._reopen()
 

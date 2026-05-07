@@ -21,7 +21,19 @@
             <field name="sequence">100</field>
             <field name="active" eval="True"/>
             <field name="model_id" ref="model_myschool_person"/>
+            <field name="trigger_event">account_created</field>
             <field name="description">Default welcome letter sent after AD account creation. Customise per school by copying this record.</field>
+            <field name="auto_send_email" eval="False"/>
+            <field name="email_to_field">email_cloud</field>
+            <field name="email_subject">Welkom — je nieuwe account</field>
+            <field name="email_body_html"><![CDATA[
+                <p>Beste {{ object.first_name or object.name }},</p>
+                <p>
+                    In bijlage vind je je welkomstbrief met de gegevens
+                    van je nieuwe account.
+                </p>
+                <p>Met vriendelijke groet,<br/><em>Het ICT-team</em></p>
+            ]]></field>
             <field name="body_html"><![CDATA[
                 <div style="font-family: Arial, sans-serif; font-size: 11pt;">
                     <p>Beste {{ object.first_name or object.name }},</p>
@@ -58,6 +70,127 @@
                     <p>
                         Heb je vragen of problemen bij het aanmelden?
                         Contacteer dan de ICT-coördinator van je school.
+                    </p>
+
+                    <p style="margin-top: 32px;">
+                        Met vriendelijke groet,<br/>
+                        <em>Het ICT-team</em>
+                    </p>
+                </div>
+            ]]></field>
+        </record>
+
+        <!--
+            Default farewell letter — sent the day the AD account is
+            suspended (Lifecycle Phase 1). Reminds the leaver about
+            data export deadlines and hardware return. Customise per
+            school by copying this record.
+        -->
+        <record id="letter_template_farewell_default" model="myschool.letter.template">
+            <field name="name">Farewell Letter — Default</field>
+            <field name="code">FAREWELL_LETTER_DEFAULT</field>
+            <field name="sequence">100</field>
+            <field name="active" eval="True"/>
+            <field name="model_id" ref="model_myschool_person"/>
+            <field name="trigger_event">account_suspended</field>
+            <field name="description">Default farewell letter sent when an account is suspended (Lifecycle Phase 1).</field>
+            <field name="auto_send_email" eval="False"/>
+            <field name="email_to_field">email_cloud</field>
+            <field name="email_subject">Je account is op niet-actief gezet</field>
+            <field name="email_body_html"><![CDATA[
+                <p>Beste {{ object.first_name or object.name }},</p>
+                <p>
+                    In bijlage vind je de bevestiging dat je digitale
+                    account vandaag op niet-actief is gezet. Lees de
+                    brief grondig — er staan belangrijke deadlines in
+                    voor het exporteren van je gegevens.
+                </p>
+                <p>Met vriendelijke groet,<br/><em>Het ICT-team</em></p>
+            ]]></field>
+            <field name="body_html"><![CDATA[
+                <div style="font-family: Arial, sans-serif; font-size: 11pt;">
+                    <p>Beste {{ object.first_name or object.name }},</p>
+
+                    <p>
+                        Vandaag is je digitale account op niet-actief
+                        gezet. Dit betekent dat je niet meer kunt
+                        inloggen op de schooltools.
+                    </p>
+
+                    <h3 style="color: #b06a00; margin-top: 24px;">Belangrijk: data-export</h3>
+                    <p>
+                        Je Google-account blijft nog
+                        <strong>30 dagen</strong> actief in de
+                        achtergrond, zodat je je e-mails, documenten en
+                        Drive-bestanden kunt exporteren via
+                        <a href="https://takeout.google.com">Google Takeout</a>.
+                        Daarna wordt het account definitief verwijderd
+                        en zijn je gegevens niet meer terug te halen.
+                    </p>
+
+                    <h3 style="color: #b06a00;">Materiaal terug brengen</h3>
+                    <p>
+                        Heb je nog materiaal van de school in bezit
+                        (Chromebook, sleutels, badges, …)? Bezorg
+                        deze terug aan de ICT-coördinator voor het
+                        einde van deze week.
+                    </p>
+
+                    <p>
+                        We danken je voor je inzet en wensen je veel
+                        succes in je verdere loopbaan.
+                    </p>
+
+                    <p style="margin-top: 32px;">
+                        Met vriendelijke groet,<br/>
+                        <em>Het ICT-team</em>
+                    </p>
+                </div>
+            ]]></field>
+        </record>
+
+        <!--
+            Default final-farewell letter — sent the day the Google
+            account is permanently deleted (Lifecycle Phase 2). Last
+            heads-up; if the recipient still has data they want to
+            keep it's already too late, but the email gives closure
+            and an HR contact for follow-up.
+        -->
+        <record id="letter_template_final_farewell_default" model="myschool.letter.template">
+            <field name="name">Final Farewell — Default</field>
+            <field name="code">FINAL_FAREWELL_DEFAULT</field>
+            <field name="sequence">100</field>
+            <field name="active" eval="True"/>
+            <field name="model_id" ref="model_myschool_person"/>
+            <field name="trigger_event">account_deleted</field>
+            <field name="description">Final farewell — sent when the Google account is hard-deleted (Lifecycle Phase 2).</field>
+            <field name="auto_send_email" eval="False"/>
+            <field name="email_to_field">email_private</field>
+            <field name="email_subject">Je Google-account is verwijderd</field>
+            <field name="email_body_html"><![CDATA[
+                <p>Beste {{ object.first_name or object.name }},</p>
+                <p>
+                    Dit is een laatste bevestiging: je Google-account
+                    bij onze school is vandaag definitief verwijderd.
+                    Verdere correspondentie verloopt via je privé-adres.
+                </p>
+                <p>Met vriendelijke groet,<br/><em>Het ICT-team</em></p>
+            ]]></field>
+            <field name="body_html"><![CDATA[
+                <div style="font-family: Arial, sans-serif; font-size: 11pt;">
+                    <p>Beste {{ object.first_name or object.name }},</p>
+
+                    <p>
+                        Vandaag is je Google-account bij onze school
+                        <strong>definitief verwijderd</strong>. Alle
+                        e-mails, documenten en Drive-bestanden onder
+                        dat account zijn weg.
+                    </p>
+
+                    <p>
+                        Eventuele toekomstige correspondentie verloopt
+                        via je privé-adres dat we in ons systeem
+                        hebben.
                     </p>
 
                     <p style="margin-top: 32px;">

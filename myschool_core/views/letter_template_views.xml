@@ -14,7 +14,7 @@
                             type="object"
                             string="Preview PDF"
                             class="btn-primary"
-                            invisible="not preview_record_ref"/>
+                            help="Pick a Preview Record on the Preview tab first."/>
                 </header>
                 <sheet>
                     <widget name="web_ribbon" title="Archived"
@@ -33,6 +33,7 @@
                             <field name="model_id"
                                    options="{'no_create': True, 'no_open': True}"/>
                             <field name="model" invisible="1"/>
+                            <field name="trigger_event" widget="radio"/>
                             <field name="paperformat_id"/>
                             <field name="sequence"/>
                             <field name="active"/>
@@ -48,7 +49,10 @@
 
                     <!-- Field-insertion helper. Pick a field on the
                          left, see the placeholder syntax on the right —
-                         copy that string into the body. -->
+                         copy that string into the body. Binary fields
+                         (Logo!) auto-wrap in <img> with the image_url
+                         helper so the rendered PDF embeds the picture
+                         as a self-contained data: URL. -->
                     <group string="Insert Field" col="4"
                            invisible="not model_id">
                         <field name="field_picker_id"
@@ -61,6 +65,25 @@
                                colspan="2"/>
                     </group>
 
+                    <!-- Quick-action helpers: ready-made placeholder
+                         strings for common targets that aren't single
+                         fields on the model. ``current_school_id`` is
+                         a computed Many2one on myschool.person that
+                         resolves to the first non-admin SCHOOL
+                         ancestor via PERSON-TREE — admins don't have
+                         to know the proprelation graph. -->
+                    <group string="Quick Inserts"
+                           invisible="model != 'myschool.person'">
+                        <div class="o_form_label" colspan="2">
+                            <strong>School logo:</strong>
+                            <code>&lt;img src="{{ image_url(object.current_school_id.logo) }}" style="max-width: 200px;"/&gt;</code>
+                        </div>
+                        <div class="o_form_label" colspan="2">
+                            <strong>School name:</strong>
+                            <code>{{ object.current_school_id.name }}</code>
+                        </div>
+                    </group>
+
                     <notebook>
                         <page string="Body" name="body">
                             <field name="body_html"
@@ -68,10 +91,39 @@
                                    options="{'style-inline': true}"
                                    nolabel="1"/>
                         </page>
+                        <page string="Email Delivery" name="email">
+                            <group>
+                                <group>
+                                    <field name="auto_send_email"/>
+                                    <field name="email_to_field"
+                                           placeholder="email_cloud"/>
+                                    <field name="email_from"
+                                           placeholder="(default: company email)"/>
+                                </group>
+                                <group>
+                                    <field name="email_subject"
+                                           placeholder="Welkom — je nieuwe account"/>
+                                </group>
+                            </group>
+                            <separator string="Email Body"/>
+                            <field name="email_body_html"
+                                   widget="html"
+                                   options="{'style-inline': true}"
+                                   nolabel="1"
+                                   placeholder="Body of the cover email…"/>
+                            <div class="alert alert-info" role="alert">
+                                The PDF is always attached automatically
+                                — this is the cover-email body, not the
+                                letter content. Use the same
+                                <code>{{ object.<i>field</i> }}</code>
+                                placeholders as in the letter body.
+                            </div>
+                        </page>
                         <page string="Preview" name="preview">
                             <group>
-                                <field name="preview_record_ref"
-                                       options="{'no_create': True}"/>
+                                <field name="preview_record_id"
+                                       options="{'no_create': True}"
+                                       readonly="not model_id"/>
                             </group>
                             <div class="alert alert-info" role="alert">
                                 Pick any record of model
@@ -100,6 +152,12 @@
                 <field name="sequence" widget="handle"/>
                 <field name="code"/>
                 <field name="name"/>
+                <field name="trigger_event" widget="badge"
+                       decoration-success="trigger_event == 'account_created'"
+                       decoration-warning="trigger_event == 'account_suspended'"
+                       decoration-danger="trigger_event == 'account_deleted'"
+                       decoration-info="trigger_event == 'password_reset'"
+                       decoration-muted="trigger_event == 'manual'"/>
                 <field name="model_id"/>
                 <field name="person_type_ids" widget="many2many_tags"
                        optional="show"/>
@@ -120,6 +178,7 @@
                 <field name="name"/>
                 <field name="model_id"/>
                 <field name="person_type_ids"/>
+                <field name="trigger_event"/>
                 <filter string="Active" name="active"
                         domain="[('active', '=', True)]"/>
                 <filter string="Archived" name="inactive"
@@ -128,8 +187,21 @@
                 <filter string="Person Templates" name="for_person"
                         domain="[('model', '=', 'myschool.person')]"/>
                 <separator/>
+                <filter string="Account Created" name="trig_created"
+                        domain="[('trigger_event', '=', 'account_created')]"/>
+                <filter string="Account Suspended" name="trig_suspended"
+                        domain="[('trigger_event', '=', 'account_suspended')]"/>
+                <filter string="Account Deleted" name="trig_deleted"
+                        domain="[('trigger_event', '=', 'account_deleted')]"/>
+                <filter string="Password Reset" name="trig_pwd"
+                        domain="[('trigger_event', '=', 'password_reset')]"/>
+                <filter string="Manual Only" name="trig_manual"
+                        domain="[('trigger_event', '=', 'manual')]"/>
+                <separator/>
                 <filter string="Target Model" name="group_model"
                         context="{'group_by': 'model_id'}"/>
+                <filter string="Trigger Event" name="group_trigger"
+                        context="{'group_by': 'trigger_event'}"/>
             </search>
         </field>
     </record>

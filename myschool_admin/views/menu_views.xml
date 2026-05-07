@@ -351,6 +351,13 @@
               sequence="45"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_verify_all_groups"
+              name="Verify all AD/Cloud groups"
+              parent="menu_tools"
+              action="action_verify_all_groups"
+              sequence="47"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <menuitem id="menu_sync_companies"
               name="Sync Odoo Companies (from orgs)"
               parent="menu_tools"

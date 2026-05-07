@@ -19,6 +19,13 @@ class Org(models.Model):
 
     name = fields.Char(string='Naam', required=True)
     name_short = fields.Char(string='Korte Naam', required=True)
+    logo = fields.Binary(
+        string='Logo',
+        attachment=True,
+        help='Org logo (typical use: school logo). Embedded into '
+             'rendered PDFs via the {{ image_url(...) }} helper in '
+             'letter templates. Stored as ir.attachment, not in the '
+             'main org table — large images don\'t bloat row size.')
     displayname = fields.Char(
         string='Weergavenaam',
         help='Naam zoals getoond in de UI. Valt terug op ``name`` '
@@ -272,6 +279,147 @@ class Org(models.Model):
     # =========================================================================
     # Audit Trail - Create backend tasks for manual changes
     # =========================================================================
+
+    def action_verify_groups(self):
+        """Verify + create AD/Cloud groups for the selected org(s).
+
+        Per-org button (form view) and bulk-list action. For each org:
+          * If org is PERSONGROUP: ensure the AD COM/SEC groups exist
+            (using ``com_group_fqdn_internal`` / ``sec_group_fqdn_internal``)
+            and the matching Workspace group (`com_group_email`).
+          * If org is anything else (SCHOOL / DEPARTMENT / CLASSGROUP /
+            ...): ensure the Workspace OU exists. AD-side OUs are not
+            verified here — the LDAP service has no ``delete_ou`` /
+            ``create_ou`` extender (yet); existing AD OU code is in
+            ``process_ldap_org_add``.
+
+        Idempotent: existing groups/OUs are detected by
+        ``create_group_at_dn`` / ``create_orgunit`` which short-circuit
+        to "already exists" success.
+
+        Returns a notification with the count of created vs already-OK.
+        """
+        LdapConfig = self.env['myschool.ldap.server.config']
+        WsConfig = self.env['myschool.google.workspace.config']
+        ldap_cfg = LdapConfig.search(
+            [('active', '=', True)], limit=1, order='sequence')
+        ws_cfg = WsConfig.search(
+            [('active', '=', True)], limit=1, order='sequence')
+        if not ldap_cfg and not ws_cfg:
+            return self._verify_notify(
+                'No backend configured',
+                'Configure an LDAP server and/or a Workspace tenant first.',
+                'warning')
+
+        ldap_svc = self.env['myschool.ldap.service'] if ldap_cfg else None
+        gd_svc = self.env['myschool.google.directory.service'] \
+            if ws_cfg else None
+
+        created = 0
+        existed = 0
+        errors = []
+
+        for org in self:
+            org_type = (org.org_type_id.name or '').upper() \
+                if org.org_type_id else ''
+            try:
+                if org_type == 'PERSONGROUP':
+                    # AD COM / SEC groups
+                    if ldap_svc:
+                        for fqdn_field, name_field, kind in (
+                                ('com_group_fqdn_internal',
+                                 'com_group_name', 'COM'),
+                                ('sec_group_fqdn_internal',
+                                 'sec_group_name', 'SEC')):
+                            dn = (getattr(org, fqdn_field, '') or '').strip()
+                            if not dn:
+                                continue
+                            grp_name = (getattr(org, name_field, '')
+                                        or org.name_short).strip()
+                            mail = (org.com_group_email or None) \
+                                if kind == 'COM' else None
+                            res = ldap_svc.create_group_at_dn(
+                                ldap_cfg, dn=dn, group_name=grp_name,
+                                description=org.name, mail=mail,
+                                security=(kind != 'COM'))
+                            if res.get('success'):
+                                if 'already' in (res.get('message') or '').lower():
+                                    existed += 1
+                                else:
+                                    created += 1
+                            else:
+                                errors.append(
+                                    f'{org.name} {kind}: {res.get("message")}')
+                    # Cloud group (mail-enabled side only)
+                    if gd_svc:
+                        grp_email = (org.com_group_email or '').strip()
+                        if grp_email:
+                            res = gd_svc.create_group(
+                                ws_cfg, grp_email,
+                                group_name=org.com_group_name or org.name_short,
+                                description=org.name)
+                            if res.get('success'):
+                                if 'already' in (res.get('message') or '').lower():
+                                    existed += 1
+                                else:
+                                    created += 1
+                            else:
+                                errors.append(
+                                    f'{org.name} CLOUD-GROUP: {res.get("message")}')
+                else:
+                    # Cloud OU for non-PERSONGROUP orgs
+                    if gd_svc:
+                        res = gd_svc.create_orgunit(ws_cfg, org)
+                        if res.get('success'):
+                            if 'already' in (res.get('message') or '').lower() \
+                                    or 'ensured' in (res.get('message') or '').lower():
+                                existed += 1
+                            else:
+                                created += 1
+                        else:
+                            errors.append(
+                                f'{org.name} CLOUD-OU: {res.get("message")}')
+            except Exception as e:
+                errors.append(f'{org.name}: {e}')
+
+        body = (
+            f'Created: {created}, already present: {existed}, '
+            f'errors: {len(errors)}'
+        )
+        if errors:
+            body += '\n\n' + '\n'.join(errors[:10])
+            if len(errors) > 10:
+                body += f'\n… (+{len(errors) - 10} more)'
+        return self._verify_notify(
+            'Group verification',
+            body,
+            'success' if not errors else 'warning')
+
+    @staticmethod
+    def _verify_notify(title, message, level):
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': title, 'message': message,
+                'type': level, 'sticky': bool(level == 'warning'),
+            },
+        }
+
+    @api.model
+    def action_verify_all_groups(self):
+        """Sweep every PERSONGROUP + every non-administrative SCHOOL
+        and run ``action_verify_groups`` on them. Useful after a fresh
+        setup or as a quick audit."""
+        OrgType = self.env['myschool.org.type']
+        pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
+        type_ids = [t.id for t in (pg_type, school_type) if t]
+        candidates = self.search([
+            ('is_active', '=', True),
+            ('org_type_id', 'in', type_ids),
+        ]) if type_ids else self.browse()
+        return candidates.action_verify_groups()
 
     @api.model
     def sync_all_persongroups(self):
@@ -1060,6 +1208,29 @@ class Org(models.Model):
             stats['error'] = 'org-types-missing'
             return stats
 
+        Country = self.env['res.country'].sudo()
+
+        def _resolve_country(org_country):
+            if not org_country:
+                return False
+            value = org_country.strip()
+            if not value:
+                return False
+            country = Country.search(
+                ['|', ('name', '=ilike', value), ('code', '=ilike', value)],
+                limit=1)
+            return country.id if country else False
+
+        def _build_address_vals(org):
+            street = ' '.join(p for p in (org.street, org.street_nr) if p) or False
+            return {
+                'street': street,
+                'zip': org.postal_code or False,
+                'city': org.community or False,
+                'country_id': _resolve_country(org.country),
+                'email_domain': org.domain_external or False,
+            }
+
         def _ensure_company(org, parent_company=None):
             target_name = (org.displayname or org.name or '').strip()
             if not target_name:
@@ -1085,6 +1256,7 @@ class Org(models.Model):
                 create_vals = {'name': target_name, 'school_id': org.id}
                 if parent_company:
                     create_vals['parent_id'] = parent_company.id
+                create_vals.update(_build_address_vals(org))
                 company = Company.with_context(
                     skip_school_rename_guard=True).create(create_vals)
                 stats['created'] += 1
@@ -1096,6 +1268,16 @@ class Org(models.Model):
                 sync_vals['school_id'] = org.id
             if parent_company and company.parent_id != parent_company:
                 sync_vals['parent_id'] = parent_company.id
+
+            address_vals = _build_address_vals(org)
+            for f, v in address_vals.items():
+                current = getattr(company, f)
+                # country_id comparison: relation vs id
+                if f == 'country_id':
+                    current = current.id if current else False
+                if current != v:
+                    sync_vals[f] = v
+
             if org.is_active and not company.active:
                 sync_vals['active'] = True
                 stats['reactivated'] += 1
@@ -1123,8 +1305,24 @@ class Org(models.Model):
             if company:
                 sb_to_company[sb.id] = company
 
+        # Administrative schools must not have a branch company. If a
+        # previous run created one (or the flag was flipped after the
+        # fact), archive the company so it stops appearing in pickers.
+        admin_schools_with_company = self.with_context(active_test=False).search([
+            ('org_type_id', '=', school_type.id),
+            ('is_administrative', '=', True),
+            ('company_id', '!=', False),
+        ])
+        for adm in admin_schools_with_company:
+            comp = adm.company_id
+            if comp and comp.active:
+                comp.with_context(
+                    skip_school_rename_guard=True).write({'active': False})
+                stats['archived'] += 1
+
         schools = self.with_context(active_test=False).search([
             ('org_type_id', '=', school_type.id),
+            ('is_administrative', '=', False),
         ])
         for sch in schools:
             sb_org = self._resolve_schoolboard_via_orgtree(

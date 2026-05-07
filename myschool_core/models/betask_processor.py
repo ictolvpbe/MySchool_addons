@@ -1638,6 +1638,29 @@ class BeTaskProcessor(models.AbstractModel):
             _logger.warning(f'Task {task.name} is not in processable status: {task.status}')
             return False
 
+        # Context-driven skip: lets the sync test runner (and any
+        # other caller) bypass entire backend integrations for the
+        # duration of a process_all_pending run. Catches tasks that
+        # are queued mid-processing too — the equivalent ``_skip_*``
+        # helpers only run once before processing starts.
+        target = task.betasktype_id.target
+        if (target == 'CLOUD'
+                and self.env.context.get('skip_cloud_processing')):
+            task.write({
+                'status': 'completed_ok',
+                'changes': 'Skipped via context (skip_cloud_processing=True)',
+                'lastrun': fields.Datetime.now(),
+            })
+            return True
+        if (target in ('LDAP', 'AD')
+                and self.env.context.get('skip_ldap_processing')):
+            task.write({
+                'status': 'completed_ok',
+                'changes': 'Skipped via context (skip_ldap_processing=True)',
+                'lastrun': fields.Datetime.now(),
+            })
+            return True
+
         task.action_set_processing()
 
         try:
@@ -4142,6 +4165,179 @@ class BeTaskProcessor(models.AbstractModel):
 
         return config
 
+    # =========================================================================
+    # Group self-healing helpers (used by GROUPMEMBER/ADD handlers)
+    # =========================================================================
+
+    def _ldap_group_exists(self, config, group_dn):
+        """Cheap existence-check on a group DN. Returns True/False.
+
+        Returns True on errors that aren't "not found" — better to let
+        the subsequent add_group_member call raise the real error
+        than to mask connection issues as "group missing".
+        """
+        try:
+            ldap_service = self.env['myschool.ldap.service']
+            with ldap_service._get_connection(config) as conn:
+                conn.search(
+                    search_base=group_dn,
+                    search_filter='(objectClass=group)',
+                    search_scope='BASE',
+                    attributes=['distinguishedName'])
+                present = bool(conn.entries)
+                _logger.info(
+                    '[GROUP-HEAL] LDAP existence check %s -> %s',
+                    group_dn, 'present' if present else 'missing')
+                return present
+        except Exception as e:
+            # noSuchObject → group not present. Other errors → assume
+            # present (don't try to heal what we can't diagnose).
+            msg = str(e).lower()
+            if 'nosuchobject' in msg:
+                _logger.info(
+                    '[GROUP-HEAL] LDAP existence check %s -> missing '
+                    '(noSuchObject)', group_dn)
+                return False
+            _logger.warning(
+                '[GROUP-HEAL] LDAP existence check inconclusive '
+                'for %s: %s — assuming present', group_dn, e)
+            return True
+
+    def _ldap_self_heal_create_group(self, config, group_dn, data, changes):
+        """Create the missing AD group inline.
+
+        ``data`` is the GROUPMEMBER/ADD task payload. We try to
+        recover enough to call ``create_group_at_dn``:
+          - org_id → look up the org and use its com/sec_group fields
+          - else: derive cn from group_dn's leftmost RDN, no description
+
+        Returns True when the create succeeded (or we have reason to
+        believe it did), False when self-healing isn't possible — in
+        the latter case the caller should let the membership-add fail
+        with its native error.
+        """
+        ldap_service = self.env['myschool.ldap.service']
+        org_id = data.get('org_id')
+        org = self.env['myschool.org'].browse(org_id).exists() \
+            if org_id else None
+
+        # Decide which side this DN matches (COM vs SEC) so we know
+        # whether to mark it as security-group.
+        kind = None
+        cn = None
+        description = None
+        mail = None
+        if org and org.com_group_fqdn_internal == group_dn:
+            kind = 'COM'
+            cn = (org.com_group_name or org.name_short or '').strip()
+            description = org.name
+            mail = (org.com_group_email or '').strip() or None
+        elif org and org.sec_group_fqdn_internal == group_dn:
+            kind = 'SEC'
+            cn = (org.sec_group_name or org.name_short or '').strip()
+            description = org.name
+
+        if not cn:
+            # Fall back to the leftmost RDN value of the DN.
+            first = (group_dn.split(',', 1) or [''])[0]
+            if first.lower().startswith('cn='):
+                cn = first[3:].strip()
+        if not cn:
+            changes.append(
+                f'[SELF-HEAL] LDAP group missing at {group_dn} but no '
+                f'CN could be derived — falling back to native error')
+            _logger.warning(
+                '[GROUP-HEAL] No CN derivable from %s, skipping self-heal',
+                group_dn)
+            return False
+
+        _logger.info(
+            '[GROUP-HEAL] LDAP self-heal create: dn=%s cn=%s '
+            'security=%s mail=%s', group_dn, cn, kind != 'COM', mail)
+        result = ldap_service.create_group_at_dn(
+            config, dn=group_dn, group_name=cn,
+            description=description, mail=mail,
+            security=(kind != 'COM'))
+        _logger.info(
+            '[GROUP-HEAL] create_group_at_dn returned: success=%s '
+            'dn=%s msg=%s',
+            result.get('success'), result.get('dn'), result.get('message'))
+        if result.get('success'):
+            # If create_group_at_dn discovered an sAMAccountName
+            # collision, the returned ``dn`` is the REAL location of
+            # the existing group — different from the one we asked
+            # for. Stash it on ``data`` so the calling handler can
+            # retry the modify against the real DN.
+            real_dn = result.get('dn')
+            if real_dn and real_dn.lower() != group_dn.lower():
+                data['_resolved_group_dn'] = real_dn
+                changes.append(
+                    f'[SELF-HEAL] Group {cn} found at real DN '
+                    f'{real_dn} (was requested at {group_dn})')
+            else:
+                changes.append(
+                    f'[SELF-HEAL] Created/found LDAP group {group_dn} — '
+                    f'{result.get("message")}')
+            return True
+        changes.append(
+            f'[SELF-HEAL] Could not create {group_dn}: '
+            f'{result.get("message")}')
+        return False
+
+    def _cloud_group_exists(self, config, group_email):
+        """Cheap Workspace existence-check on a group email."""
+        try:
+            svc = self.env['myschool.google.directory.service']
+            directory = svc._get_directory_service(config)
+            present = svc._get_group(directory, group_email) is not None
+            _logger.info(
+                '[GROUP-HEAL] Cloud existence check %s -> %s',
+                group_email, 'present' if present else 'missing')
+            return present
+        except Exception as e:
+            _logger.warning(
+                '[GROUP-HEAL] Cloud existence check inconclusive '
+                'for %s: %s — assuming present', group_email, e)
+            return True
+
+    def _cloud_self_heal_create_group(self, config, group_email,
+                                       data, changes):
+        """Create the missing Workspace group inline.
+
+        Same pattern as the LDAP variant. Falls back to using the
+        local-part of ``group_email`` as the display name when no
+        org context is available.
+        """
+        svc = self.env['myschool.google.directory.service']
+        org_id = data.get('org_id')
+        org = self.env['myschool.org'].browse(org_id).exists() \
+            if org_id else None
+        if org:
+            group_name = (org.com_group_name or org.name_short
+                          or org.name or group_email)
+            description = org.name
+        else:
+            group_name = group_email.split('@', 1)[0]
+            description = ''
+        _logger.info(
+            '[GROUP-HEAL] Cloud self-heal create: email=%s name=%s',
+            group_email, group_name)
+        result = svc.create_group(
+            config, group_email,
+            group_name=group_name, description=description)
+        _logger.info(
+            '[GROUP-HEAL] create_group returned: success=%s msg=%s',
+            result.get('success'), result.get('message'))
+        if result.get('success'):
+            changes.append(
+                f'[SELF-HEAL] Created missing Cloud group {group_email} — '
+                f'{result.get("message")}')
+            return True
+        changes.append(
+            f'[SELF-HEAL] Could not create {group_email}: '
+            f'{result.get("message")}')
+        return False
+
     @api.model
     def process_ldap_user_add(self, task):
         """
@@ -4216,7 +4412,8 @@ class BeTaskProcessor(models.AbstractModel):
                 # preserved + an earlier letter exists). Idempotent
                 # via dedupe inside ``_emit_letter_generate_for_person``.
                 if 'already existed' not in (result.get('message') or '').lower():
-                    self._emit_letter_generate_for_person(person, changes)
+                    self._emit_letter_generate_for_person(
+                        person, changes, trigger_event='account_created')
                 task.write({'changes': '\n'.join(changes)})
                 return True
             else:
@@ -4674,8 +4871,59 @@ class BeTaskProcessor(models.AbstractModel):
             if not member_dn:
                 raise ValidationError(_('member_dn or person_id is required in task data'))
 
+            # Self-healing: if the group doesn't exist yet, create it
+            # inline before adding the member. We do this AT THE LAST
+            # MOMENT (rather than via a separate queued task) so a single
+            # GROUPMEMBER/ADD task is fully idempotent — re-running it
+            # on a fresh AD will both create the group AND add the
+            # member, no manual prep needed. The earlier cascade still
+            # queues a GROUP/ADD ahead of time when it can; this is
+            # the safety net.
+            if not dry_run and not self._ldap_group_exists(config, group_dn):
+                self._ldap_self_heal_create_group(
+                    config, group_dn, data, changes)
+                # Self-heal may have discovered the group lives at a
+                # different DN (sAMAccountName collision elsewhere in
+                # AD) — switch to that real DN before the modify.
+                resolved = data.get('_resolved_group_dn')
+                if resolved:
+                    group_dn = resolved
+                    changes.append(
+                        f'[GROUP-HEAL] Using real group DN: {group_dn}')
+
             # Call LDAP service
             result = ldap_service.add_group_member(config, group_dn, member_dn, dry_run=dry_run)
+
+            # Last-ditch retry: if the modify failed with noSuchObject
+            # (group still missing — pre-flight check passed but the
+            # state changed, or self-heal silently failed) we run the
+            # heal once more and try again. Saves a manual re-run.
+            if (not dry_run and not result.get('success')
+                    and 'nosuchobject' in (result.get('message') or '').lower()):
+                _logger.warning(
+                    '[GROUP-HEAL] add_group_member returned noSuchObject '
+                    'for %s — retrying self-heal once', group_dn)
+                # Try to find the group elsewhere by sAMAccountName
+                # before falling back to create.
+                cn = group_dn.split(',', 1)[0].split('=', 1)[1] \
+                    if ',' in group_dn else None
+                real_dn = ldap_service.find_group_by_samaccountname(
+                    config, cn) if cn else None
+                if real_dn and real_dn.lower() != group_dn.lower():
+                    changes.append(
+                        f'[GROUP-HEAL] Found existing group at real DN '
+                        f'{real_dn} — retargeting modify')
+                    group_dn = real_dn
+                    result = ldap_service.add_group_member(
+                        config, group_dn, member_dn, dry_run=dry_run)
+                elif self._ldap_self_heal_create_group(
+                        config, group_dn, data, changes):
+                    target_dn = data.get('_resolved_group_dn') or group_dn
+                    result = ldap_service.add_group_member(
+                        config, target_dn, member_dn, dry_run=dry_run)
+                if result.get('success'):
+                    changes.append(
+                        '[SELF-HEAL] Recovered after second-pass lookup')
 
             if result.get('success'):
                 changes.append(f"Member added to group: {member_dn}")
@@ -5141,7 +5389,15 @@ class BeTaskProcessor(models.AbstractModel):
                 cfg, person, plaintext, org=org,
                 change_at_next_login=bool(data.get('change_at_next_login', False)),
                 dry_run=bool(data.get('dry_run')))
-            return self._record_cloud_result(task, changes, result)
+            ok = self._record_cloud_result(task, changes, result)
+            # Letter cascade — fire "password_reset" template after a
+            # successful non-dry-run rotation so the user gets the new
+            # credentials in writing. Skipped silently when no template
+            # is configured (admins haven't seeded one yet).
+            if ok and not data.get('dry_run'):
+                self._emit_letter_generate_for_person(
+                    person, [], trigger_event='password_reset')
+            return ok
         except Exception as e:
             _logger.exception(f'CLOUD_USER_PWD failed: {task.name}')
             changes.append(f'ERROR: {e}')
@@ -5316,10 +5572,19 @@ class BeTaskProcessor(models.AbstractModel):
             cfg = self._get_google_config_for_task(task, data.get('org_id'))
             changes.append(f"Using Workspace tenant: {cfg.name}")
             svc = self.env['myschool.google.directory.service']
+
+            # Self-healing: ensure the group exists before adding a
+            # member. See process_ldap_groupmember_add for the
+            # rationale — same pattern, different backend.
+            dry_run = bool(data.get('dry_run'))
+            if not dry_run and not self._cloud_group_exists(cfg, group_email):
+                self._cloud_self_heal_create_group(
+                    cfg, group_email, data, changes)
+
             result = svc.add_group_member(
                 cfg, group_email, member_email,
                 role=data.get('role') or 'MEMBER',
-                dry_run=bool(data.get('dry_run')))
+                dry_run=dry_run)
             return self._record_cloud_result(task, changes, result)
         except Exception as e:
             _logger.exception(f'CLOUD_GROUPMEMBER_ADD failed: {task.name}')
@@ -5730,22 +5995,25 @@ class BeTaskProcessor(models.AbstractModel):
     # LETTER (PDF document generation) TASK PROCESSORS
     # =========================================================================
 
-    def _emit_letter_generate_for_person(self, person, changes):
-        """Queue a LETTER/USER/GENERATE task for ``person``.
+    def _emit_letter_generate_for_person(self, person, changes,
+                                         trigger_event='account_created'):
+        """Queue a LETTER/USER/GENERATE task for ``person`` × ``trigger_event``.
 
-        Skips silently when no template targeting myschool.person is
-        configured (a fresh install before admins seed templates) or
-        when an unprocessed task for the same person already exists.
-        Idempotent re-runs are tolerated downstream too — the handler
-        will simply attach a fresh PDF.
+        Skips silently when:
+          - No template matches (trigger_event, person_type) — admin
+            hasn't seeded one for this event yet, perfectly fine.
+          - An unprocessed task for the same (person, trigger_event)
+            pair already exists — dedupe key includes trigger_event so
+            a welcome-letter task and a farewell-letter task for the
+            same person co-exist without cancelling each other.
         """
         if not person:
             return
         BeTaskType = self.env['myschool.betask.type']
         BeTask = self.env['myschool.betask']
         Tpl = self.env['myschool.letter.template']
-        if not Tpl.find_for_person(person):
-            # No active template — admin hasn't configured one yet.
+        if not Tpl.find_for_person(person, trigger_event=trigger_event):
+            # No template for this event — quiet skip.
             return
         task_type = BeTaskType.search([
             ('target', '=', 'LETTER'),
@@ -5760,33 +6028,44 @@ class BeTaskProcessor(models.AbstractModel):
             ('betasktype_id', '=', task_type.id),
             ('status', '=', 'new'),
             ('data', 'ilike', f'"person_id": {person.id}'),
+            ('data', 'ilike', f'"trigger_event": "{trigger_event}"'),
         ], limit=1)
         if existing:
             return
         BeTask.create({
-            'name': f'LETTER/USER/GENERATE for {person.name}',
+            'name': f'LETTER/USER/GENERATE ({trigger_event}) for {person.name}',
             'betasktype_id': task_type.id,
             'status': 'new',
-            'data': json.dumps({'person_id': person.id}),
+            'data': json.dumps({
+                'person_id': person.id,
+                'trigger_event': trigger_event,
+            }),
         })
-        changes.append(f'Queued LETTER/USER/GENERATE for {person.name}')
+        changes.append(
+            f'Queued LETTER/USER/GENERATE ({trigger_event}) for {person.name}')
 
     @api.model
     def process_letter_user_generate(self, task):
-        """LETTER/USER/GENERATE — render and attach the welcome PDF.
+        """LETTER/USER/GENERATE — render and attach the PDF.
 
-        Expected data: ``{'person_id': N, 'template_code': 'OPTIONAL'}``.
-        When no ``template_code`` is given, ``find_for_person`` picks
-        based on the person's type (with fallback to the catch-all).
+        Expected data: ``{'person_id': N, 'trigger_event': '<event>',
+        'template_code': 'OPTIONAL'}``. When ``template_code`` is set
+        it wins (admin override). Otherwise ``find_for_person`` picks
+        the template matching ``(trigger_event, person_type)``.
+        ``trigger_event`` defaults to ``account_created`` for backward
+        compatibility with tasks queued before v0.6.
         """
         _logger.info(f'Processing LETTER_USER_GENERATE: {task.name}')
         changes = []
         try:
             data = self._parse_task_data(task.data) or {}
             person_id = data.get('person_id')
+            trigger_event = data.get('trigger_event') or 'account_created'
             if not person_id:
                 raise ValidationError(_('person_id is required'))
-            person = self.env['myschool.person'].browse(person_id).exists()
+            # Suspended/deleted persons: lookup with active_test=False.
+            person = self.env['myschool.person'].with_context(
+                active_test=False).browse(person_id).exists()
             if not person:
                 raise ValidationError(_('Person %s not found') % person_id)
 
@@ -5801,17 +6080,40 @@ class BeTaskProcessor(models.AbstractModel):
                         'Letter template with code "%s" not found / inactive'
                     ) % data['template_code'])
             else:
-                template = Tpl.find_for_person(person)
+                template = Tpl.find_for_person(
+                    person, trigger_event=trigger_event)
                 if not template:
                     raise ValidationError(_(
-                        'No active letter template targeting myschool.person'))
-            changes.append(f'Using template: {template.code}')
+                        'No active letter template for trigger "%s" on '
+                        'myschool.person') % trigger_event)
+            changes.append(
+                f'Using template: {template.code} (trigger={trigger_event})')
 
             attachment = template.generate_letter_attachment(
                 person, attach=True)
             changes.append(
                 f'Generated attachment id={attachment.id} '
                 f'name={attachment.name}')
+
+            # Auto-send the cover email when the template requests it.
+            # We don't fail the betask if the email itself fails — the
+            # PDF is already attached on the record and an admin can
+            # re-send manually. Email errors are logged + recorded in
+            # task.changes for traceability.
+            if template.auto_send_email:
+                try:
+                    mail = template.send_email(person, attachment=attachment)
+                    changes.append(
+                        f'Sent email mail_id={mail.id} '
+                        f'subject="{mail.subject}" to={mail.email_to}')
+                except Exception as mail_e:
+                    _logger.exception(
+                        'LETTER auto-send failed (template=%s person=%s)',
+                        template.code, person.id)
+                    changes.append(
+                        f'WARN: auto-send email failed: {mail_e} '
+                        f'(PDF still attached to record)')
+
             task.write({'changes': '\n'.join(changes)})
             return True
         except Exception as e:
@@ -7710,6 +8012,12 @@ class BeTaskProcessor(models.AbstractModel):
                             '[LIFECYCLE-1] CLOUD/USER/DEACT queue failed for %s: %s',
                             person.name, e)
 
+                # Letter cascade — fire "account_suspended" template
+                # while the person is still active so the recipient
+                # email (email_cloud) is still resolvable.
+                self._emit_letter_generate_for_person(
+                    person, [], trigger_event='account_suspended')
+
                 person.write({
                     'is_active': False,
                     'deactivation_date': today,
@@ -7743,6 +8051,11 @@ class BeTaskProcessor(models.AbstractModel):
                     'email_cloud': person.email_cloud or '',
                     'reason': 'Google delete: EmployeeDeletePeriod elapsed',
                 })
+                # Letter cascade — final farewell. Fired BEFORE the
+                # Google account is gone so the recipient email is
+                # still deliverable.
+                self._emit_letter_generate_for_person(
+                    person, [], trigger_event='account_deleted')
                 person.write({
                     'google_account_deletion_requested_date': today,
                 })
