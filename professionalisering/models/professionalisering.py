@@ -37,27 +37,6 @@ def _geocode_address(query):
     return 0.0, 0.0
 
 
-def _osrm_distance_km(lat1, lon1, lat2, lon2):
-    """Vraagt OSRM om de wegafstand in km tussen twee punten. Returnt 0.0 bij fout."""
-    if not all([lat1, lon1, lat2, lon2]):
-        return 0.0
-    try:
-        url = f'{OSRM_URL}/{lon1},{lat1};{lon2},{lat2}'
-        resp = requests.get(
-            url,
-            params={'overview': 'false'},
-            headers={'User-Agent': HTTP_USER_AGENT},
-            timeout=HTTP_TIMEOUT,
-        )
-        data = resp.json()
-        if data.get('routes'):
-            return round(data['routes'][0]['distance'] / 1000.0, 1)
-    except Exception as e:
-        _logger.warning('OSRM routing failed (%s,%s -> %s,%s): %s',
-                        lat1, lon1, lat2, lon2, e)
-    return 0.0
-
-
 class ProfessionaliseringAddress(models.Model):
     _name = 'professionalisering.address'
     _description = 'Professionalisering Adres / Locatie'
@@ -380,16 +359,6 @@ class ProfessionaliseringRecord(models.Model):
         domain="[('is_online', '=', False)]",
         help='Kies een bestaand adres of typ een nieuw adres in.',
     )
-    afstand_km = fields.Float(
-        string='Afstand (km)',
-        compute='_compute_afstand_km',
-        store=True,
-        readonly=False,
-        digits=(10, 1),
-        help='Wegafstand heen en terug tussen de school en de locatie. '
-             'Wordt automatisch berekend via OSRM, maar je mag handmatig '
-             'overschrijven indien de berekende afstand niet klopt.',
-    )
     link = fields.Char(
         string='Link',
         help='URL naar de video of podcast (optioneel).',
@@ -498,14 +467,17 @@ class ProfessionaliseringRecord(models.Model):
         ('meerdere_dagen', 'Meerdere dagen'),
     ], string='Duur', default='hele_dag', required=True)
     start_uur = fields.Float(
-        string='Van',
-        help='Startuur van de opleiding (bv. 09:00). Wordt gebruikt voor de '
-             'planning van studie en vervangingen.',
+        string='Afwezig van',
+        help='Tijdstip dat je de school verlaat. Tel ook de transporttijd '
+             'mee: als de opleiding om 14:00 start maar je hebt 1u30 onderweg, '
+             'vul je hier 12:30 in. Wordt gebruikt om vervangingen exact '
+             'te kunnen plannen.',
     )
     eind_uur = fields.Float(
-        string='Tot',
-        help='Einduur van de opleiding (bv. 12:30). Wordt gebruikt voor de '
-             'planning van studie en vervangingen.',
+        string='Afwezig tot',
+        help='Tijdstip dat je terug op school aankomt (incl. transport). '
+             'Indien je niet meer terugkeert die dag, vul het einduur van '
+             'de opleiding + transport in.',
     )
     verschillende_dagen = fields.Boolean(
         string='Niet-aaneensluitende dagen',
@@ -676,46 +648,6 @@ class ProfessionaliseringRecord(models.Model):
         is_directie = self.env.user.has_group('professionalisering.group_professionalisering_directie')
         for record in self:
             record.is_directie = is_directie
-
-    @api.depends('school_id', 'school_id.latitude', 'school_id.longitude',
-                 'address_id', 'address_id.latitude', 'address_id.longitude',
-                 'location_type', 'address_id.is_online')
-    def _compute_afstand_km(self):
-        """Berekent de wegafstand (km) tussen school en locatie via OSRM.
-        Geocodeert lazy als lat/lon nog niet ingevuld zijn."""
-        for record in self:
-            if record.location_type == 'online' or not record.address_id or not record.school_id:
-                record.afstand_km = 0
-                continue
-            if record.address_id.is_online:
-                record.afstand_km = 0
-                continue
-            school = record.school_id
-            addr = record.address_id
-            # Lazy-geocode wanneer nog geen coördinaten
-            if not (school.latitude and school.longitude):
-                school.sudo().action_geocode()
-            if not (addr.latitude and addr.longitude):
-                addr.sudo().action_geocode()
-            if school.latitude and addr.latitude:
-                # Heen en terug = enkele afstand × 2
-                one_way = _osrm_distance_km(
-                    school.latitude, school.longitude,
-                    addr.latitude, addr.longitude,
-                )
-                record.afstand_km = round(one_way * 2, 1)
-            else:
-                record.afstand_km = 0
-
-    def action_recompute_afstand(self):
-        """Knop om afstand te (her)berekenen — forceert ook re-geocoding."""
-        for rec in self:
-            if rec.address_id and not rec.address_id.is_online:
-                rec.address_id.sudo().action_geocode()
-            if rec.school_id:
-                rec.school_id.sudo().action_geocode()
-            rec._compute_afstand_km()
-        return True
 
     @api.depends('verschillende_dagen', 'start_date', 'end_date', 'date_line_ids.date', 'date_line_ids.cost')
     def _compute_dates_display(self):
@@ -946,6 +878,10 @@ class ProfessionaliseringRecord(models.Model):
         self._send_notification('professionalisering.email_template_notify_employee_rejected')
 
     def action_reset_draft(self):
+        """Zet een afgekeurde aanvraag terug op concept-state zodat de
+        leerkracht alle velden (hoofdform én extra info via de wizard)
+        opnieuw kan aanpassen. De gebruiker beslist zelf wanneer hij/zij
+        via 'Volgende' naar de wizard gaat om opnieuw in te dienen."""
         for record in self:
             if record.state != 'weigering':
                 raise UserError("Alleen afgekeurde aanvragen kunnen opnieuw ingediend worden.")

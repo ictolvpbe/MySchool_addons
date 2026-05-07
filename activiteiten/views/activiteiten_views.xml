@@ -16,13 +16,13 @@
 
                     <!-- Personeelslid: reset to form after rejection or bus refusal (owner) -->
                     <button name="action_reset_to_form"
-                            string="Opnieuw Volgende"
+                            string="Opnieuw indienen"
                             type="object"
                             class="btn-secondary"
                             invisible="state not in ('rejected', 'bus_refused') or not is_owner"/>
                     <!-- Admin: reset to form after rejection or bus refusal (non-owner) -->
                     <button name="action_reset_to_form"
-                            string="Opnieuw Volgende"
+                            string="Opnieuw indienen"
                             type="object"
                             class="btn-secondary"
                             groups="activiteiten.group_activiteiten_admin"
@@ -125,6 +125,14 @@
                     <field name="available_klas_ids" invisible="1"/>
                     <field name="available_leerkracht_ids" invisible="1"/>
 
+                    <!-- Header: analytische code (door boekhouding ingevuld) -->
+                    <group>
+                        <field name="analytische_code"
+                               placeholder="bv. ANA-2026-001"
+                               readonly="state not in ('s_code', 'vervanging', 'done', 'approved')"
+                               groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+                    </group>
+
                     <!-- Two-column field grid with group titles -->
                     <group>
                         <!-- LEFT COLUMN: Activiteit + Planning -->
@@ -132,33 +140,89 @@
                             <separator string="Activiteit"/>
                             <field name="activity_type"
                                    required="1"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="titel"
                                    placeholder="bv. Schooluitstap naar Technopolis"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="school_id"
                                    options="{'no_open': True}"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="klas_ids" widget="many2many_tags"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="lokaal"
                                    placeholder="bv. A101, Turnzaal, ..."
                                    invisible="activity_type != 'binnenschools'"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="locatie_adres"
                                    placeholder="bv. Technologielaan 1, 2800 Mechelen"
                                    invisible="activity_type != 'buitenschools'"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <!-- Vervoer-keuze blijft enkel in pre-submit aanpasbaar.
+                                 Eens ingediend kan de aankoop-flow al lopen, dus
+                                 vervoer-wissels (bv. van bus naar te_voet) kunnen
+                                 problemen geven met de busverdeling — wijzig daar
+                                 enkel via "Opnieuw indienen" na bus-weigering. -->
                             <field name="vervoer_type"
                                    invisible="activity_type == 'binnenschools'"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
                             <field name="bus_nodig" invisible="1"/>
 
+                            <!-- OV-detail wanneer vervoer = openbaar vervoer -->
+                            <field name="ov_type"
+                                   invisible="vervoer_type != 'openbaar_vervoer'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="ov_gratis_count"
+                                   invisible="vervoer_type != 'openbaar_vervoer'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="ov_betalend_count"
+                                   invisible="vervoer_type != 'openbaar_vervoer'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="ov_totaal_reizigers"
+                                   invisible="vervoer_type != 'openbaar_vervoer'"
+                                   readonly="1"/>
+
+                            <!-- Bestemming-details (enkel voor buitenschools) -->
+                            <separator string="Bestemming"
+                                       invisible="activity_type != 'buitenschools'"/>
+                            <field name="bestemming_naam"
+                                   placeholder="bv. Technopolis"
+                                   invisible="activity_type != 'buitenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="bestemming_adres"
+                                   placeholder="bv. Technologielaan 1, 2800 Mechelen"
+                                   invisible="activity_type != 'buitenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="bestemming_telefoon"
+                                   placeholder="bv. 015 12 34 56"
+                                   invisible="activity_type != 'buitenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+
+                            <!-- Leerplandoelstellingen -->
+                            <separator string="Leerplandoelstellingen"/>
+                            <label for="is_doel_vakgebonden" string="Categorieën"/>
+                            <div>
+                                <field name="is_doel_vakgebonden" class="oe_inline"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                                <label for="is_doel_vakgebonden" string="Vakgebonden" class="me-3"/>
+                                <field name="is_doel_gfl" class="oe_inline"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                                <label for="is_doel_gfl" string="GFL" class="me-3"/>
+                                <field name="is_doel_ict" class="oe_inline"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                                <label for="is_doel_ict" string="ICT" class="me-3"/>
+                                <field name="is_doel_financieel" class="oe_inline"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                                <label for="is_doel_financieel" string="Financieel-economisch"/>
+                            </div>
+                            <field name="doelstellingen_toelichting"
+                                   placeholder="Korte toelichting bij de aangeduide categorieën..."
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+
                             <separator string="Planning"/>
                             <field name="datetime"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="datetime_end"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                         </group>
 
                         <!-- RIGHT COLUMN: Bus + Financieel -->
@@ -184,6 +248,10 @@
                                 <list editable="bottom" create="0" delete="0">
                                     <field name="bus_nummer" string="Bus #" readonly="1"/>
                                     <field name="prijs"/>
+                                    <field name="vertrekuur_school" widget="float_time" optional="show"/>
+                                    <field name="aankomstuur_bestemming" widget="float_time" optional="show"/>
+                                    <field name="vertrekuur_bestemming" widget="float_time" optional="show"/>
+                                    <field name="aankomstuur_school" widget="float_time" optional="show"/>
                                     <field name="currency_id" column_invisible="1"/>
                                 </list>
                             </field>
@@ -285,7 +353,7 @@
                     <group invisible="wizard_step != '2'">
                         <field name="description" nolabel="1"
                                placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
-                               readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                               readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                     </group>
                     <!-- Stap 3: Kosten -->
                     <div invisible="wizard_step != '3'">
@@ -329,9 +397,24 @@
                             </div>
                         </div>
                         <group class="mt-3">
+                            <separator string="Inkomgeld" colspan="2"/>
+                            <field name="inkomgeld_per_persoon"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="inkomgeld_aantal_betalend"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="inkomgeld_totaal" readonly="1"/>
+                            <separator string="Boekhouding" colspan="2"/>
                             <field name="bijdragen_regeling"
                                    readonly="state not in ('s_code', 'draft', 'form_invullen', 'bus_refused', 'pending_approval')"
                                    groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+                            <field name="bijdrageregeling_bedrag"
+                                   invisible="not bijdragen_regeling"
+                                   readonly="state not in ('s_code', 'draft', 'form_invullen', 'bus_refused', 'pending_approval')"
+                                   groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
+                            <field name="heeft_overnachting"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="cash_bedrag_nodig"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="totale_kost" readonly="1"/>
                         </group>
                     </div>
@@ -386,15 +469,15 @@
                 <field name="name"/>
                 <field name="create_date" string="Aanvraagdatum" optional="show"/>
                 <field name="create_uid" string="Aangemaakt door" optional="show"/>
-                <field name="titel"/>
+                <field name="titel" optional="show"/>
                 <field name="school_id" optional="show"/>
                 <field name="klas_ids" widget="many2many_tags" optional="show"/>
-                <field name="activity_type"/>
-                <field name="dates_display" widget="html"/>
+                <field name="activity_type" optional="show"/>
+                <field name="dates_display" widget="html" optional="show"/>
                 <field name="price" optional="hide"/>
-                <field name="kosten_display" string="Kosten" widget="html"
+                <field name="kosten_display" string="Kosten" widget="html" optional="hide"
                        groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
-                <field name="totale_kost" string="Totaal"
+                <field name="totale_kost" string="Totaal" optional="show"
                        groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
                 <field name="is_active" optional="hide"/>
                 <field name="bus_available" optional="hide"/>

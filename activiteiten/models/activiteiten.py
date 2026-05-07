@@ -20,7 +20,42 @@ class Activiteiten(models.Model):
         default='New',
     )
     titel = fields.Char(string='Titel activiteit')
-    description = fields.Text(string='Beschrijving')
+    description = fields.Text(
+        string='Aard van de uitstap / Inhoudelijke verduidelijking',
+    )
+
+    # Header: analytische code (op te vullen door boekhouding bij verwerking)
+    analytische_code = fields.Char(
+        string='Analytische code',
+        tracking=True,
+        help='Boekhoudkundige analytische code. Wordt door boekhouding '
+             'ingevuld bij de verwerking.',
+    )
+
+    # Bestemming-details (PDF: naam / adres / telefoon)
+    bestemming_naam = fields.Char(
+        string='Bestemming — naam',
+        help='Naam van de plek waar de activiteit doorgaat (bv. Technopolis, KU Leuven, ...).',
+    )
+    bestemming_adres = fields.Text(
+        string='Bestemming — adres',
+        help='Volledig adres van de bestemming.',
+    )
+    bestemming_telefoon = fields.Char(
+        string='Bestemming — telefoon',
+        help='Contactnummer van de bestemming.',
+    )
+
+    # Leerplandoelstellingen (PDF: vakgebonden / GFL / ICT / financieel-economisch)
+    is_doel_vakgebonden = fields.Boolean(string='Vakgebonden')
+    is_doel_gfl = fields.Boolean(string='GFL')
+    is_doel_ict = fields.Boolean(string='ICT')
+    is_doel_financieel = fields.Boolean(string='Financieel-economisch')
+    doelstellingen_toelichting = fields.Text(
+        string='Leerplandoelstellingen — toelichting',
+        help='Korte beschrijving van de doelstellingen die aansluiten bij '
+             'de aangeduide categorieën.',
+    )
     activity_type = fields.Selection([
         ('binnenschools', 'Binnenschoolse activiteit'),
         ('buitenschools', 'Buitenschoolse activiteit'),
@@ -105,6 +140,35 @@ class Activiteiten(models.Model):
     def _onchange_vervoer_type(self):
         for record in self:
             record.bus_nodig = (record.vervoer_type == 'bus')
+
+    # --- Openbaar vervoer (PDF: De Lijn / Trein + aantallen reizigers) ---
+    ov_type = fields.Selection([
+        ('delijn', 'De Lijn — rittenkaart'),
+        ('trein', 'Trein NMBS — GO-PASS / GROEPSTICKET'),
+    ], string='Type openbaar vervoer',
+       help='Subkeuze wanneer Vervoer = Openbaar vervoer. Bij trein moet de '
+            'aanvrager 14 dagen vooraf een groepsticket bij de NMBS bestellen.')
+    ov_gratis_count = fields.Integer(
+        string='Aantal gratis reizigers',
+        help='Aantal leerlingen dat gratis gebruik mag maken van het openbaar '
+             'vervoer (bv. abonnement). Wordt op de klaslijst genoteerd en '
+             'aan boekhouding bezorgd.',
+    )
+    ov_betalend_count = fields.Integer(
+        string='Aantal betalende reizigers',
+    )
+    ov_totaal_reizigers = fields.Integer(
+        string='Totaal aantal reizigers',
+        compute='_compute_ov_totaal', store=True,
+    )
+
+    @api.depends('ov_gratis_count', 'ov_betalend_count')
+    def _compute_ov_totaal(self):
+        for record in self:
+            record.ov_totaal_reizigers = (
+                (record.ov_gratis_count or 0) + (record.ov_betalend_count or 0)
+            )
+
     bus_price = fields.Monetary(
         string='Totale busprijs',
         currency_field='currency_id',
@@ -171,18 +235,24 @@ class Activiteiten(models.Model):
     def _sync_bus_lines(self):
         """Server-side helper voor write/action — gebruikt ORM-acties direct
         i.p.v. onchange-commands, zodat dit ook werkt bij batch-write of in
-        submit-flow."""
+        submit-flow.
+
+        sudo() is nodig omdat de leerkracht (personeelslid) zelf geen
+        create/unlink-rechten heeft op activiteiten.bus, maar de bus-regels
+        moeten wel klaargezet worden bij het indienen zodat aankoop later
+        prijzen kan invullen.
+        """
         self.ensure_one()
         target = int(self.aantal_bussen or '1')
         existing = self.bus_ids.sorted(key=lambda b: b.bus_nummer)
         current = len(existing)
         if current > target:
-            existing[target:].unlink()
+            existing[target:].sudo().unlink()
         elif current < target:
             existing_nrs = set(existing.mapped('bus_nummer'))
             nr = 1
             added = 0
-            Bus = self.env['activiteiten.bus']
+            Bus = self.env['activiteiten.bus'].sudo()
             while added < target - current:
                 if nr not in existing_nrs:
                     Bus.create({
@@ -236,7 +306,49 @@ class Activiteiten(models.Model):
         default=False,
         help='Geeft aan dat deze activiteit onder de bijdragenregeling valt.',
     )
+    bijdrageregeling_bedrag = fields.Monetary(
+        string='Bedrag in bijdrageregeling',
+        currency_field='currency_id',
+        help='Concrete eurowaarde uit de bijdrageregeling voor deze activiteit.',
+    )
+    # Inkomgeld gestructureerd: prijs per persoon × aantal betalend = totaal
+    inkomgeld_per_persoon = fields.Monetary(
+        string='Inkomgeld per persoon',
+        currency_field='currency_id',
+        help='Inkomgeld per betalende deelnemer (bv. ticketprijs).',
+    )
+    inkomgeld_aantal_betalend = fields.Integer(
+        string='Aantal betalende deelnemers',
+        help='Aantal leerlingen of deelnemers dat inkomgeld moet betalen.',
+    )
+    inkomgeld_totaal = fields.Monetary(
+        string='Inkomgeld totaal',
+        currency_field='currency_id',
+        compute='_compute_inkomgeld_totaal', store=True,
+    )
+    # Cash bedrag dat boekhouding minstens een week vooraf moet voorzien
+    cash_bedrag_nodig = fields.Monetary(
+        string='Cash benodigd',
+        currency_field='currency_id',
+        help='Bedrag aan cash geld dat de aanvrager nodig heeft. Minstens '
+             'één week vóór de activiteit aan boekhouding aanvragen.',
+    )
+    # Overnachting flag — bepaalt of annulatieverzekering 2% nog wordt
+    # toegepast (PDF zegt: enkel meerdaags MET overnachting).
+    heeft_overnachting = fields.Boolean(
+        string='Met overnachting',
+        help='Aanvinken bij meerdaagse uitstappen waar leerlingen ter plaatse '
+             'overnachten — triggert de 2% annulatieverzekering.',
+    )
     verzekering_done = fields.Boolean(string='Verzekering geregeld', default=False)
+
+    @api.depends('inkomgeld_per_persoon', 'inkomgeld_aantal_betalend')
+    def _compute_inkomgeld_totaal(self):
+        for record in self:
+            record.inkomgeld_totaal = (
+                (record.inkomgeld_per_persoon or 0)
+                * (record.inkomgeld_aantal_betalend or 0)
+            )
     wizard_step = fields.Selection([
         ('1', 'Begeleiders'),
         ('2', 'Opmerkingen'),
@@ -930,8 +1042,10 @@ class Activiteiten(models.Model):
                     'kosten_type': 'vast',
                     'is_auto': True,
                 })
-            # Only add verzekering for multi-day activities (2+ days)
-            if record._is_multiday():
+            # Annulatieverzekering 2% — enkel bij meerdaagse uitstappen MET
+            # overnachting (PDF-conventie: "meerdaagse uitstappen met
+            # overnachting"). Multi-day zonder overnachting → geen verzekering.
+            if record._is_multiday() and record.heeft_overnachting:
                 manual_total = sum(
                     l.bedrag for l in record.kosten_ids if not l.is_auto)
                 basis_bedrag = (record.bus_price or 0) + manual_total
@@ -954,6 +1068,10 @@ class Activiteiten(models.Model):
     # --- Shared actions ---
 
     def action_reset_to_form(self):
+        """Zet een afgekeurde of bus-geweigerde aanvraag terug op invul-state
+        zodat de leerkracht alle velden (hoofdform én extra info) opnieuw
+        kan aanpassen. De gebruiker bepaalt zelf wanneer hij/zij via
+        'Volgende' naar de wizard gaat om opnieuw in te dienen."""
         for record in self:
             if record.state not in ('rejected', 'bus_refused'):
                 raise UserError(
@@ -1129,18 +1247,41 @@ class Activiteiten(models.Model):
     }
 
     def _send_notification(self, notification_type):
+        """Verstuur een mail naar de aanvrager (en plaats een chatter-nota
+        op het record). Defensief: skip als geen geldig e-mailadres of geen
+        outgoing mailserver. force_send=False zodat de mail in de queue
+        komt en SMTP-fouten de actie niet blokkeren."""
         template_xmlid = self._NOTIFICATION_TEMPLATES.get(notification_type)
         if not template_xmlid:
             return
         template = self.env.ref(template_xmlid, raise_if_not_found=False)
         if not template:
             return
+        has_mail_server = self.env['ir.mail_server'].sudo().search_count([('active', '=', True)])
         for record in self:
-            rendered = template._render_template(
-                template.body_html, template.render_model, [record.id],
-                engine='inline_template',
-                options={'post_process': True},
-            )
-            body = rendered.get(record.id, '')
-            if body:
-                record.message_post(body=Markup(body), subtype_xmlid='mail.mt_note')
+            # 1) Chatter-nota — altijd, zodat de history zichtbaar is
+            try:
+                rendered = template._render_template(
+                    template.body_html, template.render_model, [record.id],
+                    engine='inline_template',
+                    options={'post_process': True},
+                )
+                body = rendered.get(record.id, '')
+                if body:
+                    record.message_post(body=Markup(body), subtype_xmlid='mail.mt_note')
+            except Exception as e:
+                _logger.warning('Failed to render chatter note %s for %s: %s',
+                                template_xmlid, record.name, e)
+            # 2) Echte mail naar de aanvrager — enkel als er een mailserver is
+            if not has_mail_server:
+                continue
+            recipient = (record.create_uid.partner_id.email or '').strip()
+            if not recipient:
+                _logger.info('Skipping mail %s for activiteit %s: aanvrager has no email',
+                             template_xmlid, record.name)
+                continue
+            try:
+                template.send_mail(record.id, force_send=False)
+            except Exception as e:
+                _logger.warning('Failed to queue mail %s for activiteit %s: %s',
+                                template_xmlid, record.name, e)

@@ -1,0 +1,27 @@
+/**
+ * Visuele feedback voor het verslepen van kolomkoppen in lijstweergaven.
+ * Werkt samen met static/src/webclient/list_column_drag.js.
+ */
+
+.o_list_table thead th.o_ms_col_draggable {
+    // Subtiele cursor-hint dat de header gesleept kan worden.
+    cursor: grab;
+
+    &:active,
+    &.o_ms_col_dragging {
+        cursor: grabbing;
+    }
+}
+
+// De kolom die opgepakt is — vager weergeven zodat duidelijk is dat hij
+// "verplaatst wordt".
+.o_list_table thead th.o_ms_col_dragging {
+    opacity: 0.4;
+}
+
+// De kolom waarboven de gebruiker hangt — markeer met een verticale balk
+// links zodat duidelijk is waar de drop zal landen.
+.o_list_table thead th.o_ms_col_drag_over {
+    box-shadow: inset 3px 0 0 var(--o-brand-primary, #007d8c);
+    background-color: rgba(0, 125, 140, 0.06);
+}

@@ -190,19 +190,21 @@
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_bus_check': 1}"
                                                 class="ms-badge-status ms-badge-warning ms-badge-btn"
-                                                invisible="not is_act_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
+                                                invisible="is_only_boekhouding or is_only_directie or is_only_vervangingen or act_bus_check == 0"
+                                                title="Activiteiten in bus-controle (wachten op aankoop).">
                                             <field name="act_bus_check" class="d-inline"/> Bus controle
                                         </button>
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_state_bus_refused': 1}"
                                                 class="ms-badge-status ms-badge-error ms-badge-btn"
-                                                invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
+                                                invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_vervangingen or act_bus_refused == 0">
                                             <field name="act_bus_refused" class="d-inline"/> Bus geweigerd
                                         </button>
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_to_approve': 1}"
                                                 class="ms-badge-status ms-badge-warning ms-badge-btn"
-                                                invisible="not is_act_directie or is_only_boekhouding or is_only_medewerker or is_only_vervangingen">
+                                                invisible="is_only_aankoop or is_only_boekhouding or is_only_vervangingen or act_pending_approval == 0"
+                                                title="Activiteiten die wachten op goedkeuring door directie.">
                                             <field name="act_pending_approval" class="d-inline"/> Wacht op goedkeuring
                                         </button>
                                         <button type="object" name="action_open_activiteiten_list"

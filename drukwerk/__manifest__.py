@@ -1,6 +1,6 @@
 {
     'name': 'Afdrukcentrum',
-    'version': '4.1',
+    'version': '4.2',
     'summary': 'Aanvragen van drukwerk per leerling/klas voor doorrekening op factuur',
     'description': """
         Het aanvragen van drukwerk per leerling in klas dat er na wordt
