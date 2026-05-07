@@ -38,6 +38,7 @@ from . import google_directory_service
 from . import google_drive_service
 from . import google_classroom_service
 from . import google_license_service
+from . import letter_template
 from . import res_company
 from . import res_users
 

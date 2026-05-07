@@ -275,6 +275,13 @@
               sequence="40"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_letter_template"
+              name="Letter Templates"
+              parent="menu_integrations"
+              action="myschool_core.action_letter_template"
+              sequence="50"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <!-- ========================================= -->
     <!-- CONFIG ITEMS (sequence: 60) -->
     <!-- ========================================= -->
@@ -342,6 +349,13 @@
               parent="menu_tools"
               action="action_sync_all_persongroups"
               sequence="45"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_sync_companies"
+              name="Sync Odoo Companies (from orgs)"
+              parent="menu_tools"
+              action="action_sync_companies"
+              sequence="46"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_update_person_properties"

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- =========================================================
+         Form view — letter template editor
+         ========================================================= -->
+    <record id="view_letter_template_form" model="ir.ui.view">
+        <field name="name">myschool.letter.template.form</field>
+        <field name="model">myschool.letter.template</field>
+        <field name="arch" type="xml">
+            <form string="Letter Template">
+                <header>
+                    <button name="action_preview_pdf"
+                            type="object"
+                            string="Preview PDF"
+                            class="btn-primary"
+                            invisible="not preview_record_ref"/>
+                </header>
+                <sheet>
+                    <widget name="web_ribbon" title="Archived"
+                            bg_color="bg-danger"
+                            invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="e.g. Welcome Letter — Employee"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="code"
+                                   placeholder="WELCOME_LETTER_EMPLOYEE"/>
+                            <field name="model_id"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                            <field name="model" invisible="1"/>
+                            <field name="paperformat_id"/>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="person_type_ids"
+                                   widget="many2many_tags"
+                                   options="{'no_create': True}"
+                                   invisible="model != 'myschool.person'"/>
+                            <field name="description" placeholder="Internal notes…"/>
+                        </group>
+                    </group>
+
+                    <!-- Field-insertion helper. Pick a field on the
+                         left, see the placeholder syntax on the right —
+                         copy that string into the body. -->
+                    <group string="Insert Field" col="4"
+                           invisible="not model_id">
+                        <field name="field_picker_id"
+                               options="{'no_create': True, 'no_open': True}"
+                               domain="[('model_id', '=', model_id), ('store', '=', True)]"
+                               colspan="2"/>
+                        <field name="field_placeholder"
+                               readonly="1"
+                               placeholder="(pick a field on the left)"
+                               colspan="2"/>
+                    </group>
+
+                    <notebook>
+                        <page string="Body" name="body">
+                            <field name="body_html"
+                                   widget="html"
+                                   options="{'style-inline': true}"
+                                   nolabel="1"/>
+                        </page>
+                        <page string="Preview" name="preview">
+                            <group>
+                                <field name="preview_record_ref"
+                                       options="{'no_create': True}"/>
+                            </group>
+                            <div class="alert alert-info" role="alert">
+                                Pick any record of model
+                                <field name="model" readonly="1" class="oe_inline"/>
+                                above and click <strong>Preview PDF</strong>
+                                in the header to download a one-off
+                                rendered preview. Production rendering
+                                runs through the betask cascade and
+                                attaches the PDF to the target record.
+                            </div>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- =========================================================
+         List view
+         ========================================================= -->
+    <record id="view_letter_template_list" model="ir.ui.view">
+        <field name="name">myschool.letter.template.list</field>
+        <field name="model">myschool.letter.template</field>
+        <field name="arch" type="xml">
+            <list string="Letter Templates">
+                <field name="sequence" widget="handle"/>
+                <field name="code"/>
+                <field name="name"/>
+                <field name="model_id"/>
+                <field name="person_type_ids" widget="many2many_tags"
+                       optional="show"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- =========================================================
+         Search view
+         ========================================================= -->
+    <record id="view_letter_template_search" model="ir.ui.view">
+        <field name="name">myschool.letter.template.search</field>
+        <field name="model">myschool.letter.template</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="code"/>
+                <field name="name"/>
+                <field name="model_id"/>
+                <field name="person_type_ids"/>
+                <filter string="Active" name="active"
+                        domain="[('active', '=', True)]"/>
+                <filter string="Archived" name="inactive"
+                        domain="[('active', '=', False)]"/>
+                <separator/>
+                <filter string="Person Templates" name="for_person"
+                        domain="[('model', '=', 'myschool.person')]"/>
+                <separator/>
+                <filter string="Target Model" name="group_model"
+                        context="{'group_by': 'model_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- =========================================================
+         Action
+         ========================================================= -->
+    <record id="action_letter_template" model="ir.actions.act_window">
+        <field name="name">Letter Templates</field>
+        <field name="res_model">myschool.letter.template</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_letter_template_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+</odoo>

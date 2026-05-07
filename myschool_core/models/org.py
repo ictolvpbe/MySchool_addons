@@ -100,6 +100,17 @@ class Org(models.Model):
     com_group_email = fields.Char(string='Com Groep Email', size=200)
     sec_group_name = fields.Char(string='Sec Groep Naam')
 
+    # Odoo Company link (managed by sync_companies — see bottom of class)
+    company_id = fields.Many2one(
+        'res.company',
+        string='Odoo Company',
+        readonly=True,
+        copy=False,
+        help='Odoo res.company / branch dat door de bedrijfssync aan '
+             'deze org gekoppeld is. SCHOOLBOARD-orgs krijgen een '
+             'top-level company, SCHOOL-orgs een branch onder de '
+             'SCHOOLBOARD-company. Beheerd via myschool.org.sync_companies.')
+
     # Redundant
     orggroup_working_period = fields.Char(string='Werktijd Periode', size=30)
     richting = fields.Char(string='Richting', size=30)
@@ -997,3 +1008,202 @@ class Org(models.Model):
         _logger.info(f'[CG-UPDATE] DONE: removed={removed}, created={success}, ad_updated={ad_updated}, skipped={skipped}')
         return {'removed': removed, 'created': success, 'skipped': skipped,
                 'ad_updated': ad_updated, 'total': len(classgroups), 'errors': errors}
+
+    # =========================================================================
+    # Odoo Company / Branch sync
+    # SCHOOLBOARD orgs → top-level res.company.
+    # SCHOOL orgs      → branch (child res.company with parent_id set) of
+    #                    their SCHOOLBOARD ancestor's company.
+    # Triggered manually (action_sync_companies) or via cron
+    # (_cron_sync_companies). Idempotent — safe to run repeatedly.
+    # =========================================================================
+
+    @api.model
+    def _cron_sync_companies(self):
+        """Cron entry point. Returns the stats dict from sync_companies."""
+        return self.sync_companies()
+
+    @api.model
+    def sync_companies(self):
+        """Synchronise res.company records from active SCHOOLBOARD/SCHOOL
+        orgs.
+
+        Resolution order per org:
+          1. Already linked via ``org.company_id``? → keep that company.
+          2. Reverse linked via ``res.company.school_id``? → adopt it.
+          3. Existing company by name (+ parent_id for branches)? → match
+             — picks up manually-created companies.
+          4. Otherwise create.
+
+        Active state of the org follows through to the company
+        (org.is_active=False archives the company; reactivation
+        unarchives). SCHOOL orgs without a SCHOOLBOARD ancestor via
+        ORG-TREE are skipped with a SYNC.COMPANY.ORPHAN_SCHOOL sysevent.
+
+        @return: dict with counters
+        """
+        OrgType = self.env['myschool.org.type']
+        Company = self.env['res.company'].sudo()
+        PropRelationType = self.env['myschool.proprelation.type']
+        SysEventService = self.env.get('myschool.sys.event.service')
+
+        schoolboard_type = OrgType.search([('name', '=', 'SCHOOLBOARD')], limit=1)
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        stats = {'created': 0, 'matched': 0, 'updated': 0,
+                 'archived': 0, 'reactivated': 0, 'orphan_skipped': 0}
+
+        if not schoolboard_type or not school_type:
+            _logger.warning(
+                '[COMPANY-SYNC] SCHOOLBOARD or SCHOOL OrgType missing — abort')
+            stats['error'] = 'org-types-missing'
+            return stats
+
+        def _ensure_company(org, parent_company=None):
+            target_name = (org.displayname or org.name or '').strip()
+            if not target_name:
+                return None
+
+            company = org.company_id
+            if not company:
+                company = Company.with_context(active_test=False).search(
+                    [('school_id', '=', org.id)], limit=1)
+
+            if not company:
+                domain = [('name', '=', target_name)]
+                if parent_company:
+                    domain.append(('parent_id', '=', parent_company.id))
+                else:
+                    domain.append(('parent_id', '=', False))
+                company = Company.with_context(active_test=False).search(
+                    domain, limit=1)
+                if company:
+                    stats['matched'] += 1
+
+            if not company:
+                create_vals = {'name': target_name, 'school_id': org.id}
+                if parent_company:
+                    create_vals['parent_id'] = parent_company.id
+                company = Company.with_context(
+                    skip_school_rename_guard=True).create(create_vals)
+                stats['created'] += 1
+
+            sync_vals = {}
+            if company.name != target_name:
+                sync_vals['name'] = target_name
+            if company.school_id != org:
+                sync_vals['school_id'] = org.id
+            if parent_company and company.parent_id != parent_company:
+                sync_vals['parent_id'] = parent_company.id
+            if org.is_active and not company.active:
+                sync_vals['active'] = True
+                stats['reactivated'] += 1
+            elif not org.is_active and company.active:
+                sync_vals['active'] = False
+                stats['archived'] += 1
+            if sync_vals:
+                company.with_context(
+                    skip_school_rename_guard=True).write(sync_vals)
+                if any(k in sync_vals for k in ('name', 'parent_id', 'school_id')):
+                    stats['updated'] += 1
+
+            if org.company_id != company:
+                org.with_context(skip_manual_audit=True).write(
+                    {'company_id': company.id})
+
+            return company
+
+        schoolboards = self.with_context(active_test=False).search([
+            ('org_type_id', '=', schoolboard_type.id),
+        ])
+        sb_to_company = {}
+        for sb in schoolboards:
+            company = _ensure_company(sb, parent_company=None)
+            if company:
+                sb_to_company[sb.id] = company
+
+        schools = self.with_context(active_test=False).search([
+            ('org_type_id', '=', school_type.id),
+        ])
+        for sch in schools:
+            sb_org = self._resolve_schoolboard_via_orgtree(
+                sch, schoolboard_type, org_tree_type)
+            if not sb_org:
+                stats['orphan_skipped'] += 1
+                if SysEventService:
+                    SysEventService.create_sys_error(
+                        'SYNC.COMPANY.ORPHAN_SCHOOL',
+                        (f'School "{sch.displayname or sch.name}" '
+                         f'(id={sch.id}, inst_nr={sch.inst_nr}) has no '
+                         f'SCHOOLBOARD ancestor via ORG-TREE — skipping '
+                         f'res.company creation.'),
+                        'ERROR-NONBLOCKING', True)
+                continue
+            parent_company = sb_to_company.get(sb_org.id)
+            if not parent_company:
+                stats['orphan_skipped'] += 1
+                continue
+            _ensure_company(sch, parent_company=parent_company)
+
+        _logger.info('[COMPANY-SYNC] %s', stats)
+        return stats
+
+    def _resolve_schoolboard_via_orgtree(self, school_org,
+                                        schoolboard_type, org_tree_type):
+        """Walk ORG-TREE upward from ``school_org`` to find a
+        SCHOOLBOARD-typed ancestor. Returns the SCHOOLBOARD org or None.
+
+        Note: starts from the immediate parent — a SCHOOL that is itself
+        of type SCHOOLBOARD is invalid input (SCHOOLBOARDs are handled
+        in the first pass)."""
+        if not org_tree_type or not schoolboard_type:
+            return None
+        PropRelation = self.env['myschool.proprelation']
+        current = school_org
+        visited = set()
+        while current and current.id not in visited:
+            visited.add(current.id)
+            rel = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org', '=', current.id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ], limit=1)
+            if not rel or not rel.id_org_parent:
+                return None
+            current = rel.id_org_parent
+            if current.org_type_id and current.org_type_id.id == schoolboard_type.id:
+                return current
+        return None
+
+    def action_sync_companies(self):
+        """Manual button entry point for the company sync."""
+        stats = self.sync_companies()
+        if stats.get('error'):
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Company sync',
+                    'message': f"Error: {stats['error']}",
+                    'type': 'danger',
+                    'sticky': True,
+                },
+            }
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Company sync',
+                'message': (
+                    f"Created: {stats.get('created', 0)}, "
+                    f"matched: {stats.get('matched', 0)}, "
+                    f"updated: {stats.get('updated', 0)}, "
+                    f"archived: {stats.get('archived', 0)}, "
+                    f"reactivated: {stats.get('reactivated', 0)}, "
+                    f"orphan-skipped: {stats.get('orphan_skipped', 0)}"
+                ),
+                'type': 'success' if not stats.get('orphan_skipped') else 'warning',
+            },
+        }

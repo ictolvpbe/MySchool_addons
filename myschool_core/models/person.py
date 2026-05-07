@@ -537,6 +537,39 @@ class Person(models.Model):
                 }
             }
 
+    def action_generate_welcome_letter(self):
+        """Render and attach the welcome-letter PDF for this person.
+
+        Picks the right template via ``letter_template.find_for_person``
+        (matches person_type, falls back to the catch-all) and stores
+        the result as an ``ir.attachment`` on the person record. Opens
+        the PDF in the browser so the admin can print/download it
+        immediately.
+        """
+        self.ensure_one()
+        Tpl = self.env['myschool.letter.template']
+        template = Tpl.find_for_person(self)
+        if not template:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Welcome Letter'),
+                    'message': _(
+                        'No active letter template targeting myschool.person '
+                        'is configured. Add one under Settings → Letter '
+                        'Templates first.'),
+                    'type': 'warning',
+                    'sticky': True,
+                },
+            }
+        attachment = template.generate_letter_attachment(self, attach=True)
+        return {
+            'type': 'ir.actions.act_url',
+            'url': f'/web/content/{attachment.id}?download=true',
+            'target': 'self',
+        }
+
     def action_recalc_roles(self):
         """Recalculate roles for this person based on hoofd_ambt assignment."""
         self.ensure_one()

@@ -1864,6 +1864,11 @@ class BeTaskProcessor(models.AbstractModel):
             ('CLOUD', 'LICENSE', 'ADD'): self.process_cloud_license_add,
             ('CLOUD', 'LICENSE', 'UPD'): self.process_cloud_license_upd,
             ('CLOUD', 'LICENSE', 'DEL'): self.process_cloud_license_del,
+
+            # =========================================================
+            # LETTER (PDF document generation)
+            # =========================================================
+            ('LETTER', 'USER', 'GENERATE'): self.process_letter_user_generate,
         }
         
         handler = handler_map.get((target, obj, action))
@@ -4205,6 +4210,13 @@ class BeTaskProcessor(models.AbstractModel):
             if result.get('success'):
                 changes.append(f"User created: {result.get('dn', 'N/A')}")
                 changes.append(result.get('message', ''))
+                # Trailing cascade: queue welcome-letter generation for
+                # the just-provisioned account. Skipped silently when
+                # the message says "already existed" (then password is
+                # preserved + an earlier letter exists). Idempotent
+                # via dedupe inside ``_emit_letter_generate_for_person``.
+                if 'already existed' not in (result.get('message') or '').lower():
+                    self._emit_letter_generate_for_person(person, changes)
                 task.write({'changes': '\n'.join(changes)})
                 return True
             else:
@@ -5710,6 +5722,100 @@ class BeTaskProcessor(models.AbstractModel):
             return self._record_cloud_result(task, changes, result)
         except Exception as e:
             _logger.exception(f'CLOUD_LICENSE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # =========================================================================
+    # LETTER (PDF document generation) TASK PROCESSORS
+    # =========================================================================
+
+    def _emit_letter_generate_for_person(self, person, changes):
+        """Queue a LETTER/USER/GENERATE task for ``person``.
+
+        Skips silently when no template targeting myschool.person is
+        configured (a fresh install before admins seed templates) or
+        when an unprocessed task for the same person already exists.
+        Idempotent re-runs are tolerated downstream too — the handler
+        will simply attach a fresh PDF.
+        """
+        if not person:
+            return
+        BeTaskType = self.env['myschool.betask.type']
+        BeTask = self.env['myschool.betask']
+        Tpl = self.env['myschool.letter.template']
+        if not Tpl.find_for_person(person):
+            # No active template — admin hasn't configured one yet.
+            return
+        task_type = BeTaskType.search([
+            ('target', '=', 'LETTER'),
+            ('object', '=', 'USER'),
+            ('action', '=', 'GENERATE'),
+        ], limit=1)
+        if not task_type:
+            _logger.warning(
+                '[LETTER-CASCADE] LETTER/USER/GENERATE task type missing')
+            return
+        existing = BeTask.search([
+            ('betasktype_id', '=', task_type.id),
+            ('status', '=', 'new'),
+            ('data', 'ilike', f'"person_id": {person.id}'),
+        ], limit=1)
+        if existing:
+            return
+        BeTask.create({
+            'name': f'LETTER/USER/GENERATE for {person.name}',
+            'betasktype_id': task_type.id,
+            'status': 'new',
+            'data': json.dumps({'person_id': person.id}),
+        })
+        changes.append(f'Queued LETTER/USER/GENERATE for {person.name}')
+
+    @api.model
+    def process_letter_user_generate(self, task):
+        """LETTER/USER/GENERATE — render and attach the welcome PDF.
+
+        Expected data: ``{'person_id': N, 'template_code': 'OPTIONAL'}``.
+        When no ``template_code`` is given, ``find_for_person`` picks
+        based on the person's type (with fallback to the catch-all).
+        """
+        _logger.info(f'Processing LETTER_USER_GENERATE: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person_id = data.get('person_id')
+            if not person_id:
+                raise ValidationError(_('person_id is required'))
+            person = self.env['myschool.person'].browse(person_id).exists()
+            if not person:
+                raise ValidationError(_('Person %s not found') % person_id)
+
+            Tpl = self.env['myschool.letter.template']
+            template = None
+            if data.get('template_code'):
+                template = Tpl.search(
+                    [('code', '=', data['template_code']),
+                     ('active', '=', True)], limit=1)
+                if not template:
+                    raise ValidationError(_(
+                        'Letter template with code "%s" not found / inactive'
+                    ) % data['template_code'])
+            else:
+                template = Tpl.find_for_person(person)
+                if not template:
+                    raise ValidationError(_(
+                        'No active letter template targeting myschool.person'))
+            changes.append(f'Using template: {template.code}')
+
+            attachment = template.generate_letter_attachment(
+                person, attach=True)
+            changes.append(
+                f'Generated attachment id={attachment.id} '
+                f'name={attachment.name}')
+            task.write({'changes': '\n'.join(changes)})
+            return True
+        except Exception as e:
+            _logger.exception(f'LETTER_USER_GENERATE failed: {task.name}')
             changes.append(f'ERROR: {e}')
             task.write({'changes': '\n'.join(changes)})
             raise

@@ -273,6 +273,14 @@ if result and isinstance(result, dict):
         </field>
     </record>
 
+    <!-- Sync Odoo Companies from SCHOOLBOARD/SCHOOL orgs -->
+    <record id="action_sync_companies" model="ir.actions.server">
+        <field name="name">Sync Odoo Companies (from orgs)</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="state">code</field>
+        <field name="code">action = env['myschool.org'].action_sync_companies()</field>
+    </record>
+
     <!-- Sync persongroups from org settings (menu action) -->
     <record id="action_sync_all_persongroups" model="ir.actions.server">
         <field name="name">Sync persongroups (org settings)</field>

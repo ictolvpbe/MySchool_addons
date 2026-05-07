@@ -77,6 +77,12 @@
                             class="btn-secondary"
                             icon="fa-id-badge"
                             title="Read hoofd_ambt from person details, resolve via SRBR and create missing PPSBR"/>
+                    <button name="action_generate_welcome_letter"
+                            string="Welcome Letter"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-file-pdf-o"
+                            title="Generate the welcome-letter PDF for this person and attach it to the record"/>
                 </header>
                 <sheet>
                     <!-- Stat Buttons -->

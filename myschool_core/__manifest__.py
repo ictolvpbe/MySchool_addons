@@ -62,6 +62,10 @@
         # 'data/ldap_task_types.xml',
         'data/cloud_task_types.xml',
         'data/cloud_cron.xml',
+        'data/company_sync_cron.xml',
+        'data/letter_task_types.xml',
+        'data/letter_template_data.xml',
+        'report/letter_report_templates.xml',
 
         #Services
         #'services/data/ir_cron_data.xml',
@@ -71,6 +75,9 @@
 
         # Google Workspace integration
         'views/google_workspace_config_views.xml',
+
+        # Letter templates
+        'views/letter_template_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

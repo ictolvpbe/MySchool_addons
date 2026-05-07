@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            Default fallback welcome-letter template.
+            ``person_type_ids`` is left empty so this acts as the
+            "match any person type" fallback in
+            ``find_for_person``. Admins will typically copy this and
+            create more specific templates per person_type
+            (EMPLOYEE / STUDENT / GUARDIAN / …) — those override the
+            fallback automatically.
+
+            Body uses {{ object.<field> }} placeholders. The real
+            content/branding is meant to be customised per school
+            after install — this is just a working starting point.
+        -->
+        <record id="letter_template_welcome_default" model="myschool.letter.template">
+            <field name="name">Welcome Letter — Default</field>
+            <field name="code">WELCOME_LETTER_DEFAULT</field>
+            <field name="sequence">100</field>
+            <field name="active" eval="True"/>
+            <field name="model_id" ref="model_myschool_person"/>
+            <field name="description">Default welcome letter sent after AD account creation. Customise per school by copying this record.</field>
+            <field name="body_html"><![CDATA[
+                <div style="font-family: Arial, sans-serif; font-size: 11pt;">
+                    <p>Beste {{ object.first_name or object.name }},</p>
+
+                    <p>
+                        We heten je van harte welkom! Voor jou werd
+                        een nieuwe digitale account aangemaakt
+                        waarmee je toegang krijgt tot onze schooltools.
+                    </p>
+
+                    <h3 style="color: #1f4e79; margin-top: 24px;">Jouw account</h3>
+                    <table style="border-collapse: collapse; margin-top: 8px;">
+                        <tr>
+                            <td style="padding: 4px 16px 4px 0;"><strong>Gebruikersnaam</strong></td>
+                            <td>{{ object.email_cloud or object.abbreviation }}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 4px 16px 4px 0;"><strong>Tijdelijk wachtwoord</strong></td>
+                            <td><code style="background:#f5f5f5; padding:2px 6px; border-radius:3px;">{{ object.password }}</code></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 4px 16px 4px 0;"><strong>E-mail</strong></td>
+                            <td>{{ object.email_cloud }}</td>
+                        </tr>
+                    </table>
+
+                    <p style="margin-top: 24px;">
+                        Bij de eerste aanmelding zal het systeem je
+                        vragen een nieuw wachtwoord te kiezen. Kies
+                        een sterk wachtwoord dat je gemakkelijk kunt
+                        onthouden, maar moeilijk te raden is.
+                    </p>
+
+                    <p>
+                        Heb je vragen of problemen bij het aanmelden?
+                        Contacteer dan de ICT-coördinator van je school.
+                    </p>
+
+                    <p style="margin-top: 32px;">
+                        Met vriendelijke groet,<br/>
+                        <em>Het ICT-team</em>
+                    </p>
+                </div>
+            ]]></field>
+        </record>
+
+    </data>
+</odoo>
