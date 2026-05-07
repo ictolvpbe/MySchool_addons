@@ -27,6 +27,22 @@ class DrukwerkConfig(models.Model):
         default=0.04,
     )
 
+    # --- Count-e export ---
+    count_e_artikel = fields.Char(
+        string='Count-e artikel (zwart-wit)',
+        default='KOPIES',
+        help='Artikelcode in Count-e voor zwart-wit kopies',
+    )
+    count_e_artikel_kleur = fields.Char(
+        string='Count-e artikel (kleur)',
+        default='KOPIES',
+        help='Artikelcode in Count-e voor kleur kopies (mag dezelfde zijn als zwart-wit)',
+    )
+    count_e_analytisch = fields.Char(
+        string='Count-e analytische code',
+        help='Optionele analytische code (kolom Analytisch1 in de export)',
+    )
+
     @api.model
     def _get_defaults(self):
         """Get the singleton config record, create if needed."""
@@ -47,4 +63,10 @@ class DrukwerkConfig(models.Model):
             param.set_param('drukwerk.prijs_a3', str(vals['prijs_a3']))
         if 'prijs_dik_papier' in vals:
             param.set_param('drukwerk.prijs_dik_papier', str(vals['prijs_dik_papier']))
+        if 'count_e_artikel' in vals:
+            param.set_param('drukwerk.count_e_artikel', vals['count_e_artikel'] or '')
+        if 'count_e_artikel_kleur' in vals:
+            param.set_param('drukwerk.count_e_artikel_kleur', vals['count_e_artikel_kleur'] or '')
+        if 'count_e_analytisch' in vals:
+            param.set_param('drukwerk.count_e_analytisch', vals['count_e_analytisch'] or '')
         return res

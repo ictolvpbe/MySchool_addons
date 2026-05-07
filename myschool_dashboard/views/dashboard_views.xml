@@ -182,7 +182,7 @@
                                     </button>
                                     <div class="d-flex gap-2 flex-wrap mb-3">
                                         <button type="object" name="action_open_activiteiten_list"
-                                                context="{'search_default_state_form_invullen': 1}"
+                                                context="{'search_default_state_draft': 1}"
                                                 class="ms-badge-status ms-badge-info ms-badge-btn"
                                                 invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_vervangingen">
                                             <field name="act_form_invullen" class="d-inline"/> Concepten

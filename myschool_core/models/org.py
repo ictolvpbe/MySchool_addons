@@ -9,6 +9,9 @@ _logger = logging.getLogger(__name__)
 class Org(models.Model):
     _name = 'myschool.org'
     _description = 'Organisatie'
+    # Sorteer alfabetisch op naam (klassen 1DOEa, 1DOEb, 2ORLO, 4BEORb, …) i.p.v.
+    # toevoeg-volgorde, zodat dropdowns natuurlijk per jaar gegroepeerd staan.
+    _order = 'name asc'
     # _inherit = 'mail.thread'
 
     #Tijdelijk

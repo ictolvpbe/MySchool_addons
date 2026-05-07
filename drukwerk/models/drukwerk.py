@@ -28,6 +28,15 @@ class DrukwerkRecord(models.Model):
         ('gewoon', 'Gewoon drukwerk'),
         ('examen', 'Examen drukwerk'),
     ], string='Type drukwerk', tracking=True)
+    examen_variant = fields.Selection([
+        ('wit', 'Wit — geen hulpmiddelen'),
+        ('groen', 'Groen — met hulpmiddelen'),
+        ('geel', 'Geel — vergrote tekst / specifieke hulpmiddelen'),
+    ], string='Examen-versie',
+       help='Kleurcode van het examenpapier afhankelijk van het toegestane '
+            'gebruik van hulpmiddelen. Wit = geen hulpmiddelen, '
+            'Groen = met hulpmiddelen, Geel = vergrote tekst of specifieke '
+            'aanpassingen voor leerlingen met bv. dyslexie.')
     titel = fields.Char(string='Omschrijving')
     description = fields.Text(string='Toelichting')
     print_deadline = fields.Date(
@@ -79,7 +88,12 @@ class DrukwerkRecord(models.Model):
         ('a4', 'A4'),
         ('a3', 'A3'),
     ], string='Formaat', default='a4', required=True)
-    kopie_leerkracht = fields.Boolean(string='Kopie leerkracht', default=False)
+    kopie_leerkracht = fields.Boolean(
+        string='Kopie leerkracht',
+        default=False,
+        help='Aanvinken voor 1 extra exemplaar voor de leerkracht zelf '
+             '(bovenop het totaal voor de leerlingen).',
+    )
     papier_kleur = fields.Selection([
         ('geen', 'Wit (standaard)'),
         ('groen', 'Groen'),
@@ -139,13 +153,15 @@ class DrukwerkRecord(models.Model):
         ('form_invullen', 'Concept'),
         ('afdrukken', 'Af te drukken'),
         ('done', 'Afgedrukt'),
-        ('gestockeerd', 'Gestockeerd'),
+        ('gestockeerd', 'Gearchiveerd'),
     ], string='Status', default='draft', required=True, tracking=True)
     done_date = fields.Datetime(
         string='Datum afgerond',
         readonly=True,
         help='Tijdstip waarop de aanvraag de status Afgerond bereikte. '
-             'Wordt gebruikt om automatisch te stockeren na X dagen.',
+             'Wordt gebruikt om afgeronde records automatisch te archiveren '
+             'na X dagen, zodat boekhouding op het einde van het jaar weet '
+             'welke aanvragen netjes afgesloten zijn.',
     )
     is_owner = fields.Boolean(compute='_compute_is_owner')
     can_edit_content = fields.Boolean(
@@ -154,13 +170,31 @@ class DrukwerkRecord(models.Model):
              'in concept- of formulier-fase, of in de afdrukken-fase voor de eigenaar.',
     )
     can_select_color = fields.Boolean(compute='_compute_can_select_color')
+    is_drukwerk_team = fields.Boolean(
+        compute='_compute_is_drukwerk_team',
+        help='True voor gebruikers in de drukkerij- of admin-groep — gebruikt '
+             'om dubbele Verwijderen-knoppen te vermijden voor users die zowel '
+             'personeelslid als drukker/admin zijn.',
+    )
 
-    @api.depends('state', 'is_owner')
+    @api.depends_context('uid')
+    def _compute_is_drukwerk_team(self):
+        in_team = (
+            self.env.user.has_group('drukwerk.group_drukwerk_drukwerk')
+            or self.env.user.has_group('drukwerk.group_drukwerk_admin')
+        )
+        for record in self:
+            record.is_drukwerk_team = in_team
+
+    @api.depends('state', 'is_owner', 'is_drukwerk_team')
     def _compute_can_edit_content(self):
         for record in self:
             record.can_edit_content = (
                 record.state in ('draft', 'form_invullen')
                 or (record.state == 'afdrukken' and record.is_owner)
+                # Drukkerij-team / admin moet ook na indienen kleine
+                # correcties kunnen doen (typo's, papierkleur, ...).
+                or (record.state == 'afdrukken' and record.is_drukwerk_team)
             )
 
     @api.depends_context('uid')
@@ -183,10 +217,13 @@ class DrukwerkRecord(models.Model):
 
     @api.depends('dubbelzijdig', 'nieten', 'perforeren', 'liggend',
                  'sorteren', 'a3_plooien', 'boekje_a4',
-                 'gekleurd_papier', 'papier_kleur')
+                 'gekleurd_papier', 'papier_kleur',
+                 'drukwerk_type', 'examen_variant')
     def _compute_printer_code(self):
         for record in self:
             codes = []
+            if record.drukwerk_type == 'examen' and record.examen_variant:
+                codes.append(f'EXAMEN-{record.examen_variant.upper()}')
             if record.dubbelzijdig:
                 codes.append('R/V')
             if record.nieten:
@@ -511,8 +548,13 @@ class DrukwerkRecord(models.Model):
                 raise UserError("Kan alleen vanuit de invulfase ingediend worden.")
             if not record.titel:
                 raise UserError("Vul een omschrijving in.")
-            if not record.klas_ids:
-                raise UserError("Selecteer minstens één klas.")
+            if not record.print_deadline:
+                raise UserError("Vul de gewenste afdrukdatum in.")
+            if not record.klas_ids and not record.kopie_leerkracht:
+                raise UserError(
+                    "Selecteer minstens één klas, of vink "
+                    "'Kopie leerkracht' aan om enkel voor jezelf af te drukken."
+                )
             if not record.document_file:
                 raise UserError("Upload een document.")
             record.state = 'afdrukken'
@@ -533,7 +575,11 @@ class DrukwerkRecord(models.Model):
     def action_submit_from_dialog(self):
         self.ensure_one()
         self.action_submit()
-        return {'type': 'ir.actions.act_window_close'}
+        # Sluit de dialog en navigeer naar de drukwerk-lijst zodat de leerkracht
+        # de nieuwe aanvraag in het overzicht ziet i.p.v. te blijven hangen op de form.
+        action = self.env.ref('drukwerk.action_drukwerk').sudo().read()[0]
+        action['target'] = 'main'
+        return action
 
     # --- Drukwerk actions ---
 
@@ -546,18 +592,29 @@ class DrukwerkRecord(models.Model):
         self._send_notification('done')
 
     def action_stockeren(self):
-        """Move done records into stock (gestockeerd)."""
+        """Archiveer afgeronde records — bedoeld als jaarlijkse opschoning
+        zodat boekhouding weet welke aanvragen netjes afgesloten zijn.
+        Enkel boekhouding/admin mag dit triggeren."""
+        if not (
+            self.env.user.has_group('drukwerk.group_drukwerk_boekhouding')
+            or self.env.user.has_group('drukwerk.group_drukwerk_admin')
+        ):
+            raise UserError(
+                "Alleen boekhouding of beheer mag drukwerk archiveren."
+            )
         for record in self:
             if record.state != 'done':
                 raise UserError(
-                    "Alleen afgeronde aanvragen kunnen gestockeerd worden."
+                    "Alleen afgeronde aanvragen kunnen gearchiveerd worden."
                 )
             record.state = 'gestockeerd'
 
     @api.model
     def _cron_auto_stock(self):
-        """Automatically move records from 'done' to 'gestockeerd' once their
-        done_date is older than the configured threshold (default 30 days)."""
+        """Automatische jaarlijkse opschoning: zet afgeronde records (state
+        'done') na X dagen op 'gestockeerd' (gearchiveerd) zodat de actieve
+        lijst overzichtelijk blijft. Default 30 dagen, configureerbaar via
+        ir.config_parameter `drukwerk.auto_stock_after_days`."""
         days = int(self.env['ir.config_parameter'].sudo().get_param(
             'drukwerk.auto_stock_after_days', '30'))
         cutoff = fields.Datetime.now() - timedelta(days=days)
@@ -569,7 +626,7 @@ class DrukwerkRecord(models.Model):
         if records:
             records.write({'state': 'gestockeerd'})
             _logger.info(
-                "Drukwerk auto-stock: %d records moved to gestockeerd "
+                "Drukwerk auto-archive: %d records moved to gestockeerd "
                 "(threshold %d days).", len(records), days)
 
     # --- Print actions ---
@@ -643,7 +700,15 @@ class DrukwerkRecord(models.Model):
 
     def action_delete(self):
         self.unlink()
-        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+        # Generieke client-action die terugkeert naar de vorige controller
+        # zodat filters/sortering/scroll behouden blijven (zie myschool_core).
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'myschool_back_to_previous',
+            'params': {
+                'fallback_action': 'drukwerk.action_drukwerk',
+            },
+        }
 
     def unlink(self):
         privileged = (

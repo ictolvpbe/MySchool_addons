@@ -89,7 +89,7 @@ class Activiteiten(models.Model):
     ], string='Status', default='draft', required=True, tracking=True)
 
     vervoer_type = fields.Selection([
-        ('bus', 'Schoolbus'),
+        ('bus', 'Bus (gehuurd via privé-maatschappij)'),
         ('openbaar_vervoer', 'Openbaar vervoer'),
         ('te_voet', 'Te voet'),
         ('fiets', 'Fiets'),
@@ -97,7 +97,8 @@ class Activiteiten(models.Model):
         ('anders', 'Anders'),
     ], string='Vervoer', default='bus',
        help='Hoe verplaatst de groep zich tijdens deze activiteit. '
-            'Selectie van "Schoolbus" triggert de bus-controle-flow.')
+            'Selectie van "Bus (gehuurd via privé-maatschappij)" triggert '
+            'de bus-controle-flow met aankoop.')
     bus_nodig = fields.Boolean(string='Bus nodig', default=False)
 
     @api.onchange('vervoer_type')
@@ -105,8 +106,11 @@ class Activiteiten(models.Model):
         for record in self:
             record.bus_nodig = (record.vervoer_type == 'bus')
     bus_price = fields.Monetary(
-        string='Prijs van bus',
+        string='Totale busprijs',
         currency_field='currency_id',
+        compute='_compute_bus_price', store=True,
+        help='Som van de prijzen per bus. Vul de prijs per bus in op de '
+             'busverdeling-lijst hieronder.',
     )
     bus_available = fields.Boolean(string='Bus beschikbaar')
     aantal_bussen = fields.Selection([
@@ -116,8 +120,86 @@ class Activiteiten(models.Model):
     bus_ids = fields.One2many(
         'activiteiten.bus', 'activiteit_id', string='Busverdeling',
     )
+
+    @api.depends('bus_ids.prijs')
+    def _compute_bus_price(self):
+        for record in self:
+            record.bus_price = sum(record.bus_ids.mapped('prijs'))
+
+    @api.onchange('aantal_bussen')
+    def _onchange_aantal_bussen(self):
+        """UI-side: synchroniseer bus_ids met aantal_bussen door een nieuwe
+        recordset op te bouwen — zo verwijdert Odoo de te-veel regels (zowel
+        bestaande DB-records als NewId-records uit deze onchange-sessie)."""
+        target = int(self.aantal_bussen or '1')
+        sorted_buses = self.bus_ids.sorted(key=lambda b: b.bus_nummer)
+        current = len(sorted_buses)
+
+        if current == target:
+            return
+
+        # Bouw de nieuwe set commando's expliciet op zodat Odoo elke gewenste
+        # bus-regel kent (en de overige eruit haalt).
+        keep = sorted_buses[:target]
+        commands = []
+        for bus in keep:
+            if isinstance(bus.id, int):
+                # Bestaand DB-record: link + behoud zoals het is
+                commands.append((4, bus.id))
+            else:
+                # NewId-record uit een eerdere onchange — heropbouwen zodat
+                # de prijs-waarde niet verloren gaat
+                commands.append((0, 0, {
+                    'bus_nummer': bus.bus_nummer,
+                    'prijs': bus.prijs or 0,
+                }))
+
+        # Voeg ontbrekende rijen toe als we hoger gaan
+        if current < target:
+            existing_nrs = set(keep.mapped('bus_nummer'))
+            nr = 1
+            while len([c for c in commands if c[0] in (0, 4)]) < target:
+                if nr not in existing_nrs:
+                    commands.append((0, 0, {'bus_nummer': nr}))
+                    existing_nrs.add(nr)
+                nr += 1
+
+        # (5,) wist de relatie eerst, daarna voegen onze commando's de juiste
+        # set weer toe. Dit zorgt dat te-veel regels écht verdwijnen uit het UI.
+        self.bus_ids = [(5, 0, 0)] + commands
+
+    def _sync_bus_lines(self):
+        """Server-side helper voor write/action — gebruikt ORM-acties direct
+        i.p.v. onchange-commands, zodat dit ook werkt bij batch-write of in
+        submit-flow."""
+        self.ensure_one()
+        target = int(self.aantal_bussen or '1')
+        existing = self.bus_ids.sorted(key=lambda b: b.bus_nummer)
+        current = len(existing)
+        if current > target:
+            existing[target:].unlink()
+        elif current < target:
+            existing_nrs = set(existing.mapped('bus_nummer'))
+            nr = 1
+            added = 0
+            Bus = self.env['activiteiten.bus']
+            while added < target - current:
+                if nr not in existing_nrs:
+                    Bus.create({
+                        'activiteit_id': self.id,
+                        'bus_nummer': nr,
+                    })
+                    existing_nrs.add(nr)
+                    added += 1
+                nr += 1
     document_ids = fields.Many2many(
         'ir.attachment', string='Documenten',
+    )
+    document_notitie = fields.Html(
+        string='Notitie bij documenten',
+        sanitize=True,
+        help='Vrije tekst — bv. een korte uitleg, of een link naar een '
+             'Google Drive document of spreadsheet.',
     )
     s_code_name = fields.Char(string='S-Code')
     s_code_price = fields.Monetary(
@@ -673,6 +755,10 @@ class Activiteiten(models.Model):
         for record in self:
             if not record.name or record.name == 'New':
                 record.sudo().name = self._next_reference()
+        # Sync bus_ids count met aantal_bussen wanneer dat aantal verandert.
+        if 'aantal_bussen' in vals:
+            for record in self:
+                record._sync_bus_lines()
         return res
 
     def _next_reference(self):
@@ -727,6 +813,10 @@ class Activiteiten(models.Model):
             # Snapshot students and teachers at submission time
             record._create_snapshot()
             if record.bus_nodig:
+                # Zorg dat er bus-regels klaar staan voor aankoop, één per
+                # bus volgens aantal_bussen (default 1). Aankoop kan dan
+                # meteen prijs per bus invullen.
+                record._sync_bus_lines()
                 record.state = 'bus_check'
             else:
                 record.state = 'pending_approval'
@@ -878,7 +968,10 @@ class Activiteiten(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        if 'bus_price' in vals:
+        # bus_price is een computed-stored field op basis van bus_ids.prijs.
+        # Wijzigingen aan bus_price komen dus binnen via bus_ids of via een
+        # directe write hier — in beide gevallen herberekenen.
+        if 'bus_price' in vals or 'bus_ids' in vals:
             self._recalculate_auto_lines()
         return res
 
@@ -910,7 +1003,15 @@ class Activiteiten(models.Model):
 
     def action_delete(self):
         self.unlink()
-        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+        # Generieke client-action die terugkeert naar de vorige controller
+        # zodat filters/sortering/scroll behouden blijven (zie myschool_core).
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'myschool_back_to_previous',
+            'params': {
+                'fallback_action': 'activiteiten.action_activiteiten_main',
+            },
+        }
 
     def _schedule_owner_approved_activity(self):
         activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)

@@ -166,14 +166,30 @@
                             <!-- Bus section -->
                             <separator string="Bus"
                                        invisible="not bus_nodig or state in ('draft', 'form_invullen')"/>
-                            <field name="bus_price"
-                                   placeholder="bv. 250.00"
-                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
-                                   readonly="state != 'bus_check'"
-                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
                             <field name="aantal_bussen"
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen')"
-                                   readonly="state != 'bus_check'"
+                                   readonly="state not in ('bus_check', 'pending_approval')"
+                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
+                            <!-- Prijs per bus — verschillende bussen kunnen
+                                 verschillende prijzen hebben. Aankoop mag nog
+                                 bijwerken zolang directie nog niet goedgekeurd
+                                 heeft (bus_check + pending_approval). -->
+                            <label for="bus_ids" string="Prijs per bus"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
+                            <field name="bus_ids" nolabel="1"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   readonly="state not in ('bus_check', 'pending_approval')"
+                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin">
+                                <list editable="bottom" create="0" delete="0">
+                                    <field name="bus_nummer" string="Bus #" readonly="1"/>
+                                    <field name="prijs"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                </list>
+                            </field>
+                            <field name="bus_price" string="Totale busprijs"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   readonly="1"
                                    groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
                             <field name="bus_available"
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen', 'bus_check')"
@@ -251,7 +267,7 @@
                 <field name="can_manage_invites" invisible="1"/>
                 <field name="state" invisible="1"/>
                 <header>
-                    <field name="wizard_step" widget="statusbar" options="{'clickable': '0'}"/>
+                    <field name="wizard_step" widget="statusbar" options="{'clickable': False}"/>
                 </header>
                 <sheet>
                     <!-- Stap 1: Begeleiders -->
@@ -273,13 +289,20 @@
                     </group>
                     <!-- Stap 3: Kosten -->
                     <div invisible="wizard_step != '3'">
+                        <p class="text-muted mb-2">
+                            <i class="fa fa-info-circle me-1"/>
+                            Vul telkens het <strong>totaalbedrag</strong> in voor de volledige
+                            activiteit, niet per leerling. Bijvoorbeeld: een busrit van € 250
+                            in totaal → vul 250 in. De kost-per-leerling wordt onderaan
+                            automatisch berekend.
+                        </p>
                         <div class="row">
                             <div class="col-6">
                                 <h4 class="mt-4 mb-3">Vaste kosten</h4>
                                 <field name="kosten_vast_ids"
                                        context="{'default_kosten_type': 'vast'}"
                                        nolabel="1"
-                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging')">
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval', 's_code', 'vervanging')">
                                     <list editable="bottom" create="1" delete="1">
                                         <field name="is_auto" column_invisible="1"/>
                                         <field name="kosten_type" column_invisible="1"/>
@@ -294,7 +317,7 @@
                                 <field name="kosten_variabel_ids"
                                        context="{'default_kosten_type': 'variabel'}"
                                        nolabel="1"
-                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 's_code', 'vervanging', 'done')">
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval', 's_code', 'vervanging', 'done')">
                                     <list editable="bottom" create="1" delete="1">
                                         <field name="is_auto" column_invisible="1"/>
                                         <field name="kosten_type" column_invisible="1"/>
@@ -313,9 +336,20 @@
                         </group>
                     </div>
                     <!-- Stap 4: Documenten -->
-                    <group invisible="wizard_step != '4'">
-                        <field name="document_ids" widget="many2many_binary" nolabel="1"/>
-                    </group>
+                    <div invisible="wizard_step != '4'">
+                        <p class="text-muted mb-2">
+                            <i class="fa fa-info-circle me-1"/>
+                            Voeg bestanden toe (PDF, Word, Excel, ...) en/of een notitie
+                            met bv. een link naar een Google Drive document of spreadsheet.
+                        </p>
+                        <separator string="Bestanden"/>
+                        <field name="document_ids" widget="many2many_binary" nolabel="1"
+                               readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'pending_approval', 'bus_check', 'approved', 's_code', 'vervanging', 'done')"/>
+                        <separator string="Notitie / links" class="mt-3"/>
+                        <field name="document_notitie" nolabel="1"
+                               placeholder="bv. Programma op de Drive: https://drive.google.com/..."
+                               readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'pending_approval', 'bus_check', 'approved', 's_code', 'vervanging', 'done')"/>
+                    </div>
                 </sheet>
                 <footer>
                     <button name="action_wizard_prev"
@@ -399,7 +433,7 @@
                         domain="[('activity_type', '=', 'buitenschools')]"/>
                 <separator/>
                 <filter string="Te beoordelen" name="to_approve"
-                        domain="[('state', '=', 'pending_approval')]"/>
+                        domain="[('state', 'in', ('bus_check', 'pending_approval'))]"/>
                 <filter string="Bus controle" name="bus_check"
                         domain="[('state', '=', 'bus_check')]"/>
                 <filter string="S-Code openstaand" name="s_code_pending"
@@ -407,7 +441,7 @@
                 <filter string="Vervanging openstaand" name="replacement_pending"
                         domain="[('state', '=', 'vervanging')]"/>
                 <separator/>
-                <filter string="Concept" name="state_draft"
+                <filter string="Concepten" name="state_draft"
                         domain="[('state', 'in', ('draft', 'form_invullen'))]"/>
                 <filter string="Bus geweigerd" name="state_bus_refused"
                         domain="[('state', '=', 'bus_refused')]"/>

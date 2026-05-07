@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_add_date_wizard_form" model="ir.ui.view">
+        <field name="name">professionalisering.add.date.wizard.form</field>
+        <field name="model">professionalisering.add.date.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Datum toevoegen">
+                <field name="record_id" invisible="1"/>
+                <group>
+                    <field name="date"/>
+                    <field name="cost" placeholder="Optioneel"/>
+                </group>
+                <footer>
+                    <button name="action_confirm"
+                            string="Toevoegen"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Annuleren" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

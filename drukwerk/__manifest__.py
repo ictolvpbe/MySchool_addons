@@ -23,6 +23,7 @@
         'wizard/student_select_wizard_views.xml',
         'wizard/print_confirm_wizard_views.xml',
         'wizard/extra_klas_wizard_views.xml',
+        'wizard/count_e_export_wizard_views.xml',
         'views/drukwerk_menu.xml',
     ],
     'assets': {

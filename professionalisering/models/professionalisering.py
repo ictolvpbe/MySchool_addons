@@ -384,8 +384,11 @@ class ProfessionaliseringRecord(models.Model):
         string='Afstand (km)',
         compute='_compute_afstand_km',
         store=True,
+        readonly=False,
         digits=(10, 1),
-        help='Wegafstand heen en terug tussen de school en de locatie (via OSRM).',
+        help='Wegafstand heen en terug tussen de school en de locatie. '
+             'Wordt automatisch berekend via OSRM, maar je mag handmatig '
+             'overschrijven indien de berekende afstand niet klopt.',
     )
     link = fields.Char(
         string='Link',
@@ -417,10 +420,22 @@ class ProfessionaliseringRecord(models.Model):
         help='Wat zou deze opleiding moeten opleveren voor de klas / leerlingen?',
     )
 
-    # Carpool — voor wanneer collega's samen naar de opleiding rijden
+    # Vervoersmiddel — hoe ga je naar de opleiding
+    vervoersmiddel = fields.Selection([
+        ('auto_alleen', 'Met de wagen (alleen)'),
+        ('auto_carpool', 'Met de wagen (carpool)'),
+        ('trein', 'Trein'),
+        ('fiets', 'Fiets'),
+        ('ov', 'Openbaar vervoer (bus/tram/metro)'),
+        ('te_voet', 'Te voet'),
+        ('andere', 'Andere'),
+    ], string='Vervoersmiddel',
+        help='Hoe ga je naar de opleiding?')
+    # Legacy carpool Boolean — blijft bestaan voor backwards-compat. Wordt door
+    # @api.onchange gesynchroniseerd met vervoersmiddel.
     carpool = fields.Boolean(
         string='Carpool',
-        help='Aanvinken als je samen met collega(s) rijdt naar de opleiding.',
+        help='True als gebruiker carpoolt naar de opleiding.',
     )
     carpool_employee_ids = fields.Many2many(
         'hr.employee',
@@ -429,6 +444,12 @@ class ProfessionaliseringRecord(models.Model):
         string='Carpool met',
         help='Collega(s) waarmee je samen rijdt.',
     )
+
+    @api.onchange('vervoersmiddel')
+    def _onchange_vervoersmiddel(self):
+        self.carpool = self.vervoersmiddel == 'auto_carpool'
+        if self.vervoersmiddel != 'auto_carpool':
+            self.carpool_employee_ids = [(5,)]
     employee_id = fields.Many2one(
         'hr.employee',
         string='Medewerker',
@@ -476,6 +497,16 @@ class ProfessionaliseringRecord(models.Model):
         ('namiddag', 'Namiddag'),
         ('meerdere_dagen', 'Meerdere dagen'),
     ], string='Duur', default='hele_dag', required=True)
+    start_uur = fields.Float(
+        string='Van',
+        help='Startuur van de opleiding (bv. 09:00). Wordt gebruikt voor de '
+             'planning van studie en vervangingen.',
+    )
+    eind_uur = fields.Float(
+        string='Tot',
+        help='Einduur van de opleiding (bv. 12:30). Wordt gebruikt voor de '
+             'planning van studie en vervangingen.',
+    )
     verschillende_dagen = fields.Boolean(
         string='Niet-aaneensluitende dagen',
         help='Vink aan voor losstaande dagen, bv. 4 woensdagen verspreid over enkele weken.',
@@ -522,7 +553,7 @@ class ProfessionaliseringRecord(models.Model):
         ('fill_in_form_teamleren', 'Goed te keuren'),
         ('bevestiging', 'Goedgekeurd'),
         ('bewijs', 'Bewijs'),
-        ('weigering', 'Geweigerd'),
+        ('weigering', 'Afgekeurd'),
         ('done', 'Afgerond'),
     ], string='Status', default='selection_of_form', tracking=True)
     rejection_reason = fields.Text(string='Reden voor afkeuring')
@@ -690,11 +721,10 @@ class ProfessionaliseringRecord(models.Model):
     def _compute_dates_display(self):
         for record in self:
             if record.verschillende_dagen:
+                # Bij niet-aaneensluitende dagen tonen we enkel de losse
+                # datums uit date_line_ids — start_date is in dit geval geen
+                # zelfstandige opleidingsdatum, alleen een vlag voor de range.
                 all_dates = []
-                if record.start_date:
-                    all_dates.append('%s &nbsp;-&nbsp; €%.2f' % (
-                        record.start_date.strftime('%d %b %Y'), record.cost or 0,
-                    ))
                 for line in record.date_line_ids.sorted('date'):
                     if line.date:
                         all_dates.append('%s &nbsp;-&nbsp; €%.2f' % (
@@ -774,7 +804,9 @@ class ProfessionaliseringRecord(models.Model):
 
     def action_open_details(self):
         self.ensure_one()
-        self.wizard_step = '1'
+        # Sla stap 1 (Datums) over wanneer verschillende_dagen niet aanstaat —
+        # die tab is dan toch niet van toepassing.
+        self.wizard_step = '1' if self.verschillende_dagen else '2'
         return self._get_details_action()
 
     def action_wizard_next(self):
@@ -802,10 +834,13 @@ class ProfessionaliseringRecord(models.Model):
         Tijdens drafting hoeven ze niet ingevuld te zijn — pas bij indienen
         wordt alles gecontroleerd."""
         self.ensure_one()
+        # Zorg dat eventueel openstaande UI-wijzigingen (bv. motivatie-velden uit
+        # de wizard-dialog) écht naar DB geschreven zijn voor we ze valideren.
+        self.flush_recordset()
         missing = []
-        if not self.titel:
+        if not (self.titel or '').strip():
             missing.append("Titel opleiding")
-        if self.vak_id.is_other and not self.vak_andere:
+        if self.vak_id.is_other and not (self.vak_andere or '').strip():
             missing.append("Vermelding vak")
         # Adres alleen verplicht voor nascholing of teamleren met "Op locatie"
         needs_address = (
@@ -827,14 +862,19 @@ class ProfessionaliseringRecord(models.Model):
                     missing.append("Einddatum")
         # Motivatie: minstens één van de 4 gestructureerde velden invullen
         # (legacy `description` blijft als fallback voor oude records).
-        if not (
-            self.motivatie_aanleiding
-            or self.motivatie_doelstelling
-            or self.motivatie_toepassing
-            or self.motivatie_effect
-            or self.description
-        ):
-            missing.append("Motivatie (minstens één veld)")
+        # Strip whitespace zodat enkel-spaties niet meetellen.
+        motivatie_values = [
+            (self.motivatie_aanleiding or '').strip(),
+            (self.motivatie_doelstelling or '').strip(),
+            (self.motivatie_toepassing or '').strip(),
+            (self.motivatie_effect or '').strip(),
+            (self.description or '').strip(),
+        ]
+        if not any(motivatie_values):
+            missing.append(
+                "Motivatie — vul minstens één van de 4 velden in "
+                "(Aanleiding, Doelstelling, Toepassing, Verwacht effect)"
+            )
         if missing:
             raise UserError(
                 "De volgende velden moeten ingevuld zijn voor het indienen:\n• "
@@ -995,9 +1035,15 @@ class ProfessionaliseringRecord(models.Model):
         for record in self:
             for line in record.date_line_ids:
                 if record.start_date and line.date < record.start_date:
-                    raise ValidationError("Elke datum moet op of na de startdatum liggen.")
+                    raise ValidationError(
+                        f"Datum {line.date.strftime('%d/%m/%Y')} ligt vóór de startdatum "
+                        f"({record.start_date.strftime('%d/%m/%Y')}). Verwijder deze datum of pas de startdatum aan."
+                    )
                 if line.date < today:
-                    raise ValidationError("Elke datum moet vandaag of in de toekomst liggen.")
+                    raise ValidationError(
+                        f"Datum {line.date.strftime('%d/%m/%Y')} ligt in het verleden. "
+                        f"Elke datum moet vandaag of in de toekomst liggen."
+                    )
 
     @api.constrains('start_date', 'end_date', 'verschillende_dagen')
     def _check_end_date(self):
@@ -1008,7 +1054,47 @@ class ProfessionaliseringRecord(models.Model):
 
     def action_delete(self):
         self.unlink()
-        return {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+        # Roep de generieke JS-client-action op die de gebruiker terugzet op
+        # de vorige controller in de breadcrumb-stack. Op die manier blijven
+        # alle frontend-filters (ook handmatig aangezette zoals "Concept"),
+        # sortering, scrollpositie en groeperingen behouden.
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'myschool_back_to_previous',
+            'params': {
+                'fallback_action': 'professionalisering.action_professionalisering_main',
+            },
+        }
+
+    def unlink(self):
+        # Bescherming: niet-admin gebruikers mogen enkel hun eigen, nog niet
+        # ingediende aanvragen verwijderen. Admin/directie kunnen altijd.
+        is_admin = self.env.user.has_group('professionalisering.group_professionalisering_admin')
+        if not is_admin:
+            for record in self:
+                if record.state != 'selection_of_form':
+                    raise UserError(
+                        "Een ingediende of goedgekeurde aanvraag kan niet meer verwijderd worden. "
+                        "Vraag een beheerder als dit toch nodig is."
+                    )
+                if record.employee_id and record.employee_id.user_id.id != self.env.uid:
+                    raise UserError("Je kan enkel je eigen aanvragen verwijderen.")
+        return super().unlink()
+
+    def action_open_add_date_wizard(self):
+        """Open een eenvoudige datum-dialog om snel een losse datum toe te voegen."""
+        self.ensure_one()
+        wiz = self.env['professionalisering.add.date.wizard'].create({
+            'record_id': self.id,
+        })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Datum toevoegen',
+            'res_model': 'professionalisering.add.date.wizard',
+            'res_id': wiz.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
 
     def _send_notification(self, template_xmlid):
         """Verstuur een mail-template naar de medewerker. Defensief:
@@ -1155,6 +1241,77 @@ class ProfessionaliseringDateLine(models.Model):
     professionalisering_titel = fields.Char(related='professionalisering_id.titel', string='Professionalisering')
     date = fields.Date(string='Datum', required=True)
     cost = fields.Float(string='Kost (€)')
+
+    @api.constrains('date', 'professionalisering_id')
+    def _check_unique_date_per_record(self):
+        for line in self:
+            if not line.date or not line.professionalisering_id:
+                continue
+            duplicates = self.search_count([
+                ('professionalisering_id', '=', line.professionalisering_id.id),
+                ('date', '=', line.date),
+                ('id', '!=', line.id),
+            ])
+            if duplicates:
+                raise ValidationError(
+                    f"Datum {line.date.strftime('%d/%m/%Y')} bestaat al voor deze aanvraag."
+                )
+
+    @api.onchange('date')
+    def _onchange_date_validate(self):
+        """Client-side check zodra de gebruiker een datum kiest in de editable
+        list. Bij ongeldige datum: leeg het veld en toon een waarschuwing zodat
+        de gebruiker niet pas bij submit een foutmelding krijgt."""
+        if not self.date:
+            return
+        chosen = self.date
+        today = fields.Date.context_today(self)
+        # 1. Datum mag niet in het verleden liggen
+        if chosen < today:
+            self.date = False
+            return {
+                'warning': {
+                    'title': "Datum in het verleden",
+                    'message': (
+                        f"De datum {chosen.strftime('%d/%m/%Y')} ligt in het verleden. "
+                        f"Kies een datum vanaf vandaag ({today.strftime('%d/%m/%Y')})."
+                    ),
+                }
+            }
+        # 2. Datum mag niet eerder dan de startdatum van de aanvraag liggen
+        parent = self.professionalisering_id
+        if parent and parent.start_date and chosen < parent.start_date:
+            self.date = False
+            return {
+                'warning': {
+                    'title': "Datum vóór startdatum",
+                    'message': (
+                        f"De datum {chosen.strftime('%d/%m/%Y')} ligt vóór de "
+                        f"startdatum ({parent.start_date.strftime('%d/%m/%Y')}). "
+                        f"Kies een datum op of na de startdatum."
+                    ),
+                }
+            }
+        # 3. Geen duplicaat van een bestaande sibling-datum
+        if parent:
+            for sibling in parent.date_line_ids:
+                if sibling == self:
+                    continue
+                if sibling.date == chosen:
+                    self.date = False
+                    return {
+                        'warning': {
+                            'title': "Datum bestaat al",
+                            'message': (
+                                f"De datum {chosen.strftime('%d/%m/%Y')} "
+                                f"is al toegevoegd aan deze aanvraag. Kies een andere datum."
+                            ),
+                        }
+                    }
+
+    def action_unlink_self(self):
+        """Verwijder deze datumregel."""
+        self.unlink()
 
 
 class ProfessionaliseringAddressPicker(models.TransientModel):

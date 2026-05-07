@@ -3,6 +3,14 @@
 // andere lijstweergaven onaangetast blijven. De headertekst zit in
 // <span class="text-truncate"> binnen de <th>; daar moeten we Bootstrap's
 // truncate-stijl breken.
+// Float-time velden Van/Tot voor opleidingsuren — standaard input is te smal
+// voor "00:00", dus minimum-breedte forceren.
+.o_field_widget[name="start_uur"] input,
+.o_field_widget[name="eind_uur"] input {
+    min-width: 80px;
+    text-align: center;
+}
+
 .o_list_table thead th[data-name="create_date"] .text-truncate,
 .o_list_table thead th[data-name="start_date"] .text-truncate {
     white-space: normal !important;
@@ -76,6 +84,10 @@
 .o_professionalisering_wizard_form {
     .o_form_sheet {
         max-width: none;
+        // Wat horizontale ademruimte zodat velden + textareas niet tegen de
+        // modal-rand aan zitten.
+        padding-left: 1rem;
+        padding-right: 1rem;
     }
     // o2m-veld + interne tabel laten zich uitstrekken over de volledige breedte
     .o_field_one2many,
@@ -87,7 +99,29 @@
         min-height: 250px;
     }
     .o_field_text textarea {
-        min-height: 200px;
+        min-height: 90px;
         width: 100%;
+        // Padding zodat tekst en placeholder niet tegen de rand kleven.
+        padding: 0.5rem 0.75rem;
+        line-height: 1.4;
+    }
+    // Kleine ademruimte tussen het label "Aanleiding/Doelstelling/..." en
+    // het tekstveld eronder.
+    .o_field_text {
+        padding-right: 0.5rem;
+    }
+
+    // Maak de standaard "verwijder regel"-X altijd zichtbaar en prominent
+    // in date_line_ids zodat de leerkracht een verkeerde datum makkelijk
+    // kan verwijderen i.p.v. enkel op hover.
+    .o_field_one2many .o_list_record_remove {
+        opacity: 1 !important;
+        visibility: visible !important;
+        color: var(--bs-danger, #dc3545) !important;
+        font-size: 1.1rem;
+    }
+    .o_field_one2many .o_list_record_remove:hover {
+        color: #a02530 !important;
+        transform: scale(1.15);
     }
 }

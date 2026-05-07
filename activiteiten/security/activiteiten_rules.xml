@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <!-- Personeelslid: own records, filtered by active company school -->
+    <!-- Personeelslid: own records + records waar de leerkracht is opgegeven of uitgenodigd, filtered by active company school -->
     <record id="rule_activiteiten_personeelslid" model="ir.rule">
         <field name="name">Activiteiten: personeelslid ziet eigen aanvragen van actieve school</field>
         <field name="model_id" ref="model_activiteiten_record"/>
-        <field name="domain_force">['&amp;', ('create_uid', '=', user.id), '|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
+        <field name="domain_force">['&amp;', '|', '|', ('create_uid', '=', user.id), ('leerkracht_ids.odoo_user_id', '=', user.id), ('invite_ids.person_id.odoo_user_id', '=', user.id), '|', ('school_company_id', 'child_of', [company_id]), ('school_company_id', '=', False)]</field>
         <field name="groups" eval="[(4, ref('group_activiteiten_personeelslid'))]"/>
     </record>
 

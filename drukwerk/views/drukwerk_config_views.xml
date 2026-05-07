@@ -14,6 +14,11 @@
                             <field name="prijs_a3"/>
                             <field name="prijs_dik_papier"/>
                         </group>
+                        <group string="Count-e export">
+                            <field name="count_e_artikel"/>
+                            <field name="count_e_artikel_kleur"/>
+                            <field name="count_e_analytisch" placeholder="bv. KOPIES-2026"/>
+                        </group>
                     </group>
                 </sheet>
             </form>
