@@ -1052,6 +1052,46 @@ class ProfessionaliseringRecord(models.Model):
                 if record.end_date < record.start_date:
                     raise ValidationError("De einddatum moet op of na de startdatum liggen.")
 
+    @api.constrains('duur', 'start_uur', 'eind_uur')
+    def _check_uren_passen_bij_duur(self):
+        """Bij keuze 'voormiddag' moet het start- en einduur in de voormiddag
+        liggen (< 13:00); bij 'namiddag' moeten ze ná 12:00 liggen. Voorkomt
+        bv. dat iemand 'voormiddag' selecteert met starttijd 13:00."""
+        def _fmt(uur):
+            # Float-time naar HH:MM string voor leesbare error
+            h = int(uur)
+            m = int(round((uur - h) * 60))
+            return f'{h:02d}:{m:02d}'
+
+        for record in self:
+            if record.duur == 'voormiddag':
+                if record.start_uur and record.start_uur >= 13.0:
+                    raise ValidationError(
+                        f"Bij keuze 'Voormiddag' moet het startuur vóór 13:00 "
+                        f"liggen. Je gaf {_fmt(record.start_uur)} op — kies "
+                        f"'Namiddag' of 'Hele dag' als de opleiding na "
+                        f"de middag begint."
+                    )
+                if record.eind_uur and record.eind_uur > 13.0:
+                    raise ValidationError(
+                        f"Bij keuze 'Voormiddag' moet het einduur vóór of "
+                        f"op 13:00 liggen. Je gaf {_fmt(record.eind_uur)} op."
+                    )
+            elif record.duur == 'namiddag':
+                if record.start_uur and record.start_uur < 12.0:
+                    raise ValidationError(
+                        f"Bij keuze 'Namiddag' moet het startuur vanaf 12:00 "
+                        f"liggen. Je gaf {_fmt(record.start_uur)} op — kies "
+                        f"'Voormiddag' of 'Hele dag' als de opleiding 's "
+                        f"morgens begint."
+                    )
+            # Sanity-check: einduur na startuur (zonder 0 als 'leeg' te tellen)
+            if record.start_uur and record.eind_uur and record.eind_uur <= record.start_uur:
+                raise ValidationError(
+                    f"Het einduur ({_fmt(record.eind_uur)}) moet na het "
+                    f"startuur ({_fmt(record.start_uur)}) liggen."
+                )
+
     def action_delete(self):
         self.unlink()
         # Roep de generieke JS-client-action op die de gebruiker terugzet op
