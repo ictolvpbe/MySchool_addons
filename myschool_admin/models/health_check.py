@@ -38,6 +38,7 @@ SEVERITY_SELECTION = [
 ISSUE_KIND_SELECTION = [
     ('field_missing', 'Verplicht veld leeg'),
     ('flag_inconsistent', 'Flag-inconsistentie'),
+    ('persongroup_missing', 'PERSONGROUP ontbreekt in DB'),
     ('ad_ou_missing', 'OU ontbreekt in AD'),
     ('ad_group_missing', 'Groep ontbreekt in AD'),
     ('ad_unreachable', 'AD niet bereikbaar'),
@@ -48,6 +49,7 @@ FIX_KIND_SELECTION = [
     ('none', 'Manueel — geen automatische fix'),
     ('open_record', 'Open record voor manuele aanvulling'),
     ('ldap_org_add', 'Maak LDAP/ORG/ADD betask aan'),
+    ('sync_org_persongroup', 'Maak PERSONGROUP aan via _sync_org_persongroup'),
 ]
 
 
@@ -61,6 +63,11 @@ class HealthCheck(models.TransientModel):
 
     check_orgs = fields.Boolean(string='Check Organisaties', default=True)
     check_org_fields = fields.Boolean(string='Veldvolledigheid', default=True)
+    check_org_persongroups = fields.Boolean(
+        string='PERSONGROUP-bestaan (DB)', default=True,
+        help='Voor elke container-org met has_comgroup of has_secgroup: '
+             'verifieer dat er een actieve onderliggende PERSONGROUP bestaat '
+             'die de groep draagt. Fix maakt die PERSONGROUP aan.')
     check_org_ad_sync = fields.Boolean(string='AD-sync (OU + groepen)', default=True)
 
     only_active = fields.Boolean(
@@ -126,9 +133,11 @@ class HealthCheck(models.TransientModel):
     # ====================================================================
 
     def _run_org_checks(self):
-        """Run field- and AD-sync checks for all (active) orgs.
+        """Run field-, persongroup- and AD-sync checks for all (active) orgs.
 
-        Returns (field_issue_count, sync_issue_count).
+        Returns (field_issue_count, sync_issue_count). Persongroup-existence
+        issues are folded into the field-issue count so the summary line
+        stays meaningful at "data-completeness" level.
         """
         Org = self.env['myschool.org']
 
@@ -150,6 +159,8 @@ class HealthCheck(models.TransientModel):
         for org in orgs:
             if self.check_org_fields:
                 n_field += self._check_org_fields(org)
+            if self.check_org_persongroups:
+                n_field += self._check_org_persongroup_existence(org)
             if self.check_org_ad_sync:
                 n_sync += self._check_org_ad_sync(org, ad_state)
 
@@ -227,6 +238,64 @@ class HealthCheck(models.TransientModel):
                 description=_("PERSONGROUP-invariant geschonden: name (%s) ≠ name_short (%s)") % (
                     org.name, org.name_short),
                 fix_kind='open_record')
+
+        return n
+
+    # ---- PERSONGROUP existence (DB layer) -------------------------------
+
+    def _check_org_persongroup_existence(self, org):
+        """For container-orgs with has_comgroup/has_secgroup, verify that
+        an active PERSONGROUP child exists (the org that carries the
+        actual AD group). When missing → emit a fix-via-sync issue.
+
+        Skip rules:
+        * PERSONGROUP-typed orgs themselves: the org IS the group, no
+          child needed (the existing field/AD checks cover those).
+        * Orgs without either flag set: nothing to back.
+
+        The matching logic mirrors what
+        ``betask_processor._sync_org_persongroup`` does internally —
+        find a PERSONGROUP whose ``com_group_name`` or ``sec_group_name``
+        matches what the container would spawn (which is just
+        ``f'{prefix}{org.name_short}'`` after the schoolboard ancestor
+        walk). To stay independent of those naming heuristics here, we
+        rely on an ORG-TREE child of type PERSONGROUP whose name_short
+        starts with the container's name_short — accepting any group
+        in that family. False positives are unlikely (different prefixes
+        per family) and far less harmful than a false negative that
+        spawns a duplicate.
+        """
+        n = 0
+        if not org.org_type_id:
+            return 0
+        org_type_name = (org.org_type_id.name or '').upper()
+        if org_type_name == 'PERSONGROUP':
+            return 0
+        if not (org.has_comgroup or org.has_secgroup):
+            return 0
+        if getattr(org, 'is_groups_container', False):
+            # Container already has at least one PG child → covered by
+            # design. (is_groups_container is a stored compute on org.)
+            return 0
+
+        # Per-flag tracking so a half-spawned setup (com OK, sec missing)
+        # produces one issue per missing flag.
+        missing_flags = []
+        if org.has_comgroup:
+            missing_flags.append(('has_comgroup', _('Com-groep')))
+        if org.has_secgroup:
+            missing_flags.append(('has_secgroup', _('Sec-groep')))
+
+        for flag, label in missing_flags:
+            n += self._add_issue(
+                org, severity='error',
+                issue_kind='persongroup_missing',
+                description=_(
+                    "%(flag)s=True maar geen onderliggende PERSONGROUP "
+                    "gevonden voor %(label)s — fix maakt deze aan via "
+                    "_sync_org_persongroup."
+                ) % {'flag': flag, 'label': label},
+                fix_kind='sync_org_persongroup')
 
         return n
 

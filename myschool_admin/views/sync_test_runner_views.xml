@@ -169,6 +169,7 @@
                                    invisible="mode != 'employees'"
                                    required="mode == 'employees'"/>
                             <field name="skip_ldap_processing"/>
+                            <field name="skip_cloud_processing"/>
                         </group>
                         <group>
                             <field name="last_run_at" readonly="1"/>
