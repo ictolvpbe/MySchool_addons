@@ -166,14 +166,30 @@
                             <!-- Bus section -->
                             <separator string="Bus"
                                        invisible="not bus_nodig or state in ('draft', 'form_invullen')"/>
-                            <field name="bus_price"
-                                   placeholder="bv. 250.00"
-                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
-                                   readonly="state != 'bus_check'"
-                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
                             <field name="aantal_bussen"
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen')"
-                                   readonly="state != 'bus_check'"
+                                   readonly="state not in ('bus_check', 'pending_approval')"
+                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
+                            <!-- Prijs per bus — verschillende bussen kunnen
+                                 verschillende prijzen hebben. Aankoop mag nog
+                                 bijwerken zolang directie nog niet goedgekeurd
+                                 heeft (bus_check + pending_approval). -->
+                            <label for="bus_ids" string="Prijs per bus"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
+                            <field name="bus_ids" nolabel="1"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   readonly="state not in ('bus_check', 'pending_approval')"
+                                   groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin">
+                                <list editable="bottom" create="0" delete="0">
+                                    <field name="bus_nummer" string="Bus #" readonly="1"/>
+                                    <field name="prijs"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                </list>
+                            </field>
+                            <field name="bus_price" string="Totale busprijs"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   readonly="1"
                                    groups="activiteiten.group_activiteiten_aankoop,activiteiten.group_activiteiten_admin"/>
                             <field name="bus_available"
                                    invisible="not bus_nodig or state in ('draft', 'form_invullen', 'bus_check')"

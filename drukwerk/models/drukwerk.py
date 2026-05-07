@@ -153,13 +153,15 @@ class DrukwerkRecord(models.Model):
         ('form_invullen', 'Concept'),
         ('afdrukken', 'Af te drukken'),
         ('done', 'Afgedrukt'),
-        ('gestockeerd', 'Gestockeerd'),
+        ('gestockeerd', 'Gearchiveerd'),
     ], string='Status', default='draft', required=True, tracking=True)
     done_date = fields.Datetime(
         string='Datum afgerond',
         readonly=True,
         help='Tijdstip waarop de aanvraag de status Afgerond bereikte. '
-             'Wordt gebruikt om automatisch te stockeren na X dagen.',
+             'Wordt gebruikt om afgeronde records automatisch te archiveren '
+             'na X dagen, zodat boekhouding op het einde van het jaar weet '
+             'welke aanvragen netjes afgesloten zijn.',
     )
     is_owner = fields.Boolean(compute='_compute_is_owner')
     can_edit_content = fields.Boolean(
@@ -590,18 +592,29 @@ class DrukwerkRecord(models.Model):
         self._send_notification('done')
 
     def action_stockeren(self):
-        """Move done records into stock (gestockeerd)."""
+        """Archiveer afgeronde records — bedoeld als jaarlijkse opschoning
+        zodat boekhouding weet welke aanvragen netjes afgesloten zijn.
+        Enkel boekhouding/admin mag dit triggeren."""
+        if not (
+            self.env.user.has_group('drukwerk.group_drukwerk_boekhouding')
+            or self.env.user.has_group('drukwerk.group_drukwerk_admin')
+        ):
+            raise UserError(
+                "Alleen boekhouding of beheer mag drukwerk archiveren."
+            )
         for record in self:
             if record.state != 'done':
                 raise UserError(
-                    "Alleen afgeronde aanvragen kunnen gestockeerd worden."
+                    "Alleen afgeronde aanvragen kunnen gearchiveerd worden."
                 )
             record.state = 'gestockeerd'
 
     @api.model
     def _cron_auto_stock(self):
-        """Automatically move records from 'done' to 'gestockeerd' once their
-        done_date is older than the configured threshold (default 30 days)."""
+        """Automatische jaarlijkse opschoning: zet afgeronde records (state
+        'done') na X dagen op 'gestockeerd' (gearchiveerd) zodat de actieve
+        lijst overzichtelijk blijft. Default 30 dagen, configureerbaar via
+        ir.config_parameter `drukwerk.auto_stock_after_days`."""
         days = int(self.env['ir.config_parameter'].sudo().get_param(
             'drukwerk.auto_stock_after_days', '30'))
         cutoff = fields.Datetime.now() - timedelta(days=days)
@@ -613,7 +626,7 @@ class DrukwerkRecord(models.Model):
         if records:
             records.write({'state': 'gestockeerd'})
             _logger.info(
-                "Drukwerk auto-stock: %d records moved to gestockeerd "
+                "Drukwerk auto-archive: %d records moved to gestockeerd "
                 "(threshold %d days).", len(records), days)
 
     # --- Print actions ---

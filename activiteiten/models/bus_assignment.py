@@ -15,6 +15,14 @@ class ActiviteitenBus(models.Model):
     )
     bus_nummer = fields.Integer(string='Busnummer', required=True, default=1)
     plaatsen = fields.Integer(string='Plaatsen')
+    prijs = fields.Monetary(
+        string='Prijs', currency_field='currency_id',
+        help='Prijs voor deze specifieke bus. Verschillende bussen kunnen '
+             'verschillende prijzen hebben (bv. ander type bus, andere route).',
+    )
+    currency_id = fields.Many2one(
+        related='activiteit_id.currency_id', store=False,
+    )
 
     # Available (not yet taken by other buses on same activity)
     beschikbare_klas_ids = fields.Many2many(
@@ -137,6 +145,14 @@ class ActiviteitenBus(models.Model):
                 ])
             else:
                 rec.student_count = 0
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'prijs' in vals:
+            # Trigger herberekening van auto-kostenlijnen (bus + verzekering)
+            # zodat de Kosten-tab de nieuwe totale busprijs reflecteert.
+            self.mapped('activiteit_id')._recalculate_auto_lines()
+        return res
 
     def action_export_busverdeling(self):
         """Export busverdeling as XLSX with a sheet per class."""

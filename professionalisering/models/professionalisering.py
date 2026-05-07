@@ -721,11 +721,10 @@ class ProfessionaliseringRecord(models.Model):
     def _compute_dates_display(self):
         for record in self:
             if record.verschillende_dagen:
+                # Bij niet-aaneensluitende dagen tonen we enkel de losse
+                # datums uit date_line_ids — start_date is in dit geval geen
+                # zelfstandige opleidingsdatum, alleen een vlag voor de range.
                 all_dates = []
-                if record.start_date:
-                    all_dates.append('%s &nbsp;-&nbsp; €%.2f' % (
-                        record.start_date.strftime('%d %b %Y'), record.cost or 0,
-                    ))
                 for line in record.date_line_ids.sorted('date'):
                     if line.date:
                         all_dates.append('%s &nbsp;-&nbsp; €%.2f' % (

@@ -33,9 +33,10 @@
               sequence="10"/>
 
     <menuitem id="menu_drukwerk_voorraad"
-              name="Voorraad"
+              name="Archief"
               parent="menu_drukwerk_root"
               action="action_drukwerk_voorraad"
+              groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
               sequence="12"/>
 
     <menuitem id="menu_drukwerk_boekhouding_overzicht"
@@ -75,9 +76,10 @@
               sequence="10"/>
 
     <menuitem id="menu_drukwerk_centrum_voorraad"
-              name="Voorraad"
+              name="Archief"
               parent="menu_drukwerk_centrum_root"
               action="action_drukwerk_voorraad"
+              groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"
               sequence="12"/>
 
     <menuitem id="menu_drukwerk_centrum_overzicht"

@@ -56,13 +56,14 @@
                             invisible="state != 'afdrukken'"
                             confirm="Bevestig: is dit drukwerk effectief afgedrukt en klaar om af te halen? Deze actie kan niet ongedaan worden gemaakt."/>
 
-                    <!-- Iedereen met toegang: stockeren vanaf 'Afgerond' -->
+                    <!-- Boekhouding / admin: jaarlijkse archivering vanaf 'Afgerond' -->
                     <button name="action_stockeren"
-                            string="Stockeren"
+                            string="Archiveren"
                             type="object"
                             class="btn-secondary"
                             icon="fa-archive"
-                            invisible="state != 'done'"/>
+                            invisible="state != 'done'"
+                            groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"/>
 
                     <field name="state" widget="statusbar"
                            statusbar_visible="form_invullen,afdrukken,done,gestockeerd"/>
@@ -364,9 +365,10 @@
                 <header>
                     <button name="action_stockeren"
                             type="object"
-                            string="Stockeren"
+                            string="Archiveren"
                             icon="fa-archive"
-                            display="always"/>
+                            display="always"
+                            groups="drukwerk.group_drukwerk_boekhouding,drukwerk.group_drukwerk_admin"/>
                 </header>
                 <field name="name"/>
                 <field name="create_date" string="Aanvraagdatum" optional="show"/>
@@ -414,9 +416,9 @@
                         domain="[('state', '=', 'afdrukken')]"/>
                 <filter string="Afgedrukt" name="done"
                         domain="[('state', '=', 'done')]"/>
-                <filter string="Gestockeerd" name="state_gestockeerd"
+                <filter string="Gearchiveerd" name="state_gestockeerd"
                         domain="[('state', '=', 'gestockeerd')]"/>
-                <filter string="Niet gestockeerd" name="not_gestockeerd"
+                <filter string="Niet gearchiveerd" name="not_gestockeerd"
                         domain="[('state', '!=', 'gestockeerd')]"/>
                 <separator/>
                 <filter string="Gewoon drukwerk" name="gewoon"
