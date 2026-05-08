@@ -253,7 +253,17 @@ class MySchoolDashboard(models.Model):
             return domain
         if self._is_manager(model_name):
             return domain
-        if model_name in ('drukwerk.record', 'activiteiten.record'):
+        if model_name == 'activiteiten.record':
+            # Voor activiteiten: ook records waar de leerkracht is opgegeven
+            # of via een invite uitgenodigd, niet enkel waar hij/zij aanmaker
+            # is. Spiegelt de "Mijn aanvragen"-filter en record-rule.
+            return domain + [
+                '|', '|',
+                ('create_uid', '=', self.env.uid),
+                ('leerkracht_ids.odoo_user_id', '=', self.env.uid),
+                ('invite_ids.person_id.odoo_user_id', '=', self.env.uid),
+            ]
+        if model_name == 'drukwerk.record':
             return domain + [('create_uid', '=', self.env.uid)]
         return domain + [('employee_id.user_id', '=', self.env.uid)]
 

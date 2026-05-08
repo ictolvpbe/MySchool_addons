@@ -516,16 +516,34 @@ class Person(models.Model):
     @api.depends('name', 'first_name')
     def _compute_display_name(self):
         """Toon "Voornaam Achternaam" in m2o-widgets en lijsten zodat collega's
-        herkenbaar zijn aan hun voornaam (testers vroegen hierom)."""
+        en leerlingen herkenbaar zijn aan hun voornaam.
+
+        De data in myschool.person is historisch niet altijd consistent
+        ingevuld. Daarom werken we in lagen:
+          1. ``first_name`` gevuld → "first_name name"
+          2. ``name`` bevat een komma "Achternaam, Voornaam" → omdraaien
+          3. Anders ``name`` ongewijzigd tonen (kan voor- of achternaam zijn).
+        """
         for record in self:
-            last = record.name or ''
-            # 'Achternaam, Voornaam' splitten — neem alleen het achternaam-deel
-            if ',' in last:
-                last = last.split(',', 1)[0].strip()
+            raw = (record.name or '').strip()
+            # Geval 1: voornaam apart aanwezig
             if record.first_name:
+                last = raw
+                if ',' in last:
+                    last = last.split(',', 1)[0].strip()
                 record.display_name = f"{record.first_name} {last}".strip()
-            else:
-                record.display_name = record.name or ''
+                continue
+            # Geval 2: "Achternaam, Voornaam" zonder aparte first_name
+            if ',' in raw:
+                last, first = [p.strip() for p in raw.split(',', 1)]
+                if first:
+                    record.display_name = f'{first} {last}'
+                    continue
+                # geen voornaam na de komma → enkel achternaam
+                record.display_name = last
+                continue
+            # Geval 3: rauwe waarde (kan zowel voor- als achternaam zijn)
+            record.display_name = raw
     
     def is_employee(self):
         """Check if this person is an employee."""
