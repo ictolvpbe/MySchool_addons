@@ -103,12 +103,37 @@
                         </group>
                     </group>
 
+                    <!-- Document section — eerst, zodat titel auto-gevuld
+                         kan worden uit de bestandsnaam. -->
+                    <group string="Document" invisible="not drukwerk_type or (state == 'afdrukken' and not is_owner)">
+                        <group>
+                            <field name="document_filename" invisible="1"/>
+                            <field name="document_file" filename="document_filename"
+                                   widget="binary"
+                                   options="{'accepted_file_extensions': '.pdf'}"
+                                   readonly="not can_edit_content"/>
+                            <field name="aantal_paginas" readonly="1"/>
+                            <field name="aantal_kopies" readonly="1"/>
+                            <field name="kopie_leerkracht"
+                                   readonly="not can_edit_content"/>
+                        </group>
+                        <group>
+                            <field name="kleur"
+                                   readonly="not can_edit_content or not can_select_color"/>
+                            <field name="formaat"
+                                   readonly="not can_edit_content"/>
+                            <field name="dik_papier"
+                                   invisible="drukwerk_type != 'gewoon'"
+                                   readonly="not can_edit_content"/>
+                        </group>
+                    </group>
+
                     <!-- Aanvraag details: zichtbaar in concept/formulier én voor de
                          eigenaar in afdrukken-fase (zodat hij/zij nog kan corrigeren) -->
                     <group invisible="not drukwerk_type or (state == 'afdrukken' and not is_owner)">
                         <group string="Aanvraag">
                             <field name="titel"
-                                   placeholder="bv. Werkbladen wiskunde H3"
+                                   placeholder="Wordt automatisch ingevuld op basis van de bestandsnaam"
                                    readonly="not can_edit_content"/>
                             <field name="print_deadline"
                                    required="1"
@@ -156,30 +181,6 @@
                         </group>
                     </group>
 
-                    <!-- Document section -->
-                    <group string="Document" invisible="not drukwerk_type or (state == 'afdrukken' and not is_owner)">
-                        <group>
-                            <field name="document_filename" invisible="1"/>
-                            <field name="document_file" filename="document_filename"
-                                   widget="binary"
-                                   options="{'accepted_file_extensions': '.pdf'}"
-                                   readonly="not can_edit_content"/>
-                            <field name="aantal_paginas" readonly="1"/>
-                            <field name="aantal_kopies" readonly="1"/>
-                            <field name="kopie_leerkracht"
-                                   readonly="not can_edit_content"/>
-                        </group>
-                        <group>
-                            <field name="kleur"
-                                   readonly="not can_edit_content or not can_select_color"/>
-                            <field name="formaat"
-                                   readonly="not can_edit_content"/>
-                            <field name="dik_papier"
-                                   invisible="drukwerk_type != 'gewoon'"
-                                   readonly="not can_edit_content"/>
-                        </group>
-                    </group>
-
                     <!-- Afdrukopties + Toelichting inline tijdens invullen, geen
                          aparte wizard-dialog meer (UX-verzoek beta-team). -->
                     <group string="Afdrukopties"
@@ -201,11 +202,14 @@
                                    readonly="not can_edit_content"/>
                             <field name="boekje_a4"
                                    readonly="not can_edit_content"/>
-                            <field name="papier_kleur"
-                                   readonly="not can_edit_content"/>
-                            <field name="gekleurd_papier"
-                                   invisible="papier_kleur == 'geen'"
-                                   readonly="not can_edit_content"/>
+                            <!-- Papier-keuze gebeurt automatisch:
+                                 - Gewoon drukwerk: altijd wit (geen veld nodig)
+                                 - Examen drukwerk: bepaald door 'Examen-versie'
+                                   (groen → Lade4, geel → Lade5).
+                                 Velden hidden gehouden zodat de printer-code
+                                 toch nog correct genereert. -->
+                            <field name="papier_kleur" invisible="1"/>
+                            <field name="gekleurd_papier" invisible="1"/>
                         </group>
                     </group>
                     <group string="Toelichting"
@@ -276,9 +280,8 @@
                             <field name="sorteren"/>
                             <field name="a3_plooien"/>
                             <field name="boekje_a4"/>
-                            <field name="papier_kleur"/>
-                            <field name="gekleurd_papier"
-                                   invisible="papier_kleur == 'geen'"/>
+                            <field name="papier_kleur" invisible="1"/>
+                            <field name="gekleurd_papier" invisible="1"/>
                         </group>
                     </group>
 
@@ -324,11 +327,8 @@
                                        readonly="not can_edit_content"/>
                                 <field name="boekje_a4"
                                        readonly="not can_edit_content"/>
-                                <field name="papier_kleur"
-                                       readonly="not can_edit_content"/>
-                                <field name="gekleurd_papier"
-                                       invisible="papier_kleur == 'geen'"
-                                       readonly="not can_edit_content"/>
+                                <field name="papier_kleur" invisible="1"/>
+                                <field name="gekleurd_papier" invisible="1"/>
                             </group>
                         </group>
                     </page>
@@ -372,16 +372,16 @@
                 </header>
                 <field name="name"/>
                 <field name="create_date" string="Aanvraagdatum" optional="show"/>
-                <field name="create_uid" string="Aangemaakt door"/>
-                <field name="drukwerk_type"/>
-                <field name="titel"/>
+                <field name="create_uid" string="Aangemaakt door" optional="show"/>
+                <field name="drukwerk_type" optional="show"/>
+                <field name="titel" optional="show"/>
                 <field name="print_deadline" optional="show"/>
                 <field name="school_id" optional="show"/>
                 <field name="klas_ids" widget="many2many_tags" optional="show"/>
-                <field name="student_count" string="Leerlingen"/>
-                <field name="total_pages" string="Pagina's"/>
-                <field name="total_cost" string="Totale kost"/>
-                <field name="cost_per_student" string="Kost / leerling" optional="show"/>
+                <field name="student_count" string="Leerlingen" optional="show"/>
+                <field name="total_pages" string="Pagina's" optional="hide"/>
+                <field name="total_cost" string="Totale kost" optional="show"/>
+                <field name="cost_per_student" string="Kost / leerling" optional="hide"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
                        decoration-warning="state in ('form_invullen', 'afdrukken')"

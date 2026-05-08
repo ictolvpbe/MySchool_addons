@@ -23,6 +23,24 @@ class ActiviteitenBus(models.Model):
     currency_id = fields.Many2one(
         related='activiteit_id.currency_id', store=False,
     )
+    # Bus-traject tijden (PDF: vertrek school / aankomst bestemming /
+    # vertrek bestemming / aankomst school)
+    vertrekuur_school = fields.Float(
+        string='Vertrek school',
+        help='Uur dat de bus vertrekt aan de school (heenrit).',
+    )
+    aankomstuur_bestemming = fields.Float(
+        string='Aankomst bestemming',
+        help='Verwacht uur van aankomst op de bestemming.',
+    )
+    vertrekuur_bestemming = fields.Float(
+        string='Vertrek bestemming',
+        help='Uur dat de bus vertrekt aan de bestemming (terugrit).',
+    )
+    aankomstuur_school = fields.Float(
+        string='Aankomst school',
+        help='Verwacht uur van aankomst terug op school.',
+    )
 
     # Available (not yet taken by other buses on same activity)
     beschikbare_klas_ids = fields.Many2many(

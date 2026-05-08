@@ -1,6 +1,6 @@
 {
     'name': 'MySchool Core Module',
-    'version': '0.3',
+    'version': '0.2',
     'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, and periods',
     'description': """
@@ -21,7 +21,6 @@
     'external_dependencies': {
         'python': ['ldap3'],
     },
-    'post_init_hook': '_migrate_legacy_group_flags_post_init',
     'data': [
         # Securityaccount_analytic_applicability
         'security/myschool_security.xml',

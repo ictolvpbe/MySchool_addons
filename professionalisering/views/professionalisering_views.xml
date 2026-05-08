@@ -134,20 +134,6 @@
                                           invisible="address_id">— geen adres gekozen —</span>
                                 </div>
                             </div>
-                            <label for="afstand_km" string="Afstand (km)"
-                                   invisible="location_type != 'address' or not address_id or (subtype_individueel != 'nascholing' and type != 'teamleren')"/>
-                            <div class="o_row"
-                                 invisible="location_type != 'address' or not address_id or (subtype_individueel != 'nascholing' and type != 'teamleren')">
-                                <field name="afstand_km" nolabel="1" class="oe_inline"
-                                       readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
-                                <span class="text-muted">km (heen en terug)</span>
-                                <button name="action_recompute_afstand"
-                                        type="object"
-                                        icon="fa-refresh"
-                                        title="Afstand opnieuw berekenen via OSRM"
-                                        class="btn-link ms-2"
-                                        invisible="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
-                            </div>
                             <field name="link"
                                    widget="url"
                                    placeholder="bv. https://youtube.com/..."
@@ -168,7 +154,7 @@
                                        invisible="subtype_individueel in ('lezen', 'video', 'podcast')"/>
                             <field name="duur" readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
                                    invisible="subtype_individueel in ('lezen', 'video', 'podcast')"/>
-                            <label for="start_uur" string="Uren"
+                            <label for="start_uur" string="Afwezig op school"
                                    invisible="duur not in ('voormiddag', 'namiddag') or subtype_individueel in ('lezen', 'video', 'podcast')"/>
                             <div class="o_row"
                                  invisible="duur not in ('voormiddag', 'namiddag') or subtype_individueel in ('lezen', 'video', 'podcast')">
@@ -177,6 +163,13 @@
                                 <span class="text-muted mx-1">tot</span>
                                 <field name="eind_uur" nolabel="1" widget="float_time" class="oe_inline"
                                        readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"/>
+                            </div>
+                            <div colspan="2" class="text-muted small fst-italic ms-2"
+                                 invisible="duur not in ('voormiddag', 'namiddag') or subtype_individueel in ('lezen', 'video', 'podcast')">
+                                <i class="fa fa-info-circle me-1"/>
+                                Vul je <strong>school-afwezigheid</strong> in (incl. transporttijd),
+                                niet enkel de uren van de opleiding zelf — zo kan vervanging precies
+                                inplannen welke lesuren overgenomen moeten worden.
                             </div>
                             <field name="verschillende_dagen"
                                    readonly="state != 'selection_of_form' or (not is_owner and not is_admin)"
@@ -464,13 +457,13 @@
                 <field name="create_date" string="Aanvraag&#8203;datum" optional="show"/>
                 <field name="start_date" string="Opleidings&#8203;datum" optional="show"/>
                 <field name="type" optional="hide"/>
-                <field name="vorm_display" string="Vorm"/>
-                <field name="titel"/>
-                <field name="employee_id"/>
-                <field name="school_id"/>
-                <field name="dates_display" widget="html"/>
+                <field name="vorm_display" string="Vorm" optional="show"/>
+                <field name="titel" optional="show"/>
+                <field name="employee_id" optional="show"/>
+                <field name="school_id" optional="show"/>
+                <field name="dates_display" widget="html" optional="show"/>
                 <field name="total_cost" string="Prijs" optional="show"/>
-                <field name="totale_kost" string="Totaal"
+                <field name="totale_kost" string="Totaal" optional="show"
                        groups="professionalisering.group_professionalisering_boekhouding,professionalisering.group_professionalisering_admin"/>
                 <field name="assigned_to" optional="show"
                        groups="professionalisering.group_professionalisering_directie"/>

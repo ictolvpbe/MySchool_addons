@@ -217,13 +217,10 @@ class DrukwerkRecord(models.Model):
 
     @api.depends('dubbelzijdig', 'nieten', 'perforeren', 'liggend',
                  'sorteren', 'a3_plooien', 'boekje_a4',
-                 'gekleurd_papier', 'papier_kleur',
-                 'drukwerk_type', 'examen_variant')
+                 'gekleurd_papier', 'papier_kleur')
     def _compute_printer_code(self):
         for record in self:
             codes = []
-            if record.drukwerk_type == 'examen' and record.examen_variant:
-                codes.append(f'EXAMEN-{record.examen_variant.upper()}')
             if record.dubbelzijdig:
                 codes.append('R/V')
             if record.nieten:
@@ -242,13 +239,35 @@ class DrukwerkRecord(models.Model):
                 if record.gekleurd_papier == 'gl4':
                     codes.append('Lade4 kleur 1')
                 elif record.gekleurd_papier == 'gl5':
-                    codes.append('Lade5 kleur 2')
+                    codes.append('Lade5 kleur 1')
             record.printer_code = '-'.join(codes) if codes else ''
 
     @api.onchange('papier_kleur')
     def _onchange_papier_kleur(self):
         if self.papier_kleur == 'geen':
             self.gekleurd_papier = False
+
+    @api.onchange('examen_variant', 'drukwerk_type')
+    def _onchange_examen_variant(self):
+        """Voor examen drukwerk bepaalt de examen-versie meteen ook de
+        printerlade (papier_kleur + gekleurd_papier). Zo hoeft de leerkracht
+        die niet apart in te vullen.
+
+        Gewoon drukwerk gaat altijd op wit — papier_kleur='geen', geen lade.
+        """
+        if self.drukwerk_type != 'examen':
+            self.papier_kleur = 'geen'
+            self.gekleurd_papier = False
+            return
+        if self.examen_variant == 'wit':
+            self.papier_kleur = 'geen'
+            self.gekleurd_papier = False
+        elif self.examen_variant == 'groen':
+            self.papier_kleur = 'groen'
+            self.gekleurd_papier = 'gl4'
+        elif self.examen_variant == 'geel':
+            self.papier_kleur = 'geel'
+            self.gekleurd_papier = 'gl5'
 
     @api.depends_context('uid')
     def _compute_is_owner(self):
@@ -438,6 +457,18 @@ class DrukwerkRecord(models.Model):
     def _onchange_document_file(self):
         if self.document_file and self.document_filename and self.document_filename.lower().endswith('.pdf'):
             self._recount_pages()
+        # Autofill titel op basis van de bestandsnaam (zonder .pdf-extensie).
+        # Overschrijft ook een eerder ingevulde titel zodat een nieuw geüpload
+        # bestand altijd consistent is met zijn naam — de gebruiker kan
+        # nadien manueel aanpassen.
+        if self.document_filename:
+            base = self.document_filename
+            if base.lower().endswith('.pdf'):
+                base = base[:-4]
+            # Vervang underscores/streepjes door spaties voor leesbaarheid
+            base = base.replace('_', ' ').replace('-', ' ').strip()
+            if base:
+                self.titel = base
 
     @staticmethod
     def _is_pdf_landscape(pdf_bytes):
@@ -722,33 +753,24 @@ class DrukwerkRecord(models.Model):
         return super().unlink()
 
     def _notify_drukwerk_team(self):
-        """Stuur een mail.activity (todo) én een email naar elke gebruiker
-        in de drukkerij-rol zodra er nieuw drukwerk klaarstaat."""
+        """Stuur een mail.activity (todo) naar elke gebruiker in de drukkerij-rol
+        zodra er nieuw drukwerk klaarstaat. Geen externe e-mail meer (UX-verzoek
+        beta-team: drukwerk genereert geen mails) — alleen de Odoo-todo blijft
+        zodat de drukker een werkitem in zijn activity-menu krijgt."""
         drukwerk_group = self.env.ref(
             'drukwerk.group_drukwerk_drukwerk', raise_if_not_found=False)
         if not drukwerk_group:
             return
         activity_type = self.env.ref(
             'mail.mail_activity_data_todo', raise_if_not_found=False)
-        new_template = self.env.ref(
-            'drukwerk.email_template_drukwerk_new', raise_if_not_found=False)
-        partner_ids = drukwerk_group.user_ids.partner_id.ids
 
         for record in self:
-            # Activity (todo) per drukker
             for user in drukwerk_group.user_ids:
                 record.activity_schedule(
                     activity_type_id=activity_type.id if activity_type else False,
                     summary='Drukwerk afdrukken',
                     note=f'Drukwerk aanvraag "{record.titel}" is klaar om af te drukken.',
                     user_id=user.id,
-                )
-            # Email naar alle drukkers tegelijk via mail-template
-            if new_template and partner_ids:
-                new_template.send_mail(
-                    record.id,
-                    force_send=False,  # respecteer de mail-queue
-                    email_values={'partner_ids': [(6, 0, partner_ids)]},
                 )
 
     _NOTIFICATION_TEMPLATES = {
