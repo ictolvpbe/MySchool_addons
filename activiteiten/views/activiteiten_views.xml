@@ -82,11 +82,14 @@
                             invisible="is_owner or state not in ('draft', 'form_invullen')"
                             confirm="Weet u zeker dat u deze aanvraag wilt verwijderen?"/>
 
+                    <!-- 'draft' wordt niet getoond: dat is een tijdelijke
+                         initiële state vóór activiteit-type gekozen is.
+                         'form_invullen' is de echte Concept-fase. -->
                     <field name="state" widget="statusbar"
-                           statusbar_visible="draft,form_invullen,pending_approval,s_code,done"
+                           statusbar_visible="form_invullen,pending_approval,s_code,done"
                            groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin,activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_vervangingen,activiteiten.group_activiteiten_aankoop"/>
                     <field name="display_state" widget="statusbar"
-                           statusbar_visible="draft,form_invullen,pending_approval,approved,done"
+                           statusbar_visible="form_invullen,pending_approval,approved,done"
                            groups="!activiteiten.group_activiteiten_directie,!activiteiten.group_activiteiten_admin,!activiteiten.group_activiteiten_boekhouding,!activiteiten.group_activiteiten_vervangingen,!activiteiten.group_activiteiten_aankoop"/>
                 </header>
                 <sheet>
@@ -507,8 +510,17 @@
                 <field name="titel"/>
                 <field name="name"/>
                 <field name="activity_type"/>
+                <!-- Mijn aanvragen toont:
+                     - records die ik zelf aangemaakt heb (create_uid)
+                     - records waar ik als leerkracht ben opgegeven
+                     - records waar ik via een invite uitgenodigd ben
+                     Op die manier ziet een uitgenodigde collega de activiteit
+                     ook onder "Mijn aanvragen" zodra directie ze goedkeurt. -->
                 <filter string="Mijn aanvragen" name="my_requests"
-                        domain="[('create_uid', '=', uid)]"/>
+                        domain="['|', '|',
+                                 ('create_uid', '=', uid),
+                                 ('leerkracht_ids.odoo_user_id', '=', uid),
+                                 ('invite_ids.person_id.odoo_user_id', '=', uid)]"/>
                 <separator/>
                 <filter string="Binnenschools" name="binnenschools"
                         domain="[('activity_type', '=', 'binnenschools')]"/>

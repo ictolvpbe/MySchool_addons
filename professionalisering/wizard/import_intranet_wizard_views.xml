@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Form view voor de import-wizard -->
+    <record id="view_import_intranet_wizard_form" model="ir.ui.view">
+        <field name="name">professionalisering.import.wizard.form</field>
+        <field name="model">professionalisering.import.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Import historische nascholingen">
+                <sheet>
+                    <div class="alert alert-info" role="alert" invisible="summary">
+                        <p>
+                            <i class="fa fa-info-circle me-1"/>
+                            Upload hier een <strong>phpMyAdmin XML-export</strong> van de
+                            <code>intranet_nascholing</code>-tabel. Het systeem leest het
+                            bestand uit en maakt voor elke aanvraag een professionalisering-record
+                            aan.
+                        </p>
+                        <p>
+                            <strong>Wat er gebeurt:</strong>
+                        </p>
+                        <ul>
+                            <li>Records met goedkeuring=1 → state <strong>Afgerond</strong></li>
+                            <li>Records met goedkeuring=2 → state <strong>Geweigerd</strong></li>
+                            <li>Onbekende leerkrachten (geen match op e-mail) → <strong>overgeslagen</strong> + gelogd</li>
+                            <li>Onbekende vakken → <strong>automatisch aangemaakt</strong></li>
+                            <li>Onbekende locaties → <strong>automatisch aangemaakt</strong></li>
+                            <li>De originele aanvraagID wordt bewaard in <code>legacy_id</code> voor traceerbaarheid</li>
+                        </ul>
+                    </div>
+                    <group invisible="summary">
+                        <field name="file_data" filename="file_name"
+                               widget="binary"
+                               options="{'accepted_file_extensions': '.xml'}"/>
+                        <field name="file_name" invisible="1"/>
+                        <field name="skip_existing"/>
+                    </group>
+                    <group invisible="not summary" string="Resultaat">
+                        <field name="summary" nolabel="1" widget="text"
+                               readonly="1" class="font-monospace"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_import"
+                            string="Importeren"
+                            type="object"
+                            class="btn-primary"
+                            invisible="summary"/>
+                    <button string="Sluiten"
+                            class="btn-primary"
+                            special="cancel"
+                            invisible="not summary"/>
+                    <button string="Annuleren"
+                            class="btn-secondary"
+                            special="cancel"
+                            invisible="summary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_import_intranet_wizard" model="ir.actions.act_window">
+        <field name="name">Historische nascholingen importeren</field>
+        <field name="res_model">professionalisering.import.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- Rollback wizard -->
+    <record id="view_import_intranet_rollback_form" model="ir.ui.view">
+        <field name="name">professionalisering.import.rollback.form</field>
+        <field name="model">professionalisering.import.rollback</field>
+        <field name="arch" type="xml">
+            <form string="Rollback historische import">
+                <sheet>
+                    <div class="alert alert-warning" role="alert">
+                        <p>
+                            <i class="fa fa-exclamation-triangle me-1"/>
+                            Deze actie verwijdert <strong>alle</strong> records die via de import
+                            zijn binnengekomen (alle records met een ingevuld <code>legacy_id</code>).
+                        </p>
+                        <p>
+                            Aantal records dat verwijderd zal worden:
+                            <strong><field name="legacy_count" nolabel="1" class="d-inline"/></strong>
+                        </p>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_rollback"
+                            string="Verwijderen"
+                            type="object"
+                            class="btn-danger"
+                            confirm="Weet je zeker dat je alle geïmporteerde records wil verwijderen? Deze actie kan niet ongedaan gemaakt worden."/>
+                    <button string="Annuleren" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_import_intranet_rollback" model="ir.actions.act_window">
+        <field name="name">Geïmporteerde records verwijderen</field>
+        <field name="res_model">professionalisering.import.rollback</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- Menu-items onder Professionalisering -->
+    <menuitem id="menu_professionalisering_import"
+              name="Historische import"
+              parent="menu_professionalisering_root"
+              groups="base.group_system,professionalisering.group_professionalisering_admin,professionalisering.group_professionalisering_directie"
+              sequence="90"/>
+
+    <menuitem id="menu_professionalisering_import_action"
+              name="Nascholingen importeren"
+              parent="menu_professionalisering_import"
+              action="action_import_intranet_wizard"
+              groups="base.group_system,professionalisering.group_professionalisering_admin,professionalisering.group_professionalisering_directie"
+              sequence="10"/>
+
+    <menuitem id="menu_professionalisering_import_rollback"
+              name="Geïmporteerde records verwijderen"
+              parent="menu_professionalisering_import"
+              action="action_import_intranet_rollback"
+              groups="base.group_system,professionalisering.group_professionalisering_admin,professionalisering.group_professionalisering_directie"
+              sequence="20"/>
+</odoo>

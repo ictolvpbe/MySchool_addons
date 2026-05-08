@@ -1,6 +1,6 @@
 {
     'name': 'Professionalisering',
-    'version': '4.1',
+    'version': '4.3',
     'summary': 'Beheer van professionaliseringsaanvragen voor leerkrachten',
     'description': """
         Module voor het beheren van professionaliseringsaanvragen.
@@ -21,6 +21,7 @@
         'data/cron_data.xml',
         'data/vak_data.xml',
         'wizard/add_date_wizard_views.xml',
+        'wizard/import_intranet_wizard_views.xml',
         'views/professionalisering_views.xml',
         'views/vak_views.xml',
         'views/professionalisering_menu.xml',

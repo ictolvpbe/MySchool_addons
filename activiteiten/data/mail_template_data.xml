@@ -1,65 +1,84 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
+    <!-- Notificatie naar directie wanneer nieuwe aanvraag is ingediend.
+         Adressering gebeurt via _notify_directie_popup of de aankoop-flow,
+         niet via een vaste email_to. -->
     <record id="email_template_notify_directie" model="mail.template">
         <field name="name">Activiteiten - Notificatie Directie</field>
         <field name="model_id" ref="model_activiteiten_record"/>
         <field name="subject">Nieuwe aanvraag activiteit: {{ object.name }}</field>
-        <field name="body_html"><![CDATA[
-<p>Beste Directie,</p>
-<p>Er is een nieuwe aanvraag voor een activiteit ingediend.</p>
-<ul>
-    <li>Referentie: {{ object.name }}</li>
-    <li>Titel: {{ object.titel }}</li>
-    <li>Type: {{ object.activity_type }}</li>
-    <li>Datum: {{ object.datetime }}</li>
-    <li>Geschatte kost: {{ object.price }}</li>
-</ul>
-<p>Gelieve deze aanvraag te beoordelen.</p>
-        ]]></field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste Directie,</p>
+    <p>Er is een nieuwe aanvraag voor een activiteit ingediend.</p>
+    <ul>
+        <li>Referentie: <t t-out="object.name or ''"/></li>
+        <li>Titel: <t t-out="object.titel or ''"/></li>
+        <li>Type: <t t-out="object.activity_type or ''"/></li>
+        <li>Datum: <t t-out="object.datetime or ''"/></li>
+        <li>Geschatte kost: <t t-out="object.price or 0"/></li>
+    </ul>
+    <p>Gelieve deze aanvraag te beoordelen.</p>
+</div>
+        </field>
     </record>
 
+    <!-- Notificatie naar de aanvrager (leerkracht). email_to is verplicht
+         zodat send_mail() weet naar wie te sturen. -->
     <record id="email_template_approved" model="mail.template">
         <field name="name">Activiteiten - Goedgekeurd</field>
         <field name="model_id" ref="model_activiteiten_record"/>
         <field name="subject">Uw aanvraag {{ object.name }} is goedgekeurd</field>
-        <field name="body_html"><![CDATA[
-<p>Beste,</p>
-<p>Uw aanvraag voor activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is goedgekeurd.</p>
-<p>De verdere afhandeling (S-Code, verzekering, vervanging) wordt opgestart.</p>
-        ]]></field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>Uw aanvraag voor activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong> is goedgekeurd.</p>
+    <p>De verdere afhandeling (S-Code, verzekering, vervanging) wordt opgestart.</p>
+</div>
+        </field>
     </record>
 
     <record id="email_template_rejected" model="mail.template">
         <field name="name">Activiteiten - Afgekeurd</field>
         <field name="model_id" ref="model_activiteiten_record"/>
         <field name="subject">Uw aanvraag {{ object.name }} is afgekeurd</field>
-        <field name="body_html"><![CDATA[
-<p>Beste,</p>
-<p>Uw aanvraag voor activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is helaas afgekeurd.</p>
-<p>Reden: {{ object.rejection_reason }}</p>
-<p>U kunt de aanvraag aanpassen en opnieuw indienen.</p>
-        ]]></field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>Uw aanvraag voor activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong> is helaas afgekeurd.</p>
+    <p><strong>Reden:</strong> <t t-out="object.rejection_reason or '(geen reden opgegeven)'"/></p>
+    <p>U kunt de aanvraag aanpassen en opnieuw indienen via de knop "Opnieuw indienen".</p>
+</div>
+        </field>
     </record>
 
     <record id="email_template_bus_refused" model="mail.template">
         <field name="name">Activiteiten - Bus geweigerd</field>
         <field name="model_id" ref="model_activiteiten_record"/>
         <field name="subject">Bus niet beschikbaar voor {{ object.name }}</field>
-        <field name="body_html"><![CDATA[
-<p>Beste,</p>
-<p>Er is helaas geen bus beschikbaar voor uw activiteit <strong>{{ object.name }} - {{ object.titel }}</strong>.</p>
-<p>U kunt het formulier aanpassen en opnieuw indienen.</p>
-        ]]></field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>Er is helaas geen bus beschikbaar voor uw activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong>.</p>
+    <p>U kunt het formulier aanpassen en opnieuw indienen.</p>
+</div>
+        </field>
     </record>
 
     <record id="email_template_bus_approved" model="mail.template">
         <field name="name">Activiteiten - Bus beschikbaar</field>
         <field name="model_id" ref="model_activiteiten_record"/>
         <field name="subject">Bus bevestigd voor {{ object.name }}</field>
-        <field name="body_html"><![CDATA[
-<p>Beste,</p>
-<p>Goed nieuws: de bus voor uw activiteit <strong>{{ object.name }} - {{ object.titel }}</strong> is bevestigd door Aankoop.</p>
-<p>De aanvraag is nu doorgestuurd naar de Directie voor goedkeuring.</p>
-        ]]></field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>Goed nieuws: de bus voor uw activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong> is bevestigd door Aankoop.</p>
+    <p>De aanvraag is nu doorgestuurd naar de Directie voor goedkeuring.</p>
+</div>
+        </field>
     </record>
 </odoo>

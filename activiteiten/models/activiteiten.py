@@ -130,16 +130,28 @@ class Activiteiten(models.Model):
         ('fiets', 'Fiets'),
         ('auto', 'Met de wagen'),
         ('anders', 'Anders'),
-    ], string='Vervoer', default='bus',
+    ], string='Vervoer',
        help='Hoe verplaatst de groep zich tijdens deze activiteit. '
             'Selectie van "Bus (gehuurd via privé-maatschappij)" triggert '
-            'de bus-controle-flow met aankoop.')
+            'de bus-controle-flow met aankoop. Niet van toepassing voor '
+            'binnenschoolse activiteiten.')
     bus_nodig = fields.Boolean(string='Bus nodig', default=False)
 
     @api.onchange('vervoer_type')
     def _onchange_vervoer_type(self):
         for record in self:
             record.bus_nodig = (record.vervoer_type == 'bus')
+
+    @api.onchange('activity_type')
+    def _onchange_activity_type_clear_bus(self):
+        """Bij binnenschoolse activiteit is vervoer + bus niet relevant —
+        forceer leeg zodat de bus-controle-flow niet ten onrechte triggert
+        bij submit. Voor buitenschools laten we de waarden ongemoeid (de
+        leerkracht kiest dan zelf het vervoer)."""
+        for record in self:
+            if record.activity_type == 'binnenschools':
+                record.vervoer_type = False
+                record.bus_nodig = False
 
     # --- Openbaar vervoer (PDF: De Lijn / Trein + aantallen reizigers) ---
     ov_type = fields.Selection([
@@ -922,6 +934,12 @@ class Activiteiten(models.Model):
                 raise UserError("Vul een titel in.")
             if not record.datetime:
                 raise UserError("Vul een datum en tijdstip in.")
+            # Veiligheidsnet: binnenschoolse activiteiten hebben geen bus.
+            # Een vergeten bus_nodig=True zou anders ten onrechte de bus-flow
+            # triggeren.
+            if record.activity_type == 'binnenschools':
+                record.bus_nodig = False
+                record.vervoer_type = False
             # Snapshot students and teachers at submission time
             record._create_snapshot()
             if record.bus_nodig:
@@ -932,7 +950,9 @@ class Activiteiten(models.Model):
                 record.state = 'bus_check'
             else:
                 record.state = 'pending_approval'
-        self._send_notification('submit')
+        # _schedule_directie_activity() schedulet een todo per directie-user,
+        # en Odoo stuurt zelf de notificatie-mail per assignment. Geen aparte
+        # email_template_notify_directie meer nodig (had toch geen recipients).
         pending_records = self.filtered(lambda r: r.state == 'pending_approval')
         if pending_records:
             pending_records._schedule_directie_activity()
@@ -945,8 +965,10 @@ class Activiteiten(models.Model):
                 raise UserError("Bus controle is niet van toepassing.")
             record.bus_available = True
             record.state = 'pending_approval'
+        # Mail naar leerkracht dat bus bevestigd is (heeft email_to → werkt).
         self._send_notification('bus_approved')
-        self._send_notification('submit')
+        # Activity per directie-user; Odoo stuurt automatisch per todo
+        # een notificatie-mail. Geen aparte 'submit'-mail meer nodig.
         self._schedule_directie_activity()
 
     def action_bus_refused(self):
@@ -1275,13 +1297,25 @@ class Activiteiten(models.Model):
             # 2) Echte mail naar de aanvrager — enkel als er een mailserver is
             if not has_mail_server:
                 continue
-            recipient = (record.create_uid.partner_id.email or '').strip()
+            recipient_partner = record.create_uid.partner_id
+            recipient = (recipient_partner.email or record.create_uid.email or '').strip()
             if not recipient:
                 _logger.info('Skipping mail %s for activiteit %s: aanvrager has no email',
                              template_xmlid, record.name)
                 continue
             try:
-                template.send_mail(record.id, force_send=False)
+                # Forceer de ontvanger via email_values — de template's eigen
+                # email_to-veld kan leeg zijn of niet correct renderen, dus
+                # we zetten het hier expliciet zodat de mail niet zonder
+                # geadresseerde in de queue belandt.
+                template.send_mail(
+                    record.id,
+                    force_send=False,
+                    email_values={
+                        'email_to': recipient,
+                        'recipient_ids': [(6, 0, recipient_partner.ids)] if recipient_partner else False,
+                    },
+                )
             except Exception as e:
                 _logger.warning('Failed to queue mail %s for activiteit %s: %s',
                                 template_xmlid, record.name, e)

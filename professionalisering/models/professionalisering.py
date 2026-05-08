@@ -332,6 +332,14 @@ class ProfessionaliseringRecord(models.Model):
         readonly=True,
         default='New',
     )
+    legacy_id = fields.Char(
+        string='Legacy ID',
+        index=True,
+        copy=False,
+        help='Identifier uit het oude intranet-systeem (intranet_nascholing.aanvraagID). '
+             'Wordt enkel ingevuld bij geïmporteerde historische records — '
+             'gebruikt voor traceerbaarheid en als rollback-handle.',
+    )
     type = fields.Selection([
         ('individueel', 'Individuele'),
         # ('teamleren', 'Teamleren'), # tijdelijk uitgeschakeld
