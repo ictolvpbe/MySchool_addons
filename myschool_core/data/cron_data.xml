@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- Dagelijkse cron die rond 15 augustus (configureerbaar via
+         myschool.archive_date) één keer per jaar de afgeronde records
+         van de drie modules archiveert. -->
+    <record id="ir_cron_auto_archive" model="ir.cron">
+        <field name="name">MySchool: jaarlijks auto-archive afgeronde records</field>
+        <field name="model_id" ref="model_myschool_archive_runner"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_auto_archive()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+</odoo>
