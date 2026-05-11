@@ -2,6 +2,7 @@
 from . import app
 from . import dashboard
 from . import object_browser
+from . import persongroup_member_browser
 from . import org_extension
 from . import person_extension
 from . import proprelation_extension
@@ -12,3 +13,4 @@ from . import log_viewer
 from . import data_exchange
 from . import server_benchmark
 from . import create_filialen_wizard
+from . import health_check

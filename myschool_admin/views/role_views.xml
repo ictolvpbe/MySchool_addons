@@ -56,42 +56,22 @@
                     <group>
                         <group string="Access Settings">
                             <field name="has_ui_access"/>
-                            <field name="has_accounts"/>
-                            <field name="has_group"/>
-                        </group>
-                        <group string="Legacy">
-                            <field name="old_id"/>
                         </group>
                     </group>
 
-                    <group string="Odoo Groepen" name="odoo_groups">
-                        <group>
-                            <field name="has_odoo_group" widget="boolean_toggle"/>
-                        </group>
-                        <group>
-                            <button name="action_sync_group_members"
-                                    type="object"
-                                    string="Sync Groepsleden"
-                                    class="btn-primary"
-                                    icon="fa-refresh"
-                                    invisible="not has_odoo_group"/>
-                            <button name="action_sync_persongroup_members"
-                                    type="object"
-                                    string="Sync Persongroups"
-                                    class="btn-secondary"
-                                    icon="fa-refresh"
-                                    invisible="not has_group"/>
-                        </group>
-                    </group>
-                    <group invisible="not has_odoo_group">
-                        <field name="odoo_group_ids"
-                               widget="many2many_tags"
-                               options="{'no_create': True}"
-                               domain="[('privilege_id.category_id.name', 'in', ['Professionalisering', 'Activiteiten', 'Drukwerk', 'Planner'])]"
-                               context="{'tree_view_ref': 'myschool_admin.view_res_groups_list_for_role'}"
-                               nolabel="1" colspan="2"/>
-                        <field name="odoo_group_display" nolabel="1" colspan="2" readonly="1"
-                               invisible="not odoo_group_ids"/>
+                    <group>
+                        <button name="action_sync_persongroup_members"
+                                type="object"
+                                string="Sync Persongroups"
+                                class="btn-secondary"
+                                icon="fa-refresh"/>
+                        <p class="text-muted">
+                            <small>Odoo / LDAP groups now live on the
+                            <b>target org</b> a BRSO points to. Set
+                            <code>has_odoo_group</code> / <code>has_comgroup</code> /
+                            <code>has_secgroup</code> + <code>odoo_group_ids</code>
+                            on that org's form.</small>
+                        </p>
                     </group>
 
                     <notebook>
@@ -121,8 +101,6 @@
                        decoration-warning="role_type_id.name == 'GUARDIAN'"/>
                 <field name="priority" optional="show"/>
                 <field name="has_ui_access" widget="boolean" optional="show"/>
-                <field name="has_group" widget="boolean" optional="hide"/>
-                <field name="has_accounts" widget="boolean" optional="hide"/>
                 <field name="automatic_sync" widget="boolean_toggle" optional="hide"/>
                 <field name="is_active" widget="boolean"/>
             </list>
@@ -144,8 +122,6 @@
                 <filter string="Inactive" name="inactive" domain="[('is_active', '=', False)]"/>
                 <separator/>
                 <filter string="Has UI Access" name="ui_access" domain="[('has_ui_access', '=', True)]"/>
-                <filter string="Has Group" name="has_group" domain="[('has_group', '=', True)]"/>
-                <filter string="Has Accounts" name="has_accounts" domain="[('has_accounts', '=', True)]"/>
                 <separator/>
                 <filter string="Auto Sync" name="auto_sync" domain="[('automatic_sync', '=', True)]"/>
 <!--                <group expand="0" string="Group By">-->

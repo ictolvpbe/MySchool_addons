@@ -46,11 +46,11 @@ class PropRelation(models.Model):
     start_date = fields.Datetime(string='Startdatum')
     end_date = fields.Datetime(string='Einddatum')
     automatic_sync = fields.Boolean(string='Auto Sync', default=True, required=True)
-
-    has_accounts = fields.Boolean(string='Has Accounts', default=False)
-    has_ldap_com_group = fields.Boolean(string='Has LDAP COM Group', default=False)
-    has_ldap_sec_group = fields.Boolean(string='Has LDAP SEC Group', default=False)
-    has_odoo_group = fields.Boolean(string='Has Odoo Group', default=False)
+    # ``has_accounts`` / ``has_ldap_com_group`` / ``has_ldap_sec_group`` /
+    # ``has_odoo_group`` used to live here. Removed in favour of the
+    # target-org's ``has_comgroup`` / ``has_secgroup`` / ``has_accounts``
+    # — single source of truth for "does this org have a group / does it
+    # hold accounts?". See ``Org._migrate_group_flags_from_legacy``.
 
     # -------------------------------------------------------------------------
     # Constraints

@@ -72,7 +72,12 @@
                         </group>
                     </group>
 
-                    <group string="Certificate Settings" name="certificates" invisible="not use_ssl and not use_tls">
+                    <!-- Certificate fields: only relevant for non-AD LDAP servers
+                         that use SSL/TLS with custom client certs. AD setups
+                         typically rely on the system trust store / Kerberos
+                         and don't need these fields. -->
+                    <group string="Certificate Settings" name="certificates"
+                           invisible="is_active_directory or (not use_ssl and not use_tls)">
                         <group>
                             <field name="validate_cert" widget="boolean_toggle"/>
                             <field name="ca_cert_file" placeholder="/etc/ssl/certs/ca-certificates.crt"/>
@@ -92,16 +97,6 @@
                             <field name="is_active_directory" widget="boolean_toggle"/>
                             <field name="ad_domain" placeholder="school.local" invisible="not is_active_directory"/>
                             <field name="upn_suffix" placeholder="@school.local" invisible="not is_active_directory"/>
-                        </group>
-                    </group>
-
-                    <group string="Container Settings" name="containers" invisible="not is_active_directory">
-                        <group>
-                            <field name="default_user_container" placeholder="OU=Users,OU=MySchool" class="ms-field-mono"/>
-                            <field name="default_group_container" placeholder="OU=Groups,OU=MySchool" class="ms-field-mono"/>
-                        </group>
-                        <group>
-                            <field name="disabled_users_container" placeholder="OU=Disabled,OU=Users" class="ms-field-mono"/>
                         </group>
                     </group>
 

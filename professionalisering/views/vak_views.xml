@@ -68,11 +68,17 @@
         </field>
     </record>
 
-    <!-- Menu — onder MySchool Admin → Master Data → Types -->
+    <!-- Menu — onder Professionalisering → Configuratie -->
+    <menuitem id="menu_professionalisering_config"
+              name="Configuratie"
+              parent="menu_professionalisering_root"
+              sequence="90"
+              groups="myschool_core.group_myschool_core_admin,professionalisering.group_professionalisering_admin"/>
+
     <menuitem id="menu_professionalisering_vak"
-              name="Professionalisering Vakken"
-              parent="myschool_admin.menu_types"
+              name="Vakken"
+              parent="menu_professionalisering_config"
               action="action_professionalisering_vak"
-              sequence="80"
+              sequence="10"
               groups="myschool_core.group_myschool_core_admin,professionalisering.group_professionalisering_admin"/>
 </odoo>

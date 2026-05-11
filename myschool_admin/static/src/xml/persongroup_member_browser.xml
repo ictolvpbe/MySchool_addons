@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- ======================================================== -->
+    <!-- OrgTreeNode (right pane recursive renderer)              -->
+    <!-- ======================================================== -->
+    <t t-name="myschool_admin.PgmbOrgTreeNode" owl="1">
+        <div class="pgmb-tree-node"
+             t-att-style="'padding-left: ' + (level * 14) + 'px;'">
+            <!-- Org row (NOT selectable, only expandable) -->
+            <div class="pgmb-tree-org" t-on-click="toggle">
+                <span class="pgmb-tree-toggle">
+                    <t t-if="hasContent">
+                        <i t-att-class="isExpanded ? 'fa fa-caret-down' : 'fa fa-caret-right'"/>
+                    </t>
+                    <t t-else="">
+                        <i class="fa"/>
+                    </t>
+                </span>
+                <span class="pgmb-tree-icon">
+                    <t t-if="props.node.org_type === 'PERSONGROUP'">
+                        <i class="fa fa-users text-info"/>
+                    </t>
+                    <t t-else="">
+                        <i class="fa fa-building text-muted"/>
+                    </t>
+                </span>
+                <span class="pgmb-tree-name"
+                      t-att-title="props.node.name_full or props.node.name">
+                    <t t-esc="props.node.name"/>
+                </span>
+                <t t-if="props.node.persons and props.node.persons.length">
+                    <span class="pgmb-tree-count">
+                        <t t-esc="props.node.persons.length"/>
+                    </span>
+                </t>
+            </div>
+
+            <t t-if="isExpanded">
+                <!-- Persons under this org (selectable leaves) -->
+                <t t-foreach="props.node.persons" t-as="person" t-key="person.id">
+                    <div class="pgmb-tree-person"
+                         t-att-class="{ 'pgmb-row-selected': isPersonSelected(person.id) }"
+                         t-att-style="'padding-left: ' + ((level + 1) * 14) + 'px;'"
+                         t-on-click="(ev) => this.onPersonRowClick(ev, person)">
+                        <input type="checkbox"
+                               class="pgmb-checkbox"
+                               t-att-checked="isPersonSelected(person.id)"
+                               t-on-change="(ev) => this.onPersonCheckboxChange(ev, person)"
+                               t-on-click.stop=""/>
+                        <span class="pgmb-tree-icon">
+                            <i class="fa fa-user text-info"/>
+                        </span>
+                        <span class="pgmb-tree-name" t-att-title="person.name">
+                            <t t-esc="person.name"/>
+                        </span>
+                        <t t-if="person.person_type">
+                            <span class="pgmb-tree-badge">
+                                <t t-esc="person.person_type"/>
+                            </span>
+                        </t>
+                    </div>
+                </t>
+                <!-- Recurse into children -->
+                <t t-foreach="props.node.children" t-as="child" t-key="child.id">
+                    <OrgTreeNode node="child"
+                                 level="childLevel"
+                                 expandedOrgIds="props.expandedOrgIds"
+                                 selectedPersonIds="props.selectedPersonIds"
+                                 onToggleExpand="props.onToggleExpand"
+                                 onPersonClick="props.onPersonClick"/>
+                </t>
+            </t>
+        </div>
+    </t>
+
+    <!-- ======================================================== -->
+    <!-- Main client                                              -->
+    <!-- ======================================================== -->
+    <t t-name="myschool_admin.PersongroupMemberBrowserClient" owl="1">
+        <div class="pgmb-root">
+            <!-- Header -->
+            <div class="pgmb-header">
+                <div class="pgmb-title">
+                    <i class="fa fa-users me-2"/>
+                    <span t-if="state.persongroup">
+                        <t t-esc="state.persongroup.name_tree or state.persongroup.name"/>
+                    </span>
+                    <span t-else="">…</span>
+                </div>
+                <div class="pgmb-header-actions">
+                    <button class="btn btn-sm btn-secondary"
+                            t-on-click="() => this.loadData(state.treeFilter)"
+                            title="Herlaad">
+                        <i class="fa fa-refresh"/>
+                    </button>
+                    <button class="btn btn-sm btn-light"
+                            t-on-click.stop="closeAction">
+                        <i class="fa fa-times"/> Sluiten
+                    </button>
+                </div>
+            </div>
+
+            <t t-if="state.loading">
+                <div class="pgmb-loading">
+                    <i class="fa fa-spinner fa-spin"/> Laden…
+                </div>
+            </t>
+            <t t-else="">
+                <div class="pgmb-panes">
+                    <!-- ── LEFT: members ────────────────────────────── -->
+                    <div class="pgmb-pane pgmb-pane-left">
+                        <div class="pgmb-pane-header">
+                            <span class="pgmb-pane-title">
+                                Huidige leden
+                                <span class="pgmb-counter">
+                                    <t t-esc="filteredMembers.length"/>/<t t-esc="state.members.length"/>
+                                </span>
+                            </span>
+                        </div>
+                        <div class="pgmb-pane-toolbar">
+                            <div class="pgmb-search">
+                                <i class="fa fa-search"/>
+                                <input type="text"
+                                       placeholder="Filter leden…"
+                                       t-att-value="state.memberFilter"
+                                       t-on-input="onMemberFilterInput"/>
+                                <button t-if="state.memberFilter"
+                                        class="pgmb-clear"
+                                        t-on-click="clearMemberFilter">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <button class="btn btn-sm btn-light"
+                                    t-on-click="toggleAllMembers"
+                                    title="Selecteer alles in zicht / deselecteer">
+                                <i class="fa fa-check-square-o"/>
+                            </button>
+                        </div>
+                        <div class="pgmb-list">
+                            <t t-if="!filteredMembers.length">
+                                <div class="pgmb-empty">
+                                    <t t-if="state.memberFilter">Geen leden matchen het filter.</t>
+                                    <t t-else="">Geen leden in deze groep.</t>
+                                </div>
+                            </t>
+                            <t t-foreach="filteredMembers" t-as="member" t-key="member.id">
+                                <div class="pgmb-list-row"
+                                     t-att-class="{ 'pgmb-row-selected': isMemberSelected(member) }"
+                                     t-on-click="(ev) => this.onMemberRowClick(ev, member)">
+                                    <input type="checkbox"
+                                           class="pgmb-checkbox"
+                                           t-att-checked="isMemberSelected(member)"
+                                           t-on-change="(ev) => this.onMemberCheckboxChange(ev, member)"
+                                           t-on-click.stop=""/>
+                                    <span class="pgmb-list-name" t-att-title="member.display">
+                                        <t t-esc="member.display"/>
+                                    </span>
+                                    <t t-if="member.person_type">
+                                        <span class="pgmb-list-badge">
+                                            <t t-esc="member.person_type"/>
+                                        </span>
+                                    </t>
+                                    <t t-if="member.tree_org">
+                                        <span class="pgmb-list-meta" t-att-title="member.tree_org">
+                                            <i class="fa fa-sitemap"/>
+                                            <t t-esc="member.tree_org"/>
+                                        </span>
+                                    </t>
+                                </div>
+                            </t>
+                        </div>
+                        <div class="pgmb-pane-footer">
+                            <div class="pgmb-selection-info">
+                                <t t-if="selectedMemberCount">
+                                    <i class="fa fa-check"/>
+                                    <t t-esc="selectedMemberCount"/> geselecteerd
+                                </t>
+                            </div>
+                            <button class="btn btn-danger btn-sm"
+                                    t-att-disabled="!selectedMemberCount"
+                                    t-on-click="removeSelected">
+                                <i class="fa fa-trash"/> Verwijder geselecteerden
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ── RIGHT: org-tree picker ───────────────────── -->
+                    <div class="pgmb-pane pgmb-pane-right">
+                        <div class="pgmb-pane-header">
+                            <span class="pgmb-pane-title">
+                                Toevoegen via tree
+                            </span>
+                        </div>
+                        <div class="pgmb-pane-toolbar">
+                            <div class="pgmb-search">
+                                <i class="fa fa-search"/>
+                                <input type="text"
+                                       placeholder="Filter org / persoon (Enter om te zoeken)…"
+                                       t-att-value="state.treeFilter"
+                                       t-on-input="onTreeFilterInput"
+                                       t-on-keydown="onTreeFilterKeydown"/>
+                                <button t-if="state.treeFilter"
+                                        class="pgmb-clear"
+                                        t-on-click="clearTreeFilter">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <button class="btn btn-sm btn-light"
+                                    t-on-click="onTreeFilterApply"
+                                    title="Pas filter toe">
+                                <i class="fa fa-search"/>
+                            </button>
+                            <button class="btn btn-sm btn-light"
+                                    t-on-click="expandAllInTree"
+                                    title="Klap alles open">
+                                <i class="fa fa-plus-square-o"/>
+                            </button>
+                            <button class="btn btn-sm btn-light"
+                                    t-on-click="collapseAllInTree"
+                                    title="Klap alles dicht">
+                                <i class="fa fa-minus-square-o"/>
+                            </button>
+                        </div>
+                        <div class="pgmb-tree">
+                            <t t-if="!state.tree.length">
+                                <div class="pgmb-empty">Geen kandidaten gevonden.</div>
+                            </t>
+                            <t t-foreach="state.tree" t-as="root" t-key="root.id">
+                                <OrgTreeNode node="root"
+                                             level="0"
+                                             expandedOrgIds="state.expandedOrgIds"
+                                             selectedPersonIds="state.selectedPersonIds"
+                                             onToggleExpand="(orgId, exp) => this.onToggleExpand(orgId, exp)"
+                                             onPersonClick="(p, m) => this.onPersonClick(p, m)"/>
+                            </t>
+                        </div>
+                        <div class="pgmb-pane-footer">
+                            <div class="pgmb-selection-info">
+                                <t t-if="selectedPersonCount">
+                                    <i class="fa fa-check"/>
+                                    <t t-esc="selectedPersonCount"/> geselecteerd
+                                </t>
+                                <span class="pgmb-hint">
+                                    Tip: Ctrl-klik = multi-select, Shift-klik = bereik in lijst.
+                                </span>
+                            </div>
+                            <button class="btn btn-primary btn-sm"
+                                    t-att-disabled="!selectedPersonCount"
+                                    t-on-click="addSelected">
+                                <i class="fa fa-plus"/> Voeg geselecteerden toe
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

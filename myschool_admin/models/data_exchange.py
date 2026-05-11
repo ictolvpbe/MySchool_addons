@@ -10,7 +10,7 @@ from odoo.exceptions import UserError
 _logger = logging.getLogger(__name__)
 
 # PropRelation types to export (structural only, no person-related)
-EXPORT_PR_TYPES = ('ORG-TREE', 'BRSO', 'SR-BR')
+EXPORT_PR_TYPES = ('ORG-TREE', 'BRSO', 'SRBR')
 
 # Org types to exclude from export (rebuilt per school year)
 EXCLUDE_ORG_TYPES = ('CLASSGROUP', 'PERSONGROUP')
@@ -165,10 +165,8 @@ class DataExchange(models.TransientModel):
                 'domain_internal': r.domain_internal or '',
                 'domain_external': r.domain_external or '',
                 'has_ou': r.has_ou,
-                'has_role': r.has_role,
                 'has_comgroup': r.has_comgroup,
                 'has_secgroup': r.has_secgroup,
-                'has_accounts': r.has_accounts,
                 'ou_fqdn_internal': r.ou_fqdn_internal or '',
                 'ou_fqdn_external': r.ou_fqdn_external or '',
                 'com_group_fqdn_internal': r.com_group_fqdn_internal or '',
@@ -191,8 +189,6 @@ class DataExchange(models.TransientModel):
                 'shortname': r.shortname if r.shortname and r.shortname != '0' else '',
                 'role_type': r.role_type_id.name if r.role_type_id else '',
                 'has_ui_access': r.has_ui_access,
-                'has_group': r.has_group,
-                'has_accounts': r.has_accounts,
                 'priority': r.priority,
                 'is_active': r.is_active,
                 'automatic_sync': r.automatic_sync,
@@ -507,10 +503,8 @@ class DataExchange(models.TransientModel):
                     'domain_internal': item.get('domain_internal') or False,
                     'domain_external': item.get('domain_external') or False,
                     'has_ou': item.get('has_ou', False),
-                    'has_role': item.get('has_role', False),
                     'has_comgroup': item.get('has_comgroup', False),
                     'has_secgroup': item.get('has_secgroup', False),
-                    'has_accounts': item.get('has_accounts', False),
                     'ou_fqdn_internal': item.get('ou_fqdn_internal') or False,
                     'ou_fqdn_external': item.get('ou_fqdn_external') or False,
                     'com_group_fqdn_internal': item.get('com_group_fqdn_internal') or False,
@@ -557,8 +551,6 @@ class DataExchange(models.TransientModel):
                     'label': item.get('label') or False,
                     'role_type_id': role_type.id if role_type else False,
                     'has_ui_access': item.get('has_ui_access', True),
-                    'has_group': item.get('has_group', False),
-                    'has_accounts': item.get('has_accounts', False),
                     'priority': item.get('priority', 0),
                     'is_active': item.get('is_active', True),
                     'automatic_sync': item.get('automatic_sync', True),

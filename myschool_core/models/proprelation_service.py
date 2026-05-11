@@ -727,14 +727,14 @@ class PropRelationService(models.AbstractModel):
     
     def create_sr_br(self, role_child, role_parent) -> 'PropRelation':
         """
-        Create SR-BR (SapRole to BackendRole) mapping.
-        
+        Create SRBR (SapRole to BackendRole) mapping.
+
         @param role_child: SAP Role (child)
         @param role_parent: Backend Role (parent)
         @return: Created PropRelation
         """
         return self.create_proprelation(
-            'SR-BR',
+            'SRBR',
             role_child=role_child,
             role_parent=role_parent
         )

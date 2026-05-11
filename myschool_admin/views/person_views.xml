@@ -12,6 +12,7 @@
             <list decoration-muted="not is_active"
                   default_order="name">
                 <field name="name" string="Person"/>
+                <field name="last_name" optional="hide"/>
                 <field name="first_name" optional="hide"/>
                 <field name="short_name" optional="hide"/>
                 <field name="person_type_id" widget="badge"
@@ -124,6 +125,7 @@
                             <group>
                                 <group string="Identity">
                                     <field name="name" string="Full Name"/>
+                                    <field name="last_name"/>
                                     <field name="first_name"/>
                                     <field name="short_name"/>
                                     <field name="abbreviation"/>
@@ -224,7 +226,8 @@
         <field name="arch" type="xml">
             <search string="Zoek Personen">
                 <field name="name" string="Name / SAP / Email"
-                       filter_domain="['|','|',('name', 'ilike', self),('sap_ref', 'ilike', self),('email_cloud', 'ilike', self)]"/>
+                       filter_domain="['|','|','|',('name', 'ilike', self),('last_name', 'ilike', self),('sap_ref', 'ilike', self),('email_cloud', 'ilike', self)]"/>
+                <field name="last_name"/>
                 <field name="first_name"/>
                 <field name="sap_ref"/>
                 <field name="person_type_id"/>

@@ -233,19 +233,36 @@ class SysEvent(models.Model):
         for vals in vals_list:
             if vals.get('name', _('New')) == _('New'):
                 vals['name'] = self.env['ir.sequence'].next_by_code('myschool.sys.event') or _('New')
+            self._sanitize_text_vals(vals)
         return super().create(vals_list)
-    
+
     def write(self, vals):
         # Automatically set eventclosed when status changes to CLOSED
         if vals.get('status') == 'CLOSED' and 'eventclosed' not in vals:
             vals['eventclosed'] = fields.Datetime.now()
-        
+
         # Clear eventclosed if status changes away from CLOSED
         if vals.get('status') and vals.get('status') != 'CLOSED':
             if 'eventclosed' not in vals:
                 vals['eventclosed'] = False
-        
+
+        self._sanitize_text_vals(vals)
         return super().write(vals)
+
+    @staticmethod
+    def _sanitize_text_vals(vals):
+        """Strip NUL (\\x00) chars from any string value being written.
+
+        AD/ldap3 occasionally surfaces raw byte fragments (binary
+        attributes, SIDs) inside their error messages. PostgreSQL
+        refuses NUL chars in text columns, so persisting them as-is
+        into `name`, `data`, etc. would crash any subsequent flush.
+        """
+        if not vals:
+            return
+        for key, value in list(vals.items()):
+            if isinstance(value, str) and '\x00' in value:
+                vals[key] = value.replace('\x00', ' ')
     
     # Action methods (equivalent to Java service operations)
     def action_set_processing(self):

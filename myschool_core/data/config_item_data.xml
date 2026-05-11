@@ -2,12 +2,14 @@
 <odoo>
     <data noupdate="1">
 
+        <!-- LEGACY (replaced by EmployeeSuspendPeriod / EmployeeDeletePeriod).
+             Kept only to avoid breaking anything that still reads them. -->
         <record id="ci_employee_account_deactivation_days" model="myschool.config.item">
             <field name="name">EmployeeAccountDeactivationDays</field>
             <field name="scope">global</field>
             <field name="type">config</field>
             <field name="integer_value">30</field>
-            <field name="description">Aantal dagen na wegvallen assignments voordat het account gedeactiveerd wordt</field>
+            <field name="description">[LEGACY] Vervangen door EmployeeSuspendPeriod.</field>
         </record>
 
         <record id="ci_employee_account_removal_days" model="myschool.config.item">
@@ -15,7 +17,34 @@
             <field name="scope">global</field>
             <field name="type">config</field>
             <field name="integer_value">90</field>
-            <field name="description">Aantal dagen na wegvallen assignments voordat het account verwijderd wordt</field>
+            <field name="description">[LEGACY] Vervangen door EmployeeDeletePeriod.</field>
+        </record>
+
+        <!-- Employee account-lifecycle periods.
+             Day X       : geen actieve assignments meer →
+                           deactivation_pending_since gezet,
+                           persoon uit alle groepen verwijderd.
+             Day X + EmployeeSuspendPeriod (default 30):
+                           account wordt gedeactiveerd (is_active=False)
+                           + AD-account verwijderd via LDAP/USER/DEL.
+             Day X + EmployeeSuspendPeriod + EmployeeDeletePeriod
+                          (default 30+30 = 60):
+                           Google-account moet verwijderd worden
+                           via een CLOUD/USER/DEL betask. -->
+        <record id="ci_employee_suspend_period" model="myschool.config.item">
+            <field name="name">EmployeeSuspendPeriod</field>
+            <field name="scope">global</field>
+            <field name="type">config</field>
+            <field name="integer_value">30</field>
+            <field name="description">Aantal dagen na het wegvallen van de assignments waarna het account gedeactiveerd wordt en het AD-account verwijderd wordt.</field>
+        </record>
+
+        <record id="ci_employee_delete_period" model="myschool.config.item">
+            <field name="name">EmployeeDeletePeriod</field>
+            <field name="scope">global</field>
+            <field name="type">config</field>
+            <field name="integer_value">30</field>
+            <field name="description">Aantal dagen na de account-deactivatie waarna het Google-account verwijderd moet worden.</field>
         </record>
 
     </data>

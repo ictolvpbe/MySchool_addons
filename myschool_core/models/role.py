@@ -94,17 +94,12 @@ class Role(models.Model):
         help='Whether this role grants access to the user interface'
     )
 
-    has_group = fields.Boolean(
-        string='Has Group',
-        default=False,
-        help='Whether this role requires Org creation per School'
-    )
-
-    has_accounts = fields.Boolean(
-        string='Has Accounts',
-        default=False,
-        help='Whether this role requires account creation'
-    )
+    # ``has_group`` / ``has_accounts`` removed — these were per-role
+    # without school context and duplicated state already carried by
+    # the target org's ``has_comgroup`` / ``has_accounts`` flags. The
+    # cascade now consults BRSO.id_org's flags as the single source of
+    # truth. ``has_odoo_group`` (below) stays — it's about which Odoo
+    # res.groups a role grants, a separate concern from group sync.
 
     # Priority for account creation (highest priority role determines the account)
     priority = fields.Integer(
@@ -127,52 +122,16 @@ class Role(models.Model):
         help='Whether this role should be automatically synchronized'
     )
 
-    # Legacy field for migration
-    old_id = fields.Char(
-        string='Old ID',
-        help='ID from legacy system for migration purposes'
-    )
-
     description = fields.Text(
         string='Description',
         help='Description of this role and its permissions'
     )
 
-    # =========================================================================
-    # ODOO GROUP INTEGRATION FIELDS
-    # =========================================================================
-    
-    has_odoo_group = fields.Boolean(
-        string='Has Odoo Groups',
-        default=False,
-        help='If enabled, employees with this role will be added to the linked Odoo security groups'
-    )
-
-    odoo_group_ids = fields.Many2many(
-        'res.groups',
-        'myschool_role_odoo_groups_rel',
-        'role_id', 'group_id',
-        string='Odoo Groups',
-        domain="[('privilege_id', '!=', False)]",
-        help='Odoo security groups linked to this role. '
-             'Employees with this role will be added to all these groups.'
-    )
-    odoo_group_display = fields.Char(
-        string='Toegewezen groepen',
-        compute='_compute_odoo_group_display',
-    )
-
-    @api.depends('odoo_group_ids')
-    def _compute_odoo_group_display(self):
-        for record in self:
-            if not record.odoo_group_ids:
-                record.odoo_group_display = ''
-                continue
-            parts = []
-            for group in record.odoo_group_ids:
-                category = group.privilege_id.category_id.name if group.privilege_id and group.privilege_id.category_id else ''
-                parts.append(f"{category} → {group.name}" if category else group.name)
-            record.odoo_group_display = ', '.join(parts)
+    # ``has_odoo_group`` / ``odoo_group_ids`` moved to ``myschool.org``.
+    # Reason: every group-related concern (LDAP COM, LDAP SEC, Odoo
+    # res.groups, accounts) now lives on the org — single source of
+    # truth. Migrate via ``Org._migrate_group_flags_from_legacy`` (auto-
+    # run by post_init).
 
     # =========================================================================
     # Constraints
@@ -180,45 +139,12 @@ class Role(models.Model):
 
     _shortname_unique = models.Constraint('UNIQUE(shortname)', 'Role short name must be unique!')
 
-    @api.constrains('has_odoo_group', 'odoo_group_ids')
-    def _check_odoo_group_consistency(self):
-        """Warn if has_odoo_group is True but no groups are set."""
-        for record in self:
-            if record.has_odoo_group and not record.odoo_group_ids:
-                _logger.warning(
-                    f'Role {record.name} has has_odoo_group=True but no odoo_group_ids set'
-                )
-
-    # =========================================================================
-    # Onchange Methods
-    # =========================================================================
-    
-    @api.onchange('has_odoo_group')
-    def _onchange_has_odoo_group(self):
-        """Clear odoo_group_ids when has_odoo_group is disabled."""
-        if not self.has_odoo_group:
-            self.odoo_group_ids = [(5, 0, 0)]
-
-    @api.onchange('odoo_group_ids')
-    def _onchange_odoo_group_ids(self):
-        """Set has_odoo_group when groups are selected."""
-        if self.odoo_group_ids:
-            self.has_odoo_group = True
-
     # =========================================================================
     # CRUD Overrides
     # =========================================================================
 
     def write(self, vals):
-        result = super().write(vals)
-        if vals.get('has_group'):
-            processor = self.env['myschool.betask.processor']
-            for role in self:
-                try:
-                    processor._sync_role_persongroups(role)
-                except Exception as e:
-                    _logger.warning(f'[PG-SYNC] Failed to sync persongroups for role {role.name}: {e}')
-        return result
+        return super().write(vals)
 
     # =========================================================================
     # Service Methods (from RoleServiceImpl.java)
@@ -321,19 +247,6 @@ class Role(models.Model):
             ('is_active', '=', is_active)
         ])
 
-    @api.model
-    def find_all_with_odoo_group(self) -> 'Role':
-        """
-        Find all Roles that have Odoo groups configured.
-
-        @return: Recordset of Roles with Odoo groups
-        """
-        return self.search([
-            ('has_odoo_group', '=', True),
-            ('odoo_group_ids', '!=', False),
-            ('is_active', '=', True)
-        ])
-
     def delete(self) -> bool:
         """
         Delete this Role.
@@ -374,133 +287,6 @@ class Role(models.Model):
             return self.create(vals)
 
     # =========================================================================
-    # Odoo Group Integration Actions
-    # =========================================================================
-
-    def action_sync_group_members(self):
-        """
-        Manual action to sync all employees with this role to the Odoo groups.
-        Can be called from a button in the form view.
-        """
-        self.ensure_one()
-
-        if not self.has_odoo_group or not self.odoo_group_ids:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': 'Info',
-                    'message': 'Deze rol heeft geen Odoo groepen geconfigureerd.',
-                    'type': 'info',
-                }
-            }
-
-        PropRelation = self.env['myschool.proprelation']
-        PropRelationType = self.env['myschool.proprelation.type']
-
-        ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
-
-        if not ppsbr_type:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': 'Fout',
-                    'message': 'PPSBR PropRelationType niet gevonden.',
-                    'type': 'danger',
-                }
-            }
-
-        ppsbr_records = PropRelation.search([
-            ('id_role', '=', self.id),
-            ('proprelation_type_id', '=', ppsbr_type.id),
-            ('is_active', '=', True),
-            ('id_person', '!=', False)
-        ])
-
-        added_count = 0
-        for ppsbr in ppsbr_records:
-            person = ppsbr.id_person
-            if person and person.odoo_user_id:
-                user = person.odoo_user_id
-                for group in self.odoo_group_ids:
-                    if group not in user.group_ids:
-                        user.write({'group_ids': [(4, group.id)]})
-                        added_count += 1
-
-        group_names = ', '.join(self.odoo_group_ids.mapped('full_name'))
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': 'Succes',
-                'message': f'{added_count} groepstoewijzingen toegevoegd ({group_names}).',
-                'type': 'success',
-            }
-        }
-    
-    def action_view_group_members(self):
-        """Action to view all users in the linked Odoo groups."""
-        self.ensure_one()
-
-        if not self.odoo_group_ids:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': 'Info',
-                    'message': 'Geen Odoo groepen gekoppeld aan deze rol.',
-                    'type': 'info',
-                }
-            }
-
-        return {
-            'type': 'ir.actions.act_window',
-            'name': f'Gebruikers met rol {self.name}',
-            'res_model': 'res.users',
-            'view_mode': 'tree,form',
-            'domain': [('group_ids', 'in', self.odoo_group_ids.ids)],
-            'target': 'current',
-        }
-
-    def action_remove_all_group_members(self):
-        """
-        Remove all users from this role's Odoo groups.
-        Use with caution!
-        """
-        self.ensure_one()
-
-        if not self.has_odoo_group or not self.odoo_group_ids:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': 'Info',
-                    'message': 'Deze rol heeft geen Odoo groepen geconfigureerd.',
-                    'type': 'info',
-                }
-            }
-
-        removed_count = 0
-        for group in self.odoo_group_ids:
-            users_in_group = self.env['res.users'].search([
-                ('group_ids', 'in', [group.id])
-            ])
-            for user in users_in_group:
-                user.write({'group_ids': [(3, group.id)]})
-                removed_count += 1
-
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': 'Succes',
-                'message': f'{removed_count} groepstoewijzingen verwijderd.',
-                'type': 'success',
-            }
-        }
-
-    # =========================================================================
     # Persongroup Integration Actions
     # =========================================================================
 
@@ -508,21 +294,12 @@ class Role(models.Model):
         """Manual action to sync persongroups for this role.
 
         Creates persongroups (via MANUAL/ORG/ADD betask) for each school
-        where this role has a BRSO, and syncs PG-P memberships.
+        where this role has a BRSO whose target org has
+        ``has_comgroup=True``, and syncs PG-P memberships. The
+        ``_sync_role_persongroups`` helper does the per-school filtering
+        — no role-level pre-gate any more.
         """
         self.ensure_one()
-
-        if not self.has_group:
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': 'Info',
-                    'message': 'Has Group is not enabled for this role.',
-                    'type': 'info',
-                },
-            }
-
         processor = self.env['myschool.betask.processor']
         try:
             processor._sync_role_persongroups(self)
@@ -696,8 +473,6 @@ class Role(models.Model):
                 'role_name': role.name,
                 'role_shortname': role.shortname,
                 'role_type': role.role_type_id.name if role.role_type_id else None,
-                'has_odoo_group': role.has_odoo_group,
-                'odoo_group_names': role.odoo_group_ids.mapped('full_name') if role.odoo_group_ids else [],
                 'org_id': org_id,
                 'org_name': org.name if org else None,
                 'org_short_name': org.name_short if org and hasattr(org, 'name_short') else None,
@@ -717,7 +492,7 @@ class Role(models.Model):
         """Deactivate this role."""
         self.write({'is_active': False})
 
-    @api.depends('name', 'label', 'shortname', 'role_type_id', 'has_odoo_group', 'is_active')
+    @api.depends('name', 'label', 'shortname', 'role_type_id', 'is_active')
     def _compute_display_name(self):
         """Custom display name: prefer label over system name."""
         for record in self:
@@ -726,8 +501,6 @@ class Role(models.Model):
                 display = f"{record.label} ({record.name})"
             elif record.shortname and record.shortname != record.name:
                 display = f"{record.name} ({record.shortname})"
-            if record.has_odoo_group:
-                display = f"{display} 🔐"
             if not record.is_active:
                 display = f"{display} [Inactive]"
             record.display_name = display

@@ -86,12 +86,20 @@
                         <field name="new_org_name" required="not use_existing"/>
                         <field name="new_org_name_short" required="not use_existing"
                                help="Short code/abbreviation (saved lowercase)"/>
+                        <field name="new_org_displayname"
+                               help="Optioneel UI-label. Leeg = gebruik 'name'."/>
                         <field name="new_org_inst_nr" required="not use_existing"
                                help="Official institution number"/>
                         <field name="new_org_type_id" options="{'no_create': True}"/>
                     </group>
                     <group string="Options">
                         <field name="new_org_has_ou"/>
+                        <field name="new_org_has_comgroup"
+                               readonly="new_org_type_id and new_org_type_id.name == 'PERSONGROUP'"/>
+                        <field name="new_org_has_secgroup"
+                               readonly="new_org_type_id and new_org_type_id.name == 'PERSONGROUP'"/>
+                        <field name="new_org_has_odoo_group"
+                               readonly="new_org_type_id and new_org_type_id.name == 'PERSONGROUP'"/>
                     </group>
                     <group string="Domains (inherited)">
                         <field name="new_org_domain_internal" readonly="1" force_save="1"/>
@@ -796,24 +804,62 @@
         <field name="name">myschool.manage.persongroup.members.wizard.form</field>
         <field name="model">myschool.manage.persongroup.members.wizard</field>
         <field name="arch" type="xml">
-            <form string="Manage Persongroup Members">
-                <div class="text-muted small mb-2"><em>Manage Persongroup Members</em></div>
+            <form string="Beheer groep-leden">
+                <div class="text-muted small mb-2"><em>Beheer groep-leden</em></div>
                 <group>
                     <field name="persongroup_id" invisible="1"/>
-                    <field name="persongroup_name" string="Persongroup" readonly="1"/>
+                    <field name="persongroup_name" string="Groep" readonly="1"/>
                 </group>
-                <separator string="Current Members"/>
-                <field name="current_member_ids" widget="many2many_tags" nolabel="1" readonly="1"/>
-                <separator string="Add Members"/>
-                <field name="add_member_ids" widget="many2many_tags" nolabel="1"
-                       options="{'no_create': True}"/>
-                <separator string="Remove Members"/>
-                <field name="remove_member_ids" widget="many2many_tags" nolabel="1"
-                       domain="[('id', 'in', current_member_ids)]"
-                       options="{'no_create': True}"/>
+                <field name="candidate_filter_pattern" invisible="1"/>
+                <group col="2">
+                    <!-- ── Pane 1: huidige leden ──────────────────────── -->
+                    <group string="Huidige leden">
+                        <field name="current_member_ids"
+                               widget="many2many_tags" nolabel="1" colspan="2"
+                               readonly="1"
+                               options="{'no_open': True}"/>
+                        <field name="remove_member_ids"
+                               widget="many2many_tags" nolabel="1" colspan="2"
+                               placeholder="Klik en kies leden om te verwijderen…"
+                               options="{'no_create': True, 'no_create_edit': True}"/>
+                        <button name="action_remove_selected"
+                                type="object"
+                                string="Verwijder geselecteerden"
+                                class="btn-danger"
+                                icon="fa-trash"
+                                invisible="not remove_member_ids"
+                                colspan="2"/>
+                    </group>
+
+                    <!-- ── Pane 2: toevoegen via tree-filter ──────────── -->
+                    <group string="Toevoegen">
+                        <field name="candidate_filter_org_id"
+                               string="Filter org"
+                               options="{'no_create': True, 'no_create_edit': True}"
+                               placeholder="Beperk de selectie (laat leeg = alles)"/>
+                        <field name="candidate_include_descendants"
+                               string="Incl. onderliggende takken"
+                               invisible="not candidate_filter_org_id"/>
+                        <field name="add_member_ids"
+                               widget="many2many_tags" nolabel="1" colspan="2"
+                               domain="[
+                                   ('id', 'not in', current_member_ids),
+                                   ('tree_org_name_tree', '=ilike', candidate_filter_pattern),
+                               ]"
+                               placeholder="Klik en kies personen om toe te voegen…"
+                               options="{'no_create': True, 'no_create_edit': True}"/>
+                        <button name="action_add_selected"
+                                type="object"
+                                string="Voeg geselecteerden toe"
+                                class="btn-primary"
+                                icon="fa-plus"
+                                invisible="not add_member_ids"
+                                colspan="2"/>
+                    </group>
+                </group>
                 <footer>
-                    <button name="action_apply" type="object" string="Apply" class="btn-primary"/>
-                    <button name="action_close" type="object" string="Close" class="btn-secondary"/>
+                    <button name="action_close" type="object" string="Sluiten"
+                            class="btn-secondary"/>
                 </footer>
             </form>
         </field>
@@ -931,6 +977,64 @@
     <record id="action_create_filialen_wizard" model="ir.actions.act_window">
         <field name="name">Filialen aanmaken</field>
         <field name="res_model">myschool.create.filialen.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- ========================================= -->
+    <!-- RESET AUTO-SYNC DATA WIZARD -->
+    <!-- ========================================= -->
+
+    <record id="view_reset_sync_data_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.reset.sync.data.wizard.form</field>
+        <field name="model">myschool.reset.sync.data.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Reset Auto-Sync Data">
+                <div class="text-muted small mb-2"><em>Reset Auto-Sync Data</em></div>
+                <group invisible="state != 'confirm'">
+                    <div class="alert alert-danger" role="alert">
+                        <strong>⚠ Destructive operation.</strong>
+                        Deletes sync-managed records so the next Full sync starts
+                        from a clean slate. Manual records (automatic_sync=False)
+                        and non-classgroup orgs (schools, departments, …) are
+                        kept.
+                    </div>
+                </group>
+                <group invisible="state != 'confirm'" string="What to delete">
+                    <group>
+                        <field name="delete_persons"/>
+                        <field name="delete_classgroups"/>
+                        <field name="delete_persongroups"/>
+                        <field name="delete_classgroup_roles"
+                               invisible="not delete_classgroups"/>
+                    </group>
+                    <group string="Preview (matching records)">
+                        <field name="person_count" readonly="1"/>
+                        <field name="classgroup_count" readonly="1"/>
+                        <field name="persongroup_count" readonly="1"/>
+                        <field name="role_count" readonly="1"/>
+                        <field name="proprelation_count" readonly="1"/>
+                    </group>
+                </group>
+                <group invisible="state != 'done'" string="Result">
+                    <field name="result_text" nolabel="1" widget="text"/>
+                </group>
+                <field name="state" invisible="1"/>
+                <footer>
+                    <button name="action_reset" type="object"
+                            string="Delete" class="btn-danger"
+                            invisible="state != 'confirm'"
+                            confirm="This permanently deletes the matching records and all proprelations involving them. This cannot be undone. Continue?"/>
+                    <button string="Close" class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_reset_sync_data_wizard" model="ir.actions.act_window">
+        <field name="name">Reset Auto-Sync Data</field>
+        <field name="res_model">myschool.reset.sync.data.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
     </record>

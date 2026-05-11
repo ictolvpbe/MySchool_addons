@@ -49,12 +49,16 @@
         'views/ldap_server_config_views.xml',
         'views/sync_test_runner_views.xml',
         'views/res_company_views.xml',
+        'views/field_template_views.xml',
 
         # Data Exchange
         'views/data_exchange_views.xml',
 
         # Server Benchmark
         'views/server_benchmark_views.xml',
+
+        # Health Check
+        'views/health_check_views.xml',
 
         # Wizards (must load before menus that reference wizard actions)
         'views/wizard_views.xml',
@@ -73,12 +77,15 @@
             'myschool_admin/static/src/css/dashboard.css',
             'myschool_admin/static/src/css/object_browser.css',
             'myschool_admin/static/src/css/log_viewer.css',
+            'myschool_admin/static/src/css/persongroup_member_browser.css',
             'myschool_admin/static/src/js/dashboard.js',
             'myschool_admin/static/src/xml/dashboard.xml',
             'myschool_admin/static/src/js/object_browser.js',
             'myschool_admin/static/src/xml/object_browser.xml',
             'myschool_admin/static/src/js/log_viewer.js',
             'myschool_admin/static/src/xml/log_viewer.xml',
+            'myschool_admin/static/src/js/persongroup_member_browser.js',
+            'myschool_admin/static/src/xml/persongroup_member_browser.xml',
         ],
     },
     'demo': [],

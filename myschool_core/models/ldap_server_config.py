@@ -252,6 +252,39 @@ class LdapServerConfig(models.Model):
             if record.use_ssl and record.use_tls:
                 raise ValidationError(_('Cannot use both SSL and StartTLS simultaneously'))
 
+    @api.constrains('active')
+    def _check_single_active_server(self):
+        # Allow zero or one active server. Two or more is invalid.
+        if self.search_count([('active', '=', True)]) > 1:
+            raise ValidationError(_(
+                'Only one LDAP server can be active at a time. '
+                'Archive the others first.'
+            ))
+
+    # =========================================================================
+    # Overrides — enforce single active server
+    # =========================================================================
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        # If any incoming record sets active=True, archive the existing ones
+        # first so the constraint passes after creation.
+        if any(vals.get('active', True) for vals in vals_list):
+            self.search([('active', '=', True)]).write({'active': False})
+        return super().create(vals_list)
+
+    def write(self, vals):
+        # When activating: archive any other currently-active records first
+        # so we end up with exactly one active server.
+        if vals.get('active') is True:
+            others = self.search([
+                ('active', '=', True),
+                ('id', 'not in', self.ids or [0]),
+            ])
+            if others:
+                super(type(self), others).write({'active': False})
+        return super().write(vals)
+
     # =========================================================================
     # Helper Methods
     # =========================================================================
@@ -285,6 +318,14 @@ class LdapServerConfig(models.Model):
         """Test the LDAP connection."""
         self.ensure_one()
 
+        # Strip NUL (\x00) and other characters PostgreSQL refuses in text
+        # columns. ldap3 sometimes surfaces raw byte fragments from AD
+        # rootDSE attributes inside its exception messages.
+        def _safe(text):
+            if not text:
+                return ''
+            return str(text).replace('\x00', ' ')
+
         ldap_service = self.env['myschool.ldap.service']
 
         try:
@@ -293,7 +334,7 @@ class LdapServerConfig(models.Model):
             self.write({
                 'last_test_date': fields.Datetime.now(),
                 'last_test_result': 'success' if result.get('success') else 'failed',
-                'last_test_message': result.get('message', ''),
+                'last_test_message': _safe(result.get('message', '')),
             })
 
             if result.get('success'):
@@ -302,7 +343,7 @@ class LdapServerConfig(models.Model):
                     'tag': 'display_notification',
                     'params': {
                         'title': _('Connection Test'),
-                        'message': _('Connection successful! Server info: %s') % result.get('message', 'OK'),
+                        'message': _('Connection successful! Server info: %s') % _safe(result.get('message', 'OK')),
                         'type': 'success',
                         'sticky': False,
                     }
@@ -313,7 +354,7 @@ class LdapServerConfig(models.Model):
                     'tag': 'display_notification',
                     'params': {
                         'title': _('Connection Test'),
-                        'message': _('Connection failed: %s') % result.get('message', 'Unknown error'),
+                        'message': _('Connection failed: %s') % _safe(result.get('message', 'Unknown error')),
                         'type': 'danger',
                         'sticky': True,
                     }
@@ -324,7 +365,7 @@ class LdapServerConfig(models.Model):
             self.write({
                 'last_test_date': fields.Datetime.now(),
                 'last_test_result': 'failed',
-                'last_test_message': str(e),
+                'last_test_message': _safe(str(e)),
             })
             return {
                 'type': 'ir.actions.client',
