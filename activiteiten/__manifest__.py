@@ -1,6 +1,6 @@
 {
     'name': 'Activiteiten',
-    'version': '3.9',
+    'version': '4.2',
     'summary': 'Aanvragen voor interne en externe schoolactiviteiten',
     'description': """
         Een module voor het aanvragen van een uitstap samen met een klas of klassen
@@ -24,6 +24,7 @@
         'views/activiteiten_menu.xml',
         'views/org_views.xml',
         'wizard/snapshot_wizard_views.xml',
+        'wizard/export_wizard_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

@@ -1,6 +1,6 @@
 {
     'name': 'Professionalisering',
-    'version': '4.6',
+    'version': '4.8',
     'summary': 'Beheer van professionaliseringsaanvragen voor leerkrachten',
     'description': """
         Module voor het beheren van professionaliseringsaanvragen.
@@ -22,6 +22,7 @@
         'data/vak_data.xml',
         'wizard/add_date_wizard_views.xml',
         'wizard/import_intranet_wizard_views.xml',
+        'wizard/export_wizard_views.xml',
         'views/professionalisering_views.xml',
         # Root menu must exist before vak_views.xml hangs Configuratie
         # under it.

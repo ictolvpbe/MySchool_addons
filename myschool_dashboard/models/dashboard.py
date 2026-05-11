@@ -486,6 +486,22 @@ class MySchoolDashboard(models.Model):
 
     # --- Actions ---
 
+    def action_open_prof_import(self):
+        """Open de Historische Import-wizard voor professionaliseringen.
+        Werkt enkel als de professionalisering-module geïnstalleerd is.
+        """
+        if 'professionalisering.import.wizard' not in self.env:
+            return False
+        wiz = self.env['professionalisering.import.wizard'].sudo().create({})
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Nascholingen importeren',
+            'res_model': 'professionalisering.import.wizard',
+            'res_id': wiz.id,
+            'view_mode': 'form',
+            'target': 'new',
+        }
+
     def action_open_professionalisering(self):
         if 'professionalisering.record' not in self.env:
             return False

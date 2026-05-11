@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_activiteiten_export_wizard_form" model="ir.ui.view">
+        <field name="name">activiteiten.export.wizard.form</field>
+        <field name="model">activiteiten.export.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Export naar Excel">
+                <sheet>
+                    <p>
+                        Genereer een xlsx-overzicht van alle activiteiten in
+                        een gekozen schooljaar. Twee sheets:
+                    </p>
+                    <ul>
+                        <li><strong>Detail</strong> — elke activiteit per school met kosten, leerlingen, S-Code</li>
+                        <li><strong>Samenvatting</strong> — per school: aantal uitstappen, totaalkost, gemiddelde kost/leerling</li>
+                    </ul>
+                    <group>
+                        <field name="schoolyear"/>
+                        <field name="only_done"/>
+                    </group>
+                    <group string="Filteren (optioneel)">
+                        <field name="school_id"
+                               options="{'no_create': True}"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_export"
+                            string="Download xlsx"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-download"/>
+                    <button string="Annuleren"
+                            class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_activiteiten_export_wizard"
+            model="ir.actions.act_window">
+        <field name="name">Exporteren naar Excel</field>
+        <field name="res_model">activiteiten.export.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_activiteiten_export"
+              name="Exporteren naar Excel"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_export_wizard"
+              groups="base.group_system,activiteiten.group_activiteiten_admin,activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_boekhouding"
+              sequence="80"/>
+</odoo>

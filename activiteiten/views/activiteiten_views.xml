@@ -301,6 +301,8 @@
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="datetime_end"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="is_gratis"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                         </group>
 
                         <!-- RIGHT COLUMN: Bus + Financieel -->
@@ -419,6 +421,7 @@
                 <field name="available_leerkracht_ids" invisible="1"/>
                 <field name="can_manage_invites" invisible="1"/>
                 <field name="state" invisible="1"/>
+                <field name="is_gratis" invisible="1"/>
                 <header>
                     <field name="wizard_step" widget="statusbar" options="{'clickable': True}"/>
                 </header>
@@ -440,8 +443,13 @@
                                placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
                                readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                     </group>
-                    <!-- Stap 3: Kosten -->
-                    <div invisible="wizard_step != '3'">
+                    <!-- Stap 3: Kosten — bij gratis activiteit toont er
+                         enkel een info-banner i.p.v. de hele kostenlijst. -->
+                    <div class="alert alert-info" role="alert"
+                         invisible="wizard_step != '3' or not is_gratis">
+                        <strong>Gratis activiteit.</strong> Er hoeven geen kosten ingevuld te worden. Vink "Gratis activiteit" af op het hoofdformulier indien er toch kosten zijn.
+                    </div>
+                    <div invisible="wizard_step != '3' or is_gratis">
                         <p class="text-muted mb-2">
                             <i class="fa fa-info-circle me-1"/>
                             Vul telkens het <strong>totaalbedrag</strong> in voor de volledige
@@ -482,12 +490,6 @@
                             </div>
                         </div>
                         <group class="mt-3">
-                            <separator string="Inkomgeld" colspan="2"/>
-                            <field name="inkomgeld_per_persoon"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
-                            <field name="inkomgeld_aantal_betalend"
-                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
-                            <field name="inkomgeld_totaal" readonly="1"/>
                             <separator string="Boekhouding" colspan="2"/>
                             <field name="bijdragen_regeling"
                                    readonly="state not in ('s_code', 'draft', 'form_invullen', 'bus_refused', 'pending_approval')"
@@ -720,6 +722,18 @@ records.filtered(lambda l: l.snapshot_type == 'student').write({'aanwezig': Fals
                 <field name="klas_name" readonly="1"/>
                 <field name="person_name" readonly="1"/>
                 <field name="aanwezig" widget="boolean_toggle"/>
+                <!-- Factureren-toggle en bedrag: enkel boekhouding/admin
+                     mag hierop schrijven. Voor andere rollen wordt het
+                     veld onzichtbaar (niet enkel readonly, want anders
+                     zou de leerkracht de huidige aanrekening zien
+                     terwijl die hem niet aanbelangt). -->
+                <field name="factureren" widget="boolean_toggle"
+                       groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
+                       optional="show"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="aangerekend_bedrag" widget="monetary"
+                       groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
+                       optional="show"/>
             </list>
         </field>
     </record>

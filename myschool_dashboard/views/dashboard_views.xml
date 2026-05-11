@@ -157,6 +157,15 @@
                                             <field name="prof_done" class="d-inline"/> Afgerond
                                         </button>
                                     </div>
+                                    <!-- Directie/Admin-tool: historische nascholingen importeren -->
+                                    <div class="d-flex mt-2" invisible="not is_prof_directie">
+                                        <button type="object" name="action_open_prof_import"
+                                                class="btn btn-sm btn-outline-secondary"
+                                                title="Historische nascholingen importeren uit phpMyAdmin XML-export">
+                                            <i class="fa fa-upload me-1" title="Importeren"/>
+                                            Historische import
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 

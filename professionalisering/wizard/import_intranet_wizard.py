@@ -129,18 +129,26 @@ class ProfessionaliseringImportWizard(models.TransientModel):
         no_employee_emails = set()
 
         for rec in records_data:
+            # Eén savepoint per record: als ÉÉN record faalt, rollen we
+            # enkel die savepoint terug, niet de hele transactie. Zo blijft
+            # de import gewoon doorgaan.
+            savepoint_name = f'import_rec_{created + errors}'
+            self.env.cr.execute(f'SAVEPOINT "{savepoint_name}"')
             try:
                 legacy_id = rec.get('aanvraagID') or ''
                 if not legacy_id:
+                    self.env.cr.execute(f'RELEASE SAVEPOINT "{savepoint_name}"')
                     continue
                 if legacy_id in existing_legacy:
                     skipped_existing += 1
+                    self.env.cr.execute(f'RELEASE SAVEPOINT "{savepoint_name}"')
                     continue
 
                 # Employee lookup via email
                 email = (rec.get('email') or '').strip().lower()
                 if not email or '@' not in email:
                     skipped_no_emp += 1
+                    self.env.cr.execute(f'RELEASE SAVEPOINT "{savepoint_name}"')
                     continue
                 emp = emp_cache.get(email)
                 if emp is None:
@@ -153,6 +161,7 @@ class ProfessionaliseringImportWizard(models.TransientModel):
                 if not emp:
                     skipped_no_emp += 1
                     no_employee_emails.add(email)
+                    self.env.cr.execute(f'RELEASE SAVEPOINT "{savepoint_name}"')
                     continue
 
                 # Vak: lookup of auto-create
@@ -248,6 +257,12 @@ class ProfessionaliseringImportWizard(models.TransientModel):
 
                 # Maak het record aan met name='New' zodat sequence triggert
                 Prof.with_context(tracking_disable=True).create(vals)
+                # Flush nu, terwijl het savepoint nog actief is — zo
+                # vangen we eventuele compute-errors hier op i.p.v. ze
+                # uit te stellen tot de eind-commit (die zou dan een
+                # 'transaction aborted' error gooien).
+                self.env.flush_all()
+                self.env.cr.execute(f'RELEASE SAVEPOINT "{savepoint_name}"')
                 created += 1
                 # Commit per 100 om geheugen + lock-tijd te beperken
                 if created % 100 == 0:
@@ -255,6 +270,10 @@ class ProfessionaliseringImportWizard(models.TransientModel):
                     _logger.info('[import] %d records aangemaakt...', created)
 
             except Exception as e:
+                # Rollback enkel deze savepoint zodat de transactie
+                # bruikbaar blijft voor de volgende records.
+                self.env.cr.execute(
+                    f'ROLLBACK TO SAVEPOINT "{savepoint_name}"')
                 errors += 1
                 if len(error_samples) < 10:
                     error_samples.append(

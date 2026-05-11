@@ -404,6 +404,13 @@ class Activiteiten(models.Model):
         currency_field='currency_id',
         help='Concrete eurowaarde uit de bijdrageregeling voor deze activiteit.',
     )
+    is_gratis = fields.Boolean(
+        string='Gratis activiteit',
+        default=False,
+        help='Vink aan als deze activiteit volledig gratis is (geen bus, '
+             'geen toegangsticket, geen kosten). De Kosten-stap wordt dan '
+             'overgeslagen en boekhouding hoeft geen S-Code in te vullen.',
+    )
     # Inkomgeld gestructureerd: prijs per persoon × aantal betalend = totaal
     inkomgeld_per_persoon = fields.Monetary(
         string='Inkomgeld per persoon',
@@ -1202,6 +1209,18 @@ class Activiteiten(models.Model):
                 raise UserError("Vul een titel in.")
             if not record.datetime:
                 raise UserError("Vul een datum en tijdstip in.")
+            # Geen-kosten-waarschuwing: als de leerkracht geen enkele
+            # kost ingegeven heeft EN geen "Gratis"-vinkje aangezet, dan
+            # is dat waarschijnlijk een vergetelheid. Blokkeer met een
+            # duidelijke melding die vraagt om expliciet te bevestigen.
+            heeft_kosten = bool(record.kosten_ids) or bool(record.bus_price)
+            if not heeft_kosten and not record.is_gratis:
+                raise UserError(
+                    "Er zijn geen kosten ingevuld. Als dit een gratis "
+                    "activiteit is, vink dan 'Gratis activiteit' aan in "
+                    "het hoofdformulier en dien opnieuw in. Zo niet, voeg "
+                    "de kosten toe via Extra info → Kosten."
+                )
             # Veiligheidsnet: binnenschoolse activiteiten hebben geen bus.
             # Een vergeten bus_nodig=True zou anders ten onrechte de bus-flow
             # triggeren.
