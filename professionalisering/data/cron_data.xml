@@ -9,4 +9,14 @@
         <field name="interval_type">days</field>
         <field name="active">True</field>
     </record>
+
+    <record id="ir_cron_reminder_bewijs" model="ir.cron">
+        <field name="name">Professionalisering: reminder bewijs indienen</field>
+        <field name="model_id" ref="model_professionalisering_record"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_reminder_bewijs()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
 </odoo>

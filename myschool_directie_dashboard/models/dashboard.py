@@ -56,6 +56,13 @@ class MySchoolDirectieDashboard(models.Model):
     total_cost_done = fields.Monetary(compute='_compute_section_data', currency_field='currency_id')
     total_cost_planned = fields.Monetary(compute='_compute_section_data', currency_field='currency_id')
 
+    # Drukwerk school-brede ranglijsten (onafhankelijk van geselecteerde
+    # leerkracht — het is bedoeld als overzicht voor de hele school).
+    druk_top_printers_html = fields.Html(
+        compute='_compute_drukwerk_ranking', sanitize=False)
+    druk_top_deleters_html = fields.Html(
+        compute='_compute_drukwerk_ranking', sanitize=False)
+
     # --- Computes ---
 
     @api.depends('employee_id', 'date_from', 'date_to')
@@ -237,3 +244,59 @@ class MySchoolDirectieDashboard(models.Model):
             'print_deadline', max(self.date_from, today), self.date_to,
             'Drukwerk — Gepland',
         )
+
+    # --- Drukwerk ranglijsten (school-breed) ---
+
+    @api.depends('date_from', 'date_to')
+    def _compute_drukwerk_ranking(self):
+        """Top-5 indieners (= meeste afgewerkte aanvragen) en top-5
+        verwijderaars (= meeste verwijderingen uit audit-log) binnen
+        de geselecteerde periode."""
+        for rec in self:
+            if 'drukwerk.record' not in self.env:
+                rec.druk_top_printers_html = False
+                rec.druk_top_deleters_html = False
+                continue
+            domain_print = [('state', '=', 'done')]
+            domain_del = [('action', '=', 'delete')]
+            if rec.date_from:
+                domain_print.append(('create_date', '>=', rec.date_from))
+                domain_del.append(('create_date', '>=', rec.date_from))
+            if rec.date_to:
+                domain_print.append(('create_date', '<=', rec.date_to))
+                domain_del.append(('create_date', '<=', rec.date_to))
+            top_print = self.env['drukwerk.record'].sudo().read_group(
+                domain=domain_print,
+                fields=['create_uid'],
+                groupby=['create_uid'],
+                orderby='__count desc',
+                limit=5,
+            )
+            rec.druk_top_printers_html = self._render_top_list(
+                top_print, key='create_uid',
+                label='aanvraag', label_p='aanvragen')
+            top_del = self.env['drukwerk.audit.log'].sudo().read_group(
+                domain=domain_del,
+                fields=['actor_id'],
+                groupby=['actor_id'],
+                orderby='__count desc',
+                limit=5,
+            )
+            rec.druk_top_deleters_html = self._render_top_list(
+                top_del, key='actor_id',
+                label='verwijdering', label_p='verwijderingen')
+
+    @staticmethod
+    def _render_top_list(rows, key='create_uid',
+                         label='item', label_p='items'):
+        if not rows:
+            return '<em class="text-muted">Nog geen data.</em>'
+        out = ['<ol class="mb-0 ps-3">']
+        for row in rows:
+            ref = row.get(key)
+            name = ref[1] if isinstance(ref, (list, tuple)) and len(ref) > 1 else '(onbekend)'
+            count = row.get('__count', 0)
+            lbl = label if count == 1 else label_p
+            out.append(f'<li><strong>{name}</strong> — {count} {lbl}</li>')
+        out.append('</ol>')
+        return ''.join(out)

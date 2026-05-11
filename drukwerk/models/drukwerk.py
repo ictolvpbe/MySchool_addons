@@ -100,8 +100,17 @@ class DrukwerkRecord(models.Model):
         ('geel', 'Geel'),
         ('blauw', 'Blauw'),
     ], string='Papierkleur', default='geen', required=True)
-    dik_papier = fields.Boolean(string='Dik papier', default=False)
-    opmerking = fields.Char(string='Opmerking')
+    dik_papier = fields.Boolean(
+        string='Dik papier',
+        default=False,
+        help='Aanvinken voor zwaarder papier (bv. omslagen, posters, '
+             'kaftvel). Drukwerkteam gebruikt dan een andere papierlade.',
+    )
+    opmerking = fields.Char(
+        string='Opmerking',
+        help='Korte opmerking voor het drukwerkteam (bv. "Eerste 10 op '
+             'kleur", "Niet sorteren", ...).',
+    )
 
     student_count = fields.Integer(
         string='Aantal leerlingen',
@@ -131,12 +140,26 @@ class DrukwerkRecord(models.Model):
     )
 
     # --- Print options ---
-    dubbelzijdig = fields.Boolean(string='Dubbelzijdig', default=True)
-    nieten = fields.Boolean(string='Nieten', default=False)
-    perforeren = fields.Boolean(string='Perforeren', default=False)
-    liggend = fields.Boolean(string='Liggend', default=False)
-    sorteren = fields.Boolean(string='Sorteren', default=False)
-    a3_plooien = fields.Boolean(string='A3 plooien', default=False)
+    dubbelzijdig = fields.Boolean(
+        string='Dubbelzijdig', default=True,
+        help='Recto-verso afdrukken (standaard aan). Uitvinken alleen '
+             'wanneer er enkelzijdig moet afgedrukt worden.')
+    nieten = fields.Boolean(
+        string='Nieten', default=False,
+        help='Bundeltje nieten links bovenaan.')
+    perforeren = fields.Boolean(
+        string='Perforeren', default=False,
+        help='Gaatjes voor klassieke 2- of 4-rings map.')
+    liggend = fields.Boolean(
+        string='Liggend', default=False,
+        help='Afdrukken in landscape (breedteoriëntatie) i.p.v. staand.')
+    sorteren = fields.Boolean(
+        string='Sorteren', default=False,
+        help='Per kopie alle pagina\'s achter elkaar (1-2-3, 1-2-3, ...) '
+             'i.p.v. per pagina gestapeld (1-1-1, 2-2-2, ...).')
+    a3_plooien = fields.Boolean(
+        string='A3 plooien', default=False,
+        help='A3 vellen automatisch dubbelvouwen tot A4 (bv. voor folders).')
     boekje_a4 = fields.Boolean(string='Boekje A4', default=False)
     gekleurd_papier = fields.Selection([
         ('gl4', 'Gekleurd papier optie 4'),
@@ -162,6 +185,13 @@ class DrukwerkRecord(models.Model):
              'Wordt gebruikt om afgeronde records automatisch te archiveren '
              'na X dagen, zodat boekhouding op het einde van het jaar weet '
              'welke aanvragen netjes afgesloten zijn.',
+    )
+    active = fields.Boolean(
+        string='Actief',
+        default=True,
+        help='Niet-actieve records worden niet in de standaardlijst getoond. '
+             'De jaarlijkse auto-archive cron (rond 15 augustus) zet '
+             'records van vorig schooljaar op niet-actief.',
     )
     is_owner = fields.Boolean(compute='_compute_is_owner')
     can_edit_content = fields.Boolean(
@@ -577,6 +607,12 @@ class DrukwerkRecord(models.Model):
         for record in self:
             if record.state != 'form_invullen':
                 raise UserError("Kan alleen vanuit de invulfase ingediend worden.")
+            if not record.drukwerk_type:
+                raise UserError(
+                    "Selecteer eerst of het om gewoon of examen drukwerk gaat.")
+            if record.drukwerk_type == 'examen' and not record.examen_variant:
+                raise UserError(
+                    "Selecteer ook welke variant van examen drukwerk het is.")
             if not record.titel:
                 raise UserError("Vul een omschrijving in.")
             if not record.print_deadline:
@@ -639,6 +675,25 @@ class DrukwerkRecord(models.Model):
                     "Alleen afgeronde aanvragen kunnen gearchiveerd worden."
                 )
             record.state = 'gestockeerd'
+
+    @api.model
+    def _auto_archive_old_done(self, cutoff_date):
+        """Markeer afgeronde/gearchiveerde drukwerkaanvragen ouder dan
+        cutoff_date als inactief. Aangeroepen door de centrale
+        myschool_core archive-cron.
+
+        Doel-states: 'done' en 'gestockeerd'. De 30-daagse auto-stock
+        cron heeft de meeste 'done' records al naar 'gestockeerd'
+        verplaatst; deze tweede stap ruimt de oudere ('vorig schooljaar')
+        records definitief op."""
+        records = self.search([
+            ('state', 'in', ('done', 'gestockeerd')),
+            ('active', '=', True),
+            ('done_date', '<', cutoff_date),
+        ])
+        if records:
+            records.write({'active': False})
+        return len(records)
 
     @api.model
     def _cron_auto_stock(self):
@@ -750,6 +805,27 @@ class DrukwerkRecord(models.Model):
             for record in self:
                 if record.state not in ('draft', 'form_invullen'):
                     raise UserError("U kunt alleen aanvragen verwijderen die nog niet ingediend zijn.")
+        # Log elke verwijdering — door welke gebruiker, in welke status —
+        # zodat directie kan zien wie vaak foute aanvragen indient.
+        # Concept-records die meteen weer verwijderd worden tellen niet mee:
+        # alleen records die al langer dan 1 minuut bestaan worden gelogd
+        # zodat tikfouten in de aanmaak geen ruis veroorzaken.
+        from datetime import timedelta
+        cutoff = fields.Datetime.now() - timedelta(minutes=1)
+        Audit = self.env['drukwerk.audit.log'].sudo()
+        actor = self.env.user
+        for record in self:
+            if record.create_date and record.create_date > cutoff:
+                continue
+            Audit.create({
+                'actor_id': actor.id,
+                'actor_name': actor.name,
+                'record_name': record.name or '(geen referentie)',
+                'record_titel': record.titel or '',
+                'school_company_id': record.school_company_id.id or False,
+                'action': 'delete',
+                'state_before': record.state or '',
+            })
         return super().unlink()
 
     def _notify_drukwerk_team(self):

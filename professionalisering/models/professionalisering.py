@@ -1,5 +1,6 @@
 import ast
 import logging
+from datetime import timedelta
 
 import requests
 
@@ -349,7 +350,11 @@ class ProfessionaliseringRecord(models.Model):
         ('lezen', 'Lezen'),
         ('video', 'Video'),
         ('podcast', 'Podcast'),
-    ], string='Vorm')
+    ], string='Vorm',
+        help='Nascholing = klassieke vorming met aanwezigheid (op locatie '
+             'of online). Lezen / Video / Podcast = zelfstudie waar enkel '
+             'het bewijs (link of attest) achteraf ingediend wordt — geen '
+             'goedkeuringsstroom door directie nodig.')
     subtype_teamleren = fields.Selection([
         ('plc', 'Professional Learning Community (PLC)'),
         ('samen_studie', 'Samen studie'),
@@ -557,6 +562,11 @@ class ProfessionaliseringRecord(models.Model):
         help='Upload een attest, certificaat of ander bewijs.',
     )
     bewijs_ingediend = fields.Boolean(string='Bewijs ingediend', default=False)
+    reminder_bewijs_sent_at = fields.Date(
+        string='Laatste bewijs-herinnering',
+        help='Datum waarop de laatste reminder werd gestuurd. Wordt door '
+             'de cron gebruikt om niet dagelijks te spammen.',
+    )
     needs_approval = fields.Boolean(compute='_compute_needs_approval')
     needs_payment = fields.Boolean(compute='_compute_needs_payment')
     vorm_display = fields.Char(string='Vorm', compute='_compute_vorm_display')
@@ -939,6 +949,23 @@ class ProfessionaliseringRecord(models.Model):
             activities.action_done()
 
     @api.model
+    def _auto_archive_old_done(self, cutoff_date):
+        """Markeer afgeronde professionaliseringen ouder dan cutoff_date als
+        inactief. Aangeroepen door de centrale myschool_core archive-cron."""
+        records = self.search([
+            ('state', '=', 'done'),
+            ('active', '=', True),
+            '|',
+            ('end_date', '<', cutoff_date),
+            '&',
+            ('end_date', '=', False),
+            ('start_date', '<', cutoff_date),
+        ])
+        if records:
+            records.write({'active': False})
+        return len(records)
+
+    @api.model
     def _cron_advance_to_bewijs(self):
         """Move records from 'bevestiging' (Goedgekeurd) to 'bewijs' once the
         last training date has passed, and schedule the bewijs upload activity."""
@@ -949,6 +976,32 @@ class ProfessionaliseringRecord(models.Model):
             if last_date and last_date < today:
                 rec.state = 'bewijs'
                 rec._schedule_bewijs_activity_single()
+
+    @api.model
+    def _cron_reminder_bewijs(self):
+        """Stuur reminder naar de medewerker N weken nadat de opleiding
+        afgelopen is, zolang het bewijs nog niet werd ingediend.
+        Herhaalt elke 7 dagen tot bewijs_ingediend = True."""
+        weeks_after = int(self.env['ir.config_parameter'].sudo().get_param(
+            'professionalisering.reminder_bewijs_weeks', 2))
+        repeat_interval = int(self.env['ir.config_parameter'].sudo().get_param(
+            'professionalisering.reminder_repeat_days', 7))
+        today = fields.Date.today()
+        cutoff = today - timedelta(weeks=weeks_after)
+        records = self.search([
+            ('state', '=', 'bewijs'),
+            ('bewijs_ingediend', '=', False),
+        ])
+        for rec in records:
+            last_training = rec._latest_training_date()
+            if not last_training or last_training > cutoff:
+                continue
+            last_sent = rec.reminder_bewijs_sent_at
+            if last_sent and (today - last_sent).days < repeat_interval:
+                continue
+            rec._send_notification(
+                'professionalisering.email_template_reminder_bewijs')
+            rec.reminder_bewijs_sent_at = today
 
     def _latest_training_date(self):
         """Return the latest date of the training (start_date or last date_line)."""

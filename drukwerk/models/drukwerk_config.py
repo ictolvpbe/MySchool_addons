@@ -27,6 +27,15 @@ class DrukwerkConfig(models.Model):
         default=0.04,
     )
 
+    # --- Printer ---
+    printer_naam = fields.Char(
+        string='Naam afdrukker',
+        default='Drukkerij',
+        help='Naam van de fysieke printer waar drukwerk naartoe gaat. '
+             'Wordt prominent op de afdrukpagina getoond zodat drukkerij '
+             'weet welke printer te kiezen in het systeemdialoogvenster.',
+    )
+
     # --- Count-e export ---
     count_e_artikel = fields.Char(
         string='Count-e artikel (zwart-wit)',
@@ -63,6 +72,8 @@ class DrukwerkConfig(models.Model):
             param.set_param('drukwerk.prijs_a3', str(vals['prijs_a3']))
         if 'prijs_dik_papier' in vals:
             param.set_param('drukwerk.prijs_dik_papier', str(vals['prijs_dik_papier']))
+        if 'printer_naam' in vals:
+            param.set_param('drukwerk.printer_naam', vals['printer_naam'] or 'Drukkerij')
         if 'count_e_artikel' in vals:
             param.set_param('drukwerk.count_e_artikel', vals['count_e_artikel'] or '')
         if 'count_e_artikel_kleur' in vals:

@@ -36,6 +36,7 @@ from . import res_company
 from . import res_users
 from . import mail_mail_rewrite_from
 from . import hr_employee_display_name
+from . import archive_runner
 
 # Process models
 from . import process

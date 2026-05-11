@@ -25,3 +25,5 @@ access_drukwerk_class_report_boekhouding,drukwerk.class.report.boekhouding,model
 access_drukwerk_class_report_admin,drukwerk.class.report.admin,model_drukwerk_class_report,group_drukwerk_admin,1,0,0,0
 access_drukwerk_student_report_boekhouding,drukwerk.student.report.boekhouding,model_drukwerk_student_report,group_drukwerk_boekhouding,1,0,0,0
 access_drukwerk_student_report_admin,drukwerk.student.report.admin,model_drukwerk_student_report,group_drukwerk_admin,1,0,0,0
+access_drukwerk_audit_log_directie,drukwerk.audit.log.directie,model_drukwerk_audit_log,group_drukwerk_directie,1,0,0,0
+access_drukwerk_audit_log_admin,drukwerk.audit.log.admin,model_drukwerk_audit_log,group_drukwerk_admin,1,1,1,1

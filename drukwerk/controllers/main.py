@@ -19,10 +19,92 @@ class DrukwerkPrintController(http.Controller):
 
         filename = rec.document_filename or 'document.pdf'
         copies = rec.aantal_kopies or 1
-        dubbelzijdig = rec.dubbelzijdig
         kleur_label = 'Kleur' if rec.kleur == 'kleur' else 'Zwart-wit'
         formaat_label = rec.formaat.upper() if rec.formaat else 'A4'
-        kopie_leerkracht = 'Ja' if rec.kopie_leerkracht else 'Nee'
+
+        # Printernaam komt uit drukwerk.config (eenmalig per omgeving in
+        # te stellen). Fallback: 'Drukkerij'.
+        printer_naam = request.env['ir.config_parameter'].sudo().get_param(
+            'drukwerk.printer_naam', 'Drukkerij')
+
+        # Papierkleur-label
+        papier_kleur_map = {
+            'geen': 'Wit (standaard)',
+            'groen': 'Groen',
+            'geel': 'Geel',
+            'blauw': 'Blauw',
+        }
+        papier_kleur_label = papier_kleur_map.get(rec.papier_kleur, 'Wit')
+
+        # Welke finishing-opties zijn aangevinkt
+        finishing = []
+        if rec.nieten:
+            finishing.append('NIETEN')
+        if rec.perforeren:
+            finishing.append('PERFOREREN')
+        if rec.sorteren:
+            finishing.append('SORTEREN')
+        if rec.a3_plooien:
+            finishing.append('A3 PLOOIEN')
+        if rec.boekje_a4:
+            finishing.append('BOEKJE A4')
+        if rec.liggend:
+            finishing.append('LIGGEND')
+        if rec.dik_papier:
+            finishing.append('DIK PAPIER')
+        if rec.papier_kleur and rec.papier_kleur != 'geen':
+            finishing.append(f'PAPIER: {papier_kleur_label.upper()}')
+
+        # Printer code prominent
+        printer_code = rec.printer_code or '-'
+
+        # Render row per setting
+        def row(label, value, color='secondary'):
+            return (
+                f'<div class="setting-row">'
+                f'<span class="setting-label">{label}</span>'
+                f'<span class="badge badge-{color}">{value}</span>'
+                f'</div>'
+            )
+
+        rows_html = ''
+        rows_html += row('Afdrukker', printer_naam, 'printer')
+        if printer_code != '-':
+            rows_html += row('Printer code', printer_code, 'code')
+        rows_html += row('Formaat', formaat_label, 'formaat')
+        rows_html += row('Kleur', kleur_label,
+                         'kleur' if rec.kleur == 'kleur' else 'zw')
+        rows_html += row('Kopieën', str(copies), 'copies')
+        rows_html += row(
+            'Dubbelzijdig', 'Ja' if rec.dubbelzijdig else 'Nee',
+            'yes' if rec.dubbelzijdig else 'no')
+        rows_html += row(
+            'Papier', papier_kleur_label,
+            'paper' if rec.papier_kleur and rec.papier_kleur != 'geen' else 'no')
+        rows_html += row(
+            'Kopie leerkracht', 'Ja' if rec.kopie_leerkracht else 'Nee',
+            'yes' if rec.kopie_leerkracht else 'no')
+
+        # Finishing alert prominent
+        finishing_html = ''
+        if finishing or rec.opmerking:
+            parts = []
+            if finishing:
+                parts.append(
+                    '<strong>Finishing:</strong> ' + ' &middot; '.join(finishing))
+            if rec.opmerking:
+                parts.append(
+                    f'<strong>Opmerking:</strong> {rec.opmerking}')
+            finishing_html = (
+                '<div class="finishing-alert">'
+                '<span class="finish-icon">&#9888;</span> '
+                + ' &mdash; '.join(parts)
+                + ' &mdash; gebruik <strong>Ctrl+Shift+P</strong> voor '
+                'het systeemdialoogvenster met alle printeropties'
+                '</div>'
+            )
+
+        iframe_offset = 220 + (40 if finishing_html else 0)
 
         html = f"""<!DOCTYPE html>
 <html>
@@ -30,95 +112,79 @@ class DrukwerkPrintController(http.Controller):
     <meta charset="UTF-8">
     <title>Afdrukken - {filename}</title>
     <style>
-        body {{ margin: 0; }}
-        .print-info {{
+        body {{ margin: 0; font-family: Arial, sans-serif; }}
+        .print-header {{
             background: #f8f9fa;
             border-bottom: 2px solid #dee2e6;
-            padding: 10px 25px;
-            font-family: Arial, sans-serif;
+            padding: 12px 25px;
+        }}
+        .print-header h1 {{
+            margin: 0 0 8px 0;
+            font-size: 18px;
+            color: #007d8c;
+        }}
+        .print-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 8px 24px;
+        }}
+        .setting-row {{
             display: flex;
             align-items: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }}
-        .print-info .badge {{
-            padding: 4px 14px;
-            border-radius: 4px;
-            font-weight: bold;
+            gap: 10px;
             font-size: 14px;
         }}
-        .print-info .badge-copies {{
-            background: #dc3545;
-            color: white;
+        .setting-label {{
+            color: #555;
+            min-width: 110px;
         }}
-        .print-info .badge-yes {{
-            background: #28a745;
-            color: white;
-        }}
-        .print-info .badge-no {{
-            background: #6c757d;
-            color: white;
-        }}
-        .print-info .badge-kleur {{
-            background: #007bff;
-            color: white;
-        }}
-        .print-info .badge-zw {{
-            background: #343a40;
-            color: white;
-        }}
-        .print-info .badge-formaat {{
-            background: #17a2b8;
-            color: white;
-        }}
-        .print-info .manual-warning {{
-            background: #fff3cd;
-            border: 1px solid #ffc107;
+        .badge {{
             padding: 4px 12px;
             border-radius: 4px;
+            font-weight: bold;
             font-size: 13px;
-            color: #856404;
         }}
+        .badge-printer {{ background: #007d8c; color: white; }}
+        .badge-code {{
+            background: #6f42c1;
+            color: white;
+            font-family: monospace;
+            letter-spacing: 1px;
+        }}
+        .badge-formaat {{ background: #17a2b8; color: white; }}
+        .badge-kleur {{ background: #007bff; color: white; }}
+        .badge-zw {{ background: #343a40; color: white; }}
+        .badge-copies {{ background: #dc3545; color: white; }}
+        .badge-yes {{ background: #28a745; color: white; }}
+        .badge-no {{ background: #6c757d; color: white; }}
+        .badge-paper {{ background: #fd7e14; color: white; }}
         .finishing-alert {{
             background: #f8d7da;
             border: 2px solid #dc3545;
             border-radius: 6px;
             padding: 10px 20px;
-            margin: 0 25px;
-            font-family: Arial, sans-serif;
-            font-size: 15px;
-            font-weight: bold;
+            margin: 12px 25px;
+            font-size: 14px;
             color: #721c24;
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }}
-        .finishing-alert .finish-icon {{
-            font-size: 22px;
-        }}
+        .finishing-alert .finish-icon {{ font-size: 18px; }}
         iframe {{
             width: 100%;
-            height: calc(100vh - {90 if (rec.nieten or rec.perforeren) else 50}px);
+            height: calc(100vh - {iframe_offset}px);
             border: none;
         }}
         @media print {{
-            .print-info, .finishing-alert {{ display: none !important; }}
+            .print-header, .finishing-alert {{ display: none !important; }}
             iframe {{ height: 100vh; }}
         }}
     </style>
 </head>
 <body>
-    <div class="print-info">
-        <span><strong>Formaat:</strong> <span class="badge badge-formaat">{formaat_label}</span></span>
-        <span><strong>Kleur:</strong> <span class="badge badge-{'kleur' if rec.kleur == 'kleur' else 'zw'}">{kleur_label}</span></span>
-        <span><strong>Kopieën:</strong> <span class="badge badge-copies">{copies}</span></span>
-        <span><strong>Dubbelzijdig:</strong> <span class="badge badge-{'yes' if dubbelzijdig else 'no'}">{'Ja' if dubbelzijdig else 'Nee'}</span></span>
-        <span><strong>Nieten:</strong> <span class="badge badge-{'yes' if rec.nieten else 'no'}">{'Ja' if rec.nieten else 'Nee'}</span></span>
-        <span><strong>Perforeren:</strong> <span class="badge badge-{'yes' if rec.perforeren else 'no'}">{'Ja' if rec.perforeren else 'Nee'}</span></span>
-        <span><strong>Kopie leerkracht:</strong> <span class="badge badge-{'yes' if rec.kopie_leerkracht else 'no'}">{kopie_leerkracht}</span></span>
-        {'<span class="manual-warning">&#9888; Controleer kleurinstelling in afdrukvenster</span>' if rec.kleur == 'kleur' else ''}
+    <div class="print-header">
+        <h1>Afdrukinstellingen — {rec.name or ''}</h1>
+        <div class="print-grid">{rows_html}</div>
     </div>
-    {'<div class="finishing-alert"><span class="finish-icon">&#9888;</span> Stel in het afdrukvenster in: ' + ' + '.join(f for f in [('NIETEN' if rec.nieten else ''), ('PERFOREREN' if rec.perforeren else '')] if f) + ' &mdash; Gebruik <strong>Ctrl+Shift+P</strong> voor het systeemdialoogvenster met alle printeropties</div>' if (rec.nieten or rec.perforeren) else ''}
+    {finishing_html}
     <iframe id="pdf-frame" src="/drukwerk/print/{record_id}/pdf"
             onload="setTimeout(function(){{ document.getElementById('pdf-frame').contentWindow.print(); }}, 500);">
     </iframe>

@@ -203,6 +203,18 @@ class ManualTaskProcessor(models.AbstractModel):
                     'is_active': True,
                 })
                 changes.append(f"Created PERSON-TREE relation to {org.name_tree or org.name}")
+                # Geef de gebruiker meteen toegang tot het bedrijf van
+                # de school zodat de bedrijfswisselaar werkt.
+                if user:
+                    school_org = self._resolve_parent_school_from_org(org)
+                    if school_org:
+                        company = self.env['res.company'].sudo().search(
+                            [('school_id', '=', school_org.id)], limit=1)
+                        if company and company.id not in user.company_ids.ids:
+                            user.sudo().write({'company_ids': [(4, company.id)]})
+                            changes.append(
+                                f"Linked company '{company.name}' to user "
+                                f"(school: {school_org.name})")
 
         return {'success': True, 'changes': '\n'.join(changes)}
 

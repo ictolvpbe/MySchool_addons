@@ -33,6 +33,12 @@ class ActiviteitenSnapshotLine(models.Model):
     klas_name = fields.Char(
         string='Klas', compute='_compute_klas_name', store=True,
     )
+    aanwezig = fields.Boolean(
+        string='Aanwezig',
+        default=True,
+        help='Vink aan voor leerlingen die effectief op de uitstap waren. '
+             'Standaard staat iedereen op aanwezig — vink af wie er niet bij was.',
+    )
 
     @api.depends('person_id', 'activiteit_id.klas_ids')
     def _compute_klas_name(self):

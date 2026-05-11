@@ -92,6 +92,10 @@ class MySchoolDashboard(models.Model):
         string="Act. S-Code", compute='_compute_activiteiten_counts')
     act_vervanging = fields.Integer(
         string="Act. Vervanging", compute='_compute_activiteiten_counts')
+    act_aanwezigheid = fields.Integer(
+        string="Act. Aanwezigheid", compute='_compute_activiteiten_counts')
+    act_facturen = fields.Integer(
+        string="Act. Facturen", compute='_compute_activiteiten_counts')
     act_done = fields.Integer(
         string="Act. Afgerond", compute='_compute_activiteiten_counts')
 
@@ -101,6 +105,8 @@ class MySchoolDashboard(models.Model):
     is_drukwerk_drukwerk = fields.Boolean(
         compute='_compute_access_rights')
     is_drukwerk_boekhouding = fields.Boolean(
+        compute='_compute_access_rights')
+    is_drukwerk_directie = fields.Boolean(
         compute='_compute_access_rights')
     is_drukwerk_manager = fields.Boolean(
         compute='_compute_access_rights')
@@ -283,6 +289,7 @@ class MySchoolDashboard(models.Model):
         act_dir = is_admin or self._safe_has_group('activiteiten.group_activiteiten_directie')
         druk_drukwerk = self._safe_has_group('drukwerk.group_drukwerk_drukwerk')
         druk_boekhouding = self._safe_has_group('drukwerk.group_drukwerk_boekhouding')
+        druk_directie = self._safe_has_group('drukwerk.group_drukwerk_directie')
         for rec in self:
             rec.has_professionalisering_access = professionalisering
             rec.has_activiteiten_access = activiteiten
@@ -292,6 +299,7 @@ class MySchoolDashboard(models.Model):
             rec.is_drukwerk_manager = druk_mgr
             rec.is_drukwerk_drukwerk = druk_drukwerk
             rec.is_drukwerk_boekhouding = druk_boekhouding
+            rec.is_drukwerk_directie = druk_directie
             rec.is_act_vervangingen = act_verv
             rec.is_act_aankoop = act_aank
             rec.is_act_boekhouding = act_boek
@@ -376,6 +384,7 @@ class MySchoolDashboard(models.Model):
                     v for k, v in raw.items() if k != 'done'
                 )
 
+
     @api.depends_context('uid')
     def _compute_activiteiten_counts(self):
         raw = self._get_state_counts('activiteiten.record')
@@ -408,6 +417,8 @@ class MySchoolDashboard(models.Model):
             rec.act_rejected = raw.get('rejected', 0)
             rec.act_s_code = raw.get('s_code', 0)
             rec.act_vervanging = raw.get('vervanging', 0)
+            rec.act_aanwezigheid = raw.get('aanwezigheid', 0)
+            rec.act_facturen = raw.get('facturen', 0)
             rec.act_done = raw.get('done', 0)
             rec.act_total = sum(
                 count for state, count in raw.items()
@@ -450,6 +461,11 @@ class MySchoolDashboard(models.Model):
                 act_parts.append((n, self._plural(n,
                     f"{n} S-Code te verwerken",
                     f"{n} S-Codes te verwerken")))
+            if rec.is_act_boekhouding and rec.act_facturen:
+                n = rec.act_facturen
+                act_parts.append((n, self._plural(n,
+                    f"{n} factuur op te stellen",
+                    f"{n} facturen op te stellen")))
             if rec.is_act_vervangingen and rec.act_vervanging:
                 n = rec.act_vervanging
                 act_parts.append((n, self._plural(n,
@@ -504,11 +520,11 @@ class MySchoolDashboard(models.Model):
 
     # States visible per role (matching dashboard counter visibility)
     _ROLE_STATES = {
-        'directie': ['pending_approval'],
+        'directie': ['pending_approval', 'done'],
         'aankoop': ['bus_check'],
-        'boekhouding': ['approved', 's_code', 'vervanging', 'done'],
+        'boekhouding': ['s_code', 'facturen', 'done'],
         'vervangingen': ['vervanging'],
-        'medewerker': ['draft', 'form_invullen', 'bus_check', 'bus_refused', 'pending_approval', 'approved', 'rejected', 's_code', 'vervanging', 'done'],
+        'medewerker': ['draft', 'form_invullen', 'bus_check', 'bus_refused', 'pending_approval', 'approved', 'rejected', 'aanwezigheid', 'done'],
     }
 
     def action_open_activiteiten_list(self):
@@ -534,7 +550,10 @@ class MySchoolDashboard(models.Model):
             elif self._safe_has_group('activiteiten.group_activiteiten_aankoop'):
                 action['context'] = {'search_default_bus_check': 1}
             elif self._safe_has_group('activiteiten.group_activiteiten_boekhouding'):
-                action['context'] = {'search_default_s_code_pending': 1}
+                # Boekhouding ziet standaard de volledige lijst zonder
+                # voor-gefilterde "S-Code openstaand" — ze gebruiken zelf
+                # de filter-knop wanneer nodig.
+                pass
             elif self._safe_has_group('activiteiten.group_activiteiten_vervangingen'):
                 action['context'] = {'search_default_replacement_pending': 1}
         else:

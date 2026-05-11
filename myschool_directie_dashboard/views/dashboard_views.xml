@@ -129,6 +129,33 @@
                         </div>
 
                     </div>
+
+                    <!-- ========== DRUKWERK RANGLIJSTEN (school-breed) ==========
+                         Onafhankelijk van de leerkracht-keuze: toont voor de
+                         hele school wie het meest indient (afgewerkt) en wie
+                         het meest verwijdert (foute aanvragen). -->
+                    <div class="row g-3 mt-4">
+                        <div class="col-md-6">
+                            <div class="card border-success h-100">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle text-muted mb-2">
+                                        <i class="fa fa-trophy me-1" title="Top indieners"/> Top indieners (drukwerk)
+                                    </h6>
+                                    <field name="druk_top_printers_html" nolabel="1"/>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-warning h-100">
+                                <div class="card-body">
+                                    <h6 class="card-subtitle text-muted mb-2">
+                                        <i class="fa fa-trash me-1" title="Top verwijderaars"/> Top verwijderaars (drukwerk)
+                                    </h6>
+                                    <field name="druk_top_deleters_html" nolabel="1"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </sheet>
             </form>
         </field>

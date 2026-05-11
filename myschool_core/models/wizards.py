@@ -122,12 +122,38 @@ class CreatePersonWizard(models.TransientModel):
             proprel_vals['id_role'] = self.role_id.id
         PropRelation.create(proprel_vals)
 
+        # Zorg dat de Odoo-gebruiker toegang krijgt tot het bedrijf van
+        # de bijhorende school, ongeacht onder welke sub-afdeling (lkr,
+        # adm, grp, ...) hij hangt. Zo verschijnt de bedrijfswisselaar
+        # rechtsbovenaan met de juiste school selecteerbaar.
+        if user:
+            self._ensure_user_company_for_school(user, self.org_id)
+
         _logger.info(
             "Created person %s in org %s (user=%s, employee=%s)",
             person.name, self.org_id.name,
             user.id if user else '-', employee.id if employee else '-',
         )
         return person
+
+    def _ensure_user_company_for_school(self, user, org):
+        """Voeg het res.company van de school van `org` toe aan
+        user.company_ids als dat nog niet zo is. Werkt ook als `org`
+        zelf al een school is."""
+        processor = self.env['myschool.betask.processor']
+        school_org = processor._resolve_parent_school_from_org(org)
+        if not school_org:
+            return
+        company = self.env['res.company'].sudo().search(
+            [('school_id', '=', school_org.id)], limit=1)
+        if not company:
+            return
+        if company.id not in user.company_ids.ids:
+            user.sudo().write({'company_ids': [(4, company.id)]})
+            _logger.info(
+                "User %s: bedrijf '%s' toegevoegd (school: %s)",
+                user.login, company.name, school_org.name,
+            )
 
     def action_create(self):
         """Create the person, link/create Odoo user + employee, open form."""

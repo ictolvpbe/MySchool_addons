@@ -85,4 +85,23 @@
 <p>U kunt de aanvraag aanpassen en opnieuw indienen.</p>
         ]]></field>
     </record>
+
+    <!-- Reminder naar de medewerker: bewijs nog niet ingediend -->
+    <record id="email_template_reminder_bewijs" model="mail.template">
+        <field name="name">Professionalisering - Reminder bewijs</field>
+        <field name="model_id" ref="model_professionalisering_record"/>
+        <field name="subject">Herinnering: bewijs uploaden voor {{ object.titel }}</field>
+        <field name="email_to">{{ (object.employee_id.work_email or object.employee_id.user_id.email or '') }}</field>
+        <field name="body_html" type="html">
+<div style="font-family: Arial, sans-serif; max-width: 600px;">
+    <p>Beste <t t-out="object.employee_id.name or ''"/>,</p>
+    <p>De opleiding <strong><t t-out="object.titel or ''"/></strong>
+       is reeds enige tijd voorbij, maar het bewijs werd nog niet ingediend.</p>
+    <p>Gelieve via Mijn Professionaliseringen het record te openen
+       en het attest (of een link naar de video/podcast) toe te voegen.
+       Zonder bewijs kunnen de uren niet aangerekend worden.</p>
+    <p>Bedankt!</p>
+</div>
+        </field>
+    </record>
 </odoo>

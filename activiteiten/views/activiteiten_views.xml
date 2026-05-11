@@ -56,13 +56,29 @@
                             groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin"
                             invisible="state != 'pending_approval'"/>
 
-                    <!-- Boekhouding: S-Code bevestigen -->
+                    <!-- Boekhouding: S-Code bevestigen → state 'aanwezigheid' -->
                     <button name="action_confirm_s_code"
                             string="S-Code bevestigen"
                             type="object"
                             class="btn-primary"
                             groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
                             invisible="state != 's_code'"/>
+
+                    <!-- Aanwezigheid afsluiten → state 'facturen' -->
+                    <button name="action_aanwezigheid_klaar"
+                            string="Aanwezigheid bevestigen"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'aanwezigheid'"/>
+
+                    <!-- Boekhouding: kosten afsluiten → state 'done' -->
+                    <button name="action_kosten_afsluiten"
+                            string="Kosten afsluiten"
+                            type="object"
+                            class="btn-success"
+                            groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
+                            invisible="state != 'facturen'"
+                            confirm="Weet je zeker dat je de kosten wilt afsluiten? Daarna kunnen ze niet meer aangepast worden."/>
 
 
 
@@ -86,10 +102,10 @@
                          initiële state vóór activiteit-type gekozen is.
                          'form_invullen' is de echte Concept-fase. -->
                     <field name="state" widget="statusbar"
-                           statusbar_visible="form_invullen,pending_approval,s_code,done"
+                           statusbar_visible="form_invullen,pending_approval,s_code,aanwezigheid,facturen,done"
                            groups="activiteiten.group_activiteiten_directie,activiteiten.group_activiteiten_admin,activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_vervangingen,activiteiten.group_activiteiten_aankoop"/>
                     <field name="display_state" widget="statusbar"
-                           statusbar_visible="form_invullen,pending_approval,approved,done"
+                           statusbar_visible="form_invullen,pending_approval,approved,aanwezigheid,done"
                            groups="!activiteiten.group_activiteiten_directie,!activiteiten.group_activiteiten_admin,!activiteiten.group_activiteiten_boekhouding,!activiteiten.group_activiteiten_vervangingen,!activiteiten.group_activiteiten_aankoop"/>
                 </header>
                 <sheet>
@@ -107,6 +123,18 @@
                                 icon="fa-user"
                                 invisible="not leerkracht_ids">
                             <field name="leerkracht_count" string="Leerkrachten" widget="statinfo"/>
+                        </button>
+                        <!-- Aanwezigheid-counter: pas zichtbaar vanaf wanneer
+                             aanwezigheid relevant wordt (S-code toegekend) -->
+                        <button name="action_open_aanwezigheid"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-check-circle"
+                                invisible="state not in ('aanwezigheid', 'facturen', 'done')">
+                            <div class="o_stat_info">
+                                <field name="aanwezig_display" class="o_stat_value"/>
+                                <span class="o_stat_text">Aanwezig</span>
+                            </div>
                         </button>
                     </div>
                     <!-- Form header: title + subtitle -->
@@ -128,13 +156,60 @@
                     <field name="available_klas_ids" invisible="1"/>
                     <field name="available_leerkracht_ids" invisible="1"/>
 
-                    <!-- Header: analytische code (door boekhouding ingevuld) -->
-                    <group>
-                        <field name="analytische_code"
-                               placeholder="bv. ANA-2026-001"
-                               readonly="state not in ('s_code', 'vervanging', 'done', 'approved')"
-                               groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
-                    </group>
+                    <!-- Twee compacte tellers naast elkaar: hoeveel leerlingen
+                         effectief mee zijn geweest vs. hoeveel er oorspronkelijk
+                         opgegeven waren. Klikbaar om de lijst te openen. -->
+                    <div class="d-flex gap-2 mb-3"
+                         invisible="state not in ('aanwezigheid', 'facturen', 'done')">
+                        <button name="action_open_aanwezig_present"
+                                type="object"
+                                class="card border-success text-center p-0"
+                                style="min-width: 130px; cursor: pointer;"
+                                title="Toon leerlingen die mee geweest zijn">
+                            <div class="card-body py-2 px-3">
+                                <small class="text-muted d-block">Mee geweest</small>
+                                <span class="h4 text-success mb-0">
+                                    <field name="aanwezig_count" readonly="1" nolabel="1" class="d-inline"/>
+                                </span>
+                            </div>
+                        </button>
+                        <button name="action_open_aanwezig_total"
+                                type="object"
+                                class="card border-secondary text-center p-0"
+                                style="min-width: 130px; cursor: pointer;"
+                                title="Toon alle opgegeven leerlingen">
+                            <div class="card-body py-2 px-3">
+                                <small class="text-muted d-block">Opgegeven (totaal)</small>
+                                <span class="h4 text-secondary mb-0">
+                                    <field name="aanwezig_total" readonly="1" nolabel="1" class="d-inline"/>
+                                </span>
+                            </div>
+                        </button>
+                        <!-- Kost-per-leerling — alleen zichtbaar voor
+                             boekhouding/admin tijdens facturatiefase -->
+                        <div class="card border-info text-center"
+                             style="min-width: 160px;"
+                             groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
+                             invisible="state not in ('facturen', 'done')">
+                            <div class="card-body py-2 px-3">
+                                <small class="text-muted d-block">Aanwezige leerling betaalt</small>
+                                <span class="h5 text-info mb-0">
+                                    <field name="kost_per_aanwezig" readonly="1" nolabel="1" class="d-inline" widget="monetary"/>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="card border-warning text-center"
+                             style="min-width: 160px;"
+                             groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
+                             invisible="state not in ('facturen', 'done') or aanwezig_count == aanwezig_total">
+                            <div class="card-body py-2 px-3">
+                                <small class="text-muted d-block">Afwezige leerling betaalt</small>
+                                <span class="h5 text-warning mb-0">
+                                    <field name="kost_per_afwezig" readonly="1" nolabel="1" class="d-inline" widget="monetary"/>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- Two-column field grid with group titles -->
                     <group>
@@ -281,6 +356,9 @@
                                    placeholder="bv. S-1234"
                                    invisible="state not in ('s_code', 'vervanging', 'done')"
                                    readonly="not can_edit_s_code"/>
+                            <field name="verzekering_pct"
+                                   invisible="state not in ('s_code', 'vervanging', 'done')"
+                                   groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"/>
                             <field name="verzekering_done"
                                    readonly="1"
                                    invisible="state not in ('s_code', 'vervanging', 'done')"/>
@@ -296,11 +374,15 @@
                                 class="btn-primary"/>
                     </div>
 
-                    <!-- Extra info knop: opent dialoog (alleen als "Volgende" niet meer zichtbaar is) -->
+                    <!-- Eén "Extra info" knop opent de dialog; van daar
+                         navigeer je tussen de stappen via de klikbare
+                         statusbar bovenaan de dialog. Extra rechter-marge
+                         zodat de zwevende Berichten-knop niet overlapt. -->
                     <div class="d-flex justify-content-end mt-3 mb-3"
+                         style="padding-right: 160px;"
                          invisible="not activity_type or state in ('draft', 'form_invullen', 'bus_refused')">
                         <button name="action_open_details"
-                                string="Extra info beheren"
+                                string="Extra info"
                                 type="object"
                                 class="btn-secondary"
                                 icon="fa-edit"/>
@@ -338,7 +420,7 @@
                 <field name="can_manage_invites" invisible="1"/>
                 <field name="state" invisible="1"/>
                 <header>
-                    <field name="wizard_step" widget="statusbar" options="{'clickable': False}"/>
+                    <field name="wizard_step" widget="statusbar" options="{'clickable': True}"/>
                 </header>
                 <sheet>
                     <!-- Stap 1: Begeleiders -->
@@ -418,6 +500,10 @@
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="cash_bedrag_nodig"
                                    readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <separator string="Schatting van de leerkracht" colspan="2"/>
+                            <field name="price" string="Geschatte totale kost"
+                                   help="Vul hier een totaalbedrag in als ruwe schatting bij indienen. Boekhouding verfijnt dit later met de echte kosten-lijnen."
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
                             <field name="totale_kost" readonly="1"/>
                         </group>
                     </div>
@@ -431,6 +517,20 @@
                         <separator string="Bestanden"/>
                         <field name="document_ids" widget="many2many_binary" nolabel="1"
                                readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'pending_approval', 'bus_check', 'approved', 's_code', 'vervanging', 'done')"/>
+                        <!-- Boekhouding / admin kunnen via deze lijst de bestandsnamen
+                             aanpassen (bv. consistente facturatie-codes). -->
+                        <separator string="Bestandsnamen aanpassen (boekhouding)" class="mt-3"
+                                   groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
+                                   invisible="not document_ids"/>
+                        <field name="document_ids" nolabel="1"
+                               groups="activiteiten.group_activiteiten_boekhouding,activiteiten.group_activiteiten_admin"
+                               invisible="not document_ids">
+                            <list editable="bottom" create="0" delete="0">
+                                <field name="name" string="Bestandsnaam"/>
+                                <field name="mimetype" readonly="1" optional="hide"/>
+                                <field name="file_size" readonly="1" optional="hide"/>
+                            </list>
+                        </field>
                         <separator string="Notitie / links" class="mt-3"/>
                         <field name="document_notitie" nolabel="1"
                                placeholder="bv. Programma op de Drive: https://drive.google.com/..."
@@ -544,6 +644,10 @@
                         domain="[('state', '=', 'approved')]"/>
                 <filter string="Afgekeurd" name="state_rejected"
                         domain="[('state', '=', 'rejected')]"/>
+                <filter string="Aanwezigheid" name="state_aanwezigheid"
+                        domain="[('state', '=', 'aanwezigheid')]"/>
+                <filter string="Facturen op te stellen" name="state_facturen"
+                        domain="[('state', '=', 'facturen')]"/>
                 <filter string="Afgerond" name="state_done"
                         domain="[('state', '=', 'done')]"/>
                 <separator/>
@@ -567,6 +671,56 @@
                             domain="[]" context="{'group_by': 'datetime:month'}"/>
                 </group>
             </search>
+        </field>
+    </record>
+
+    <!-- Server-actions voor de "alles aan/uit"-knoppen in de header van de
+         aanwezigheid-list. Moeten vóór de view-record gedefinieerd staan
+         zodat de %(...)d-referenties werken. -->
+    <record id="action_aanwezigheid_alles_aan" model="ir.actions.server">
+        <field name="name">Aanwezigheid: alles aan</field>
+        <field name="model_id" ref="model_activiteiten_snapshot_line"/>
+        <field name="binding_model_id" ref="model_activiteiten_snapshot_line"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+records.filtered(lambda l: l.snapshot_type == 'student').write({'aanwezig': True})
+        </field>
+    </record>
+
+    <record id="action_aanwezigheid_alles_uit" model="ir.actions.server">
+        <field name="name">Aanwezigheid: alles uit</field>
+        <field name="model_id" ref="model_activiteiten_snapshot_line"/>
+        <field name="binding_model_id" ref="model_activiteiten_snapshot_line"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+records.filtered(lambda l: l.snapshot_type == 'student').write({'aanwezig': False})
+        </field>
+    </record>
+
+    <!-- Aanwezigheid registreren: list view op snapshot.line -->
+    <record id="view_activiteiten_snapshot_line_list" model="ir.ui.view">
+        <field name="name">activiteiten.snapshot.line.list</field>
+        <field name="model">activiteiten.snapshot.line</field>
+        <field name="arch" type="xml">
+            <list editable="bottom" create="0" delete="0">
+                <header>
+                    <button name="%(activiteiten.action_aanwezigheid_alles_aan)d"
+                            string="Alles aanwezig"
+                            type="action"
+                            class="btn-secondary"
+                            display="always"/>
+                    <button name="%(activiteiten.action_aanwezigheid_alles_uit)d"
+                            string="Alles afwezig"
+                            type="action"
+                            class="btn-secondary"
+                            display="always"/>
+                </header>
+                <field name="klas_name" readonly="1"/>
+                <field name="person_name" readonly="1"/>
+                <field name="aanwezig" widget="boolean_toggle"/>
+            </list>
         </field>
     </record>
 </odoo>

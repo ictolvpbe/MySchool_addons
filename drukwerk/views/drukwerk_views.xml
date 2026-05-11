@@ -93,11 +93,9 @@
                         <group>
                             <field name="drukwerk_type"
                                    widget="radio"
-                                   required="1"
                                    readonly="not can_edit_content"/>
                             <field name="examen_variant"
                                    widget="radio"
-                                   required="drukwerk_type == 'examen'"
                                    invisible="drukwerk_type != 'examen'"
                                    readonly="not can_edit_content"/>
                         </group>
@@ -136,7 +134,6 @@
                                    placeholder="Wordt automatisch ingevuld op basis van de bestandsnaam"
                                    readonly="not can_edit_content"/>
                             <field name="print_deadline"
-                                   required="1"
                                    readonly="not can_edit_content"/>
                             <field name="school_id"
                                    options="{'no_open': True}"

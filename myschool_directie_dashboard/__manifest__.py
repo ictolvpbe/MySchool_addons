@@ -1,6 +1,6 @@
 {
     'name': 'Directie Dashboard',
-    'version': '0.1',
+    'version': '0.2',
     'summary': 'Overzicht per leerkracht: activiteiten, professionalisering, drukwerk en uitgaven',
     'author': 'MySchool',
     'license': 'LGPL-3',

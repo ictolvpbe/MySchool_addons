@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from markupsafe import Markup
 
@@ -47,10 +48,26 @@ class Activiteiten(models.Model):
     )
 
     # Leerplandoelstellingen (PDF: vakgebonden / GFL / ICT / financieel-economisch)
-    is_doel_vakgebonden = fields.Boolean(string='Vakgebonden')
-    is_doel_gfl = fields.Boolean(string='GFL')
-    is_doel_ict = fields.Boolean(string='ICT')
-    is_doel_financieel = fields.Boolean(string='Financieel-economisch')
+    is_doel_vakgebonden = fields.Boolean(
+        string='Vakgebonden',
+        help='Aanvinken als de activiteit aansluit bij een specifiek vak '
+             '(bv. een museumbezoek voor geschiedenis).',
+    )
+    is_doel_gfl = fields.Boolean(
+        string='GFL',
+        help='Gemeenschappelijke functionele leerlijn — vakoverschrijdend '
+             'doel zoals samenwerken, kritisch denken, ...',
+    )
+    is_doel_ict = fields.Boolean(
+        string='ICT',
+        help='ICT-competenties aanvinken als de activiteit digitale '
+             'vaardigheden traint (bv. workshop programmeren).',
+    )
+    is_doel_financieel = fields.Boolean(
+        string='Financieel-economisch',
+        help='Financieel-economische geletterdheid: aankoop, budget, '
+             'consumentengedrag, banken, ...',
+    )
     doelstellingen_toelichting = fields.Text(
         string='Leerplandoelstellingen — toelichting',
         help='Korte beschrijving van de doelstellingen die aansluiten bij '
@@ -100,7 +117,13 @@ class Activiteiten(models.Model):
         string='Aantal leerkrachten',
         compute='_compute_leerkracht_count',
     )
-    price = fields.Monetary(string='Geschatte kost', currency_field='currency_id')
+    price = fields.Monetary(
+        string='Geschatte kost', currency_field='currency_id',
+        help='Voorlopige schatting van de totale kost (bus, toegang, ...). '
+             'Directie gebruikt dit als indicatie bij de goedkeuring. De '
+             'echte kost wordt later door boekhouding ingevuld op basis '
+             'van de werkelijke facturen.',
+    )
     currency_id = fields.Many2one(
         'res.currency',
         string='Valuta',
@@ -118,8 +141,10 @@ class Activiteiten(models.Model):
         ('pending_approval', 'Wacht op goedkeuring'),
         ('approved', 'Goedgekeurd'),
         ('rejected', 'Afgekeurd'),
-        ('s_code', 'S-Code controle'),
+        ('s_code', 'S-Code in te vullen'),
         ('vervanging', 'Vervanging inplannen'),
+        ('aanwezigheid', 'Aanwezigheid registreren'),
+        ('facturen', 'Facturen opstellen'),
         ('done', 'Afgerond'),
     ], string='Status', default='draft', required=True, tracking=True)
 
@@ -135,7 +160,13 @@ class Activiteiten(models.Model):
             'Selectie van "Bus (gehuurd via privé-maatschappij)" triggert '
             'de bus-controle-flow met aankoop. Niet van toepassing voor '
             'binnenschoolse activiteiten.')
-    bus_nodig = fields.Boolean(string='Bus nodig', default=False)
+    bus_nodig = fields.Boolean(
+        string='Bus nodig',
+        default=False,
+        help='Aan = bus moet door aankoop besteld worden vóór de '
+             'activiteit kan goedgekeurd worden. Uit = ander vervoer '
+             '(openbaar, te voet, fiets, wagen).',
+    )
 
     @api.onchange('vervoer_type')
     def _onchange_vervoer_type(self):
@@ -168,6 +199,9 @@ class Activiteiten(models.Model):
     )
     ov_betalend_count = fields.Integer(
         string='Aantal betalende reizigers',
+        help='Aantal leerlingen dat zelf een ticket moet betalen (geen '
+             'abonnement). Boekhouding gebruikt dit aantal om de '
+             'doorrekening per leerling correct op te maken.',
     )
     ov_totaal_reizigers = fields.Integer(
         string='Totaal aantal reizigers',
@@ -188,11 +222,20 @@ class Activiteiten(models.Model):
         help='Som van de prijzen per bus. Vul de prijs per bus in op de '
              'busverdeling-lijst hieronder.',
     )
-    bus_available = fields.Boolean(string='Bus beschikbaar')
+    bus_available = fields.Boolean(
+        string='Bus beschikbaar',
+        help='Wordt door aankoop gezet wanneer de bus effectief gereserveerd '
+             'is. Pas na deze bevestiging gaat de aanvraag verder naar '
+             'directie voor goedkeuring.',
+    )
     aantal_bussen = fields.Selection([
         ('1', '1'), ('2', '2'), ('3', '3'), ('4', '4'), ('5', '5'),
         ('6', '6'), ('7', '7'), ('8', '8'), ('9', '9'), ('10', '10'),
-    ], string='Aantal bussen', default='1')
+    ], string='Aantal bussen', default='1',
+        help='Standaard 1. Verhoog wanneer meer leerlingen meegaan dan '
+             'in één bus passen, of wanneer aankoop meerdere bussen '
+             'tegelijk wil bestellen. Per bus wordt een aparte regel '
+             'voor de prijs aangemaakt onder Busverdeling.')
     bus_ids = fields.One2many(
         'activiteiten.bus', 'activiteit_id', string='Busverdeling',
     )
@@ -283,10 +326,18 @@ class Activiteiten(models.Model):
         help='Vrije tekst — bv. een korte uitleg, of een link naar een '
              'Google Drive document of spreadsheet.',
     )
-    s_code_name = fields.Char(string='S-Code')
+    s_code_name = fields.Char(
+        string='S-Code',
+        help='Boekhoudkundige S-Code voor deze activiteit (bv. S-1234). '
+             'Wordt door boekhouding toegekend nadat de activiteit '
+             'goedgekeurd is. Pas na bevestiging van deze code start '
+             'de aanwezigheidsfase.',
+    )
     s_code_price = fields.Monetary(
         string='S-Code bedrag',
         currency_field='currency_id',
+        help='Effectief totaalbedrag dat onder deze S-Code valt. '
+             'Wordt door boekhouding ingevuld.',
     )
     kosten_ids = fields.One2many(
         'activiteiten.kosten.line', 'activiteit_id',
@@ -308,6 +359,32 @@ class Activiteiten(models.Model):
         compute='_compute_totale_kost',
         store=True,
     )
+    kost_vast_total = fields.Monetary(
+        string='Vaste kosten totaal',
+        currency_field='currency_id',
+        compute='_compute_kost_per_leerling',
+    )
+    kost_variabel_total = fields.Monetary(
+        string='Variabele kosten totaal',
+        currency_field='currency_id',
+        compute='_compute_kost_per_leerling',
+    )
+    kost_per_aanwezig = fields.Monetary(
+        string='Per aanwezige leerling',
+        currency_field='currency_id',
+        compute='_compute_kost_per_leerling',
+        help='Bedrag dat een leerling die mee was betaalt: vaste kosten '
+             'verdeeld over alle opgegeven leerlingen, plus variabele '
+             'kosten verdeeld over enkel de aanwezigen.',
+    )
+    kost_per_afwezig = fields.Monetary(
+        string='Per afwezige leerling',
+        currency_field='currency_id',
+        compute='_compute_kost_per_leerling',
+        help='Bedrag dat een afwezige leerling betaalt: enkel zijn aandeel '
+             'in de vaste kosten (bus, verzekering, ...). Variabele kosten '
+             '(toegang, gids, ...) vallen weg.',
+    )
     kosten_display = fields.Html(
         string='Kosten overzicht',
         compute='_compute_kosten_display',
@@ -315,8 +392,12 @@ class Activiteiten(models.Model):
     )
     bijdragen_regeling = fields.Boolean(
         string='Bijdragen regeling',
-        default=False,
-        help='Geeft aan dat deze activiteit onder de bijdragenregeling valt.',
+        default=True,
+        help='Aan = de activiteit valt onder de schoolbijdragenregeling. '
+             'In dat geval wordt de 2% annulatieverzekering NIET extra '
+             'aangerekend bij meerdaagse uitstappen mét overnachting — '
+             'die zit al in de bijdragenregeling vervat. Uit = de '
+             'verzekering wordt apart aangerekend.',
     )
     bijdrageregeling_bedrag = fields.Monetary(
         string='Bedrag in bijdrageregeling',
@@ -350,9 +431,31 @@ class Activiteiten(models.Model):
     heeft_overnachting = fields.Boolean(
         string='Met overnachting',
         help='Aanvinken bij meerdaagse uitstappen waar leerlingen ter plaatse '
-             'overnachten — triggert de 2% annulatieverzekering.',
+             'overnachten — triggert de annulatieverzekering bij '
+             'S-Code bevestiging, tenzij Bijdragenregeling aangevinkt staat. '
+             'Bij meerdaagse uitstappen zonder overnachting (bv. dag-tot-dag '
+             'over middernacht) laat je dit uit.',
     )
     verzekering_done = fields.Boolean(string='Verzekering geregeld', default=False)
+    reminder_aanwezigheid_sent_at = fields.Date(
+        string='Laatste aanwezigheid-herinnering',
+        help='Datum waarop de laatste reminder naar de leerkracht werd '
+             'gestuurd. Wordt door de cron gebruikt om niet dagelijks '
+             'te spammen.',
+    )
+    reminder_facturen_sent_at = fields.Date(
+        string='Laatste facturen-herinnering',
+        help='Datum waarop de laatste reminder naar boekhouding werd '
+             'gestuurd.',
+    )
+    verzekering_pct = fields.Float(
+        string='Verzekering %',
+        default=2.0,
+        digits=(5, 2),
+        help='Percentage annulatieverzekering. Standaard 2%, maar boekhouding '
+             'kan dit per activiteit aanpassen indien nodig (bv. duurder '
+             'voor specifieke bestemmingen).',
+    )
 
     @api.depends('inkomgeld_per_persoon', 'inkomgeld_aantal_betalend')
     def _compute_inkomgeld_totaal(self):
@@ -387,6 +490,19 @@ class Activiteiten(models.Model):
         string='Leerkrachten (ingediend)',
         compute='_compute_snapshot_counts',
     )
+    aanwezig_count = fields.Integer(
+        string='Aanwezig',
+        compute='_compute_aanwezig_count',
+    )
+    aanwezig_total = fields.Integer(
+        string='Totaal',
+        compute='_compute_aanwezig_count',
+    )
+    aanwezig_display = fields.Char(
+        string='Aanwezigen',
+        compute='_compute_aanwezig_count',
+        help='Aantal aanwezige leerlingen / totaal aantal opgegeven leerlingen.',
+    )
     is_owner = fields.Boolean(compute='_compute_is_owner')
     can_edit_s_code = fields.Boolean(
         compute='_compute_can_edit_s_code',
@@ -414,6 +530,7 @@ class Activiteiten(models.Model):
         ('pending_approval', 'Wacht op goedkeuring'),
         ('approved', 'Goedgekeurd'),
         ('rejected', 'Afgekeurd'),
+        ('aanwezigheid', 'Aanwezigheid registreren'),
         ('done', 'Afgerond'),
     ], string='Status', compute='_compute_display_state')
 
@@ -427,13 +544,17 @@ class Activiteiten(models.Model):
     @api.depends('state')
     @api.depends_context('uid')
     def _compute_display_state(self):
+        """Voor leerkrachten: backstage-states (S-Code, vervanging, facturen)
+        afronden als "Goedgekeurd". Aanwezigheid blijft zichtbaar omdat zij
+        die zelf moeten invullen."""
         is_manager = self.env.user.has_group('activiteiten.group_activiteiten_directie') or \
                      self.env.user.has_group('activiteiten.group_activiteiten_admin') or \
                      self.env.user.has_group('activiteiten.group_activiteiten_boekhouding') or \
                      self.env.user.has_group('activiteiten.group_activiteiten_vervangingen') or \
                      self.env.user.has_group('activiteiten.group_activiteiten_aankoop')
+        backstage_states = ('s_code', 'vervanging', 'facturen')
         for record in self:
-            if not is_manager and record.state in ('s_code', 'vervanging'):
+            if not is_manager and record.state in backstage_states:
                 record.display_state = 'approved'
             else:
                 record.display_state = record.state
@@ -462,6 +583,94 @@ class Activiteiten(models.Model):
                 lines.filtered(lambda l: l.snapshot_type == 'student'))
             record.snapshot_leerkracht_count = len(
                 lines.filtered(lambda l: l.snapshot_type == 'leerkracht'))
+
+    @api.depends('snapshot_line_ids.aanwezig', 'snapshot_line_ids.snapshot_type')
+    def _compute_aanwezig_count(self):
+        for record in self:
+            students = record.snapshot_line_ids.filtered(
+                lambda l: l.snapshot_type == 'student' and not l.date_to)
+            present = students.filtered('aanwezig')
+            record.aanwezig_count = len(present)
+            record.aanwezig_total = len(students)
+            record.aanwezig_display = (
+                f'{len(present)} / {len(students)}' if students else '-'
+            )
+
+    def action_aanwezigheid_alles_aan(self):
+        """Vink alle leerlingen op aanwezig (snapshot)."""
+        self.ensure_one()
+        self.snapshot_line_ids.filtered(
+            lambda l: l.snapshot_type == 'student').write({'aanwezig': True})
+
+    def action_aanwezigheid_alles_uit(self):
+        """Vink alle leerlingen op afwezig (snapshot)."""
+        self.ensure_one()
+        self.snapshot_line_ids.filtered(
+            lambda l: l.snapshot_type == 'student').write({'aanwezig': False})
+
+    def action_open_aanwezigheid(self):
+        """Open de lijst-view om aanwezigheid te registreren."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Aanwezigheid — {self.name}',
+            'res_model': 'activiteiten.snapshot.line',
+            'view_mode': 'list',
+            'domain': [
+                ('activiteit_id', '=', self.id),
+                ('snapshot_type', '=', 'student'),
+                ('date_to', '=', False),
+            ],
+            'context': {
+                'create': False,
+                'delete': False,
+                'default_activiteit_id': self.id,
+            },
+            'target': 'new',
+        }
+
+    def action_open_aanwezig_present(self):
+        """Open de lijst van leerlingen die effectief mee zijn geweest."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Mee geweest — {self.name}',
+            'res_model': 'activiteiten.snapshot.line',
+            'view_mode': 'list',
+            'domain': [
+                ('activiteit_id', '=', self.id),
+                ('snapshot_type', '=', 'student'),
+                ('date_to', '=', False),
+                ('aanwezig', '=', True),
+            ],
+            'context': {
+                'create': False,
+                'delete': False,
+                'default_activiteit_id': self.id,
+            },
+            'target': 'new',
+        }
+
+    def action_open_aanwezig_total(self):
+        """Open de lijst van alle opgegeven leerlingen (snapshot)."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Opgegeven leerlingen — {self.name}',
+            'res_model': 'activiteiten.snapshot.line',
+            'view_mode': 'list',
+            'domain': [
+                ('activiteit_id', '=', self.id),
+                ('snapshot_type', '=', 'student'),
+                ('date_to', '=', False),
+            ],
+            'context': {
+                'create': False,
+                'delete': False,
+                'default_activiteit_id': self.id,
+            },
+            'target': 'new',
+        }
 
     def _get_current_students(self):
         """Get the current student person records for the selected classes."""
@@ -624,7 +833,11 @@ class Activiteiten(models.Model):
                 record.dates_display = ''
 
     def _get_verzekering_pct(self):
-        """Get the insurance percentage from settings (default 2%)."""
+        """Geef het verzekering-percentage. Als het record zelf een waarde
+        heeft (bv. boekhouding heeft het aangepast), gebruik die. Anders
+        val terug op de globale config-parameter (default 2%)."""
+        if self and self[:1].verzekering_pct:
+            return self[:1].verzekering_pct
         pct = self.env['ir.config_parameter'].sudo().get_param(
             'activiteiten.verzekering_pct', '2.0')
         try:
@@ -647,6 +860,26 @@ class Activiteiten(models.Model):
     def action_open_details(self):
         self.ensure_one()
         self.wizard_step = '1'
+        return self._get_details_action()
+
+    def action_open_details_step_1(self):
+        self.ensure_one()
+        self.wizard_step = '1'
+        return self._get_details_action()
+
+    def action_open_details_step_2(self):
+        self.ensure_one()
+        self.wizard_step = '2'
+        return self._get_details_action()
+
+    def action_open_details_step_3(self):
+        self.ensure_one()
+        self.wizard_step = '3'
+        return self._get_details_action()
+
+    def action_open_details_step_4(self):
+        self.ensure_one()
+        self.wizard_step = '4'
         return self._get_details_action()
 
     def action_wizard_next(self):
@@ -672,6 +905,41 @@ class Activiteiten(models.Model):
     def _compute_totale_kost(self):
         for record in self:
             record.totale_kost = sum(record.kosten_ids.mapped('bedrag'))
+
+    @api.depends('kosten_ids.bedrag', 'kosten_ids.kosten_type',
+                 'aanwezig_count', 'aanwezig_total')
+    def _compute_kost_per_leerling(self):
+        """Verdeel de kosten op basis van aanwezigheid.
+
+        Vaste kosten (bus, verzekering, ...) worden gedragen door ALLE
+        opgegeven leerlingen, ook de afwezigen — die betalen mee voor wat
+        sowieso besteld werd. Variabele kosten (toegangsticket, gids per
+        groep, ...) betalen alleen de aanwezigen — wie er niet bij was
+        gebruikt niets.
+        """
+        for record in self:
+            vast = sum(
+                l.bedrag for l in record.kosten_ids
+                if l.kosten_type == 'vast'
+            )
+            variabel = sum(
+                l.bedrag for l in record.kosten_ids
+                if l.kosten_type == 'variabel'
+            )
+            record.kost_vast_total = vast
+            record.kost_variabel_total = variabel
+            total = record.aanwezig_total
+            present = record.aanwezig_count
+            if total:
+                vast_share = vast / total
+            else:
+                vast_share = 0
+            if present:
+                variabel_share = variabel / present
+            else:
+                variabel_share = 0
+            record.kost_per_aanwezig = vast_share + variabel_share
+            record.kost_per_afwezig = vast_share
 
     @api.onchange('bus_price', 'kosten_ids')
     def _onchange_recalculate_verzekering(self):
@@ -1064,10 +1332,12 @@ class Activiteiten(models.Model):
                     'kosten_type': 'vast',
                     'is_auto': True,
                 })
-            # Annulatieverzekering 2% — enkel bij meerdaagse uitstappen MET
-            # overnachting (PDF-conventie: "meerdaagse uitstappen met
-            # overnachting"). Multi-day zonder overnachting → geen verzekering.
-            if record._is_multiday() and record.heeft_overnachting:
+            # Annulatieverzekering — enkel bij meerdaagse uitstappen MET
+            # overnachting EN als de bijdragenregeling NIET aangevinkt is.
+            # Bijdragenregeling dekt de annulatieverzekering al af, dus geen
+            # dubbel aanrekenen.
+            if (record._is_multiday() and record.heeft_overnachting
+                    and not record.bijdragen_regeling):
                 manual_total = sum(
                     l.bedrag for l in record.kosten_ids if not l.is_auto)
                 basis_bedrag = (record.bus_price or 0) + manual_total
@@ -1084,8 +1354,30 @@ class Activiteiten(models.Model):
                 record.verzekering_done = False
             if auto_lines:
                 self.env['activiteiten.kosten.line'].create(auto_lines)
-            record.state = 'done'
+            # Nieuwe workflow: na S-code-bevestiging gaan we rechtstreeks naar
+            # 'aanwezigheid'. De leerkracht vult aanwezigheid in, en daarna
+            # is het aan boekhouding om facturen op te stellen.
+            record.state = 'aanwezigheid'
         self._schedule_vervangingen_activity()
+
+    def action_aanwezigheid_klaar(self):
+        """Leerkracht heeft de aanwezigheid ingevuld → state naar 'facturen'."""
+        for record in self:
+            if record.state != 'aanwezigheid':
+                raise UserError(
+                    "Aanwezigheid kan alleen afgesloten worden vanuit de aanwezigheid-fase."
+                )
+            record.state = 'facturen'
+
+    def action_kosten_afsluiten(self):
+        """Boekhouding sluit de kosten af → state naar 'done'.
+        Pas vanaf hier kunnen de kosten niet meer aangepast worden."""
+        for record in self:
+            if record.state not in ('facturen', 'aanwezigheid'):
+                raise UserError(
+                    "Kosten kunnen pas afgesloten worden nadat de S-code is toegekend."
+                )
+            record.state = 'done'
 
     # --- Shared actions ---
 
@@ -1266,7 +1558,119 @@ class Activiteiten(models.Model):
         'rejected': 'activiteiten.email_template_rejected',
         'bus_refused': 'activiteiten.email_template_bus_refused',
         'bus_approved': 'activiteiten.email_template_bus_approved',
+        'reminder_aanwezigheid': 'activiteiten.email_template_reminder_aanwezigheid',
+        'reminder_facturen': 'activiteiten.email_template_reminder_facturen',
     }
+
+    def _get_reminder_days(self, key, default):
+        """Lees configureerbaar aantal dagen uit ir.config_parameter."""
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            f'activiteiten.{key}', default)
+        try:
+            return int(param)
+        except (ValueError, TypeError):
+            return default
+
+    @api.model
+    def _auto_archive_old_done(self, cutoff_date):
+        """Markeer afgeronde activiteiten ouder dan cutoff_date als inactief.
+        Wordt aangeroepen door de centrale auto-archive cron in
+        myschool_core. Records blijven in de DB, maar verdwijnen uit de
+        standaardlijst (filter "Inclusief gearchiveerd" toont ze terug)."""
+        records = self.search([
+            ('state', '=', 'done'),
+            ('is_active', '=', True),
+            ('datetime', '<', cutoff_date),
+        ])
+        if records:
+            records.write({'is_active': False})
+        return len(records)
+
+    @api.model
+    def _cron_reminder_aanwezigheid(self):
+        """Stuur reminder naar de aanvrager X dagen na het einde van de
+        activiteit als aanwezigheid nog niet ingevuld is.
+        Herhaalt elke 7 dagen zolang state == 'aanwezigheid'."""
+        days_after = self._get_reminder_days('reminder_aanwezigheid_days', 3)
+        repeat_interval = self._get_reminder_days('reminder_repeat_days', 7)
+        today = fields.Date.today()
+        cutoff = fields.Datetime.now() - timedelta(days=days_after)
+        records = self.search([
+            ('state', '=', 'aanwezigheid'),
+            ('datetime_end', '<=', cutoff),
+        ])
+        for rec in records:
+            last = rec.reminder_aanwezigheid_sent_at
+            if last and (today - last).days < repeat_interval:
+                continue
+            rec._send_notification('reminder_aanwezigheid')
+            rec.reminder_aanwezigheid_sent_at = today
+
+    @api.model
+    def _cron_reminder_facturen(self):
+        """Stuur reminder naar boekhouding X dagen nadat een activiteit in
+        de facturen-fase zit. Eén mail per record, naar alle boekhouders
+        van de school van de activiteit."""
+        days_after = self._get_reminder_days('reminder_facturen_days', 7)
+        repeat_interval = self._get_reminder_days('reminder_repeat_days', 7)
+        today = fields.Date.today()
+        cutoff = today - timedelta(days=days_after)
+        records = self.search([
+            ('state', '=', 'facturen'),
+            ('write_date', '<=', cutoff),
+        ])
+        for rec in records:
+            last = rec.reminder_facturen_sent_at
+            if last and (today - last).days < repeat_interval:
+                continue
+            rec._notify_boekhouding_facturen()
+            rec.reminder_facturen_sent_at = today
+
+    def _notify_boekhouding_facturen(self):
+        """Stuur de facturen-herinnering naar elke boekhoudgebruiker. Anders
+        dan _send_notification (die naar de aanvrager stuurt), gaat deze
+        naar de hele boekhouding-groep."""
+        self.ensure_one()
+        template = self.env.ref(
+            'activiteiten.email_template_reminder_facturen',
+            raise_if_not_found=False)
+        if not template:
+            return
+        boekhouding_group = self.env.ref(
+            'activiteiten.group_activiteiten_boekhouding',
+            raise_if_not_found=False)
+        if not boekhouding_group:
+            return
+        partners = boekhouding_group.user_ids.mapped('partner_id').filtered('email')
+        if not partners:
+            return
+        try:
+            # Chatter-nota
+            rendered = template._render_template(
+                template.body_html, template.render_model, [self.id],
+                engine='inline_template', options={'post_process': True})
+            body = rendered.get(self.id, '')
+            if body:
+                self.message_post(
+                    body=Markup(body), subtype_xmlid='mail.mt_note',
+                    partner_ids=partners.ids)
+        except Exception as e:
+            _logger.warning(
+                'Failed to render facturen-reminder for %s: %s', self.name, e)
+        if not self.env['ir.mail_server'].sudo().search_count([('active', '=', True)]):
+            return
+        try:
+            template.send_mail(
+                self.id,
+                force_send=False,
+                email_values={
+                    'email_to': ','.join(p.email for p in partners),
+                    'recipient_ids': [(6, 0, partners.ids)],
+                },
+            )
+        except Exception as e:
+            _logger.warning(
+                'Failed to queue facturen-reminder for %s: %s', self.name, e)
 
     def _send_notification(self, notification_type):
         """Verstuur een mail naar de aanvrager (en plaats een chatter-nota

@@ -222,13 +222,32 @@
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_s_code_pending': 1}"
                                                 class="ms-badge-status ms-badge-info ms-badge-btn"
-                                                invisible="not is_act_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
+                                                invisible="not is_act_boekhouding">
                                             <field name="act_s_code" class="d-inline"/> S-Code
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_replacement_pending': 1}"
+                                                class="ms-badge-status ms-badge-warning ms-badge-btn"
+                                                invisible="not is_act_vervangingen or act_vervanging == 0">
+                                            <field name="act_vervanging" class="d-inline"/> Vervanging
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_state_aanwezigheid': 1}"
+                                                class="ms-badge-status ms-badge-info ms-badge-btn"
+                                                invisible="is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_vervangingen or act_aanwezigheid == 0"
+                                                title="Activiteiten waarvoor jij nog aanwezigheid moet aanvinken.">
+                                            <field name="act_aanwezigheid" class="d-inline"/> Aanwezigheid
+                                        </button>
+                                        <button type="object" name="action_open_activiteiten_list"
+                                                context="{'search_default_state_facturen': 1}"
+                                                class="ms-badge-status ms-badge-warning ms-badge-btn"
+                                                invisible="not is_act_boekhouding">
+                                            <field name="act_facturen" class="d-inline"/> Facturen
                                         </button>
                                         <button type="object" name="action_open_activiteiten_list"
                                                 context="{'search_default_state_done': 1}"
                                                 class="ms-badge-status ms-badge-success ms-badge-btn"
-                                                invisible="not is_act_manager or is_only_aankoop or is_only_boekhouding or is_only_directie or is_only_medewerker or is_only_vervangingen">
+                                                invisible="not (is_act_directie or is_act_boekhouding)">
                                             <field name="act_done" class="d-inline"/> Afgerond
                                         </button>
                                     </div>
