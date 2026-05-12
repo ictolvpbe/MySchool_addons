@@ -590,6 +590,8 @@
                        groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"/>
                 <field name="totale_kost" string="Totaal" optional="show"
                        groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"/>
+                <field name="s_code_name" string="S-Code" optional="hide"
+                       groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"/>
                 <field name="is_active" optional="hide"/>
                 <field name="bus_available" optional="hide"/>
                 <field name="verzekering_done" optional="hide"/>
@@ -618,6 +620,7 @@
                 <field name="titel"/>
                 <field name="name"/>
                 <field name="activity_type"/>
+                <field name="s_code_name" string="S-Code"/>
                 <!-- Mijn aanvragen toont:
                      - records die ik zelf aangemaakt heb (create_uid)
                      - records waar ik als leerkracht ben opgegeven
@@ -641,6 +644,10 @@
                         domain="[('state', '=', 'bus_check')]"/>
                 <filter string="S-Code openstaand" name="s_code_pending"
                         domain="[('state', '=', 's_code')]"/>
+                <filter string="Heeft S-Code" name="has_s_code"
+                        domain="[('s_code_name', '!=', False)]"/>
+                <filter string="Zonder S-Code" name="no_s_code"
+                        domain="[('s_code_name', '=', False)]"/>
                 <filter string="Vervanging openstaand" name="replacement_pending"
                         domain="[('state', '=', 'vervanging')]"/>
                 <separator/>
