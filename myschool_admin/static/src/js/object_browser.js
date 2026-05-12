@@ -358,12 +358,14 @@ export class MembersPanel extends Component {
     onMemberContextMenu(ev) {
         ev.preventDefault();
         ev.stopPropagation();
-        
+
         const model = ev.currentTarget.dataset.model;
         const id = parseInt(ev.currentTarget.dataset.id);
         const name = ev.currentTarget.dataset.name;
         const type = ev.currentTarget.dataset.type;
-        
+        const otherOrgs = parseInt(
+            ev.currentTarget.dataset.otherOrgs || '0', 10) || 0;
+
         if (this.props.onMemberContextMenu && id) {
             // Create a node object for the context menu
             const node = {
@@ -372,6 +374,7 @@ export class MembersPanel extends Component {
                 type: type,
                 model: model,
                 org_id: this.props.node?.id,  // Parent org for person context
+                other_active_org_count: otherOrgs,
             };
             this.props.onMemberContextMenu(ev, node);
         }
@@ -413,13 +416,17 @@ export class ContextMenu extends Component {
         x: Number,
         y: Number,
         node: Object,
+        bulkSource: { type: String, optional: true },
+        bulkCount: { type: Number, optional: true },
         onAction: Function,
         onClose: Function,
     };
-    
+
     get menuItems() {
         const items = [];
         const node = this.props.node;
+        const bulkCount = this.props.bulkCount || 0;
+        const hasBulk = bulkCount > 1 && this.props.bulkSource;
         
         if (node.type === 'org' && node.org_type_name === 'PERSONGROUP') {
             items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
@@ -451,8 +458,19 @@ export class ContextMenu extends Component {
             items.push({ divider: true });
             items.push({ action: 'deactivate_person', label: 'Deactivate', iconClass: 'fa fa-ban', danger: true });
             items.push({ action: 'delete_person', label: 'Delete', iconClass: 'fa fa-trash', danger: true });
-            items.push({ divider: true });
-            items.push({ action: 'remove_from_org', label: 'Remove from Org', iconClass: 'fa fa-user-times', danger: true });
+            // "Remove from this Org" only makes sense when the person
+            // is still attached to at least one OTHER org — otherwise
+            // it leaves a dangling person record with no placement.
+            // For single-org persons "Delete" is the right action.
+            if ((node.other_active_org_count || 0) > 0) {
+                items.push({ divider: true });
+                items.push({
+                    action: 'remove_from_org',
+                    label: 'Unlink from this Org',
+                    iconClass: 'fa fa-user-times',
+                    danger: true,
+                });
+            }
         } else if (node.type === 'persongroup') {
             items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
             items.push({ divider: true });
@@ -460,10 +478,20 @@ export class ContextMenu extends Component {
         } else if (node.type === 'role') {
             items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
         }
-        
+
+        if (hasBulk) {
+            items.push({ divider: true });
+            items.push({
+                action: 'bulk_delete',
+                label: `Verwijder ${bulkCount} geselecteerde items`,
+                iconClass: 'fa fa-trash',
+                danger: true,
+            });
+        }
+
         return items;
     }
-    
+
     onMenuItemClick(ev) {
         const action = ev.currentTarget.dataset.action;
         if (action) {
@@ -892,22 +920,45 @@ export class ObjectBrowserClient extends Component {
         this.state.selectedIds = {};
     }
     
+    // Helpers: how many items are in each multi-select set, and is the
+    // right-clicked node part of it? The context menu uses both to decide
+    // whether to surface a "Delete N selected" entry.
+    _treeBulkInfo(node) {
+        const ids = this.state.selectedIds || {};
+        const keys = Object.keys(ids).filter(k => ids[k]);
+        const inSet = !!ids[`${node.type}_${node.id}`];
+        return { count: keys.length, inSet };
+    }
+
+    _memberBulkInfo(node) {
+        const ids = this.state.selectedMemberIds || {};
+        const keys = Object.keys(ids).filter(k => ids[k]);
+        const inSet = !!ids[`${node.type}_${node.id}`];
+        return { count: keys.length, inSet };
+    }
+
     // Context Menu
     onContextMenu(ev, node) {
+        const tb = this._treeBulkInfo(node);
         this.state.contextMenu = {
             x: ev.clientX,
             y: ev.clientY,
             node: node,
+            bulkSource: tb.inSet && tb.count > 1 ? 'tree' : null,
+            bulkCount: tb.inSet && tb.count > 1 ? tb.count : 0,
         };
         this.state.activeNode = node;
     }
-    
+
     // Context Menu for members panel - doesn't change activeNode to preserve members list
     onMemberContextMenu(ev, node) {
+        const mb = this._memberBulkInfo(node);
         this.state.contextMenu = {
             x: ev.clientX,
             y: ev.clientY,
             node: node,
+            bulkSource: mb.inSet && mb.count > 1 ? 'members' : null,
+            bulkCount: mb.inSet && mb.count > 1 ? mb.count : 0,
         };
         // Don't change activeNode - keep the org selected so members panel stays visible
     }
@@ -965,6 +1016,13 @@ export class ObjectBrowserClient extends Component {
                 break;
             case 'delete':
                 await this.deleteNode(node);
+                break;
+            case 'bulk_delete':
+                if (this.state.contextMenu && this.state.contextMenu.bulkSource === 'members') {
+                    await this.bulkDeleteMembers();
+                } else {
+                    await this.bulkDelete();
+                }
                 break;
         }
     }
@@ -1526,18 +1584,18 @@ export class ObjectBrowserClient extends Component {
     async bulkDelete() {
         const count = this.selectedCount;
         if (count === 0) return;
-        
+
         if (!confirm(`Delete ${count} selected items?`)) {
             return;
         }
-        
+
         const selected = Object.keys(this.state.selectedIds)
             .filter(k => this.state.selectedIds[k])
             .map(k => {
                 const [type, id] = k.split('_');
                 return { type, id: parseInt(id) };
             });
-        
+
         for (const item of selected) {
             try {
                 await this.orm.call(
@@ -1549,11 +1607,78 @@ export class ObjectBrowserClient extends Component {
                 console.error('Error deleting:', error);
             }
         }
-        
+
         this.notification.add(`Deleted ${selected.length} items`, { type: 'success' });
         this.state.selectedIds = {};
         this.state.activeNode = null;
         this.loadData();
+    }
+
+    async bulkDeleteMembers() {
+        // Same as bulkDelete, but works on ``selectedMemberIds`` (the
+        // ctrl/shift+click selection in the members panel). Members
+        // are persons or persongroups; ``delete_node`` understands both
+        // type strings.
+        const ids = this.state.selectedMemberIds || {};
+        const selected = Object.keys(ids)
+            .filter(k => ids[k])
+            .map(k => {
+                const idx = k.indexOf('_');
+                const type = k.slice(0, idx);
+                const id = parseInt(k.slice(idx + 1));
+                return { type, id };
+            });
+        if (!selected.length) return;
+
+        if (!confirm(`Verwijder ${selected.length} geselecteerde items? Dit is onomkeerbaar.`)) {
+            return;
+        }
+
+        const orgId = this.state.activeOrgNode?.id;
+        let ok = 0;
+        const errors = [];
+        for (const item of selected) {
+            try {
+                await this.orm.call(
+                    'myschool.object.browser',
+                    'delete_node',
+                    [item.type, item.id]
+                );
+                ok += 1;
+            } catch (error) {
+                let message = '';
+                if (error.data && error.data.arguments && error.data.arguments[0]) {
+                    message = error.data.arguments[0];
+                } else if (error.data && error.data.message) {
+                    message = error.data.message;
+                } else if (error.message) {
+                    message = error.message;
+                }
+                errors.push(`${item.type}#${item.id}: ${message || 'unknown error'}`);
+            }
+        }
+
+        this.state.selectedMemberIds = {};
+        this.state.activeNode = null;
+        await this.loadData();
+        if (orgId) {
+            this.expandPathToOrg(orgId);
+            // Reload members panel so the deleted rows disappear.
+            const refreshed = { id: orgId, type: 'org', model: 'myschool.org',
+                                 name: this.state.activeOrgNode?.name };
+            await this.onSelectNode(refreshed);
+        }
+
+        if (errors.length) {
+            const detail = errors.slice(0, 5).join('\n')
+                + (errors.length > 5 ? `\n…en ${errors.length - 5} meer` : '');
+            this.notification.add(
+                `${ok}/${selected.length} verwijderd. Fouten:\n${detail}`,
+                { type: 'warning', sticky: true });
+        } else {
+            this.notification.add(
+                `${ok} item(s) verwijderd`, { type: 'success' });
+        }
     }
     
     getSelectedByType(type) {

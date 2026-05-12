@@ -138,14 +138,133 @@ class ObjectBrowser(models.TransientModel):
         
         # Find root orgs
         root_orgs = [org for org in all_orgs if org.id not in org_parent or org_parent[org.id] not in all_org_ids]
-        
+
         # Build tree with cycle detection
         org_dict = {org.id: org for org in all_orgs}
+
+        # ----- Bulk-prefetch (Phase A perf-fix) ----------------------------
+        # Replace the per-node PERSON-TREE search + per-node CI search_count
+        # in ``_build_org_node`` with two batched queries here. Org count
+        # was ~ N round-trips before; now it is constant. The dicts are
+        # passed through the recursion so each node reads from cache.
+        person_tree_by_org = self._prefetch_person_tree_by_org(
+            all_org_ids, show_inactive, show_administrative)
+        ci_count_by_org = self._prefetch_ci_count_by_org(all_org_ids)
+        # Warm Many2one caches the org-node renderer touches per org
+        # (org_type_id.name, name_tree). One batched fetch each.
+        all_orgs.mapped('org_type_id.name')
+        all_orgs.mapped('name_tree')
+
         tree = []
         for org in root_orgs:
-            tree.append(self._build_org_node(org, org_dict, org_children, show_inactive, show_administrative, visited=set()))
-        
+            tree.append(self._build_org_node(
+                org, org_dict, org_children, show_inactive, show_administrative,
+                visited=set(),
+                person_tree_by_org=person_tree_by_org,
+                ci_count_by_org=ci_count_by_org))
+
         return tree
+
+    def _prefetch_person_tree_by_org(self, all_org_ids, show_inactive,
+                                     show_administrative):
+        """Return ``{org_id: [person-dict, ...]}`` for the orgs in scope.
+
+        Single PropRelation.search + warm Person/Role caches via
+        ``mapped()``. Replaces the per-node search in ``_build_org_node``.
+        """
+        if not all_org_ids:
+            return {}
+        if 'myschool.proprelation' not in self.env \
+                or 'myschool.proprelation.type' not in self.env:
+            return {}
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        person_tree_type = PropRelationType.search(
+            [('name', '=', 'PERSON-TREE')], limit=1)
+        if not person_tree_type:
+            return {}
+
+        domain = [
+            ('proprelation_type_id', '=', person_tree_type.id),
+            ('id_org', 'in', list(all_org_ids)),
+            ('id_person', '!=', False),
+        ]
+        if not show_inactive:
+            domain.append(('is_active', '=', True))
+
+        rels = PropRelation.search(domain)
+        if not rels:
+            return {}
+
+        # One batched fetch per related model — beats per-record lazy load.
+        # ``is_administrative`` lives on myschool.org only, so it is
+        # not prefetched here on the person side.
+        persons = rels.mapped('id_person')
+        persons.mapped('name')
+        persons.mapped('first_name')
+        persons.mapped('is_active')
+        roles = rels.mapped('id_role')
+        roles.mapped('shortname')
+        roles.mapped('name')
+
+        by_org = {}
+        # (org_id, person_id) -> aggregated dict so multiple PT-rows for
+        # the same person under the same org collapse into one entry
+        # with a merged role list (mirrors the original loop semantics).
+        agg = {}
+        for rel in rels:
+            person = rel.id_person
+            if not person:
+                continue
+            # ``is_administrative`` is an org-level concept only; the
+            # filter is applied where it makes sense (org-tree domain
+            # in ``_get_org_tree``). Persons inherit visibility purely
+            # from their is_active flag here.
+            if not show_inactive and not getattr(person, 'is_active', True):
+                continue
+            org_id = rel.id_org.id
+            pid = person.id
+            key = (org_id, pid)
+            entry = agg.get(key)
+            if entry is None:
+                name = person.name or 'Unknown'
+                if getattr(person, 'first_name', None):
+                    name = f"{person.first_name} {person.name}"
+                entry = {
+                    'id': pid,
+                    'name': name,
+                    'type': 'person',
+                    'model': 'myschool.person',
+                    'org_id': org_id,
+                    'roles': [],
+                }
+                agg[key] = entry
+                by_org.setdefault(org_id, []).append(entry)
+            if rel.id_role:
+                role = rel.id_role
+                role_name = role.shortname or role.name
+                if role_name and role_name not in entry['roles']:
+                    entry['roles'].append(role_name)
+        return by_org
+
+    def _prefetch_ci_count_by_org(self, all_org_ids):
+        """Return ``{org_id: count}`` for active CI relations on each org
+        in scope. One search_read replaces N search_counts."""
+        if not all_org_ids or 'myschool.ci.relation' not in self.env:
+            return {}
+        CiRelation = self.env['myschool.ci.relation']
+        domain = [('id_org', 'in', list(all_org_ids))]
+        if 'isactive' in CiRelation._fields:
+            domain.append(('isactive', '=', True))
+        rows = CiRelation.search_read(domain, ['id_org'])
+        counts = {}
+        for r in rows:
+            org_field = r.get('id_org')
+            if org_field:
+                org_id = org_field[0] if isinstance(org_field, (list, tuple)) else org_field
+                counts[org_id] = counts.get(org_id, 0) + 1
+        return counts
 
     def _get_display_name(self, org):
         """Get display name for org - prefer name_short if available."""
@@ -158,86 +277,42 @@ class ObjectBrowser(models.TransientModel):
             return org.shortname
         return org.name
 
-    def _build_org_node(self, org, org_dict, org_children, show_inactive=False, show_administrative=False, visited=None):
-        """Build a single org node with children."""
+    def _build_org_node(self, org, org_dict, org_children, show_inactive=False,
+                        show_administrative=False, visited=None,
+                        person_tree_by_org=None, ci_count_by_org=None):
+        """Build a single org node with children.
+
+        Persons + CI-counts are read from prefetched dicts (built once
+        in ``_get_org_tree``). Falls back to a per-node fetch if a caller
+        invokes this without the dicts — preserves the original API for
+        any external user.
+        """
         # Cycle detection
         if visited is None:
             visited = set()
-        
+
         if org.id in visited:
             _logger.warning(f"Circular reference detected for org {org.id} ({org.name}), skipping")
             return None
-        
+
         visited.add(org.id)
-        
+
         child_ids = org_children.get(org.id, [])
         child_ids = [cid for cid in child_ids if cid in org_dict]
-        
-        # Get persons - only from PERSON-TREE proprelations
-        person_count = 0
-        persons = []
-        if 'myschool.proprelation' in self.env and 'myschool.proprelation.type' in self.env:
-            PropRelation = self.env['myschool.proprelation']
-            PropRelationType = self.env['myschool.proprelation.type']
-            
-            # Get PERSON-TREE type
-            person_tree_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
-            
-            person_rel_domain = [
-                ('id_org', '=', org.id),
-                ('id_person', '!=', False),
-            ]
-            
-            # Filter by PERSON-TREE type if it exists
-            if person_tree_type:
-                person_rel_domain.append(('proprelation_type_id', '=', person_tree_type.id))
-            
-            if not show_inactive:
-                person_rel_domain.append(('is_active', '=', True))
-            
-            person_rels = PropRelation.search(person_rel_domain)
-            
-            person_dict = {}
-            for rel in person_rels:
-                person = rel.id_person
-                
-                if not show_administrative and hasattr(person, 'is_administrative') and person.is_administrative:
-                    continue
-                if not show_inactive and hasattr(person, 'is_active') and not person.is_active:
-                    continue
-                
-                pid = person.id
-                if pid not in person_dict:
-                    name = person.name or 'Unknown'
-                    if hasattr(person, 'first_name') and person.first_name:
-                        name = f"{person.first_name} {person.name}"
-                    person_dict[pid] = {
-                        'id': pid,
-                        'name': name,
-                        'type': 'person',
-                        'model': 'myschool.person',
-                        'org_id': org.id,
-                        'roles': [],
-                        'is_administrative': person.is_administrative if hasattr(person, 'is_administrative') else False,
-                    }
-                if rel.id_role:
-                    role = rel.id_role
-                    role_name = role.shortname if hasattr(role, 'shortname') and role.shortname else role.name
-                    if role_name not in person_dict[pid]['roles']:
-                        person_dict[pid]['roles'].append(role_name)
-            
-            persons = list(person_dict.values())
-            person_count = len(persons)
-        
-        # Get CI relations count
-        ci_count = 0
-        if 'myschool.ci.relation' in self.env:
-            CiRelation = self.env['myschool.ci.relation']
-            ci_count = CiRelation.search_count([
-                ('id_org', '=', org.id),
-                ('isactive', '=', True)
-            ])
-        
+
+        # ----- persons -------------------------------------------------------
+        if person_tree_by_org is None:
+            # Backwards-compat path: caller did not prefetch.
+            person_tree_by_org = self._prefetch_person_tree_by_org(
+                {org.id}, show_inactive, show_administrative)
+        persons = person_tree_by_org.get(org.id, [])
+        person_count = len(persons)
+
+        # ----- CI count ------------------------------------------------------
+        if ci_count_by_org is None:
+            ci_count_by_org = self._prefetch_ci_count_by_org({org.id})
+        ci_count = ci_count_by_org.get(org.id, 0)
+
         is_administrative = org.is_administrative if hasattr(org, 'is_administrative') else False
         
         # Use short_name for display
@@ -270,10 +345,15 @@ class ObjectBrowser(models.TransientModel):
         for child_id in child_ids:
             if child_id in org_dict and child_id not in visited:
                 child_org = org_dict[child_id]
-                child_node = self._build_org_node(child_org, org_dict, org_children, show_inactive, show_administrative, visited.copy())
+                child_node = self._build_org_node(
+                    child_org, org_dict, org_children,
+                    show_inactive, show_administrative,
+                    visited=visited.copy(),
+                    person_tree_by_org=person_tree_by_org,
+                    ci_count_by_org=ci_count_by_org)
                 if child_node:
                     node['children'].append(child_node)
-        
+
         return node
 
     def _get_role_list(self, show_inactive=False):
@@ -522,16 +602,26 @@ class ObjectBrowser(models.TransientModel):
 
     @api.model
     def delete_node(self, node_type, node_id):
-        """Delete a node (org, person, or role)."""
+        """Delete a node (org, persongroup, person, or role)."""
+        # ``persongroup`` rows in the members panel are also
+        # ``myschool.org`` records — both real PERSONGROUP-type orgs
+        # and regular sub-orgs surface there. Route them through the
+        # org delete path; the betask handler (and the persongroup
+        # short-circuit below) figures out the rest.
         model_map = {
             'org': 'myschool.org',
+            'persongroup': 'myschool.org',
             'person': 'myschool.person',
             'role': 'myschool.role',
         }
-        
+
         model_name = model_map.get(node_type)
         if not model_name or model_name not in self.env:
             raise UserError(f"Unknown node type: {node_type}")
+
+        # Treat persongroup like org for downstream routing.
+        if node_type == 'persongroup':
+            node_type = 'org'
         
         record = self.env[model_name].browse(node_id)
         if not record.exists():
@@ -611,10 +701,16 @@ class ObjectBrowser(models.TransientModel):
             _logger.info(f"Created MANUAL/ORG/DEL betask for org {node_id}")
 
         elif node_type == 'person':
-            service.create_manual_task('PERSON', 'DEACT', {
+            # ``delete_node`` is the entry-point for both the tree-view
+            # bulk-delete and the multi-select members-panel bulk-delete.
+            # Both labels read "Verwijder N items" / "Delete" — so the
+            # action must actually DELETE, not deactivate. (The context
+            # menu has a separate "Deactivate" entry that routes through
+            # ``deactivate_person`` for the soft-delete path.)
+            service.create_manual_task('PERSON', 'DEL', {
                 'person_id': node_id,
             })
-            _logger.info(f"Created MANUAL/PERSON/DEACT betask for person {node_id}")
+            _logger.info(f"Created MANUAL/PERSON/DEL betask for person {node_id}")
 
         elif node_type == 'role':
             # Deactivate all proprelations for this role via betask
@@ -839,89 +935,100 @@ class ObjectBrowser(models.TransientModel):
                 if role_name and role_name not in person_dict[pid]['roles']:
                     person_dict[pid]['roles'].append(role_name)
         
+        # Annotate each person with how many distinct **other** orgs
+        # they're actively linked to (across PERSON-TREE, PPSBR, PG-P,
+        # …). The UI uses this to suppress "Remove from this Org" when
+        # the person has only this single org — for them "Delete" is
+        # the only sensible action.
+        if person_dict:
+            other_org_rels = PropRelation.search([
+                ('id_person', 'in', list(person_dict.keys())),
+                ('id_org', '!=', False),
+                ('id_org', '!=', org_id),
+                ('is_active', '=', True),
+            ])
+            other_orgs_by_person = {}
+            for rel in other_org_rels:
+                pid = rel.id_person.id
+                other_orgs_by_person.setdefault(pid, set()).add(rel.id_org.id)
+            for pid, entry in person_dict.items():
+                entry['other_active_org_count'] = len(
+                    other_orgs_by_person.get(pid, ()))
+
         result['persons'] = list(person_dict.values())
         _logger.info(f"Returning {len(result['persons'])} persons")
-        
-        # Get persongroup orgs linked to this org
-        # Persongroups are orgs with org_type.name = 'PERSONGROUP' that are children of this org
-        if 'myschool.org.type' in self.env and 'myschool.org' in self.env:
-            OrgType = self.env['myschool.org.type']
+
+        # Get all child orgs linked to this org (via ORG-TREE).
+        # Both PERSONGROUP-type and regular sub-orgs are surfaced in the
+        # 'persongroups' list — the UI distinguishes them by org_type_name.
+        if 'myschool.org' in self.env:
             Org = self.env['myschool.org']
             PropRelationType = self.env['myschool.proprelation.type']
 
-            persongroup_type = OrgType.search([('name', '=ilike', 'PERSONGROUP')], limit=1)
-            _logger.info(f"PERSONGROUP type found: {persongroup_type.id if persongroup_type else 'NOT FOUND'}")
-
-            # Get ORG-TREE type for filtering
             org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
 
-            if persongroup_type:
-                # Find orgs that are persongroups and are children of this org (via ORG-TREE only)
-                # Pattern 1: id_org (child) + id_org_parent (parent) = org_id
-                pg_search_domain = [
-                    ('id_org_parent', '=', org_id),
-                    ('id_org', '!=', False),
-                    ('is_active', '=', True),
-                ]
-                if org_tree_type:
-                    pg_search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
+            # Pattern 1: id_org (child) + id_org_parent (parent) = org_id
+            pg_search_domain = [
+                ('id_org_parent', '=', org_id),
+                ('id_org', '!=', False),
+                ('is_active', '=', True),
+            ]
+            if org_tree_type:
+                pg_search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
 
-                pg_rels = PropRelation.search(pg_search_domain)
+            pg_rels = PropRelation.search(pg_search_domain)
+            _logger.info(f"Found {len(pg_rels)} ORG-TREE child relations (pattern 1)")
 
-                _logger.info(f"Found {len(pg_rels)} potential persongroup relations (pattern 1)")
+            child_org_ids = set()
+            for rel in pg_rels:
+                child_org = rel.id_org
+                if child_org and child_org.id != org_id:
+                    child_org_ids.add(child_org.id)
 
-                persongroup_ids = set()
-                for rel in pg_rels:
-                    child_org = rel.id_org
-                    if child_org and child_org.id != org_id:
-                        # Check if this org is a persongroup
-                        if hasattr(child_org, 'org_type_id') and child_org.org_type_id:
-                            if child_org.org_type_id.id == persongroup_type.id:
-                                persongroup_ids.add(child_org.id)
-                                _logger.info(f"Found persongroup: {child_org.name} (id={child_org.id})")
+            # Pattern 2: id_org_child + id_org_parent = org_id
+            pg_search_domain2 = [
+                ('id_org_parent', '=', org_id),
+                ('id_org_child', '!=', False),
+                ('is_active', '=', True),
+            ]
+            if org_tree_type:
+                pg_search_domain2.append(('proprelation_type_id', '=', org_tree_type.id))
 
-                # Pattern 2: id_org_child + id_org_parent = org_id
-                pg_search_domain2 = [
-                    ('id_org_parent', '=', org_id),
-                    ('id_org_child', '!=', False),
-                    ('is_active', '=', True),
-                ]
-                if org_tree_type:
-                    pg_search_domain2.append(('proprelation_type_id', '=', org_tree_type.id))
+            pg_rels2 = PropRelation.search(pg_search_domain2)
+            _logger.info(f"Found {len(pg_rels2)} ORG-TREE child relations (pattern 2)")
 
-                pg_rels2 = PropRelation.search(pg_search_domain2)
+            for rel in pg_rels2:
+                if hasattr(rel, 'id_org_child') and rel.id_org_child:
+                    child_org = rel.id_org_child
+                    if child_org.id != org_id:
+                        child_org_ids.add(child_org.id)
 
-                _logger.info(f"Found {len(pg_rels2)} potential persongroup relations (pattern 2)")
+            if child_org_ids:
+                child_orgs = Org.browse(list(child_org_ids))
+                for sub in child_orgs:
+                    if hasattr(sub, 'is_active') and not sub.is_active:
+                        continue
 
-                for rel in pg_rels2:
-                    if hasattr(rel, 'id_org_child') and rel.id_org_child:
-                        child_org = rel.id_org_child
-                        if child_org.id != org_id:
-                            if hasattr(child_org, 'org_type_id') and child_org.org_type_id:
-                                if child_org.org_type_id.id == persongroup_type.id:
-                                    persongroup_ids.add(child_org.id)
-                                    _logger.info(f"Found persongroup (pattern 2): {child_org.name} (id={child_org.id})")
-                
-                if persongroup_ids:
-                    persongroups = Org.browse(list(persongroup_ids))
-                    for pg in persongroups:
-                        if hasattr(pg, 'is_active') and not pg.is_active:
-                            continue
-                        
-                        display_name = pg.name
-                        if hasattr(pg, 'name_short') and pg.name_short:
-                            display_name = pg.name_short
-                        
-                        result['persongroups'].append({
-                            'id': pg.id,
-                            'name': display_name,
-                            'full_name': pg.name,
-                            'model': 'myschool.org',
-                        })
+                    display_name = sub.name
+                    if hasattr(sub, 'name_short') and sub.name_short:
+                        display_name = sub.name_short
+
+                    org_type_name = ''
+                    if hasattr(sub, 'org_type_id') and sub.org_type_id:
+                        org_type_name = sub.org_type_id.name or ''
+
+                    result['persongroups'].append({
+                        'id': sub.id,
+                        'name': display_name,
+                        'full_name': sub.name,
+                        'model': 'myschool.org',
+                        'org_type_name': org_type_name,
+                        'is_persongroup': org_type_name == 'PERSONGROUP',
+                    })
         else:
-            _logger.warning("myschool.org.type or myschool.org model not found")
-        
-        _logger.info(f"Returning {len(result['persongroups'])} persongroups")
+            _logger.warning("myschool.org model not found")
+
+        _logger.info(f"Returning {len(result['persongroups'])} sub-orgs")
 
         # For PERSONGROUP orgs: also load PG-P members (persons linked via PG-P proprelation)
         if 'myschool.org' in self.env:

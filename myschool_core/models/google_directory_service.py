@@ -136,27 +136,343 @@ class GoogleDirectoryService(models.AbstractModel):
     def test_connection(self, config):
         """Probe the Directory API.
 
-        Issues a tiny ``users.list(maxResults=1)`` against the
-        configured customer. A 200 means: credentials parse, subject
-        is delegated correctly, scopes match, customer id resolves.
+        Issues a tiny ``users.list(maxResults=1)``. Tries ``customer=``
+        first; on any HttpError, falls back to ``domain=`` so we can
+        tell apart "customer id doesn't resolve" from "subject/scopes
+        not yet propagated". Both error texts are surfaced when both
+        attempts fail.
         """
         try:
             self._check_google_available()
             svc = self._get_directory_service(config)
-            customer = config.customer_id or 'my_customer'
-            with self._api_errors('test_connection'):
-                resp = svc.users().list(
-                    customer=customer, maxResults=1).execute()
-            count = len(resp.get('users') or [])
-            return {
-                'success': True,
-                'message': f'Bind OK — listed {count} user(s) on customer={customer}',
-            }
         except UserError as e:
             return {'success': False, 'message': str(e.args[0]) if e.args else 'Failed'}
         except Exception as e:
-            _logger.exception('Workspace test_connection failed')
+            _logger.exception('Workspace test_connection setup failed')
             return {'success': False, 'message': str(e)}
+
+        customer = config.customer_id or 'my_customer'
+        domain = config.domain or ''
+
+        def _err_text(err):
+            status = getattr(err, 'status_code', None) or getattr(
+                getattr(err, 'resp', None), 'status', None)
+            try:
+                body = err.content.decode('utf-8', 'replace') if err.content else ''
+            except Exception:
+                body = str(err)
+            return f'HTTP {status}: {body}'
+
+        # Attempt 1: customer=
+        try:
+            resp = svc.users().list(customer=customer, maxResults=1).execute()
+            count = len(resp.get('users') or [])
+            return {
+                'success': True,
+                'message': (f'Bind OK via customer={customer} — '
+                            f'listed {count} user(s)'),
+            }
+        except HttpError as e_cust:
+            err1 = _err_text(e_cust)
+            _logger.warning(
+                'Google API users.list(customer=%s) failed: %s — '
+                'retrying with domain=%s', customer, err1, domain)
+        except Exception as e:
+            _logger.exception('Workspace test_connection (customer) failed')
+            return {'success': False, 'message': str(e)}
+
+        # Attempt 2: domain=
+        if not domain:
+            return {
+                'success': False,
+                'message': (f'customer={customer} failed ({err1}); '
+                            f'no domain configured for fallback'),
+            }
+        try:
+            resp = svc.users().list(domain=domain, maxResults=1).execute()
+            count = len(resp.get('users') or [])
+            return {
+                'success': True,
+                'message': (f'Bind OK via domain={domain} — '
+                            f'listed {count} user(s). '
+                            f'NOTE: customer={customer} returned {err1} — '
+                            f'check Cloud project ↔ Workspace tenant link.'),
+            }
+        except HttpError as e_dom:
+            err2 = _err_text(e_dom)
+            _logger.error(
+                'Google API users.list(domain=%s) also failed: %s',
+                domain, err2)
+            return {
+                'success': False,
+                'message': (f'Both attempts failed. '
+                            f'customer={customer}: {err1}. '
+                            f'domain={domain}: {err2}.'),
+            }
+        except Exception as e:
+            _logger.exception('Workspace test_connection (domain) failed')
+            return {'success': False, 'message': str(e)}
+
+    # =========================================================================
+    # Customer ID auto-detect
+    # =========================================================================
+
+    @api.model
+    def resolve_customer_id(self, config):
+        """Look up the tenant's real Customer ID via the subject account.
+
+        ``users.get(userKey=subject_email)`` returns a user object with a
+        ``customerId`` field (the ``C...`` identifier). This is the most
+        reliable way to discover the value admins should put in
+        ``customer_id`` — needed because ``orgunits`` and
+        ``chromeosdevices`` endpoints reject the ``my_customer`` alias
+        in some Workspace/Cloud-project setups.
+
+        Returns ``{'success', 'customer_id', 'message'}``.
+        """
+        try:
+            self._check_google_available()
+        except UserError as e:
+            return {'success': False, 'customer_id': '',
+                    'message': str(e.args[0]) if e.args else 'Failed'}
+        if not config.subject_email:
+            return {'success': False, 'customer_id': '',
+                    'message': 'No impersonation subject configured'}
+        try:
+            svc = self._get_directory_service(config)
+            user = svc.users().get(userKey=config.subject_email).execute()
+        except HttpError as e:
+            status = getattr(getattr(e, 'resp', None), 'status', None)
+            try:
+                body = e.content.decode('utf-8', 'replace') if e.content else ''
+            except Exception:
+                body = str(e)
+            return {'success': False, 'customer_id': '',
+                    'message': f'HTTP {status}: {body[:300]}'}
+        except Exception as e:
+            _logger.exception('resolve_customer_id failed')
+            return {'success': False, 'customer_id': '', 'message': str(e)}
+        cid = user.get('customerId') or ''
+        if not cid:
+            return {'success': False, 'customer_id': '',
+                    'message': f'Subject {config.subject_email} has no customerId'}
+        return {'success': True, 'customer_id': cid,
+                'message': f'Discovered customerId={cid} via {config.subject_email}'}
+
+    # =========================================================================
+    # Per-API probes
+    # =========================================================================
+
+    @api.model
+    def test_apis(self, config):
+        """Probe each enabled API/scope with a minimal read-only call.
+
+        Returns a list of dicts:
+          {'name', 'scope', 'enabled', 'success', 'message'}
+
+        Disabled scopes are still listed (``enabled=False``, ``success=None``)
+        so the UI can show the full matrix. Each probe is independent — a
+        failing scope does not abort the rest.
+        """
+        try:
+            self._check_google_available()
+        except UserError as e:
+            return [{
+                'name': 'Library',
+                'scope': '-',
+                'enabled': True,
+                'success': False,
+                'message': str(e.args[0]) if e.args else 'Failed',
+            }]
+
+        try:
+            creds = self._build_credentials(config)
+        except UserError as e:
+            return [{
+                'name': 'Credentials',
+                'scope': '-',
+                'enabled': True,
+                'success': False,
+                'message': str(e.args[0]) if e.args else 'Failed',
+            }]
+
+        customer = config.customer_id or 'my_customer'
+        domain = config.domain or ''
+
+        def _err_text(err):
+            status = getattr(err, 'status_code', None) or getattr(
+                getattr(err, 'resp', None), 'status', None)
+            try:
+                body = err.content.decode('utf-8', 'replace') if err.content else ''
+            except Exception:
+                body = str(err)
+            return f'HTTP {status}: {body[:300]}'
+
+        def _probe(label, fn):
+            try:
+                res = fn()
+                return {'success': True, 'message': res}
+            except HttpError as e:
+                return {'success': False, 'message': _err_text(e)}
+            except Exception as e:
+                _logger.exception('Probe %s failed', label)
+                return {'success': False, 'message': str(e)[:300]}
+
+        def _build(api_name, version):
+            return build(api_name, version, credentials=creds,
+                         cache_discovery=False)
+
+        results = []
+
+        # ---- Directory: Users ----
+        scope = 'admin.directory.user'
+        if config.scope_directory_user:
+            def _users():
+                svc = _build('admin', 'directory_v1')
+                try:
+                    r = svc.users().list(customer=customer, maxResults=1).execute()
+                    return f'OK via customer — {len(r.get("users") or [])} listed'
+                except HttpError:
+                    if not domain:
+                        raise
+                    r = svc.users().list(domain=domain, maxResults=1).execute()
+                    return f'OK via domain — {len(r.get("users") or [])} listed'
+            probe = _probe('users', _users)
+            results.append({
+                'name': 'Directory: Users', 'scope': scope, 'enabled': True,
+                **probe,
+            })
+        else:
+            results.append({
+                'name': 'Directory: Users', 'scope': scope, 'enabled': False,
+                'success': None, 'message': 'Scope disabled',
+            })
+
+        # ---- Directory: Groups ----
+        scope = 'admin.directory.group'
+        if config.scope_directory_group:
+            def _groups():
+                svc = _build('admin', 'directory_v1')
+                try:
+                    r = svc.groups().list(customer=customer, maxResults=1).execute()
+                    return f'OK via customer — {len(r.get("groups") or [])} listed'
+                except HttpError:
+                    if not domain:
+                        raise
+                    r = svc.groups().list(domain=domain, maxResults=1).execute()
+                    return f'OK via domain — {len(r.get("groups") or [])} listed'
+            probe = _probe('groups', _groups)
+            results.append({
+                'name': 'Directory: Groups', 'scope': scope, 'enabled': True,
+                **probe,
+            })
+        else:
+            results.append({
+                'name': 'Directory: Groups', 'scope': scope, 'enabled': False,
+                'success': None, 'message': 'Scope disabled',
+            })
+
+        # ---- Directory: OrgUnits ----
+        scope = 'admin.directory.orgunit'
+        if config.scope_directory_orgunit:
+            def _ous():
+                svc = _build('admin', 'directory_v1')
+                r = svc.orgunits().list(
+                    customerId=customer, type='all').execute()
+                return f'OK — {len(r.get("organizationUnits") or [])} OU(s)'
+            probe = _probe('orgunits', _ous)
+            results.append({
+                'name': 'Directory: OrgUnits', 'scope': scope, 'enabled': True,
+                **probe,
+            })
+        else:
+            results.append({
+                'name': 'Directory: OrgUnits', 'scope': scope, 'enabled': False,
+                'success': None, 'message': 'Scope disabled',
+            })
+
+        # ---- Directory: ChromeOS Devices ----
+        scope = 'admin.directory.device.chromeos'
+        if config.scope_directory_device:
+            def _devs():
+                svc = _build('admin', 'directory_v1')
+                r = svc.chromeosdevices().list(
+                    customerId=customer, maxResults=1).execute()
+                return f'OK — {len(r.get("chromeosdevices") or [])} listed'
+            probe = _probe('chromeos', _devs)
+            results.append({
+                'name': 'Directory: ChromeOS', 'scope': scope, 'enabled': True,
+                **probe,
+            })
+        else:
+            results.append({
+                'name': 'Directory: ChromeOS', 'scope': scope, 'enabled': False,
+                'success': None, 'message': 'Scope disabled',
+            })
+
+        # ---- Drive (shared drives) ----
+        scope = 'drive'
+        if config.scope_drive:
+            def _drives():
+                svc = _build('drive', 'v3')
+                r = svc.drives().list(pageSize=1).execute()
+                return f'OK — {len(r.get("drives") or [])} shared drive(s)'
+            probe = _probe('drive', _drives)
+            results.append({
+                'name': 'Drive', 'scope': scope, 'enabled': True,
+                **probe,
+            })
+        else:
+            results.append({
+                'name': 'Drive', 'scope': scope, 'enabled': False,
+                'success': None, 'message': 'Scope disabled',
+            })
+
+        # ---- Classroom ----
+        scope = 'classroom.courses'
+        if config.scope_classroom:
+            def _classroom():
+                svc = _build('classroom', 'v1')
+                r = svc.courses().list(pageSize=1).execute()
+                return f'OK — {len(r.get("courses") or [])} course(s)'
+            probe = _probe('classroom', _classroom)
+            results.append({
+                'name': 'Classroom', 'scope': scope, 'enabled': True,
+                **probe,
+            })
+        else:
+            results.append({
+                'name': 'Classroom', 'scope': scope, 'enabled': False,
+                'success': None, 'message': 'Scope disabled',
+            })
+
+        # ---- License Manager ----
+        scope = 'apps.licensing'
+        if config.scope_licensing:
+            def _licensing():
+                svc = _build('licensing', 'v1')
+                # licenseAssignments.listForProduct needs a productId; use
+                # Google Workspace Business Starter as a harmless probe.
+                # If the product isn't licensed the API still answers
+                # with an empty list rather than 403.
+                r = svc.licenseAssignments().listForProduct(
+                    productId='Google-Apps',
+                    customerId=domain or customer,
+                    maxResults=1).execute()
+                items = r.get('items') or []
+                return f'OK — {len(items)} assignment(s) on Google-Apps'
+            probe = _probe('licensing', _licensing)
+            results.append({
+                'name': 'License Manager', 'scope': scope, 'enabled': True,
+                **probe,
+            })
+        else:
+            results.append({
+                'name': 'License Manager', 'scope': scope, 'enabled': False,
+                'success': None, 'message': 'Scope disabled',
+            })
+
+        return results
 
     # =========================================================================
     # OU path helpers
@@ -225,8 +541,13 @@ class GoogleDirectoryService(models.AbstractModel):
         (``myschool.ldap.service._build_user_cn``) so AD's sAMAccountName,
         the LDAP CN, and the Google primaryEmail local-part stay in
         lock-step. Domain priority:
-        1. The org-tree's ``domain_internal`` (resolved upwards).
-        2. ``config.domain`` as final fallback.
+        1. The org-tree's ``domain_external`` (resolved upwards) —
+           the public domain, used for Google.
+        2. ``config.domain`` (the Workspace primary domain) as fallback.
+
+        ``domain_internal`` is **not** used here — that's the AD-only
+        internal domain (e.g. ``olvp.int``) and Workspace rejects it
+        with HTTP 403 because the domain isn't part of the tenant.
         """
         ldap_svc = self.env['myschool.ldap.service']
         cn = ldap_svc._build_user_cn(person, org=org)
@@ -241,11 +562,11 @@ class GoogleDirectoryService(models.AbstractModel):
             if not unicodedata.combining(c)
         ).replace(' ', '').replace('"', '')
 
-        domain = ldap_svc._resolve_org_domain(org, 'domain_internal') \
+        domain = ldap_svc._resolve_org_domain(org, 'domain_external') \
             or config.domain
         if not domain:
             raise UserError(_(
-                'Cannot build primaryEmail for %s: no domain_internal '
+                'Cannot build primaryEmail for %s: no domain_external '
                 'on the org-tree and no Workspace config domain set.'
             ) % person.name)
         return f'{local}@{domain}'
@@ -304,8 +625,42 @@ class GoogleDirectoryService(models.AbstractModel):
                 'message': f'User already exists: {primary_email} (no change)',
             }
 
-        with self._api_errors(f'users.insert({primary_email})'):
+        # Self-healing: try insert once; on INVALID_OU_ID create the
+        # missing OU path and retry. Matches the pattern used for
+        # group self-heal elsewhere — keeps the betask pipeline from
+        # getting stuck just because an OU wasn't pre-provisioned.
+        try:
             res = svc.users().insert(body=body).execute()
+        except HttpError as e:
+            status = getattr(getattr(e, 'resp', None), 'status', None)
+            try:
+                body_text = e.content.decode('utf-8', 'replace') if e.content else ''
+            except Exception:
+                body_text = str(e)
+            if status and int(status) == 400 and 'INVALID_OU_ID' in body_text \
+                    and ou_path and ou_path != '/':
+                _logger.warning(
+                    'users.insert(%s) got INVALID_OU_ID for %s — '
+                    'ensuring OU exists and retrying once',
+                    primary_email, ou_path)
+                customer = config.customer_id or 'my_customer'
+                ensure = self._ensure_ou_path(svc, customer, ou_path)
+                if not ensure.get('success'):
+                    raise UserError(_(
+                        'Cannot create user %(u)s: OU %(ou)s did not exist '
+                        'and could not be created: %(msg)s'
+                    ) % {'u': primary_email, 'ou': ou_path,
+                         'msg': ensure.get('message', '')})
+                with self._api_errors(f'users.insert({primary_email}) [retry]'):
+                    res = svc.users().insert(body=body).execute()
+            else:
+                _logger.error('Google API error during users.insert(%s): '
+                              'status=%s body=%s',
+                              primary_email, status, body_text)
+                raise UserError(_(
+                    'Google API error during users.insert(%(u)s) '
+                    '(HTTP %(status)s): %(body)s'
+                ) % {'u': primary_email, 'status': status, 'body': body_text})
         return {
             'success': True,
             'id': res.get('primaryEmail') or primary_email,

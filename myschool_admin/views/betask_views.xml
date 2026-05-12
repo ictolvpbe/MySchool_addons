@@ -317,6 +317,36 @@ if records:
     action = records.action_process_selected_new()
             </field>
         </record>
+
+        <!-- Bulk reset: every selected record in 'error' status is
+             reset to 'new' with retry_count cleared, so the next
+             process_all_pending run picks them up in priority order.
+             Non-error selections are silently skipped. -->
+        <record id="action_betask_reset_selected_errors" model="ir.actions.server">
+            <field name="name">Reset geselecteerde ERROR tasks → NEW</field>
+            <field name="model_id" ref="myschool_core.model_myschool_betask"/>
+            <field name="binding_model_id" ref="myschool_core.model_myschool_betask"/>
+            <field name="binding_view_types">list,form</field>
+            <field name="state">code</field>
+            <field name="code">
+if records:
+    action = records.action_reset_selected_errors()
+            </field>
+        </record>
+
+        <!-- Drain the entire pending queue in priority order.
+             Calls processor.process_all_pending() so dependencies are
+             honoured (LDAP/ORG/ADD before LDAP/USER/ADD before
+             LDAP/GROUPMEMBER/ADD, etc.) — unlike the per-record
+             "Verwerk geselecteerde NEW tasks" which runs in list-view
+             order (newest first). Wired up as a top-level menu so
+             admins can run it without first navigating into a list. -->
+        <record id="action_betask_run_all_pending" model="ir.actions.server">
+            <field name="name">Verwerk alle wachtende taken (in volgorde)</field>
+            <field name="model_id" ref="myschool_core.model_myschool_betask"/>
+            <field name="state">code</field>
+            <field name="code">action = model.action_run_all_pending()</field>
+        </record>
     </data>
 
 </odoo>

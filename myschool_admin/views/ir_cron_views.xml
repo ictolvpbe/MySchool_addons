@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Search view: extra filter dat default-aan staat zodat de lijst
+         alleen MySchool-crons toont. Vinkje uit = alle crons. -->
+    <record id="view_ir_cron_search_myschool" model="ir.ui.view">
+        <field name="name">ir.cron.search.myschool</field>
+        <field name="model">ir.cron</field>
+        <field name="inherit_id" ref="base.ir_cron_view_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='all']" position="before">
+                <filter string="Alleen MySchool-crons"
+                        name="myschool_only"
+                        domain="[('model_id.model', '=ilike', 'myschool.%')]"/>
+                <separator/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Eigen action zodat we de lijst standaard met de MySchool-filter
+         openen en duidelijke breadcrumb-naam geven. -->
+    <record id="action_myschool_ir_cron" model="ir.actions.act_window">
+        <field name="name">Cron-taken</field>
+        <field name="res_model">ir.cron</field>
+        <field name="view_mode">list,form,calendar</field>
+        <field name="context">{
+            'search_default_myschool_only': 1,
+            'search_default_all': 1,
+        }</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Geen cron-taken gevonden
+            </p>
+            <p>
+                Hier beheer je geplande achtergrondtaken (ir.cron).
+                Standaard worden enkel MySchool-crons getoond — vink
+                "Alleen MySchool-crons" uit om alle crons te zien.
+                Klik een cron aan voor details. Manuele uitvoering kan
+                via "Run Manually" op de detailweergave.
+            </p>
+        </field>
+    </record>
+</odoo>

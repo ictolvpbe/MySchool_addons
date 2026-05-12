@@ -1043,6 +1043,18 @@
                         <field name="proprelation_count" readonly="1"/>
                     </group>
                 </group>
+                <group invisible="state != 'confirm'" string="Backend cleanup (optioneel)">
+                    <field name="cleanup_ldap"/>
+                    <field name="cleanup_cloud"/>
+                    <div colspan="2" class="alert alert-info" role="alert">
+                        Wanneer aangevinkt: AD-users + persongroup-AD-groepen
+                        (en/of Workspace users + groups + class-OU's) worden
+                        <strong>vóór</strong> de DB-unlinks verwijderd.
+                        Idempotent — bestaande "404 already gone" wordt als
+                        success behandeld. Skipt netjes als geen actieve
+                        config bestaat.
+                    </div>
+                </group>
                 <group invisible="state != 'done'" string="Result">
                     <field name="result_text" nolabel="1" widget="text"/>
                 </group>
@@ -1062,6 +1074,190 @@
     <record id="action_reset_sync_data_wizard" model="ir.actions.act_window">
         <field name="name">Reset Auto-Sync Data</field>
         <field name="res_model">myschool.reset.sync.data.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- ========================================= -->
+    <!-- DOMEINNAMEN WIJZIGEN (BULK)               -->
+    <!-- ========================================= -->
+
+    <record id="view_domain_rename_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.domain.rename.wizard.form</field>
+        <field name="model">myschool.domain.rename.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Domeinnamen wijzigen (bulk)">
+                <div class="text-muted small mb-2">
+                    <em>Bulk-rename van interne en/of externe domeinnamen
+                    voor een SCHOOL of SCHOOLBOARD-scope. Voer eerst Preview
+                    uit om de impact te zien; daarna Commit.</em>
+                </div>
+
+                <group invisible="state == 'committed'">
+                    <group string="Scope">
+                        <field name="scope_org_id"
+                               options="{'no_create': True, 'no_create_edit': True}"/>
+                        <field name="scope_kind" readonly="1"/>
+                    </group>
+                    <group string="Huidige domeinen" invisible="not scope_org_id">
+                        <field name="old_domain_internal"/>
+                        <field name="old_domain_external"/>
+                    </group>
+                </group>
+
+                <group invisible="state == 'committed' or not scope_org_id">
+                    <group string="Nieuwe domeinen">
+                        <field name="new_domain_internal"
+                               placeholder="Laat leeg om intern domein onveranderd te laten"/>
+                        <field name="new_domain_external"
+                               placeholder="Laat leeg om extern domein onveranderd te laten"/>
+                    </group>
+                </group>
+
+                <group invisible="state == 'draft'" string="Preview-resultaat">
+                    <group>
+                        <field name="org_count" readonly="1"/>
+                        <field name="person_count" readonly="1"/>
+                        <field name="comgroup_count" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="secgroup_count" readonly="1"/>
+                        <field name="odoo_user_count" readonly="1"/>
+                    </group>
+                </group>
+
+                <group invisible="state == 'draft'">
+                    <field name="preview_text" nolabel="1" widget="text" readonly="1"/>
+                </group>
+
+                <group string="Patch pending task payloads (post-rename cleanup)">
+                    <div class="text-muted small" colspan="2">
+                        Vervangt <code>@&lt;oud&gt;</code> door
+                        <code>@&lt;nieuw&gt;</code> in de JSON-data van alle
+                        pending betasks (status new of error). Nodig wanneer
+                        CLOUD/GROUP/ADD of CLOUD/GROUPMEMBER/ADD tasks nog
+                        met het oude email-domein in hun payload zitten.
+                    </div>
+                    <field name="patch_old_email_domain"
+                           placeholder="bv. olvp.be"/>
+                    <field name="patch_new_email_domain"
+                           placeholder="bv. olvpedu.be"/>
+                </group>
+
+                <div class="alert alert-warning" role="alert"
+                     invisible="state != 'preview'">
+                    <strong>Let op:</strong> Commit voert een
+                    onomkeerbare bulk-rename uit. DB-strings worden
+                    bijgewerkt en LDAP/USER/UPD + LDAP/GROUP/UPD
+                    cascades worden gequeued. Cloud (Workspace)-renames
+                    moeten apart via een aparte sync-cyclus opgepakt
+                    worden — controleer Operations → Backend Tasks na
+                    afloop.
+                </div>
+
+                <field name="state" invisible="1"/>
+
+                <footer>
+                    <button name="action_preview" type="object"
+                            string="Preview" class="btn-primary"
+                            invisible="state == 'committed'"/>
+                    <button name="action_commit" type="object"
+                            string="Commit"
+                            class="btn-danger"
+                            invisible="state != 'preview'"
+                            confirm="Bulk-domeinrename uitvoeren? Dit is een ingrijpende, onomkeerbare actie."/>
+                    <button name="action_reemit_cascade" type="object"
+                            string="Heruitstuur LDAP cascade"
+                            class="btn-secondary"
+                            confirm="Cre&#235;ert nieuwe LDAP/USER/UPD + LDAP/GROUP/UPD tasks voor de gekozen scope op basis van de huidige DB-velden. Geen DB-wijziging. Gebruik dit alleen na een gefaalde cascade om opnieuw te queue&#235;n."/>
+                    <button name="action_patch_pending_task_emails"
+                            type="object"
+                            string="Patch task payloads"
+                            class="btn-secondary"
+                            confirm="Vervangt @&lt;oud&gt; door @&lt;nieuw&gt; in JSON-data van alle pending betasks. Error tasks worden teruggezet naar new."/>
+                    <button string="Sluiten" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_domain_rename_wizard" model="ir.actions.act_window">
+        <field name="name">Domeinnamen wijzigen (bulk)</field>
+        <field name="res_model">myschool.domain.rename.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- ================================================================ -->
+    <!-- Bulk cleanup wizard — delete students + classes from MySchool /  -->
+    <!-- AD / Google in one go.                                            -->
+    <!-- ================================================================ -->
+    <record id="view_bulk_cleanup_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.bulk.cleanup.wizard.form</field>
+        <field name="model">myschool.bulk.cleanup.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Bulk cleanup — studenten + klassen">
+                <div class="text-muted small mb-2">
+                    <em>Verwijdert alle geselecteerde studenten en/of
+                    klassen onder een SCHOOL/SCHOOLBOARD scope. Iedere
+                    delete loopt via MANUAL/PERSON/DEL of MANUAL/ORG/DEL
+                    en cascadeert naar AD (LDAP/USER/DEL, LDAP/GROUP/DEL,
+                    LDAP/ORG/DEL) en Google Workspace (CLOUD/USER/DEL,
+                    CLOUD/GROUP/DEL, CLOUD/ORG/DEL).</em>
+                </div>
+
+                <group invisible="state == 'committed'">
+                    <group string="Scope">
+                        <field name="scope_org_id"
+                               options="{'no_create': True, 'no_create_edit': True}"/>
+                    </group>
+                    <group string="Wat verwijderen">
+                        <field name="delete_students" widget="boolean_toggle"/>
+                        <field name="delete_classes" widget="boolean_toggle"/>
+                    </group>
+                </group>
+
+                <group invisible="state == 'draft'" string="Preview-resultaat">
+                    <group>
+                        <field name="student_count" readonly="1"/>
+                        <field name="class_count" readonly="1"/>
+                    </group>
+                </group>
+
+                <group invisible="state == 'draft'">
+                    <field name="preview_text" nolabel="1" widget="text" readonly="1"/>
+                </group>
+
+                <div class="alert alert-warning" role="alert"
+                     invisible="state != 'preview'">
+                    <strong>Let op:</strong> deze actie is onomkeerbaar.
+                    Voor elke leerling wordt zijn AD- en Google-account
+                    permanent verwijderd; voor elke klas wordt de OU
+                    in AD en Google verwijderd nadat de leerlingen
+                    eerst zijn opgekuist. Werk in een test/dev-omgeving
+                    of zorg dat je een back-up hebt.
+                </div>
+
+                <field name="state" invisible="1"/>
+
+                <footer>
+                    <button name="action_preview" type="object"
+                            string="Preview" class="btn-primary"
+                            invisible="state == 'committed'"/>
+                    <button name="action_commit" type="object"
+                            string="Commit"
+                            class="btn-danger"
+                            invisible="state != 'preview'"
+                            confirm="Bulk-cleanup uitvoeren? Iedere geselecteerde leerling en/of klas wordt verwijderd uit MySchool, AD en Google. Onomkeerbaar."/>
+                    <button string="Sluiten" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_bulk_cleanup_wizard" model="ir.actions.act_window">
+        <field name="name">Bulk cleanup — studenten + klassen</field>
+        <field name="res_model">myschool.bulk.cleanup.wizard</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>
     </record>

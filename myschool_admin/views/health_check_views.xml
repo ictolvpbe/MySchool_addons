@@ -20,15 +20,36 @@
                     </div>
 
                     <group>
-                        <group string="Scope">
+                        <group string="Organisaties">
                             <field name="check_orgs"/>
                             <field name="check_org_fields"
                                    invisible="not check_orgs"/>
+                            <field name="check_org_persongroups"
+                                   invisible="not check_orgs"/>
                             <field name="check_org_ad_sync"
                                    invisible="not check_orgs"/>
-                            <field name="only_active"/>
+                            <field name="check_org_google_sync"
+                                   invisible="not check_orgs"/>
                         </group>
-                        <group string="Resultaat">
+                        <group string="Personen">
+                            <field name="check_persons"/>
+                            <field name="check_person_fields"
+                                   invisible="not check_persons"/>
+                            <field name="check_person_ad_sync"
+                                   invisible="not check_persons"/>
+                            <field name="check_person_google_sync"
+                                   invisible="not check_persons"/>
+                        </group>
+                        <group string="Lidmaatschappen">
+                            <field name="check_memberships"/>
+                            <field name="check_membership_ad_sync"
+                                   invisible="not check_memberships"/>
+                            <field name="check_membership_google_sync"
+                                   invisible="not check_memberships"/>
+                        </group>
+                        <group string="Filters &amp; Resultaat">
+                            <field name="only_active"/>
+                            <field name="only_autosync"/>
                             <field name="last_run_at" readonly="1"/>
                             <field name="issue_count" readonly="1"/>
                             <field name="error_count" readonly="1"/>
@@ -61,17 +82,19 @@
                                    decoration-warning="severity == 'warning'"
                                    decoration-info="severity == 'info'"/>
                             <field name="object_type"/>
-                            <field name="org_id"/>
+                            <field name="org_id" optional="show"/>
+                            <field name="person_id" optional="show"/>
+                            <field name="proprelation_id" optional="hide"/>
                             <field name="issue_kind"/>
                             <field name="description"/>
                             <field name="field_name" optional="hide"/>
-                            <field name="ldap_dn" optional="show"/>
+                            <field name="ldap_dn" optional="hide"/>
                             <field name="fix_kind" optional="hide"/>
                             <field name="is_fixed"/>
                             <field name="fix_message" optional="show"/>
                             <button name="action_open_record" type="object"
                                     string="Open" icon="fa-external-link"
-                                    invisible="not org_id"/>
+                                    invisible="not org_id and not person_id and not proprelation_id"/>
                             <button name="action_fix" type="object"
                                     string="Fix" icon="fa-wrench"
                                     invisible="fix_kind == 'none' or is_fixed"/>

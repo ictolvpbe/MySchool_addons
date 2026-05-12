@@ -7,3 +7,4 @@ from . import sync_dispatcher
 from . import sync_processor
 from . import sync_emitter
 from . import org_extension
+from . import res_config_settings

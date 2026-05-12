@@ -1229,6 +1229,75 @@ class LdapService(models.AbstractModel):
             }
 
     @api.model
+    def delete_ou(self, config, ou_dn, dry_run=False):
+        """Recursively delete an Organizational Unit and all of its
+        contents using the AD-specific tree-delete control
+        (1.2.840.113556.1.4.805). One round-trip; AD walks the subtree
+        server-side.
+
+        Use with care: the entire branch goes. Intended for the
+        Reset Auto-Sync Data wizard, which discards CLASSGROUP-OUs whose
+        DB rows are also being unlinked.
+
+        Args:
+            config: ldap.server.config record
+            ou_dn: DN of the OU
+            dry_run: If True, only simulate the operation
+
+        Returns:
+            dict with operation result.
+        """
+        self._check_ldap3_available()
+
+        _logger.info(f'Deleting LDAP OU (subtree): {ou_dn}')
+
+        if dry_run:
+            return {
+                'success': True,
+                'dn': ou_dn,
+                'message': 'Dry run - OU subtree would be deleted',
+            }
+
+        try:
+            with self._get_connection(config) as conn:
+                # AD tree-delete control — value=None, criticality=True so
+                # the server refuses if it can't honour subtree-delete.
+                controls = [('1.2.840.113556.1.4.805', True, None)]
+                result = conn.delete(ou_dn, controls=controls)
+                if result:
+                    return {
+                        'success': True,
+                        'dn': ou_dn,
+                        'message': f'OU deleted (subtree): {ou_dn}',
+                    }
+                # Idempotent skip for already-gone DNs.
+                desc = (conn.result or {}).get('description', '')
+                if 'noSuchObject' in desc or 'no such object' in desc.lower():
+                    return {
+                        'success': True,
+                        'dn': ou_dn,
+                        'message': f'OU already absent: {ou_dn}',
+                    }
+                return {
+                    'success': False,
+                    'dn': ou_dn,
+                    'message': f'Failed to delete OU: {conn.result}',
+                }
+        except Exception as e:
+            msg = str(e)
+            _logger.exception(f'Failed to delete LDAP OU: {ou_dn}')
+            if 'noSuchObject' in msg or 'no such object' in msg.lower():
+                return {
+                    'success': True,
+                    'dn': ou_dn,
+                    'message': f'OU already absent: {ou_dn}',
+                }
+            return {
+                'success': False,
+                'dn': ou_dn,
+                'message': msg,
+            }
+
     def delete_group(self, config, group_dn, dry_run=False):
         """
         Delete a group from Active Directory.
@@ -1667,14 +1736,18 @@ class LdapService(models.AbstractModel):
         """Build the CN (= account name) for a person.
 
         Resolution order:
-        1. ``myschool.field.template`` matching ``field_name='cn'`` and the
-           given (school, person_type). Configured from the UI under
-           Integrations → Field Templates.
-        2. Per-school ``anonymous_account_template`` CI (legacy path,
-           limited to person types in ``anonymous_account_template_for_types``,
-           default ``STUDENT``).
-        3. Default ``<first_name>.<last_name>`` lower-cased, diacritics
+        1. ``myschool.field.template`` matching ``field_name='cn'`` and
+           the given (school, person_type). Configured from the UI under
+           Integrations → Field Templates. This is the **single source
+           of truth** for anonymised / school-specific account naming —
+           manual create and sync both go through this path.
+        2. Default ``<first_name>.<last_name>`` lower-cased, diacritics
            stripped, no spaces.
+
+        Schools that need a non-default format (e.g. ``b<sap_ref>+1631``
+        for basisschool students) must have a ``field.template`` record
+        with ``field_name='cn'``, scoped to the school and the relevant
+        person_type.
         """
         FieldTemplate = self.env['myschool.field.template']
         tpl = FieldTemplate.find_for('cn', person, org)
@@ -1682,16 +1755,6 @@ class LdapService(models.AbstractModel):
             cn_from_tpl = tpl.evaluate(person, org)
             if cn_from_tpl:
                 return self.escape_dn_chars(cn_from_tpl)
-
-        if self._should_use_anonymous_template(person, org):
-            school = self._resolve_user_cn_school(org)
-            ConfigItem = self.env['myschool.config.item']
-            template = ConfigItem.get_ci_value_by_org_and_name(
-                school.name_short, 'anonymous_account_template')
-            if template:
-                cn_from_template = self._evaluate_account_template(template, person)
-                if cn_from_template:
-                    return self.escape_dn_chars(cn_from_template)
 
         # Default: firstname.lastname (cleaned)
         first = self._cn_clean(person.first_name or '')
@@ -1705,40 +1768,10 @@ class LdapService(models.AbstractModel):
         # Final fallback when neither name part is usable
         return self.escape_dn_chars(person.abbreviation or str(person.id))
 
-    def _should_use_anonymous_template(self, person, org):
-        """Return True when the anonymous-template CN should be used for
-        this person.
-
-        Looks at two CIs on the parent school (both optional):
-        - ``anonymous_account_template``           : the template string
-        - ``anonymous_account_template_for_types`` : comma-separated list
-          of person-type names that the template applies to. Defaults to
-          ``STUDENT`` when not set, to preserve backwards-compatible
-          behaviour without ever silently anonymising employees.
-        """
-        if not person or not person.person_type_id:
-            return False
-        school = self._resolve_user_cn_school(org)
-        if not school:
-            return False
-        ConfigItem = self.env['myschool.config.item']
-        # If no template is set, no point checking the types.
-        template = ConfigItem.get_ci_value_by_org_and_name(
-            school.name_short, 'anonymous_account_template')
-        if not template:
-            return False
-        types_value = ConfigItem.get_ci_value_by_org_and_name(
-            school.name_short, 'anonymous_account_template_for_types')
-        if types_value:
-            allowed = {t.strip().upper() for t in types_value.split(',') if t.strip()}
-        else:
-            allowed = {'STUDENT'}
-        return (person.person_type_id.name or '').upper() in allowed
-
     def _resolve_user_cn_school(self, org):
         """Walk up the ORG-TREE from `org` to find the first non-admin
-        SCHOOL — that is the org whose CI ``anonymous_account_template``
-        we look up."""
+        SCHOOL — exposed for callers (e.g. wizards) that need the same
+        school-resolution rules as the CN/email builders."""
         if not org:
             return None
         # Re-use the betask_processor helper if available — same logic.
@@ -1781,58 +1814,6 @@ class LdapService(models.AbstractModel):
         if ',' in person.name:
             return person.name.split(',', 1)[0].strip()
         return person.name.strip()
-
-    def _evaluate_account_template(self, template, person):
-        """Tiny DSL for per-school account templates.
-
-        Grammar (loose, & is the only operator between terms):
-          expr := term ('&' term)*
-          term := "'" literal "'"            (literal text, single-quoted)
-                | "<" field ">" (op num)?    (field value, optional +/- N)
-          op   := "+" | "-"
-
-        Examples:
-          ``'t'&<sap_ref>+1631``  →  ``t<sap_ref+1631>``
-          ``<first_name>&'_'&<sap_ref>``  →  ``Mark_69``
-
-        Non-numeric arithmetic operands are silently ignored (the field
-        value falls through unchanged).
-        """
-        import re
-        result_parts = []
-        for raw_part in template.split('&'):
-            part = raw_part.strip()
-            if not part:
-                continue
-            # Literal: 'xxx'
-            m = re.match(r"^'([^']*)'$", part)
-            if m:
-                result_parts.append(m.group(1))
-                continue
-            # Field with optional arithmetic: <field> [+/-N]
-            m = re.match(r'^<(\w+)>\s*([+-])\s*(\d+)$', part)
-            if m:
-                field, op, num = m.group(1), m.group(2), int(m.group(3))
-                value = getattr(person, field, '')
-                try:
-                    value = int(str(value).strip())
-                    value = value + num if op == '+' else value - num
-                except (ValueError, TypeError):
-                    _logger.warning(
-                        '[CN-TEMPLATE] %s.%s is not numeric, '
-                        'skipping arithmetic %s%d', person._name, field, op, num)
-                result_parts.append(str(value))
-                continue
-            # Plain field: <field>
-            m = re.match(r'^<(\w+)>$', part)
-            if m:
-                value = getattr(person, m.group(1), '')
-                result_parts.append('' if value is None else str(value))
-                continue
-            _logger.warning(
-                '[CN-TEMPLATE] Unrecognized template segment %r in %r',
-                part, template)
-        return ''.join(result_parts)
 
     def _iter_org_ancestors(self, org):
         """Yield org plus its ORG-TREE parents until the root."""

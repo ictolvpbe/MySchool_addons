@@ -399,6 +399,107 @@ class BeTask(models.Model):
             },
         }
     
+    def action_reset_selected_errors(self):
+        """Bulk-reset every record in ``self`` whose status is ``error``
+        back to ``new``, clearing ``retry_count`` and ``error_description``
+        so ``process_all_pending`` will pick them up again on its next
+        run (in priority order).
+
+        Wired as a server action with ``binding_model_id`` so it appears
+        in the Action dropdown of any list view of ``myschool.betask``.
+        Non-error tasks are silently skipped.
+        """
+        reset = 0
+        skipped = 0
+        for task in self:
+            if task.status != 'error':
+                skipped += 1
+                continue
+            task.write({
+                'status': 'new',
+                'processing_start': False,
+                'processing_end': False,
+                'error_description': False,
+                'retry_count': 0,
+            })
+            reset += 1
+            _logger.info(f'BeTask {task.name} bulk-reset error → new')
+
+        parts = [_('%(reset)s gereset naar NEW') % {'reset': reset}]
+        if skipped:
+            parts.append(_('%(skipped)s overgeslagen (status ≠ error)')
+                         % {'skipped': skipped})
+        message = ' — '.join(parts)
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Bulk reset'),
+                'message': message,
+                'type': 'success' if reset else 'info',
+                'sticky': False,
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+            },
+        }
+
+    @api.model
+    def action_run_all_pending(self):
+        """Drain the entire backend-task queue **in dependency order**.
+
+        Different from ``action_process_selected_new`` which runs the
+        records in the listview iteration order (newest first). This
+        method calls ``process_all_pending`` on the processor which:
+
+          1. Iterates ``betask.type`` records sorted by ``priority``
+             (lower = sooner). E.g. ``LDAP/ORG/ADD`` (priority 10)
+             always runs before ``LDAP/USER/ADD`` (priority 20),
+             which in turn runs before ``LDAP/GROUPMEMBER/ADD`` (20+).
+          2. Per type, processes all ``status='new'`` tasks.
+          3. Stops gracefully when ``PROCESSING_TIME_LIMIT`` is hit —
+             remaining tasks pick up on the next cron tick (or next
+             click of this action).
+
+        Returns a notification summarising the counts. Refreshes the
+        view so the admin sees the queue empty out.
+        """
+        processor = self.env['myschool.betask.processor']
+        results = processor.process_all_pending()
+        if not results:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Backend tasks verwerkt'),
+                    'message': _('Geen wachtende taken gevonden.'),
+                    'type': 'info', 'sticky': False,
+                    'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+                },
+            }
+        ok = results.get('successful_tasks', 0)
+        err = results.get('failed_tasks', 0)
+        total = results.get('total_tasks', 0)
+        skipped = results.get('skipped_time_limit', 0)
+        parts = [_('%(total)s taak(en) verwerkt — %(ok)s OK')
+                 % {'total': total, 'ok': ok}]
+        if err:
+            parts.append(_('%(err)s fout(en)') % {'err': err})
+        if skipped:
+            parts.append(_('%(skipped)s overgeslagen (tijdslimiet)')
+                         % {'skipped': skipped})
+        message = ', '.join(parts) + '.'
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Backend tasks verwerkt'),
+                'message': message,
+                'type': 'success' if not err else 'warning',
+                'sticky': bool(err),
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+            },
+        }
+
     def action_view_sys_events(self):
         """View related system events"""
         self.ensure_one()

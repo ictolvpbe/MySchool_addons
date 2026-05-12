@@ -47,6 +47,12 @@
                             string="Verify AD/Cloud groups"
                             class="btn-secondary" icon="fa-shield"
                             title="Ensure the AD groups + Workspace group / OU exist for this org. Idempotent."/>
+                    <button name="action_sync_this_school" type="object"
+                            string="Sync this school"
+                            class="btn-primary" icon="fa-cloud-download"
+                            invisible="sap_provider != '1' or not inst_nr"
+                            confirm="Een Informat sync uitvoeren voor enkel deze school? Dit raadpleegt de live Informat API en queueet betasks op basis van de respons."
+                            title="Run an Informat sync scoped to this school's inst_nr only — useful for debugging without touching the other schools."/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">

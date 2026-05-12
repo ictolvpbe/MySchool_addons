@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_task_debug_runner_form" model="ir.ui.view">
+        <field name="name">myschool.task.debug.runner.form</field>
+        <field name="model">myschool.task.debug.runner</field>
+        <field name="arch" type="xml">
+            <form string="Debug taken">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Debug taken</h1>
+                        <p class="text-muted">
+                            Voer pending betasks uit met live log-output.
+                            Gebruik de dry-run optie om de cascade te
+                            testen zonder echte AD/Workspace mutaties.
+                        </p>
+                    </div>
+
+                    <group>
+                        <group string="Selectie">
+                            <field name="mode" widget="radio"/>
+                            <field name="task_type_id"
+                                   options="{'no_create': True, 'no_open': True}"
+                                   invisible="mode != 'by_type'"
+                                   required="mode == 'by_type'"/>
+                            <field name="task_id"
+                                   options="{'no_create': True}"
+                                   invisible="mode != 'single_task'"
+                                   required="mode == 'single_task'"/>
+                            <field name="pending_count" readonly="1"/>
+                            <field name="error_count" readonly="1"/>
+                        </group>
+                        <group string="Run-opties">
+                            <field name="dry_run"/>
+                            <field name="retry_errors"/>
+                            <field name="log_level"/>
+                        </group>
+                    </group>
+
+                    <footer invisible="state != 'draft'">
+                        <button name="action_run"
+                                type="object"
+                                string="Run"
+                                class="btn-primary"
+                                icon="fa-play"/>
+                        <button special="cancel"
+                                string="Annuleer"
+                                class="btn-secondary"/>
+                    </footer>
+
+                    <group invisible="state != 'done'" string="Resultaat">
+                        <field name="summary" readonly="1" nolabel="1"/>
+                        <field name="ok_count" readonly="1"/>
+                        <field name="err_count" readonly="1"/>
+                        <field name="skipped_count" readonly="1"/>
+                    </group>
+                    <separator string="Log output"
+                               invisible="state != 'done'"/>
+                    <field name="log_output"
+                           widget="text"
+                           readonly="1"
+                           nolabel="1"
+                           invisible="state != 'done'"
+                           options="{'rows': 30}"/>
+
+                    <footer invisible="state != 'done'">
+                        <button name="action_clear_log"
+                                type="object"
+                                string="Opnieuw"
+                                class="btn-primary"
+                                icon="fa-refresh"/>
+                        <button special="cancel"
+                                string="Sluit"
+                                class="btn-secondary"/>
+                    </footer>
+
+                    <field name="state" invisible="1"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_task_debug_runner" model="ir.actions.act_window">
+        <field name="name">Debug taken</field>
+        <field name="res_model">myschool.task.debug.runner</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

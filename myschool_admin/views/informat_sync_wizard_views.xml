@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_informat_sync_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.informat.sync.wizard.form</field>
+        <field name="model">myschool.informat.sync.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Targeted Informat Sync">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>Informat Sync — gericht</h1>
+                        <p class="text-muted">
+                            Run de Informat-sync met een eigen scope —
+                            kies welke scholen + welke phases. De
+                            persistent config-flags blijven onaangeroerd.
+                        </p>
+                    </div>
+
+                    <group>
+                        <group string="Scope (welke scholen)">
+                            <field name="org_ids"
+                                   widget="many2many_tags"
+                                   options="{'no_create': True}"
+                                   placeholder="Leeg = alle scholen met sap_provider=INFORMAT"/>
+                            <field name="inst_nr_preview" readonly="1"/>
+                        </group>
+                        <group string="Phases (wat synchroniseren)">
+                            <field name="sync_roles"/>
+                            <field name="sync_employees"/>
+                            <field name="sync_classes"/>
+                            <field name="sync_students"/>
+                            <field name="dev_mode"/>
+                        </group>
+                    </group>
+
+                    <div class="alert alert-info" role="alert"
+                         invisible="state != 'draft'">
+                        <strong>Tips bij testen:</strong>
+                        <ul class="mb-0">
+                            <li>Eerst <strong>Classes</strong> dan <strong>Students</strong> — students hebben hun klas-org nodig.</li>
+                            <li>Eerst <strong>Roles</strong> dan <strong>Employees</strong> — employee-PPSBR's verwijzen naar BACKEND-rollen.</li>
+                            <li>Combineer met <em>Backend Tasks → Debug taken</em> om de cascade-tasks die hier gequeued worden gericht te draaien.</li>
+                        </ul>
+                    </div>
+
+                    <footer invisible="state != 'draft'">
+                        <button name="action_run"
+                                type="object"
+                                string="Run sync"
+                                class="btn-primary"
+                                icon="fa-play"
+                                confirm="Bevestig: dit roept de live Informat API aan voor de geselecteerde scope. Doorgaan?"/>
+                        <button special="cancel"
+                                string="Annuleer"
+                                class="btn-secondary"/>
+                    </footer>
+
+                    <group invisible="state != 'done'" string="Resultaat">
+                        <field name="summary" readonly="1" nolabel="1"/>
+                    </group>
+                    <footer invisible="state != 'done'">
+                        <button special="cancel"
+                                string="Sluit"
+                                class="btn-primary"/>
+                    </footer>
+
+                    <field name="state" invisible="1"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_informat_sync_wizard" model="ir.actions.act_window">
+        <field name="name">Targeted Informat Sync</field>
+        <field name="res_model">myschool.informat.sync.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

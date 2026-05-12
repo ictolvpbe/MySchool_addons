@@ -30,6 +30,96 @@ class DataExchange(models.TransientModel):
 
     result_summary = fields.Text(string='Result', readonly=True)
 
+    # ---- Selective export/import options -----------------------------
+    # When ``scope_org_id`` is set, only data tied to that org and its
+    # ORG-TREE descendants is exported / imported. Leave empty = whole
+    # database. Each ``include_*`` toggle gates one section so admins
+    # can cherry-pick what to ship.
+
+    scope_org_id = fields.Many2one(
+        'myschool.org', string='Scope (school / koepel)',
+        domain="[('org_type_id.name', 'in', ['SCHOOL', 'SCHOOLBOARD'])]",
+        help='Beperk de export tot deze SCHOOL of SCHOOLBOARD en al haar '
+             'ORG-TREE descendants. Laat leeg voor de hele database.')
+
+    # Type-tables (foundational, small, recommended to always include).
+    include_types = fields.Boolean(
+        string='Include *_type tables', default=True,
+        help='org_types, person_types, role_types, period_types, '
+             'proprelation_types — kleine foundation-tabellen.')
+
+    # Main models.
+    include_orgs = fields.Boolean(
+        string='Include orgs', default=True)
+    include_persongroups = fields.Boolean(
+        string='Include persongroups', default=False,
+        help='PERSONGROUP-orgs zijn standaard uitgesloten omdat ze per '
+             'schooljaar herbouwd worden. Aanvinken om ze toch te '
+             'exporteren.')
+    include_classgroups = fields.Boolean(
+        string='Include classgroups', default=False,
+        help='Idem voor CLASSGROUP-orgs (klassen) — standaard '
+             'uitgesloten.')
+    include_roles = fields.Boolean(
+        string='Include roles', default=True)
+    include_periods = fields.Boolean(
+        string='Include periods', default=True)
+    include_proprelations = fields.Boolean(
+        string='Include proprelations (ORG-TREE, BRSO, SR-BR)',
+        default=True)
+    include_config_items = fields.Boolean(
+        string='Include config items', default=True)
+    include_ci_relations = fields.Boolean(
+        string='Include CI-relations', default=True)
+    include_betask_types = fields.Boolean(
+        string='Include betask types', default=True)
+    include_betasks = fields.Boolean(
+        string='Include betasks', default=False,
+        help='Betasks zijn typisch DB-specifiek en hoog-volume. '
+             'Aanvinken alleen voor diagnostiek-/replay-scenarios.')
+    include_persons = fields.Boolean(
+        string='Include persons', default=False,
+        help='Persoon-records zijn privacygevoelig en niet vereist voor '
+             'structurele migratie. Aanvinken voor full-data copies. '
+             'PERSON-TREE/PPSBR/PG-P proprelations worden NIET '
+             'meegeëxporteerd — re-sync vanuit Informat na import.')
+
+    # ------------------------------------------------------------------
+    # Scope helpers
+    # ------------------------------------------------------------------
+
+    def _scope_org_ids(self):
+        """Return the set of org-ids in scope, or ``None`` for "no
+        filter / whole DB". BFS-walks ORG-TREE descendants from the
+        ``scope_org_id`` root."""
+        self.ensure_one()
+        if not self.scope_org_id:
+            return None
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        org_tree_type = PropRelationType.search(
+            [('name', '=', 'ORG-TREE')], limit=1)
+        result = {self.scope_org_id.id}
+        if not org_tree_type:
+            return result
+        frontier = {self.scope_org_id.id}
+        while frontier:
+            children = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org_parent', 'in', list(frontier)),
+                ('is_active', '=', True),
+            ])
+            new_ids = set()
+            for rel in children:
+                if rel.id_org and rel.id_org.id not in result:
+                    new_ids.add(rel.id_org.id)
+                if rel.id_org_child and rel.id_org_child.id not in result:
+                    new_ids.add(rel.id_org_child.id)
+            new_ids -= result
+            result.update(new_ids)
+            frontier = new_ids
+        return result
+
     # ------------------------------------------------------------------
     # EXPORT
     # ------------------------------------------------------------------
@@ -59,55 +149,49 @@ class DataExchange(models.TransientModel):
         }
 
     def _build_export_data(self):
-        org_types = self._export_org_types()
-        person_types = self._export_person_types()
-        role_types = self._export_role_types()
-        period_types = self._export_period_types()
-        proprelation_types = self._export_proprelation_types()
-        orgs = self._export_orgs()
-        roles = self._export_roles()
-        periods = self._export_periods()
-        proprelations = self._export_proprelations()
-        config_items = self._export_config_items()
-        ci_relations = self._export_ci_relations()
-        betask_types = self._export_betask_types()
-        betasks = self._export_betasks()
+        scope_ids = self._scope_org_ids()
+        out = {}
+        if self.include_types:
+            out['org_types'] = self._export_org_types()
+            out['person_types'] = self._export_person_types()
+            out['role_types'] = self._export_role_types()
+            out['period_types'] = self._export_period_types()
+            out['proprelation_types'] = self._export_proprelation_types()
+        if self.include_orgs:
+            out['orgs'] = self._export_orgs(scope_ids)
+        if self.include_persongroups:
+            out['persongroups'] = self._export_persongroups(scope_ids)
+        if self.include_classgroups:
+            out['classgroups'] = self._export_classgroups(scope_ids)
+        if self.include_roles:
+            out['roles'] = self._export_roles()
+        if self.include_periods:
+            out['periods'] = self._export_periods()
+        if self.include_proprelations:
+            out['proprelations'] = self._export_proprelations(scope_ids)
+        if self.include_config_items:
+            out['config_items'] = self._export_config_items(scope_ids)
+        if self.include_ci_relations:
+            out['ci_relations'] = self._export_ci_relations()
+        if self.include_betask_types:
+            out['betask_types'] = self._export_betask_types()
+        if self.include_betasks:
+            out['betasks'] = self._export_betasks()
+        if self.include_persons:
+            out['persons'] = self._export_persons(scope_ids)
 
         return {
             'metadata': {
-                'version': '1.2',
+                'version': '1.3',
                 'export_date': datetime.now().isoformat(),
                 'source_database': self.env.cr.dbname,
                 'exported_by': self.env.user.name,
-                'record_counts': {
-                    'org_types': len(org_types),
-                    'person_types': len(person_types),
-                    'role_types': len(role_types),
-                    'period_types': len(period_types),
-                    'proprelation_types': len(proprelation_types),
-                    'orgs': len(orgs),
-                    'roles': len(roles),
-                    'periods': len(periods),
-                    'proprelations': len(proprelations),
-                    'config_items': len(config_items),
-                    'ci_relations': len(ci_relations),
-                    'betask_types': len(betask_types),
-                    'betasks': len(betasks),
-                },
+                'scope_org': (self.scope_org_id.name
+                              if self.scope_org_id else '(whole database)'),
+                'scope_org_count': len(scope_ids) if scope_ids else None,
+                'record_counts': {k: len(v) for k, v in out.items()},
             },
-            'org_types': org_types,
-            'person_types': person_types,
-            'role_types': role_types,
-            'period_types': period_types,
-            'proprelation_types': proprelation_types,
-            'orgs': orgs,
-            'roles': roles,
-            'periods': periods,
-            'proprelations': proprelations,
-            'config_items': config_items,
-            'ci_relations': ci_relations,
-            'betask_types': betask_types,
-            'betasks': betasks,
+            **out,
         }
 
     # --- type exports ---
@@ -137,12 +221,21 @@ class DataExchange(models.TransientModel):
 
     # --- main model exports ---
 
-    def _export_orgs(self):
+    def _export_orgs(self, scope_ids=None):
+        """Export "regular" orgs — anything that's not a classgroup or
+        persongroup. Classgroups + persongroups have their own toggles
+        so admins can decide per category.
+
+        When ``scope_ids`` is provided, the export is restricted to
+        those org-ids (typically a SCHOOL + descendants).
+        """
         excluded_type_ids = self.env['myschool.org.type'].search(
             [('name', 'in', list(EXCLUDE_ORG_TYPES))]).ids
         domain = []
         if excluded_type_ids:
             domain = [('org_type_id', 'not in', excluded_type_ids)]
+        if scope_ids is not None:
+            domain.append(('id', 'in', list(scope_ids)))
         records = self.env['myschool.org'].search(domain)
         result = []
         for r in records:
@@ -193,7 +286,6 @@ class DataExchange(models.TransientModel):
                 'is_active': r.is_active,
                 'automatic_sync': r.automatic_sync,
                 'description': r.description or '',
-                'has_odoo_group': r.has_odoo_group,
             })
         return result
 
@@ -555,7 +647,6 @@ class DataExchange(models.TransientModel):
                     'is_active': item.get('is_active', True),
                     'automatic_sync': item.get('automatic_sync', True),
                     'description': item.get('description') or False,
-                    'has_odoo_group': item.get('has_odoo_group', False),
                 }
                 # Only set shortname when non-empty to avoid UNIQUE constraint
                 # violations from multiple roles with empty shortname

@@ -1,7 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- =========================================================
+         MENUSTRUCTUUR — myschool_admin
+         =========================================================
+         Top-level (5 groepen):
+           1. Dashboard         (5)
+           2. Stamgegevens      (10)
+           3. Operations        (40)
+           4. Onderhoud         (50)
+           5. Instellingen      (60)  — zie res_config_settings_views.xml
+
+         Integraties (LDAP / Google / Informat config) en Configuratie
+         (config items / CI-relaties) zaten vroeger als aparte top-level
+         menus; die zijn opgegaan in de unified Settings-pagina. De twee
+         operationele tools die nog onder Integraties hingen
+         (Informat-sync gericht, Sync test runner) zijn verhuisd naar
+         Operations > Sync-triggers — hun natuurlijke thuis.
+         ========================================================= -->
+
     <!-- ========================================= -->
-    <!-- MAIN MENU -->
+    <!-- ROOT                                       -->
     <!-- ========================================= -->
 
     <menuitem id="menu_myschool_root"
@@ -12,7 +30,7 @@
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- ========================================= -->
-    <!-- DASHBOARD (sequence: 5) -->
+    <!-- 1. DASHBOARD                              -->
     <!-- ========================================= -->
 
     <menuitem id="menu_dashboard"
@@ -23,194 +41,224 @@
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- ========================================= -->
-    <!-- MASTER DATA (sequence: 10) -->
+    <!-- 2. STAMGEGEVENS                            -->
     <!-- ========================================= -->
 
     <menuitem id="menu_master_data"
-              name="Master Data"
+              name="Stamgegevens"
               parent="menu_myschool_root"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_myschool_org"
-              name="Organizations"
+              name="Organisaties"
               parent="menu_master_data"
               action="action_myschool_org"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_myschool_person"
-              name="Persons"
+              name="Personen"
               parent="menu_master_data"
               action="action_myschool_person"
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_myschool_person_details"
-              name="Person Details"
+              name="Persoondetails"
               parent="menu_master_data"
               action="action_myschool_person_details"
               sequence="25"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_myschool_role"
-              name="Roles"
+              name="Rollen"
               parent="menu_master_data"
               action="action_myschool_role"
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_myschool_period"
-              name="Periods"
+              name="Periodes"
               parent="menu_master_data"
               action="action_myschool_period"
               sequence="40"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <!-- Types sub-menu -->
-    <menuitem id="menu_types"
-              name="Types"
+    <menuitem id="menu_myschool_proprelation"
+              name="Relaties"
               parent="menu_master_data"
+              action="action_myschool_proprelation"
               sequence="50"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_field_template"
+              name="Veld-templates"
+              parent="menu_master_data"
+              action="action_field_template"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_letter_template"
+              name="Brief-templates"
+              parent="menu_master_data"
+              action="myschool_core.action_letter_template"
+              sequence="70"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- Types-submap onderaan Stamgegevens -->
+    <menuitem id="menu_types"
+              name="Types"
+              parent="menu_master_data"
+              sequence="90"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <menuitem id="menu_org_types"
-              name="Organization Types"
+              name="Organisatietypes"
               parent="menu_types"
               action="action_myschool_org_type"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_person_types"
-              name="Person Types"
+              name="Persoontypes"
               parent="menu_types"
               action="action_myschool_person_type"
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_role_types"
-              name="Role Types"
+              name="Roltypes"
               parent="menu_types"
               action="action_myschool_role_type"
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_period_types"
-              name="Period Types"
+              name="Periodetypes"
               parent="menu_types"
               action="action_myschool_period_type"
               sequence="40"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_relation_types"
-              name="Relation Types"
+              name="Relatietypes"
               parent="menu_types"
               action="action_myschool_proprelation_type"
               sequence="50"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_task_types"
-              name="Task Types"
+              name="Tasktypes"
               parent="menu_types"
               action="action_betask_type"
               sequence="60"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_event_types"
-              name="Event Types"
+              name="Eventtypes"
               parent="menu_types"
               action="action_sys_event_type"
               sequence="70"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- ========================================= -->
-    <!-- RELATIONS (sequence: 20) -->
+    <!-- 3. INTEGRATIES / 4. CONFIGURATIE  (verwijderd)
+         =========================================
+         Beide top-level groepen zijn opgegaan in de Settings-pagina:
+           * menu_ldap_servers, menu_google_connector, menu_informat_sync
+             → tab "MySchool Core" in Settings
+           * menu_config_items, menu_ci_relations
+             → tab "MySchool Core" in Settings
+         menu_informat_sync_wizard en menu_sync_test_runner waren
+         operationele tools; die hangen nu onder Operations > Sync-triggers
+         (zie sectie 5.4 hieronder). De vrijgekomen sequence-bereiken 20
+         en 30 blijven open voor toekomstig gebruik. -->
+
+    <!-- ========================================= -->
+    <!-- 5. OPERATIONS                              -->
+    <!-- "Is alles ok?"-vertrekpunt: queues, events,
+         logs, health, sync-triggers.              -->
     <!-- ========================================= -->
 
-    <menuitem id="menu_relations"
-              name="Relations"
+    <menuitem id="menu_operations"
+              name="Operations"
               parent="menu_myschool_root"
-              sequence="20"
+              sequence="40"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_myschool_proprelation"
-              name="All Relations"
-              parent="menu_relations"
-              action="action_myschool_proprelation"
+    <!-- 5.1 Backend Tasks -->
+    <menuitem id="menu_betask_root"
+              name="Backend Tasks"
+              parent="menu_operations"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <!-- ========================================= -->
-    <!-- BACKEND TASKS (sequence: 30) -->
-    <!-- ========================================= -->
-
-    <menuitem id="menu_betask_root"
-              name="Backend Tasks"
-              parent="menu_myschool_root"
-              sequence="30"
-              groups="myschool_core.group_myschool_core_admin"/>
-
     <menuitem id="menu_betask_all"
-              name="All Tasks"
+              name="Alle taken"
               parent="menu_betask_root"
               action="action_betask_all"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_betask_pending"
-              name="Pending Tasks"
+              name="Wachtende taken"
               parent="menu_betask_root"
               action="action_betask_pending"
               sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_betask_run_all_pending"
+              name="Verwerk alle wachtende taken"
+              parent="menu_betask_root"
+              action="action_betask_run_all_pending"
+              sequence="25"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_task_debug_runner"
+              name="Debug taken"
+              parent="menu_betask_root"
+              action="action_task_debug_runner"
+              sequence="27"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <menuitem id="menu_betask_errors"
-              name="Error Tasks"
+              name="Foutieve taken"
               parent="menu_betask_root"
               action="action_betask_errors"
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_betask_processing"
-              name="Processing"
+              name="In verwerking"
               parent="menu_betask_root"
               action="action_betask_processing"
               sequence="40"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_betask_rollback"
-              name="Task Rollback"
+              name="Rollback"
               parent="menu_betask_root"
               action="action_betask_rollback_wizard"
               sequence="50"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_betask_cleanup"
-              name="Cleanup"
-              parent="menu_betask_root"
-              action="action_cleanup_betasks_wizard"
-              sequence="60"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- ========================================= -->
-    <!-- SYSTEM EVENTS (sequence: 40) -->
-    <!-- ========================================= -->
-
+    <!-- 5.2 Systeemevents -->
     <menuitem id="menu_sys_events"
-              name="System Events"
-              parent="menu_myschool_root"
-              sequence="40"
+              name="Systeemevents"
+              parent="menu_operations"
+              sequence="20"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_sys_event_all"
-              name="All Events"
+              name="Alle events"
               parent="menu_sys_events"
               action="action_sys_event_all"
               sequence="10"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_sys_event_new"
-              name="New Events"
+              name="Nieuwe events"
               parent="menu_sys_events"
               action="action_sys_event_new"
               sequence="20"
@@ -223,241 +271,264 @@
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_sys_event_cleanup"
-              name="Cleanup"
-              parent="menu_sys_events"
-              action="action_cleanup_events_wizard"
-              sequence="40"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- ========================================= -->
-    <!-- INTEGRATIONS (sequence: 50) -->
-    <!-- ========================================= -->
-
-    <menuitem id="menu_integrations"
-              name="Integrations"
-              parent="menu_myschool_root"
-              sequence="50"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_ldap_servers"
-              name="LDAP Servers"
-              parent="menu_integrations"
-              action="action_ldap_server_config"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_google_connector"
-              name="Google Connector"
-              parent="menu_integrations"
-              action="myschool_core.action_google_workspace_config"
-              sequence="15"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_informat_sync"
-              name="Informat Sync"
-              parent="menu_integrations"
-              action="action_informat_service_config"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_sync_test_runner"
-              name="Sync Test Runner"
-              parent="menu_integrations"
-              action="action_sync_test_runner"
+    <!-- 5.3 Logs / diagnostiek -->
+    <menuitem id="menu_myschool_log_viewer"
+              name="Log Viewer"
+              parent="menu_operations"
+              action="action_log_viewer"
               sequence="30"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_field_template"
-              name="Field Templates"
-              parent="menu_integrations"
-              action="action_field_template"
-              sequence="40"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_letter_template"
-              name="Letter Templates"
-              parent="menu_integrations"
-              action="myschool_core.action_letter_template"
-              sequence="50"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- ========================================= -->
-    <!-- CONFIG ITEMS (sequence: 60) -->
-    <!-- ========================================= -->
-
-    <menuitem id="menu_config_items_root"
-              name="Config Items"
-              parent="menu_myschool_root"
-              sequence="60"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_config_items"
-              name="All Config Items"
-              parent="menu_config_items_root"
-              action="action_config_item"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_ci_relations"
-              name="CI Relations"
-              parent="menu_config_items_root"
-              action="action_ci_relation"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- ========================================= -->
-    <!-- TOOLS (sequence: 80) -->
-    <!-- ========================================= -->
-
-    <menuitem id="menu_tools"
-              name="Tools"
-              parent="menu_myschool_root"
-              sequence="80"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_update_org_trees"
-              name="Update Org Name Trees"
-              parent="menu_tools"
-              action="action_update_all_org_name_trees"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_update_relation_names"
-              name="Update Relation Names"
-              parent="menu_tools"
-              action="action_update_all_proprelation_names"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_recalculate_org_trees"
-              name="Update classgroup properties"
-              parent="menu_tools"
-              action="action_recalculate_all_org_trees"
-              sequence="30"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_recalculate_person_trees"
-              name="Recalculate PERSON-TREE"
-              parent="menu_tools"
-              action="action_recalculate_all_person_trees"
-              sequence="40"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_sync_all_persongroups"
-              name="Sync persongroups (org settings)"
-              parent="menu_tools"
-              action="action_sync_all_persongroups"
-              sequence="45"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_verify_all_groups"
-              name="Verify all AD/Cloud groups"
-              parent="menu_tools"
-              action="action_verify_all_groups"
-              sequence="47"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_sync_companies"
-              name="Sync Odoo Companies (from orgs)"
-              parent="menu_tools"
-              action="action_sync_companies"
-              sequence="46"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_update_person_properties"
-              name="Update person properties"
-              parent="menu_tools"
-              action="action_update_person_properties"
-              sequence="50"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_update_student_relations"
-              name="Update Student Relations"
-              parent="menu_tools"
-              action="action_update_student_relations_wizard"
-              sequence="60"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_recalc_employee_roles"
-              name="Recalculate Employee Roles"
-              parent="menu_tools"
-              action="action_recalc_employee_roles_wizard"
-              sequence="70"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_init_schoolyear"
-              name="Init Schooljaar"
-              parent="menu_tools"
-              action="action_init_schoolyear_wizard"
-              sequence="80"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_update_ci_relation_names"
-              name="Update CI Relation Names"
-              parent="menu_tools"
-              action="action_update_all_ci_relation_names"
-              sequence="90"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_inactive_employees"
-              name="Inactive Employees"
-              parent="menu_tools"
-              action="action_inactive_employees_report"
-              sequence="100"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_data_export"
-              name="Export Data"
-              parent="menu_tools"
-              action="action_data_exchange_export"
-              sequence="110"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_data_import"
-              name="Import Data"
-              parent="menu_tools"
-              action="action_data_exchange_import"
-              sequence="120"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_create_filialen"
-              name="Filialen aanmaken"
-              parent="menu_tools"
-              action="action_create_filialen_wizard"
-              sequence="130"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_server_benchmark"
-              name="Server Benchmark"
-              parent="menu_tools"
-              action="action_server_benchmark"
-              sequence="130"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_reset_sync_data"
-              name="Reset Auto-Sync Data"
-              parent="menu_tools"
-              action="action_reset_sync_data_wizard"
-              sequence="200"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_health_check"
               name="Health Check"
-              parent="menu_tools"
+              parent="menu_operations"
               action="action_health_check"
-              sequence="210"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_server_benchmark"
+              name="Server-benchmark"
+              parent="menu_operations"
+              action="action_server_benchmark"
+              sequence="50"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_cron_tasks"
+              name="Cron-taken"
+              parent="menu_operations"
+              action="action_myschool_ir_cron"
+              sequence="55"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- 5.4 Sync-triggers -->
+    <menuitem id="menu_sync_triggers"
+              name="Sync-triggers"
+              parent="menu_operations"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_sync_companies"
+              name="Odoo-companies syncen"
+              parent="menu_sync_triggers"
+              action="action_sync_companies"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_sync_all_persongroups"
+              name="Persongroups syncen"
+              parent="menu_sync_triggers"
+              action="action_sync_all_persongroups"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_verify_all_groups"
+              name="AD/Cloud-groepen verifiëren"
+              parent="menu_sync_triggers"
+              action="action_verify_all_groups"
+              sequence="30"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_informat_sync_wizard"
+              name="Informat Sync (gericht)"
+              parent="menu_sync_triggers"
+              action="action_informat_sync_wizard"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_sync_test_runner"
+              name="Sync Test Runner"
+              parent="menu_sync_triggers"
+              action="action_sync_test_runner"
+              sequence="50"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- ========================================= -->
-    <!-- LOG VIEWER (sequence: 95) -->
+    <!-- 6. ONDERHOUD                               -->
+    <!-- Zelden-gebruikte recompute / bulk / cleanup
+         / data-uitwisseling / danger-zone.        -->
     <!-- ========================================= -->
 
-    <menuitem id="menu_myschool_log_viewer"
-              name="Log Viewer"
+    <menuitem id="menu_tools"
+              name="Onderhoud"
               parent="menu_myschool_root"
-              action="action_log_viewer"
-              sequence="95"
+              sequence="50"
               groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- 6.1 Herberekenen -->
+    <menuitem id="menu_maint_recompute"
+              name="Herberekenen"
+              parent="menu_tools"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_update_org_trees"
+              name="Org name_tree's bijwerken"
+              parent="menu_maint_recompute"
+              action="action_update_all_org_name_trees"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_recalculate_person_trees"
+              name="PERSON-TREE herberekenen"
+              parent="menu_maint_recompute"
+              action="action_recalculate_all_person_trees"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_recalculate_org_trees"
+              name="Classgroup-eigenschappen bijwerken"
+              parent="menu_maint_recompute"
+              action="action_recalculate_all_org_trees"
+              sequence="30"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_update_relation_names"
+              name="Relatienamen bijwerken"
+              parent="menu_maint_recompute"
+              action="action_update_all_proprelation_names"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_update_ci_relation_names"
+              name="CI-relatienamen bijwerken"
+              parent="menu_maint_recompute"
+              action="action_update_all_ci_relation_names"
+              sequence="50"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_update_person_properties"
+              name="Persoonseigenschappen bijwerken"
+              parent="menu_maint_recompute"
+              action="action_update_person_properties"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- 6.2 Bulkbewerkingen -->
+    <menuitem id="menu_maint_bulk"
+              name="Bulkbewerkingen"
+              parent="menu_tools"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_recalc_employee_roles"
+              name="Werknemersrollen herberekenen"
+              parent="menu_maint_bulk"
+              action="action_recalc_employee_roles_wizard"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_update_student_relations"
+              name="Leerlingrelaties bijwerken"
+              parent="menu_maint_bulk"
+              action="action_update_student_relations_wizard"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_init_schoolyear"
+              name="Schooljaar initialiseren"
+              parent="menu_maint_bulk"
+              action="action_init_schoolyear_wizard"
+              sequence="30"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_create_filialen"
+              name="Filialen aanmaken"
+              parent="menu_maint_bulk"
+              action="action_create_filialen_wizard"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_domain_rename"
+              name="Domeinnamen wijzigen"
+              parent="menu_maint_bulk"
+              action="action_domain_rename_wizard"
+              sequence="50"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+
+    <menuitem id="menu_ad_takeover"
+              name="AD-takeover (migratie)"
+              parent="menu_maint_bulk"
+              action="action_ad_takeover_session"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- 6.3 Opschonen — geconsolideerd uit Backend Tasks + Systeemevents -->
+    <menuitem id="menu_maint_cleanup"
+              name="Opschonen"
+              parent="menu_tools"
+              sequence="30"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_betask_cleanup"
+              name="Backend Tasks opschonen"
+              parent="menu_maint_cleanup"
+              action="action_cleanup_betasks_wizard"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_sys_event_cleanup"
+              name="Systeemevents opschonen"
+              parent="menu_maint_cleanup"
+              action="action_cleanup_events_wizard"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- 6.4 Data-uitwisseling -->
+    <menuitem id="menu_maint_data_exchange"
+              name="Data-uitwisseling"
+              parent="menu_tools"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_data_export"
+              name="Exporteren"
+              parent="menu_maint_data_exchange"
+              action="action_data_exchange_export"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_data_import"
+              name="Importeren"
+              parent="menu_maint_data_exchange"
+              action="action_data_exchange_import"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- 6.5 Rapporten -->
+    <menuitem id="menu_inactive_employees"
+              name="Inactieve werknemers"
+              parent="menu_tools"
+              action="action_inactive_employees_report"
+              sequence="50"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- 6.6 Gevarenzone — onomkeerbare acties, hoog sequence-nummer
+         zodat ze visueel onderaan staan, los van de rest. -->
+    <menuitem id="menu_maint_danger"
+              name="Gevarenzone"
+              parent="menu_tools"
+              sequence="90"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_reset_sync_data"
+              name="Auto-syncdata resetten"
+              parent="menu_maint_danger"
+              action="action_reset_sync_data_wizard"
+              sequence="10"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_bulk_cleanup"
+              name="Bulk cleanup (studenten + klassen)"
+              parent="menu_maint_danger"
+              action="action_bulk_cleanup_wizard"
+              sequence="20"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- "Relations" was een top-level met één child; "Relaties" is nu
+         een sibling onder Stamgegevens. Geen <delete> nodig — deze DB
+         had het oude menu nooit; voor andere DBs is het een orphan
+         ir.model.data zonder UI-impact (de oude xmlid heeft geen
+         <menuitem> meer in deze file en wordt dus niet gerenderd). -->
 
 </odoo>

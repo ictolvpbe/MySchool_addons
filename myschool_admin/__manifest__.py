@@ -48,6 +48,8 @@
         'views/object_browser_views.xml',
         'views/ldap_server_config_views.xml',
         'views/sync_test_runner_views.xml',
+        'views/task_debug_runner_views.xml',
+        'views/informat_sync_wizard_views.xml',
         'views/res_company_views.xml',
         'views/field_template_views.xml',
 
@@ -60,8 +62,19 @@
         # Health Check
         'views/health_check_views.xml',
 
+        # Cron tasks (ir.cron beheer)
+        'views/ir_cron_views.xml',
+
+        # AD Takeover (migratie-assistent)
+        'views/ad_takeover_views.xml',
+
         # Wizards (must load before menus that reference wizard actions)
         'views/wizard_views.xml',
+
+        # Settings — unified res.config.settings view (loaded BEFORE
+        # menus so the "Instellingen" menu can resolve cross-module
+        # action refs, e.g. base.action_res_config_settings).
+        'views/res_config_settings_views.xml',
 
         # Menus (must load after all actions are defined)
         'views/menu_views.xml',

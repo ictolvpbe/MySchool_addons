@@ -168,6 +168,9 @@ class GoogleWorkspaceConfig(models.Model):
     )
     last_test_message = fields.Text(string='Last Test Message', readonly=True)
 
+    last_apis_date = fields.Datetime(string='Last API Probe Date', readonly=True)
+    last_apis_report = fields.Text(string='Last API Probe Report', readonly=True)
+
     # =========================================================================
     # Computed
     # =========================================================================
@@ -267,8 +270,10 @@ class GoogleWorkspaceConfig(models.Model):
         if not org:
             return self.browse()
 
+        # Odoo 19 deprecates ``('field', 'in', single_int)``; pass a
+        # list to silence the domain warning.
         cfg = self.search([
-            ('org_ids', 'in', org.id),
+            ('org_ids', 'in', [org.id]),
             ('active', '=', True),
         ], limit=1, order='sequence')
         if cfg:
@@ -282,7 +287,7 @@ class GoogleWorkspaceConfig(models.Model):
                     [('name_tree', '=', parent_tree)], limit=1)
                 if parent_org:
                     cfg = self.search([
-                        ('org_ids', 'in', parent_org.id),
+                        ('org_ids', 'in', [parent_org.id]),
                         ('active', '=', True),
                     ], limit=1, order='sequence')
                     if cfg:
@@ -302,6 +307,95 @@ class GoogleWorkspaceConfig(models.Model):
             'res_model': 'myschool.org',
             'view_mode': 'list,form',
             'domain': [('id', 'in', self.org_ids.ids)],
+        }
+
+    def action_detect_customer_id(self):
+        """Resolve the tenant's real Customer ID and write it to the
+        record. Useful when ``my_customer`` is rejected by some endpoints
+        (typically OrgUnits and ChromeOS) — those only accept the
+        ``C...`` form.
+        """
+        self.ensure_one()
+
+        def _safe(text):
+            return str(text or '').replace('\x00', ' ')
+
+        svc = self.env['myschool.google.directory.service']
+        result = svc.resolve_customer_id(self)
+
+        if result.get('success') and result.get('customer_id'):
+            old = self.customer_id or ''
+            new = result['customer_id']
+            if old == new:
+                msg = f'Customer ID already correct: {new}'
+            else:
+                self.write({'customer_id': new})
+                msg = f'Customer ID updated: {old or "(empty)"} → {new}'
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Customer ID Detected'),
+                    'message': _safe(msg),
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Detection Failed'),
+                'message': _safe(result.get('message') or 'Unknown error'),
+                'type': 'danger',
+                'sticky': True,
+            }
+        }
+
+    def action_test_apis(self):
+        """Probe each enabled API/scope separately so admins can see
+        per-scope status (which DWD scopes work, which don't).
+        """
+        self.ensure_one()
+
+        def _safe(text):
+            return str(text or '').replace('\x00', ' ')
+
+        svc = self.env['myschool.google.directory.service']
+        results = svc.test_apis(self)
+
+        lines = []
+        enabled_failed = 0
+        enabled_total = 0
+        for r in results:
+            if r['enabled']:
+                enabled_total += 1
+                marker = 'OK ' if r['success'] else 'FAIL'
+                if not r['success']:
+                    enabled_failed += 1
+            else:
+                marker = 'SKIP'
+            lines.append(f'[{marker}] {r["name"]:24s} — {r["message"]}')
+
+        report = '\n'.join(lines)
+        ok = enabled_failed == 0 and enabled_total > 0
+        title = (f'{enabled_total - enabled_failed}/{enabled_total} APIs OK'
+                 if enabled_total else 'No scopes enabled')
+
+        self.write({
+            'last_apis_date': fields.Datetime.now(),
+            'last_apis_report': _safe(report),
+        })
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Per-API Probe — %s') % title,
+                'message': _safe(report),
+                'type': 'success' if ok else 'danger',
+                'sticky': True,
+            }
         }
 
     def action_test_connection(self):

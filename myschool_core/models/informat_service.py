@@ -53,7 +53,14 @@ class InformatService(models.AbstractModel):
     
     # API URLs
     IDENTITY_SERVER_URL = 'https://www.identityserver.be/connect/token'
-    STUDENTS_API_URL = 'https://leerlingenapi.informatsoftware.be/1/students'
+    LEERLINGEN_API_BASE = 'https://leerlingenapi.informatsoftware.be/1'
+    # Per Leerlingen WEB API Implementation Guide v1.23:
+    #   GET /1/registrations?schoolYear=...&changedSince=...
+    #   GET /1/students[?schoolYear=...&refdate=...&changedSince=...]
+    # The previous `STUDENTS_API_URL` had "/students" baked in, which led
+    # to `/1/students/registrations` — a 404 path that doesn't exist.
+    REGISTRATIONS_API_URL = f'{LEERLINGEN_API_BASE}/registrations'
+    STUDENTS_API_URL = f'{LEERLINGEN_API_BASE}/students'
     EMPLOYEES_API_URL = 'https://personeelsapi.informatsoftware.be/employees'
     EMPLOYEE_ASSIGNMENTS_API_URL = 'https://personeelsapi.informatsoftware.be/employees/assignments'
 
@@ -253,7 +260,9 @@ class InformatService(models.AbstractModel):
     # =========================================================================
 
     @api.model
-    def execute_sync(self, dev_mode: bool = None) -> bool:
+    def execute_sync(self, dev_mode: bool = None,
+                     inst_nrs: Optional[List[str]] = None,
+                     phases: Optional[Dict[str, bool]] = None) -> bool:
         """
         Main synchronization method - retrieves data from SAP, analyzes it,
         and creates the required tasks.
@@ -261,7 +270,18 @@ class InformatService(models.AbstractModel):
         This method is designed to be called by a scheduled cron job.
         Equivalent to Java: executeSync()
 
-        @param dev_mode: If provided, overrides config setting. Otherwise reads from config.
+        @param dev_mode: If provided, overrides config setting.
+            Otherwise reads from config.
+        @param inst_nrs: When given, restrict the sync to schools whose
+            ``inst_nr`` is in the list. Used by the per-school sync
+            button — debugs one school in isolation instead of all 5.
+            ``None`` means all schools with ``sap_provider=INFORMAT``.
+        @param phases: When given, override the per-phase config flags
+            for this run only. Keys are ``sync_roles``, ``sync_employees``,
+            ``sync_classes``, ``sync_students``. Missing keys fall back
+            to the persistent config. Used by the targeted-sync wizard
+            so admins can run e.g. only the student phase without
+            permanently flipping the config flags.
         @return: True if successful, False if errors occurred
         """
         # Load configuration
@@ -269,7 +289,34 @@ class InformatService(models.AbstractModel):
         if dev_mode is None:
             dev_mode = config.dev_mode
 
-        _logger.info("SAPSYNC-001: Starting Informat sync process (dev_mode=%s)", dev_mode)
+        # Per-phase override resolution. ``config`` is shadowed by an
+        # in-memory namespace exposing the same attribute names so the
+        # downstream code reads ``config.sync_*`` unchanged.
+        if phases:
+            class _PhaseOverride:
+                pass
+            ov = _PhaseOverride()
+            ov.dev_mode = config.dev_mode
+            for attr in ('sync_roles', 'sync_employees',
+                         'sync_classes', 'sync_students'):
+                ov_val = phases.get(attr) if attr in phases else getattr(
+                    config, attr)
+                setattr(ov, attr, bool(ov_val))
+            config = ov
+
+        scope_msg = ''
+        if inst_nrs:
+            scope_msg += f', inst_nrs={inst_nrs}'
+        if phases:
+            scope_msg += f', phases={phases}'
+        _logger.info(
+            "SAPSYNC-001: Starting Informat sync process (dev_mode=%s%s)",
+            dev_mode, scope_msg)
+        # Stash the filter on the recordset's context so the
+        # underlying ``_get_*_from_informat`` helpers can read it
+        # without changing every signature individually.
+        self = self.with_context(informat_inst_nrs=tuple(inst_nrs)
+                                  if inst_nrs else None)
 
         SysEvent = self.env.get('myschool.sys.event.service')
         SysEvent.create_sys_event("SAPSYNC-001", "Start Syncing information", True)
@@ -378,9 +425,27 @@ class InformatService(models.AbstractModel):
 
 
 
+            # Drain the betask queue once after the sync's targeted
+            # DB/* processing. The cron runs only every 15 min, and
+            # the targeted ``_process_betasks(...)`` calls above only
+            # cover DB/{ORG,PERSON,...}/{ADD,UPD,DEACT} — anything the
+            # cascade queues (LDAP/USER/ADD, LDAP/ORG/ADD, CLOUD/*,
+            # LETTER/*, …) would otherwise sit at status='new' until
+            # the next cron tick. Calling ``process_all_pending`` here
+            # makes the click-Sync flow feel synchronous: by the time
+            # the user sees "All tasks processed", the AD/Cloud side
+            # has actually been touched.
+            try:
+                processor = self.env['myschool.betask.processor']
+                processor.process_all_pending()
+            except Exception:
+                _logger.exception(
+                    'SAPSYNC: process_all_pending failed — pending '
+                    'tasks will be retried on the next cron tick')
+
             self._create_sys_event("SAPSYNC", "All tasks processed without errors")
             return True
-            
+
         except Exception as e:
             self._create_sys_error("SAPSYNC-900", f"Executesync error: {traceback.format_exc()}")
             return False
@@ -430,7 +495,44 @@ class InformatService(models.AbstractModel):
     # Data Retrieval Methods
     # =========================================================================
 
-    def _get_bearer_token(self, org_short_name: str = 'olvp') -> Optional[str]:
+    def _informat_schools(self, Org):
+        """Return the schools to sync.
+
+        Default: every active org with ``sap_provider='1'`` (= INFORMAT).
+        When ``execute_sync`` was called with an ``inst_nrs`` filter,
+        the resulting recordset is narrowed to that subset — used by
+        the per-school sync button to debug a single institute in
+        isolation.
+        """
+        domain = [('sap_provider', '=', '1')]
+        inst_nrs = self.env.context.get('informat_inst_nrs')
+        if inst_nrs:
+            domain.append(('inst_nr', 'in', list(inst_nrs)))
+        return Org.search(domain)
+
+    def _build_informat_headers(self, bearer_token: str,
+                                  institute_no: str) -> dict:
+        """Build the mandatory header set for Leerlingen WEB API calls.
+
+        Per the v1.23 implementation guide every request must carry:
+          - Authorization: BEARER <token>     (uppercase keyword)
+          - InstituteNo:   <numeric institute>
+          - Timestamp:     <UTC datetime ISO-8601>
+          - Accept:        application/json
+        The Timestamp header was previously missing — older versions
+        of the API tolerated this, the current one rejects it (or
+        returns 404 on the wrong URL plus 401 on auth, equally bad).
+        """
+        return {
+            'Authorization': f'BEARER {bearer_token}',
+            'InstituteNo': institute_no,
+            'Timestamp': datetime.utcnow().strftime(
+                '%Y-%m-%dT%H:%M:%S.000'),
+            'Accept': 'application/json',
+        }
+
+    def _get_bearer_token(self, org_short_name: str = 'olvp',
+                          scopes: Optional[List[str]] = None) -> Optional[str]:
         """
         Retrieve OAuth2 Bearer token from identity server.
         
@@ -447,23 +549,40 @@ class InformatService(models.AbstractModel):
                 _logger.error("API credentials not found in config items")
                 return None
             
+            data = {
+                'client_id': api_id,
+                'client_secret': api_password,
+                'grant_type': 'client_credentials',
+            }
+            # Per spec, the token must carry the scopes for the
+            # institutes the caller intends to query — multiple scopes
+            # are space-separated. Without a scope param the
+            # identityserver returns a token without permissions for
+            # the leerlingen API, so subsequent calls 401/404.
+            if scopes:
+                data['scope'] = ' '.join(scopes) if isinstance(
+                    scopes, (list, tuple)) else scopes
             response = requests.post(
                 self.IDENTITY_SERVER_URL,
                 headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                data={
-                    'client_id': api_id,
-                    'client_secret': api_password,
-                    'grant_type': 'client_credentials'
-                },
+                data=data,
                 timeout=30
             )
-            
+
             if response.status_code != 200:
-                _logger.error(f"Problem retrieving Bearer token: {response.status_code}")
+                body = (response.text or '')[:500]
+                _logger.error(
+                    'Problem retrieving Bearer token: HTTP %s on %s — body: %s',
+                    response.status_code, self.IDENTITY_SERVER_URL, body)
                 return None
-            
+
             token_data = response.json()
-            return token_data.get('access_token')
+            access_token = token_data.get('access_token')
+            if not access_token:
+                _logger.error(
+                    'Bearer token response missing access_token. '
+                    'Keys: %s', list(token_data.keys()))
+            return access_token
             
         except Exception as e:
             _logger.error(f"Error getting bearer token: {e}")
@@ -487,20 +606,43 @@ class InformatService(models.AbstractModel):
         try:
             ConfigItem = self.env['myschool.config.item']
             current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
-            
+            _logger.info(
+                'SAPSYNC-001: CurrentSchoolYear=%r, dev_mode=%s',
+                current_school_year, dev_mode)
+            if not current_school_year:
+                self._create_sys_error(
+                    "BETASK-900",
+                    f"{procedure_name}: CI 'CurrentSchoolYear' on org 'olvp' "
+                    f"is empty — registrations API call cannot be built")
+
             timestamp_string = f"&changedSince={timestamp}" if timestamp else ""
-            
-            # Get bearer token if not in dev mode
+
+            # Get all schools with INFORMAT as SAP provider — needed
+            # *before* the token request so we can compose the right
+            # multi-scope token in one round-trip instead of one token
+            # per school.
+            Org = self.env['myschool.org']
+            schools = self._informat_schools(Org)
+            _logger.info(
+                'SAPSYNC-001: %d school(s) with sap_provider=INFORMAT',
+                len(schools))
+
+            # Get bearer token with all required scopes
             bearer_token = None
             if not dev_mode:
-                bearer_token = self._get_bearer_token()
+                scopes = [
+                    f'api_informat_sas_leerlingen.leerlingen.{s.inst_nr}'
+                    for s in schools if s.inst_nr]
+                bearer_token = self._get_bearer_token(scopes=scopes)
                 if not bearer_token:
+                    self._create_sys_error(
+                        "BETASK-900",
+                        f"{procedure_name}: bearer token request returned None")
                     return None
-            
-            # Get all schools with INFORMAT as SAP provider
-            Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])
-            
+                _logger.info(
+                    'SAPSYNC-001: bearer token acquired (length=%d, scopes=%d)',
+                    len(bearer_token), len(scopes))
+
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing data for {school.inst_nr}")
                 
@@ -530,27 +672,66 @@ class InformatService(models.AbstractModel):
                         dev_mode=False
                     )
                     
+                    url = (f"{self.REGISTRATIONS_API_URL}"
+                           f"?schoolYear={current_school_year}"
+                           f"{timestamp_string}")
+                    _logger.debug(
+                        'SAPSYNC-001: GET %s (InstituteNo=%s)',
+                        url, institution_number)
                     response = requests.get(
-                        f"{self.STUDENTS_API_URL}/registrations?schoolYear={current_school_year}{timestamp_string}",
-                        headers={
-                            'Authorization': f'Bearer {bearer_token}',
-                            'InstituteNo': institution_number,
-                            'Accept': 'application/json'
-                        },
+                        url,
+                        headers=self._build_informat_headers(
+                            bearer_token, institution_number),
                         timeout=60
                     )
-                    
+
                     if response.status_code != 200:
-                        self._create_sys_error("BETASK-900", f"{procedure_name}: Problem retrieving Registration Data")
+                        body = (response.text or '')[:500]
+                        self._create_sys_error(
+                            "BETASK-900",
+                            f"{procedure_name}: HTTP {response.status_code} "
+                            f"on {url} (InstituteNo={institution_number}, "
+                            f"schoolYear={current_school_year}). "
+                            f"Body: {body}")
+                        _logger.warning(
+                            '[INFORMAT] registrations call FAILED — '
+                            'inst_nr=%s status=%s url=%s body=%s',
+                            institution_number, response.status_code,
+                            url, body)
                         continue
-                    
+
                     if response.text and response.text != '[]':
                         # Write to file
                         self._write_json_file(json_file_path, response.text)
-                        
-                        # Parse and add to results
-                        registrations_data = response.json()
+
+                        # Parse and add to results.
+                        #
+                        # Per the v1.23 spec the response is wrapped:
+                        #     {"registrations": [{...}, {...}]}
+                        # Earlier code expected a bare top-level array
+                        # (matching the dev-mode JSON files in
+                        # ``storage/sapimport/dev - full/``), which is
+                        # why production responses crashed with
+                        # ``'str' object has no attribute 'get'``
+                        # when the loop iterated dict keys instead of
+                        # the registrations array. Tolerate both
+                        # shapes so dev-files keep working.
+                        payload = response.json()
+                        if isinstance(payload, dict):
+                            registrations_data = (
+                                payload.get('registrations')
+                                or payload.get('data') or [])
+                        else:
+                            registrations_data = payload or []
+                        _logger.info(
+                            'SAPSYNC-001: %d registration(s) for InstituteNo=%s',
+                            len(registrations_data), institution_number)
                         for registration in registrations_data:
+                            if not isinstance(registration, dict):
+                                _logger.warning(
+                                    'SAPSYNC-001: skipping non-dict '
+                                    'registration entry: %r', registration)
+                                continue
                             persoon_id = registration.get('persoonId')
                             if persoon_id:
                                 all_registrations[persoon_id] = json.dumps(registration)
@@ -581,20 +762,23 @@ class InformatService(models.AbstractModel):
         try:
             timestamp_string = f"&changedSince={timestamp}" if timestamp else ""
             student_id_string = f"/{student_id}" if student_id else ""
-            
-            # Get bearer token if not in dev mode
-            bearer_token = None
-            if not dev_mode:
-                bearer_token = self._get_bearer_token()
-                if not bearer_token:
-                    return None
-            
+
             ConfigItem = self.env['myschool.config.item']
             current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
-            
+
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])
+            schools = self._informat_schools(Org)
+
+            # Get bearer token with all required scopes
+            bearer_token = None
+            if not dev_mode:
+                scopes = [
+                    f'api_informat_sas_leerlingen.leerlingen.{s.inst_nr}'
+                    for s in schools if s.inst_nr]
+                bearer_token = self._get_bearer_token(scopes=scopes)
+                if not bearer_token:
+                    return None
             
             for school in schools:
                 _logger.info(f"Start importing student data for {school.inst_nr}")
@@ -629,11 +813,8 @@ class InformatService(models.AbstractModel):
                     
                     response = requests.get(
                         f"{self.STUDENTS_API_URL}{student_id_string}?schoolYear={current_school_year}{timestamp_string}",
-                        headers={
-                            'Authorization': f'Bearer {bearer_token}',
-                            'InstituteNo': institution_number,
-                            'Accept': 'application/json'
-                        },
+                        headers=self._build_informat_headers(
+                            bearer_token, institution_number),
                         timeout=60
                     )
                     
@@ -691,7 +872,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])  #todo: was INFORMAT - how to use string iso index
+            schools = self._informat_schools(Org)  #todo: was INFORMAT - how to use string iso index
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing employee data for {school.inst_nr}")
@@ -782,7 +963,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])
+            schools = self._informat_schools(Org)
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing assignment data for {school.inst_nr}")
@@ -2100,7 +2281,12 @@ class InformatService(models.AbstractModel):
                 school_short = _resolve_school_shortname(inst_nr)
 
                 for klas in inschr_klassen:
-                    klas_code = klas.get('klasCode', '')
+                    # Strip whitespace defensively: Informat occasionally
+                    # returns klasCode with stray trailing/leading spaces
+                    # (e.g. "l5a "). Untrimmed it leaks into name_short →
+                    # ou_fqdn_internal → AD as a ghost OU "OU=l5a\ ,..."
+                    # invisible in ADUC but real on the LDAP wire.
+                    klas_code = (klas.get('klasCode', '') or '').strip()
                     classgroup_fullname = f"{klas_code}-{school_short}" if school_short else f"{klas_code}-{inst_nr}"
 
                     # Skip if already checked

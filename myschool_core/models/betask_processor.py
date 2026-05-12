@@ -331,8 +331,11 @@ class BeTaskProcessor(models.AbstractModel):
             vals[odoo_field] = value
         
         # Build full name: "LASTNAME, Firstname"
-        first_name = employee_json.get('voornaam', '')
-        last_name = employee_json.get('naam', '')
+        # See ``_map_student_json_to_person_vals`` for the rationale
+        # behind ``_clean_informat_string`` — the literal "null" needs
+        # the same normalisation here.
+        first_name = self._clean_informat_string(employee_json.get('voornaam'))
+        last_name = self._clean_informat_string(employee_json.get('naam'))
         if last_name or first_name:
             vals['name'] = f"{last_name}, {first_name}".strip(', ')
         
@@ -388,9 +391,25 @@ class BeTaskProcessor(models.AbstractModel):
     # JSON TO ODOO MAPPING METHODS - STUDENT
     # =========================================================================
 
+    @staticmethod
+    def _clean_informat_string(value):
+        """Normalise an Informat string field.
+
+        Informat occasionally serialises missing values as the
+        **literal string** ``"null"`` (with quotes) instead of a JSON
+        null or omitting the key. Treat both as "not provided" so
+        callers don't end up with ``person.name = "null"`` or similar.
+        """
+        if value is None:
+            return ''
+        s = str(value).strip()
+        if s.lower() == 'null':
+            return ''
+        return s
+
     def _map_student_json_to_person_vals(
-        self, 
-        registration_json: dict, 
+        self,
+        registration_json: dict,
         student_json: dict = None
     ) -> dict:
         """Map imported Informat student JSON to myschool.person field values."""
@@ -418,11 +437,17 @@ class BeTaskProcessor(models.AbstractModel):
             
             vals[odoo_field] = value
         
-        first_name = merged_data.get('voornaam', '')
-        last_name = merged_data.get('naam', '')
+        # Informat sometimes ships the literal string ``"null"`` (in
+        # quotes) for missing names — not a real JSON null. The
+        # for-loop above already skips that pattern; the fallback
+        # name-builder used to assume both values were either real
+        # strings or empty, which led to ``person.name = "null"``
+        # being persisted verbatim.
+        first_name = self._clean_informat_string(merged_data.get('voornaam'))
+        last_name = self._clean_informat_string(merged_data.get('naam'))
         if last_name or first_name:
             vals['name'] = f"{last_name}, {first_name}".strip(', ')
-        
+
         vals['is_active'] = True
         vals['automatic_sync'] = True
         
@@ -1012,6 +1037,57 @@ class BeTaskProcessor(models.AbstractModel):
         # Create PPSBR and PERSON-TREE relations for the student
         self._create_student_relations(new_person, registration_json, effective_inst_nr)
 
+        # Sync persongroup memberships. The student sync builds PPSBR +
+        # PERSON-TREE rows directly (no DB/PROPRELATION/ADD betask), so
+        # the persongroup cascade that ``process_db_proprelation_add``
+        # runs for employees is otherwise skipped here. Without this
+        # call the class-org persongroup (and any role-anchored
+        # persongroup like ``studenten-<school>``) never picks up the
+        # new student until something else triggers a re-sync.
+        self._sync_persongroup_memberships(new_person)
+
+        # Auto-complete account fields (email_cloud, person_fqdn_*) so
+        # the DB matches what LDAP/USER/ADD + CLOUD/USER/ADD will
+        # actually produce — both use _build_user_cn via FieldTemplate,
+        # so without this the DB ``person.email_cloud`` keeps whatever
+        # SAP supplied (typically firstname.lastname) while AD/Google
+        # store the anonymised form. Same helper as the employee path.
+        # Fall back to the school org by inst_nr if PERSON-TREE wasn't
+        # created (e.g. class-org lookup in ``_create_student_relations``
+        # exited early) — at least the school-level domain + FQDN can
+        # then still be applied.
+        account_target = self._resolve_current_person_tree_org(new_person)
+        if not account_target and effective_inst_nr:
+            account_target = self.env['myschool.org'].search([
+                ('inst_nr', '=', effective_inst_nr),
+                ('is_active', '=', True),
+            ], limit=1) or None
+        if account_target:
+            try:
+                self._populate_person_account_fields(new_person, account_target)
+            except Exception as e:
+                _logger.warning(
+                    '[STUDENT-ACCOUNT] populate failed for %s: %s',
+                    new_person.name, e)
+        else:
+            _logger.warning(
+                '[STUDENT-ACCOUNT] no target org for %s (inst_nr=%s) — '
+                'email_cloud / FQDN not populated',
+                new_person.name, effective_inst_nr)
+
+        # Cascade — queue LDAP/USER/ADD + CLOUD/USER/ADD now that the
+        # PERSON-TREE position exists. Without this the student lives
+        # only in MySchool and never gets an AD account. The employee
+        # path runs the same emits from ``process_db_proprelation_add``;
+        # students go through a different flow (this one) which
+        # historically never wired it up. Idempotent dedupe inside
+        # ``_emit_*`` keeps re-runs safe.
+        cascade_log = []
+        self._emit_ldap_user_add_for_person(new_person, cascade_log)
+        self._emit_cloud_user_add_for_person(new_person, cascade_log)
+        for line in cascade_log:
+            _logger.info('[STUDENT-CASCADE] %s', line)
+
         return new_person
 
     def _assign_student_backend_role(self, person, inst_nr: str):
@@ -1508,6 +1584,56 @@ class BeTaskProcessor(models.AbstractModel):
             field_changes.append(
                 f"WARN: class-relation re-sync failed: {e}")
 
+        # Re-sync persongroup memberships after the class-relation
+        # rewrite. A class change (PERSON-TREE moves from class A to B,
+        # or a new classgroup-role PPSBR is created/deactivated) must
+        # ripple to the PG-P rows: drop class A's persongroup, add
+        # class B's. ``_sync_persongroup_memberships`` walks both the
+        # PPSBR-driven and currently-hosting persongroups, so the diff
+        # handles add + remove in one pass. Idempotent: a no-op
+        # registration update just re-validates the existing PG-Ps.
+        try:
+            self._sync_persongroup_memberships(person)
+            field_changes.append(
+                "Persongroup memberships re-synced")
+        except Exception as e:
+            _logger.exception(
+                '[STUDENT-PG] sync failed for %s: %s', person.name, e)
+            field_changes.append(
+                f"WARN: persongroup membership sync failed: {e}")
+
+        # Re-populate account fields against the (possibly new) class-
+        # org. A class change shifts ``ou_fqdn_internal/external`` so
+        # ``person_fqdn_*`` must follow; ``email_cloud`` is re-run
+        # through ``field.template`` to match what LDAP/USER/UPD +
+        # CLOUD/USER/UPD will compute. Idempotent.
+        current_tree_org = self._resolve_current_person_tree_org(person)
+        if current_tree_org:
+            try:
+                self._populate_person_account_fields(person, current_tree_org)
+                field_changes.append(
+                    "Account fields (email_cloud, FQDN) re-synced")
+            except Exception as e:
+                _logger.exception(
+                    '[STUDENT-ACCOUNT] populate failed for %s: %s',
+                    person.name, e)
+                field_changes.append(
+                    f"WARN: account-field sync failed: {e}")
+
+        # Cascade — same idempotent emits as on the create path. Useful
+        # for students that exist in MySchool but never got an AD/Cloud
+        # account (e.g. the student was created before the cascade was
+        # wired up; the next sync update re-emits and provisions them
+        # belatedly). Both ``_emit_*`` helpers dedupe on pending tasks
+        # so a routine UPDATE never spawns new work when the AD/Cloud
+        # accounts are already in place.
+        cascade_log = []
+        self._emit_ldap_user_add_for_person(person, cascade_log)
+        self._emit_cloud_user_add_for_person(person, cascade_log)
+        for line in cascade_log:
+            _logger.info('[STUDENT-CASCADE] %s', line)
+            field_changes.append(line)
+
         return {'success': True, 'field_changes': field_changes}
 
     # =========================================================================
@@ -1847,6 +1973,7 @@ class BeTaskProcessor(models.AbstractModel):
 
             # LDAP ORG (=OU) handlers
             ('LDAP', 'ORG', 'ADD'): self.process_ldap_org_add,
+            ('LDAP', 'ORG', 'DEL'): self.process_ldap_ou_del,
 
             # =========================================================
             # CLOUD (Google Workspace) handlers
@@ -2383,14 +2510,18 @@ class BeTaskProcessor(models.AbstractModel):
         if ou_for_classes_org.domain_external:
             org_update['domain_external'] = ou_for_classes_org.domain_external
 
-        org_short = new_org.name_short.lower() if new_org.name_short else ''
+        # .strip() guards against stray whitespace in name_short — see
+        # informat_service.py klasCode normalization. Without this, a
+        # value like "l5a " produces "ou=l5a ,..." which AD stores as
+        # "OU=l5a\ ,..." (a phantom OU invisible in ADUC).
+        org_short = (new_org.name_short or '').strip().lower()
         if not org_short:
             new_org.write(org_update)
             return
 
         # --- OU FQDN fields ---
-        parent_fqdn_int = (ou_for_classes_org.ou_fqdn_internal or '').lower()
-        parent_fqdn_ext = (ou_for_classes_org.ou_fqdn_external or '').lower()
+        parent_fqdn_int = (ou_for_classes_org.ou_fqdn_internal or '').strip().lower()
+        parent_fqdn_ext = (ou_for_classes_org.ou_fqdn_external or '').strip().lower()
 
         if parent_fqdn_int:
             org_update['ou_fqdn_internal'] = f"ou={org_short},{parent_fqdn_int}"
@@ -2477,6 +2608,64 @@ class BeTaskProcessor(models.AbstractModel):
                      f"ou_fqdn_internal={org_update.get('ou_fqdn_internal')}, "
                      f"name_tree={org_update.get('name_tree')}, "
                      f"com_group={com_group_name}, sec_group={sec_group_name}")
+
+        # Queue LDAP/ORG/ADD so the OU container is actually created in
+        # AD. Without this the FQDN fields above are pure metadata —
+        # no AD entry materialises until somebody (or some other task)
+        # walks the path. The manual-creation flow in
+        # ``manual_task_processor._emit_ldap_org_add`` does the same,
+        # but the sync-driven path went straight from
+        # ``process_db_org_add`` → ``_populate_classgroup_ad_fields``
+        # without ever queueing the LDAP side, leaving every CLASSGROUP
+        # OU stuck on disk only.
+        self._emit_classgroup_ad_tasks(new_org, changes)
+
+    def _emit_classgroup_ad_tasks(self, org, changes):
+        """Queue LDAP/ORG/ADD (+ optional CLOUD/ORG/ADD) for ``org``.
+
+        Idempotent dedupe via ``_has_pending_task`` — re-running
+        ``_populate_classgroup_ad_fields`` on the same org doesn't
+        produce duplicates. Both task handlers are themselves
+        idempotent (``create_ou`` reports "already exists" as success),
+        so even if the dedupe ever lets a duplicate slip through it's
+        a no-op at execution time.
+        """
+        if not org or not org.ou_fqdn_internal:
+            return
+        BeTaskType = self.env['myschool.betask.type']
+        BeTask = self.env['myschool.betask']
+
+        ldap_type = BeTaskType.search([
+            ('target', '=', 'LDAP'),
+            ('object', '=', 'ORG'),
+            ('action', '=', 'ADD'),
+        ], limit=1)
+        if ldap_type and not self._has_pending_task(BeTask, ldap_type, [
+                f'"org_id": {org.id}']):
+            BeTask.create({
+                'name': f'LDAP/ORG/ADD for {org.name}',
+                'betasktype_id': ldap_type.id,
+                'status': 'new',
+                'data': json.dumps({'org_id': org.id}),
+            })
+            changes.append(f'Queued LDAP/ORG/ADD for {org.name}')
+
+        # Cloud OU mirrors the AD OU when Workspace is configured.
+        if self._cloud_provisioning_enabled():
+            cloud_type = BeTaskType.search([
+                ('target', '=', 'CLOUD'),
+                ('object', '=', 'ORG'),
+                ('action', '=', 'ADD'),
+            ], limit=1)
+            if cloud_type and not self._has_pending_task(BeTask, cloud_type, [
+                    f'"org_id": {org.id}']):
+                BeTask.create({
+                    'name': f'CLOUD/ORG/ADD for {org.name}',
+                    'betasktype_id': cloud_type.id,
+                    'status': 'new',
+                    'data': json.dumps({'org_id': org.id}),
+                })
+                changes.append(f'Queued CLOUD/ORG/ADD for {org.name}')
 
     def _ensure_classgroup_ad_fields(self, org, changes):
         """Resolve parent school / OuForClasses and populate AD/OU fields.
@@ -2702,10 +2891,16 @@ class BeTaskProcessor(models.AbstractModel):
         _logger.info(f'Processing DB_PROPRELATION_ADD: {task.name}')
         changes = []
 
+        def _fail(code, msg):
+            """Log to SysEvents *and* return a dict so the dispatcher
+            writes the reason into ``task.error_description`` — no more
+            opaque 'Processing returned False'."""
+            self._log_error(code, f'{msg}. Task: {task.name}')
+            return {'success': False, 'error': f'[{code}] {msg}'}
+
         data = self._parse_task_data(task.data)
         if not data:
-            self._log_error('BETASK-700', f'No data in task {task.name}')
-            return False
+            return _fail('BETASK-700', 'No data in task')
 
         try:
             PropRelation = self.env['myschool.proprelation']
@@ -2714,24 +2909,26 @@ class BeTaskProcessor(models.AbstractModel):
             Org = self.env['myschool.org']
             Role = self.env['myschool.role']
             Period = self.env['myschool.period']
-            
+
             # -----------------------------------------------------------------
             # Step 1: Get Person
             # -----------------------------------------------------------------
             person_id = data.get('person_db_id')
             person_uuid = data.get('personId')
-            
+
             if person_id:
                 person = Person.browse(person_id)
             elif person_uuid:
                 person = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
             else:
-                self._log_error('BETASK-701', f'No person identifier in task {task.name}')
-                return False
-            
+                return _fail('BETASK-701',
+                             'No person identifier (person_db_id or personId required)')
+
             if not person or not person.exists():
-                self._log_error('BETASK-702', f'Person not found for task {task.name}')
-                return False
+                return _fail(
+                    'BETASK-702',
+                    f'Person not found (person_db_id={person_id}, '
+                    f'personId={person_uuid})')
             
             # -----------------------------------------------------------------
             # Step 2: Get School Org
@@ -2773,8 +2970,8 @@ class BeTaskProcessor(models.AbstractModel):
                 if backend_role and backend_role.exists():
                     _logger.info(f'[PPSBR] Using Backend Role directly: {backend_role.name} (ID: {backend_role.id})')
                 else:
-                    self._log_error('BETASK-703', f'Role with ID {role_id} not found. Task: {task.name}')
-                    return False
+                    return _fail('BETASK-703',
+                                 f'Backend Role with ID {role_id} not found')
 
             # Scenario B: roleCode provided - find SAP Role, then lookup Backend Role via SR-BR
             elif role_code:
@@ -2783,8 +2980,8 @@ class BeTaskProcessor(models.AbstractModel):
 
                 if not sap_role:
                     _logger.warning(f'[PPSBR] SAP Role not found for roleCode={role_code}')
-                    self._log_error('BETASK-703', f'SAP Role not found for roleCode={role_code}. Task: {task.name}')
-                    return False
+                    return _fail('BETASK-703',
+                                 f'SAP Role not found for roleCode={role_code}')
 
                 _logger.debug(f'[PPSBR] Found SAP Role: {sap_role.name} (shortname: {sap_role.shortname}, ID: {sap_role.id})')
 
@@ -2810,16 +3007,15 @@ class BeTaskProcessor(models.AbstractModel):
                             f'for SAP Role {sap_role.name} (ID: {sap_role.id})'
                         )
                     else:
-                        self._log_error(
+                        return _fail(
                             'BETASK-703',
-                            f'No SR-BR relation found for SAP Role {sap_role.name} (roleCode={role_code}). '
-                            f'Please ensure SR-BR mapping exists. Task: {task.name}'
-                        )
-                        return False
+                            f'No SR-BR relation found for SAP Role '
+                            f'{sap_role.name} (roleCode={role_code}). '
+                            f'Configure the SR-BR mapping for this SAP Role.')
                 else:
                     _logger.warning(f'[PPSBR] SR-BR PropRelationType not found!')
-                    self._log_error('BETASK-703', f'SR-BR PropRelationType not found. Task: {task.name}')
-                    return False
+                    return _fail('BETASK-703',
+                                 'SR-BR PropRelationType missing from DB')
 
             # Fallback: try to find by roleName
             elif role_name:
@@ -2827,11 +3023,11 @@ class BeTaskProcessor(models.AbstractModel):
                 if backend_role:
                     _logger.info(f'[PPSBR] Found Role by name: {backend_role.name} (ID: {backend_role.id})')
                 else:
-                    self._log_error('BETASK-703', f'Role not found for roleName={role_name}. Task: {task.name}')
-                    return False
+                    return _fail('BETASK-703',
+                                 f'Role not found for roleName={role_name}')
             else:
-                self._log_error('BETASK-703', f'No role identifier in task {task.name}')
-                return False
+                return _fail('BETASK-703',
+                             'No role identifier (roleId, roleCode or roleName required)')
 
             role_to_use = backend_role
             
@@ -3730,6 +3926,21 @@ class BeTaskProcessor(models.AbstractModel):
 
     def _find_domain_external(self, org):
         """Walk up the org hierarchy to find domain_external value."""
+        return self._walk_org_for_field(org, 'domain_external')
+
+    def _find_ou_fqdn(self, org, field_name):
+        """Walk up the org hierarchy to find an ``ou_fqdn_internal`` /
+        ``ou_fqdn_external`` value. Leaf orgs (classes / departments)
+        typically don't carry their own FQDN — the school does — so
+        the leaf record is the bottom of the walk."""
+        return self._walk_org_for_field(org, field_name)
+
+    def _walk_org_for_field(self, org, field_name):
+        """Generic walk-up: return the first non-empty value of
+        ``getattr(ancestor, field_name)`` along the active ORG-TREE
+        from ``org`` upwards. ``None`` when nothing matches."""
+        if not org:
+            return None
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
@@ -3738,8 +3949,9 @@ class BeTaskProcessor(models.AbstractModel):
         current = org
         while current and current.id not in visited:
             visited.add(current.id)
-            if current.domain_external:
-                return current.domain_external
+            value = getattr(current, field_name, None)
+            if value:
+                return value
             if not org_tree_type:
                 break
             parent_rel = PropRelation.search([
@@ -3754,11 +3966,13 @@ class BeTaskProcessor(models.AbstractModel):
     def _populate_person_account_fields(self, person, target_org):
         """Auto-complete email_cloud, person_fqdn_internal, person_fqdn_external.
 
-        Naming spec (delegated to ldap_service._build_user_cn):
-        - cn: firstname.lastname (cleaned), OR per-school template via the
-          ``anonymous_account_template`` CI for basisschool students.
-        - email_cloud: matching ``myschool.field.template`` for
-          ``email_cloud``, fallback ``<cn>@<school.domain_external>``.
+        Naming spec — every templatable field is resolved through
+        ``myschool.field.template`` (configured per school + person_type
+        via Integrations → Field Templates):
+        - cn: ``field.template`` with ``field_name='cn'`` (delegated to
+          ldap_service._build_user_cn); fallback ``firstname.lastname``.
+        - email_cloud: ``field.template`` with ``field_name='email_cloud'``;
+          fallback ``<cn>@<school.domain_external>``.
         - person_fqdn_internal: ``CN=<cn>,<ou_fqdn_internal>``
         - person_fqdn_external: ``CN=<cn>,<ou_fqdn_external>``
         """
@@ -3792,12 +4006,16 @@ class BeTaskProcessor(models.AbstractModel):
             vals['email_cloud'] = expected_email
 
         # --- person_fqdn_internal / external ---
-        if target_org.ou_fqdn_internal:
-            vals['person_fqdn_internal'] = (
-                f"CN={cn},{target_org.ou_fqdn_internal}")
-        if target_org.ou_fqdn_external:
-            vals['person_fqdn_external'] = (
-                f"CN={cn},{target_org.ou_fqdn_external}")
+        # Walk up ORG-TREE for an ancestor with the OU-FQDN field
+        # filled. Class-orgs typically don't carry their own FQDN —
+        # the school does. Falling back lets the DB at least mirror
+        # the school-level container even when the leaf has no FQDN.
+        ou_internal = self._find_ou_fqdn(target_org, 'ou_fqdn_internal')
+        ou_external = self._find_ou_fqdn(target_org, 'ou_fqdn_external')
+        if ou_internal:
+            vals['person_fqdn_internal'] = f"CN={cn},{ou_internal}"
+        if ou_external:
+            vals['person_fqdn_external'] = f"CN={cn},{ou_external}"
 
         if vals:
             person.write(vals)
@@ -5083,6 +5301,57 @@ class BeTaskProcessor(models.AbstractModel):
 
         except Exception as e:
             _logger.exception(f'LDAP_ORG_ADD failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_ldap_ou_del(self, task):
+        """Process LDAP/ORG/DEL — delete the AD OU for ``org``.
+
+        Counterpart of ``process_ldap_org_add`` (OU branch). Expects:
+            {"org_id": 123, "dry_run": false}
+
+        AD refuses to delete a non-empty OU, so the caller must have
+        already deleted the contained users / groups / sub-OUs via
+        their own betask cascades. We surface the AD error verbatim
+        when that's not the case so the admin can clean up by hand.
+
+        Persongroup orgs are *not* routed here — their counterpart is
+        ``process_ldap_group_del``. Callers must emit GROUP/DEL for
+        persongroups and ORG/DEL only for OU-backed orgs.
+        """
+        _logger.info(f'Processing LDAP_ORG_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+            org_id = data.get('org_id')
+            if not org_id:
+                raise ValidationError(_('org_id is required in task data'))
+            org = self.env['myschool.org'].browse(org_id).exists()
+            if not org:
+                raise ValidationError(
+                    _('Organization with id %s not found') % org_id)
+            ou_dn = (org.ou_fqdn_internal or '').strip()
+            if not ou_dn:
+                changes.append(
+                    f"Skipped: org {org.name} has no ou_fqdn_internal")
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            dry_run = bool(data.get('dry_run'))
+            config = self._get_ldap_config_for_task(task, org_id)
+            changes.append(f"Using LDAP server: {config.name}")
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.delete_ou(config, ou_dn, dry_run=dry_run)
+            if not result.get('success'):
+                raise ValidationError(result.get('message', 'Unknown error'))
+            changes.append(result.get('message', f'OU deleted: {ou_dn}'))
+            task.write({'changes': '\n'.join(changes)})
+            return True
+        except Exception as e:
+            _logger.exception(f'LDAP_ORG_DEL failed: {task.name}')
             changes.append(f"ERROR: {str(e)}")
             task.write({'changes': '\n'.join(changes)})
             raise
@@ -7602,9 +7871,24 @@ class BeTaskProcessor(models.AbstractModel):
             if not school_org:
                 _logger.warning(f'[PG-SYNC] Cannot resolve school for org {org.name}')
                 return
+            # If the org already carries its own canonical group name
+            # (set by ``_handle_persongroup_flags`` / wizard /
+            # ``_populate_classgroup_ad_fields``), pass it as
+            # ``group_name_override`` so the sibling persongroup reuses
+            # the **full-path** name (e.g. ``grp-lkr-pers-bawa``) and
+            # the lookup-by-name_short under OuForGroups finds the
+            # existing sibling. Without the override we'd fall back to
+            # the SHORT formula ``grp-{org.name_short}-{school_short}``
+            # (``grp-lkr-bawa``), creating a duplicate persongroup +
+            # duplicate AD group with the same role+school but a
+            # different (shorter) DN.
+            override = (org.com_group_name or org.sec_group_name or '').strip() or None
             persongroup, _created = self._find_or_create_persongroup(
                 org.name, org.name_short, school_org,
-                source_label=f'org:{org.name}')
+                source_label=f'org:{org.name}',
+                group_name_override=override,
+                has_comgroup=bool(org.has_comgroup),
+                has_secgroup=bool(org.has_secgroup))
             if not persongroup:
                 return
 
@@ -7736,8 +8020,30 @@ class BeTaskProcessor(models.AbstractModel):
             if not sn or sn == '0':
                 sn = role.name or ''
             role_short = sn.lower()
+
+            # If a BRSO target_org for this role+school already carries
+            # its own canonical com_group_name (set by the org-flag
+            # promotion path → ``_handle_persongroup_flags``), reuse
+            # that name as override. Otherwise the SHORT formula
+            # ``grp-{role_short}-{school_short}`` produces a sibling
+            # with a shorter name (``grp-lkr-bawa``) and AD ends up
+            # with two groups for the same logical role+school
+            # (``grp-lkr-pers-bawa`` *and* ``grp-lkr-bawa``).
+            override = None
+            for b in brso_rels:
+                if not b.id_org or not b.id_org_parent:
+                    continue
+                resolved = self._resolve_school_org(b.id_org_parent)
+                if not resolved or resolved.id != school_id:
+                    continue
+                if b.id_org.com_group_name:
+                    override = b.id_org.com_group_name.strip()
+                    break
+
             persongroup, _created = self._find_or_create_persongroup(
-                role.name, role_short, school_org, source_label=f'role:{role.name}')
+                role.name, role_short, school_org,
+                source_label=f'role:{role.name}',
+                group_name_override=override)
             if not persongroup:
                 continue
 

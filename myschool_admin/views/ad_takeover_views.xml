@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ===========================================================
+         AD TAKEOVER SESSION
+         =========================================================== -->
+
+    <record id="view_ad_takeover_session_list" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.session.list</field>
+        <field name="model">myschool.ad.takeover.session</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="ldap_config_id"/>
+                <field name="scope_org_id"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'discovered'"
+                       decoration-warning="state == 'in_progress'"
+                       decoration-success="state == 'completed'"/>
+                <field name="finding_count"/>
+                <field name="investigate_count"/>
+                <field name="takeover_pending_count"/>
+                <field name="last_scan_at"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ad_takeover_session_form" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.session.form</field>
+        <field name="model">myschool.ad.takeover.session</field>
+        <field name="arch" type="xml">
+            <form string="AD-takeover sessie">
+                <header>
+                    <button name="action_scan" type="object"
+                            string="Scan AD" class="btn-primary"
+                            icon="fa-search"/>
+                    <button name="action_apply_pending_takeovers" type="object"
+                            string="Pas takeovers toe" class="btn-success"
+                            icon="fa-check"
+                            invisible="takeover_pending_count == 0"
+                            confirm="Alle items met status 'takeover_pending' worden naar de DB gesynced."/>
+                    <button name="action_apply_pending_deletes" type="object"
+                            string="Verwijder uit AD" class="btn-danger"
+                            icon="fa-trash"
+                            invisible="delete_after_count == 0"
+                            confirm="LET OP: alle items gemarkeerd 'verwijder na migratie' worden definitief uit AD verwijderd. Bevestig alleen als alle takeovers afgerond en gecontroleerd zijn."/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,discovered,in_progress,completed"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Sessienaam, bv. Migratie BAWA — maart 2026"/></h1>
+                    </div>
+                    <group>
+                        <group string="Scope">
+                            <field name="ldap_config_id" options="{'no_create': True}"/>
+                            <field name="scope_org_id" options="{'no_create': True}"/>
+                            <field name="base_dn" readonly="1"/>
+                            <field name="last_scan_at" readonly="1"/>
+                        </group>
+                        <group string="Tellingen">
+                            <field name="finding_count" readonly="1"/>
+                            <field name="investigate_count" readonly="1"/>
+                            <field name="takeover_pending_count" readonly="1"/>
+                            <field name="takeover_done_count" readonly="1"/>
+                            <field name="delete_after_count" readonly="1"/>
+                            <field name="matched_count" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group invisible="not scan_summary">
+                        <field name="scan_summary" nolabel="1" widget="text" readonly="1"/>
+                    </group>
+
+                    <notebook>
+                        <page string="OUs" name="ous">
+                            <field name="finding_ou_ids"
+                                   context="{'default_session_id': id, 'default_kind': 'ou'}">
+                                <list editable="bottom" decoration-success="status == 'takeover_done'"
+                                      decoration-warning="status == 'takeover_pending'"
+                                      decoration-muted="status == 'ignored'">
+                                    <field name="ad_dn" readonly="1"/>
+                                    <field name="ad_cn" readonly="1"/>
+                                    <field name="proposed_parent_org_id"
+                                           options="{'no_create': True}"/>
+                                    <field name="proposed_org_type_id"
+                                           options="{'no_create': True}"/>
+                                    <field name="status" widget="badge"
+                                           decoration-info="status == 'investigate'"
+                                           decoration-success="status == 'takeover_done'"
+                                           decoration-warning="status == 'takeover_pending'"
+                                           decoration-muted="status == 'ignored'"/>
+                                    <field name="notes" optional="show"/>
+                                    <button name="action_mark_takeover_pending"
+                                            type="object" icon="fa-check"
+                                            title="Plan takeover"
+                                            invisible="status == 'takeover_pending' or status == 'takeover_done'"/>
+                                    <button name="action_takeover"
+                                            type="object" icon="fa-bolt"
+                                            title="Voer takeover NU uit"
+                                            invisible="status == 'takeover_done' or status == 'matched'"/>
+                                    <button name="action_mark_ignore"
+                                            type="object" icon="fa-times"
+                                            title="Negeer"
+                                            invisible="status == 'ignored'"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Groups" name="groups">
+                            <field name="finding_group_ids"
+                                   context="{'default_session_id': id, 'default_kind': 'group'}">
+                                <list editable="bottom" decoration-success="status == 'takeover_done'"
+                                      decoration-warning="status == 'takeover_pending'"
+                                      decoration-danger="status == 'delete_after_migration'"
+                                      decoration-muted="status == 'ignored'">
+                                    <field name="ad_dn" readonly="1"/>
+                                    <field name="ad_cn" readonly="1"/>
+                                    <field name="ad_mail" readonly="1" optional="show"/>
+                                    <field name="proposed_parent_org_id"
+                                           options="{'no_create': True}"/>
+                                    <field name="status" widget="badge"
+                                           decoration-info="status == 'investigate'"
+                                           decoration-success="status == 'takeover_done'"
+                                           decoration-warning="status == 'takeover_pending'"
+                                           decoration-danger="status == 'delete_after_migration' or status == 'delete_done'"
+                                           decoration-muted="status == 'ignored'"/>
+                                    <field name="notes" optional="show"/>
+                                    <button name="action_mark_takeover_pending"
+                                            type="object" icon="fa-check"
+                                            title="Plan takeover"
+                                            invisible="status == 'takeover_pending' or status == 'takeover_done'"/>
+                                    <button name="action_takeover"
+                                            type="object" icon="fa-bolt"
+                                            title="Voer takeover NU uit"
+                                            invisible="status == 'takeover_done' or status == 'matched'"/>
+                                    <button name="action_mark_delete_after"
+                                            type="object" icon="fa-trash"
+                                            title="Markeer als 'verwijder na migratie'"
+                                            invisible="status == 'delete_after_migration'"/>
+                                    <button name="action_mark_ignore"
+                                            type="object" icon="fa-times"
+                                            title="Negeer"
+                                            invisible="status == 'ignored'"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Users" name="users">
+                            <field name="finding_user_ids"
+                                   context="{'default_session_id': id, 'default_kind': 'user'}">
+                                <list editable="bottom" decoration-success="status == 'takeover_done'"
+                                      decoration-warning="status == 'takeover_pending'"
+                                      decoration-danger="status == 'delete_after_migration'"
+                                      decoration-muted="status == 'ignored'">
+                                    <field name="ad_dn" readonly="1"/>
+                                    <field name="ad_cn" readonly="1"/>
+                                    <field name="ad_givenname" readonly="1" optional="show"/>
+                                    <field name="ad_sn" readonly="1" optional="show"/>
+                                    <field name="ad_mail" readonly="1" optional="show"/>
+                                    <field name="proposed_parent_org_id"
+                                           options="{'no_create': True}"/>
+                                    <field name="proposed_person_role_id"
+                                           options="{'no_create': True}"/>
+                                    <field name="status" widget="badge"
+                                           decoration-info="status == 'investigate'"
+                                           decoration-success="status == 'takeover_done'"
+                                           decoration-warning="status == 'takeover_pending'"
+                                           decoration-danger="status == 'delete_after_migration' or status == 'delete_done'"
+                                           decoration-muted="status == 'ignored'"/>
+                                    <field name="notes" optional="show"/>
+                                    <button name="action_mark_takeover_pending"
+                                            type="object" icon="fa-check"
+                                            title="Plan takeover"
+                                            invisible="status == 'takeover_pending' or status == 'takeover_done'"/>
+                                    <button name="action_takeover"
+                                            type="object" icon="fa-bolt"
+                                            title="Voer takeover NU uit"
+                                            invisible="status == 'takeover_done' or status == 'matched'"/>
+                                    <button name="action_mark_delete_after"
+                                            type="object" icon="fa-trash"
+                                            title="Markeer als 'verwijder na migratie'"
+                                            invisible="status == 'delete_after_migration'"/>
+                                    <button name="action_mark_ignore"
+                                            type="object" icon="fa-times"
+                                            title="Negeer"
+                                            invisible="status == 'ignored'"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ad_takeover_session" model="ir.actions.act_window">
+        <field name="name">AD-takeover</field>
+        <field name="res_model">myschool.ad.takeover.session</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Eenmalige migratie-tool: ontdek AD-objecten die niet in
+                de MySchool-DB zitten en beslis per item.
+            </p>
+            <p>
+                Maak een nieuwe sessie, kies een LDAP-server + scope-org,
+                klik "Scan AD". Items komen onder de tabs OUs / Groups /
+                Users. Mark per rij als 'Onderzoek', 'Plan takeover',
+                'Verwijder na migratie' (geen OUs) of 'Negeer'. Bestaande
+                AD-objecten worden nooit overschreven; takeover schrijft
+                enkel naar de DB.
+            </p>
+        </field>
+    </record>
+
+</odoo>

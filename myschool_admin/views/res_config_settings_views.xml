@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- =============================================================
+         MySchool Settings — eigen res.config.settings-view + action
+
+         Het probleem met de aanpak via inheritance op
+         ``base.res_config_settings_view_form`` is dat alle modules
+         daar `<app>`-blokken aan toevoegen — MySchool-tabs eindigden
+         dus naast Odoo's eigen tabs (General Settings, Companies, …)
+         in dezelfde sidebar. Geen native manier om die te groeperen.
+
+         Oplossing: een aparte **primary view** in myschool_admin die
+         van de base-view erft maar als zelfstandige view fungeert.
+         Alleen onze tab-extensions inherits van deze primary view, dus
+         de sidebar van deze view bevat uitsluitend MySchool-tabs.
+         Odoo's standaard Settings (tandwiel-icoon) blijft schoon.
+
+         Architectuur:
+           * Primary view        : myschool_settings_form
+           * Action              : action_myschool_settings  (view_id=primary)
+           * Menu                : menu_myschool_settings    (uses action)
+           * Tab MySchool Core   : res_config_settings_view_form_ms_core_tab
+           * Tab MySchool Admin  : res_config_settings_view_form_myschool_admin
+           * Tab MySchool Theme  : res_config_settings_view_form_ms_theme_tab
+           * Tab ITSM / Sync     : ge\xC3\xABxtenderd vanuit hun eigen modules
+                                   (zie myschool_itsm + myschool_sync)
+
+         Fields blijven in hun eigen module via een _inherit-extension
+         op res.config.settings — alleen de XML-views verhuizen hier
+         naartoe. Theme- en core-velden zijn dus nog steeds eigendom
+         van hun modules, alleen het scherm dat ze toont leeft hier.
+         ============================================================= -->
+
+    <!-- ==========  PRIMARY VIEW  ============================== -->
+
+    <record id="myschool_settings_form" model="ir.ui.view">
+        <field name="name">myschool.settings.form</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="mode">primary</field>
+        <field name="arch" type="xml">
+            <data/>
+        </field>
+    </record>
+
+    <!-- ==========  ACTION + MENU  ============================= -->
+
+    <record id="action_myschool_settings" model="ir.actions.act_window">
+        <field name="name">MySchool Instellingen</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="myschool_settings_form"/>
+        <field name="target">current</field>
+    </record>
+
+    <menuitem id="menu_myschool_settings"
+              name="Instellingen"
+              parent="menu_myschool_root"
+              action="action_myschool_settings"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- ==========  TAB: MYSCHOOL CORE  ======================== -->
+    <!-- Cloud + AD + Informat + Config items. Velden in core, methoden
+         in myschool_core.res_config_settings (Google) en
+         myschool_admin.res_config_settings (LDAP/Informat/Config). -->
+
+    <record id="res_config_settings_view_form_ms_core_tab" model="ir.ui.view">
+        <field name="name">myschool.settings.tab.core</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="myschool_settings_form"/>
+        <field name="priority">10</field>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="MySchool Core" string="MySchool Core"
+                     name="myschool_core"
+                     groups="myschool_core.group_myschool_core_admin">
+
+                    <block title="Integraties — Cloud" name="ms_core_cloud">
+                        <setting string="Google Workspace"
+                                 help="Beheer Google Workspace-tenants (customer ID, domein, service-account, OAuth-scopes). Eén actieve config per organisatie via de scope-link.">
+                            <button name="action_open_google_workspace"
+                                    type="object" icon="fa-google"
+                                    string="Beheer Google-workspaces" class="btn-link"/>
+                        </setting>
+                    </block>
+
+                    <block title="Integraties — Active Directory" name="ms_core_ad">
+                        <setting string="LDAP-servers"
+                                 help="Beheer AD/LDAP-server-records (URL, port, SSL, bind credentials, base DN, AD-specifieke instellingen). Een LDAP-config wordt aan één of meer scope-orgs gekoppeld.">
+                            <button name="action_open_ldap_servers"
+                                    type="object" icon="fa-server"
+                                    string="Beheer LDAP-servers" class="btn-link"/>
+                        </setting>
+                    </block>
+
+                    <block title="Integraties — Informat" name="ms_core_informat">
+                        <setting string="Informat synchronisatie"
+                                 help="API-endpoints, storage-paden (dev/prod), sync-toggles (rollen, werknemers, klassen, leerlingen) en timing-parameters voor de Informat-koppeling.">
+                            <button name="action_open_informat_config"
+                                    type="object" icon="fa-database"
+                                    string="Beheer Informat-configuratie" class="btn-link"/>
+                        </setting>
+                    </block>
+
+                    <block title="Configuratie items" name="ms_core_config_items">
+                        <setting string="Config items"
+                                 help="Generieke configuratie-parameters (scope: global/local/module/org/user; type: config/status/setting/parameter/credential/api). Gebruikt door diverse services voor per-school overrides.">
+                            <button name="action_open_config_items"
+                                    type="object" icon="fa-cog"
+                                    string="Beheer Config items" class="btn-link"/>
+                        </setting>
+                        <setting string="CI-relaties"
+                                 help="Relaties tussen config-items (parent/child, depends-on, references) — voor het opbouwen van afgeleide settings.">
+                            <button name="action_open_ci_relations"
+                                    type="object" icon="fa-link"
+                                    string="Beheer CI-relaties" class="btn-link"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ==========  TAB: MYSCHOOL ADMIN  ======================= -->
+
+    <record id="res_config_settings_view_form_myschool_admin" model="ir.ui.view">
+        <field name="name">myschool.settings.tab.admin</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="myschool_settings_form"/>
+        <field name="priority">20</field>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="MySchool Admin" string="MySchool Admin"
+                     name="myschool_admin"
+                     groups="myschool_core.group_myschool_core_admin">
+
+                    <block title="Diagnostiek" name="ms_admin_diagnostics">
+                        <setting string="Health Check"
+                                 help="Volledige scan op data-completeness en AD/Google-sync mismatches voor orgs, personen en lidmaatschappen.">
+                            <button name="action_open_health_check"
+                                    type="object" icon="fa-stethoscope"
+                                    string="Open Health Check" class="btn-link"/>
+                        </setting>
+                        <setting string="Log Viewer"
+                                 help="Realtime Odoo logs filteren op niveau, module en sleutelwoord.">
+                            <button name="action_open_log_viewer"
+                                    type="object" icon="fa-file-text-o"
+                                    string="Open Log Viewer" class="btn-link"/>
+                        </setting>
+                        <setting string="Server-benchmark"
+                                 help="CPU/IO/DB-benchmark om sync-pipeline knelpunten te identificeren.">
+                            <button name="action_open_server_benchmark"
+                                    type="object" icon="fa-tachometer"
+                                    string="Open Benchmark" class="btn-link"/>
+                        </setting>
+                        <setting string="Cron-taken"
+                                 help="Beheer ir.cron-records — schedule, status, manueel triggeren.">
+                            <button name="action_open_cron_tasks"
+                                    type="object" icon="fa-clock-o"
+                                    string="Open Cron-taken" class="btn-link"/>
+                        </setting>
+                    </block>
+
+                    <block title="Migratie &amp; Onderhoud" name="ms_admin_migration">
+                        <setting string="AD-takeover"
+                                 help="Migratie-assistent: ontdek AD-objecten die nog niet in de DB zitten en beslis per item.">
+                            <button name="action_open_ad_takeover"
+                                    type="object" icon="fa-windows"
+                                    string="Open AD-takeover" class="btn-link"/>
+                        </setting>
+                        <setting string="Domeinnamen wijzigen"
+                                 help="Bulk-rename van het interne of externe AD/Google-domein over alle orgs en personen.">
+                            <button name="action_open_domain_rename"
+                                    type="object" icon="fa-exchange"
+                                    string="Open Domain-rename" class="btn-link"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ==========  TAB: MYSCHOOL THEME  ======================= -->
+    <!-- XML verhuisd vanuit myschool_theme zodat de tab in deze
+         primary view verschijnt. Fields/methods blijven in
+         myschool_theme/models/res_config_settings.py — admin
+         depends-on theme dus die velden bestaan altijd op
+         res.config.settings wanneer dit scherm geladen wordt. -->
+
+    <record id="res_config_settings_view_form_ms_theme_tab" model="ir.ui.view">
+        <field name="name">myschool.settings.tab.theme</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="myschool_settings_form"/>
+        <field name="priority">70</field>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="MySchool Theme" string="MySchool Theme"
+                     name="myschool_theme">
+
+                    <block title="Brand Colors" name="ms_theme_brand"
+                           help="Primary brand palette used across the interface">
+                        <setting string="Brand Primary">
+                            <div class="w-50 row">
+                                <label for="ms_color_brand_1" string="Brand Primary"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_brand_1"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_brand_2" string="Brand Secondary"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_brand_2"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_brand_3" string="Accent 1"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_brand_3"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_brand_4" string="Accent 2"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_brand_4"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Text &amp; Surface" name="ms_theme_textsurface">
+                        <setting string="Text Colors">
+                            <div class="w-50 row">
+                                <label for="ms_color_text" string="Text"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_text"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_text_muted" string="Muted"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_text_muted"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                        <setting string="Background Colors">
+                            <div class="w-50 row">
+                                <label for="ms_color_bg" string="Background"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_bg"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_bg_card" string="Card"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_bg_card"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_surface" string="Surface"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_surface"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                        <setting string="Border &amp; Hover">
+                            <div class="w-50 row">
+                                <label for="ms_color_border" string="Border"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_border"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_border_light" string="Border Light"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_border_light"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_hover_row" string="Row Hover"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_hover_row"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_hover_btn" string="Button Hover"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_hover_btn"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Sidebar &amp; Statusbar" name="ms_theme_bars">
+                        <setting string="Sidebar">
+                            <div class="w-50 row">
+                                <label for="ms_color_sidebar_bg" string="Sidebar Background"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_sidebar_bg"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                        <setting string="Statusbar">
+                            <div class="w-50 row">
+                                <label for="ms_color_statusbar_current" string="Current Step"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_statusbar_current"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_statusbar_done" string="Completed Steps"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_statusbar_done"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="ms_color_statusbar_future" string="Future Steps"
+                                       class="d-block w-75 py-2"/>
+                                <field name="ms_color_statusbar_future"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Branding" name="ms_theme_branding">
+                        <setting string="Background Image" company_dependent="1"
+                                 help="Background image for the apps menu dashboard">
+                            <field name="theme_background_image"
+                                   widget="image" class="w-75"/>
+                        </setting>
+                        <setting string="Reset theme">
+                            <button name="action_reset_myschool_colors"
+                                    icon="fa-refresh" type="object"
+                                    string="Reset MySchool Colors" class="btn-link"/>
+                        </setting>
+                        <setting string="App-iconen">
+                            <button name="action_regenerate_icons"
+                                    icon="fa-paint-brush" type="object"
+                                    string="Iconen opnieuw genereren" class="btn-link"/>
+                        </setting>
+                    </block>
+
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

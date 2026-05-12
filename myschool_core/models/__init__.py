@@ -35,6 +35,7 @@ from . import ldap_server_config
 from . import ldap_service
 from . import google_workspace_config
 from . import google_directory_service
+from . import res_config_settings
 from . import google_drive_service
 from . import google_classroom_service
 from . import google_license_service

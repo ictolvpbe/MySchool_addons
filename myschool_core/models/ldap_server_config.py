@@ -404,9 +404,11 @@ class LdapServerConfig(models.Model):
         if not org:
             return self.browse()
 
-        # Check if this org has a direct server assignment
+        # Check if this org has a direct server assignment.
+        # Odoo 19 deprecates ``('field', 'in', single_int)``; pass the
+        # id wrapped in a list to silence the domain warning.
         server = self.search([
-            ('org_ids', 'in', org.id),
+            ('org_ids', 'in', [org.id]),
             ('active', '=', True),
         ], limit=1, order='sequence')
 
@@ -425,7 +427,7 @@ class LdapServerConfig(models.Model):
                 ], limit=1)
                 if parent_org:
                     server = self.search([
-                        ('org_ids', 'in', parent_org.id),
+                        ('org_ids', 'in', [parent_org.id]),
                         ('active', '=', True),
                     ], limit=1, order='sequence')
                     if server:

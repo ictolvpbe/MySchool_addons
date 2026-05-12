@@ -12,6 +12,15 @@
                             string="Test Connection"
                             type="object"
                             class="btn-primary"/>
+                    <button name="action_test_apis"
+                            string="Test All APIs"
+                            type="object"
+                            class="btn-secondary"/>
+                    <button name="action_detect_customer_id"
+                            string="Detect Customer ID"
+                            type="object"
+                            class="btn-secondary"
+                            help="Resolve the real C... customer ID via the subject account and store it. Needed when 'my_customer' is rejected by OrgUnits/ChromeOS endpoints."/>
                     <field name="last_test_result"
                            widget="badge"
                            decoration-success="last_test_result == 'success'"
@@ -80,10 +89,16 @@
                             <field name="org_ids" widget="many2many_tags"/>
                         </page>
                         <page string="Last Test" name="test">
-                            <group>
+                            <group string="Connection">
                                 <field name="last_test_date" readonly="1"/>
                                 <field name="last_test_result" readonly="1"/>
                                 <field name="last_test_message" readonly="1"/>
+                            </group>
+                            <group string="Per-API Probe">
+                                <field name="last_apis_date" readonly="1"/>
+                                <field name="last_apis_report"
+                                       readonly="1"
+                                       widget="text"/>
                             </group>
                         </page>
                     </notebook>

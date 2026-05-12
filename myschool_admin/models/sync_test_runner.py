@@ -145,6 +145,77 @@ EXPECTATIONS = {
         ],
     },
 
+    # ------------------------------------------------------------------
+    # Basisschool flow — separate testset under
+    # ``dev - testsets/students-basisschool/``.
+    #
+    # bawa (011007) en baple (107839), 3 leerlingen per school in
+    # L1A / L2AL / 3A. Geanonimiseerde account-naam wordt afgedwongen
+    # via een ``field.template`` voor cn (scope = bawa+baple,
+    # person_type = STUDENT). Stap 1 registreert, stap 2 levert de
+    # volledige persoonsdata aan.
+    #
+    # Om deze set te draaien: open een Sync Test Runner session,
+    # zet ``testsets_path`` op
+    #   <extra-addons>/myschool_core/storage/sapimport/
+    #   dev - testsets/students-basisschool
+    # en klik "Refresh Steps".
+    # ------------------------------------------------------------------
+    '1 - bawa+baple registrations': {
+        'description': (
+            'Registratie van 6 nieuwe basisschoolleerlingen — 3 in bawa '
+            '(011007) en 3 in baple (107839), telkens één per klas '
+            '(L1A, L2AL, 3A). Verwacht: 6 actieve persons, elk met de '
+            'juiste actieve klas; klas-orgs moeten bestaan in MySchool.'
+        ),
+        'checks': [
+            # bawa
+            {'type': 'classgroup_active', 'name_short': 'L1A'},
+            {'type': 'classgroup_active', 'name_short': 'L2AL'},
+            {'type': 'classgroup_active', 'name_short': '3A'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0001-1100-4007-a000-000000000001'},
+            {'type': 'person_reg_inst_nr', 'uuid': '0a0a0001-1100-4007-a000-000000000001', 'inst_nr': '011007'},
+            {'type': 'person_active_class', 'uuid': '0a0a0001-1100-4007-a000-000000000001', 'klas_code': 'L1A'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0002-1100-4007-a000-000000000002'},
+            {'type': 'person_active_class', 'uuid': '0a0a0002-1100-4007-a000-000000000002', 'klas_code': 'L2AL'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0003-1100-4007-a000-000000000003'},
+            {'type': 'person_active_class', 'uuid': '0a0a0003-1100-4007-a000-000000000003', 'klas_code': '3A'},
+            # baple
+            {'type': 'person_exists_active', 'uuid': '0a0a0004-1078-4839-a000-000000000004'},
+            {'type': 'person_reg_inst_nr', 'uuid': '0a0a0004-1078-4839-a000-000000000004', 'inst_nr': '107839'},
+            {'type': 'person_active_class', 'uuid': '0a0a0004-1078-4839-a000-000000000004', 'klas_code': 'L1A'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0005-1078-4839-a000-000000000005'},
+            {'type': 'person_active_class', 'uuid': '0a0a0005-1078-4839-a000-000000000005', 'klas_code': 'L2AL'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0006-1078-4839-a000-000000000006'},
+            {'type': 'person_active_class', 'uuid': '0a0a0006-1078-4839-a000-000000000006', 'klas_code': '3A'},
+        ],
+    },
+    '2 - bawa+baple student data': {
+        'description': (
+            'Volledige persoonsdata voor de 6 basisschoolleerlingen — '
+            'naam, voornaam, geboortedatum, adres, school-email. '
+            'Verwacht: alle 6 persons actief, reg_end_date leeg, '
+            'eerste/laatste naam bijgewerkt, klas-relatie blijft staan. '
+            'De cn/email_cloud op de DB moeten volgens het basisschool-'
+            'template geanonimiseerd zijn (b<sap_ref+1631>) zodra het '
+            'cn-FieldTemplate voor bawa+baple+STUDENT geconfigureerd is.'
+        ),
+        'checks': [
+            {'type': 'person_exists_active', 'uuid': '0a0a0001-1100-4007-a000-000000000001'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0001-1100-4007-a000-000000000001'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0002-1100-4007-a000-000000000002'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0002-1100-4007-a000-000000000002'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0003-1100-4007-a000-000000000003'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0003-1100-4007-a000-000000000003'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0004-1078-4839-a000-000000000004'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0004-1078-4839-a000-000000000004'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0005-1078-4839-a000-000000000005'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0005-1078-4839-a000-000000000005'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0006-1078-4839-a000-000000000006'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0006-1078-4839-a000-000000000006'},
+        ],
+    },
+
     # =========================================================================
     # Employees-mode testset — testpersoon Mark Demeyer
     #   uuid     : 2dc5c533-5a7a-4b2f-9020-7372345a53bc

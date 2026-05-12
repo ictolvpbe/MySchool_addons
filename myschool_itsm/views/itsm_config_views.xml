@@ -2,9 +2,13 @@
 <odoo>
 
     <record id="res_config_settings_view_form_itsm" model="ir.ui.view">
-        <field name="name">res.config.settings.view.form.inherit.itsm</field>
+        <field name="name">myschool.settings.tab.itsm</field>
         <field name="model">res.config.settings</field>
-        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <!-- Erft van de MySchool-Settings primary view (in myschool_admin)
+             zodat deze tab alleen verschijnt in de MySchool Instellingen-
+             menu, niet in Odoo's standaard Settings (tandwiel-icoon). -->
+        <field name="inherit_id" ref="myschool_admin.myschool_settings_form"/>
+        <field name="priority">40</field>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
                 <app data-string="IT Service Management" string="IT Service Management"

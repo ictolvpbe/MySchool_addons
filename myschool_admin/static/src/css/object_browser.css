@@ -700,6 +700,12 @@
     font-size: 13px;
 }
 
+.ob-avatar-suborg {
+    background: var(--ms-warning-bg, #fef3c7);
+    color: var(--ms-warning, #b45309);
+    font-size: 13px;
+}
+
 /* Member info */
 .ob-member-info {
     flex: 1;

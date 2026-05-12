@@ -179,7 +179,8 @@
                                      t-att-data-model="person.model"
                                      t-att-data-id="person.id"
                                      t-att-data-name="person.name"
-                                     t-att-data-type="'person'">
+                                     t-att-data-type="'person'"
+                                     t-att-data-other-orgs="person.other_active_org_count || 0">
                                     <div t-att-class="'ob-member-avatar ' + (person.person_type === 'STUDENT' ? 'ob-avatar-student' : 'ob-avatar-employee')">
                                         <t t-esc="getInitials(person.name)"/>
                                     </div>
@@ -200,7 +201,7 @@
                             </t>
                         </t>
 
-                        <!-- Person Groups -->
+                        <!-- Person Groups + Sub-orgs -->
                         <t t-if="filteredPersongroups.length">
                             <t t-foreach="filteredPersongroups" t-as="group" t-key="group.id">
                                 <div class="ob-member-row"
@@ -211,13 +212,24 @@
                                      t-att-data-id="group.id"
                                      t-att-data-name="group.name"
                                      t-att-data-type="'persongroup'">
-                                    <div class="ob-member-avatar ob-avatar-group">
-                                        <i class="fa fa-users"/>
+                                    <div t-att-class="'ob-member-avatar ' + (group.is_persongroup ? 'ob-avatar-group' : 'ob-avatar-suborg')">
+                                        <t t-if="group.is_persongroup">
+                                            <i class="fa fa-users"/>
+                                        </t>
+                                        <t t-else="">
+                                            <i class="fa fa-building"/>
+                                        </t>
                                     </div>
                                     <div class="ob-member-info">
                                         <div class="ob-member-name"><t t-esc="group.name"/></div>
-                                        <div class="ob-member-meta" t-if="group.full_name !== group.name">
-                                            <t t-esc="group.full_name"/>
+                                        <div class="ob-member-meta">
+                                            <t t-if="group.org_type_name and !group.is_persongroup">
+                                                <t t-esc="group.org_type_name"/>
+                                                <t t-if="group.full_name and group.full_name !== group.name"> &#x2022; </t>
+                                            </t>
+                                            <t t-if="group.full_name and group.full_name !== group.name">
+                                                <t t-esc="group.full_name"/>
+                                            </t>
                                         </div>
                                     </div>
                                 </div>
@@ -701,6 +713,8 @@
                 <ContextMenu x="state.contextMenu.x"
                              y="state.contextMenu.y"
                              node="state.contextMenu.node"
+                             bulkSource="state.contextMenu.bulkSource"
+                             bulkCount="state.contextMenu.bulkCount"
                              onAction="onContextMenuAction"
                              onClose="onCloseContextMenu"/>
             </t>

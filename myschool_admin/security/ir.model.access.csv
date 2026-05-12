@@ -44,3 +44,11 @@ access_reset_sync_data_wizard,myschool.reset.sync.data.wizard,model_myschool_res
 access_persongroup_member_browser,myschool.persongroup.member.browser,model_myschool_persongroup_member_browser,myschool_core.group_myschool_core_admin,1,1,1,1
 access_health_check,myschool.health.check,model_myschool_health_check,myschool_core.group_myschool_core_admin,1,1,1,1
 access_health_check_issue,myschool.health.check.issue,model_myschool_health_check_issue,myschool_core.group_myschool_core_admin,1,1,1,1
+access_ir_cron_admin,ir.cron beheer voor myschool admin,base.model_ir_cron,myschool_core.group_myschool_core_admin,1,1,1,1
+access_ir_actions_server_admin,ir.actions.server beheer voor myschool admin,base.model_ir_actions_server,myschool_core.group_myschool_core_admin,1,1,1,1
+access_task_debug_runner,myschool.task.debug.runner,model_myschool_task_debug_runner,myschool_core.group_myschool_core_admin,1,1,1,1
+access_domain_rename_wizard,myschool.domain.rename.wizard,model_myschool_domain_rename_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_bulk_cleanup_wizard,myschool.bulk.cleanup.wizard,model_myschool_bulk_cleanup_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_ad_takeover_session,myschool.ad.takeover.session,model_myschool_ad_takeover_session,myschool_core.group_myschool_core_admin,1,1,1,1
+access_ad_takeover_finding,myschool.ad.takeover.finding,model_myschool_ad_takeover_finding,myschool_core.group_myschool_core_admin,1,1,1,1
+access_informat_sync_wizard,myschool.informat.sync.wizard,model_myschool_informat_sync_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
