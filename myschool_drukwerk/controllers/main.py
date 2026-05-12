@@ -10,7 +10,7 @@ _logger = logging.getLogger(__name__)
 
 class DrukwerkPrintController(http.Controller):
 
-    @http.route('/drukwerk/print/<int:record_id>', type='http', auth='user')
+    @http.route('/myschool_drukwerk/print/<int:record_id>', type='http', auth='user')
     def print_document(self, record_id):
         """Serve the PDF with print settings pre-filled in the print dialog."""
         rec = request.env['myschool_drukwerk.record'].browse(record_id)
@@ -194,7 +194,7 @@ class DrukwerkPrintController(http.Controller):
             ('Content-Type', 'text/html; charset=utf-8'),
         ])
 
-    @http.route('/drukwerk/print/<int:record_id>/pdf', type='http', auth='user')
+    @http.route('/myschool_drukwerk/print/<int:record_id>/pdf', type='http', auth='user')
     def print_pdf(self, record_id):
         """Serve the PDF with ViewerPreferences set for copies and duplex."""
         rec = request.env['myschool_drukwerk.record'].browse(record_id)
