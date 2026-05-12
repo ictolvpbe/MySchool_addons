@@ -1,6 +1,6 @@
 {
     'name': 'Mijn Dashboard',
-    'version': '2.3',
+    'version': '2.7',
     'summary': 'Persoonlijk dashboard met overzicht van al je taken',
     'author': 'MySchool',
     'license': 'LGPL-3',

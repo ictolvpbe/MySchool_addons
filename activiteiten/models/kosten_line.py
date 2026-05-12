@@ -15,7 +15,7 @@ class ActiviteitenKostenLine(models.Model):
         string='Bedrag (totaal)',
         currency_field='currency_id',
         help='Totaalbedrag voor de volledige activiteit, niet per leerling. '
-             'Bijvoorbeeld: voor een busrit van € 250 vul je 250 in, niet 10 '
+             'Bijvoorbeeld: voor verblijfskosten van €250 vul je 250 in, niet 10 '
              '(per leerling). De kost-per-leerling wordt automatisch berekend.',
     )
     currency_id = fields.Many2one(

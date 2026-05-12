@@ -73,7 +73,7 @@
         }</field>
     </record>
 
-    <!-- Root Menu -->
+    <!-- Root Menu — klikken opent direct de Aanvragen-lijst. -->
     <menuitem id="menu_activiteiten_root"
               name="Activiteiten"
               action="action_activiteiten_main"

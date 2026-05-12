@@ -111,6 +111,14 @@ class MySchoolDashboard(models.Model):
     is_drukwerk_manager = fields.Boolean(
         compute='_compute_access_rights')
 
+    # Cross-module rol-flags voor de info-knoppen op het dashboard.
+    # Iemand heeft een rol als hij die in om het even welke module heeft.
+    has_role_directie = fields.Boolean(compute='_compute_access_rights')
+    has_role_boekhouding = fields.Boolean(compute='_compute_access_rights')
+    has_role_vervangingen = fields.Boolean(compute='_compute_access_rights')
+    has_role_aankoop = fields.Boolean(compute='_compute_access_rights')
+    has_role_drukkerij = fields.Boolean(compute='_compute_access_rights')
+
     # Counts drukwerk
     druk_total = fields.Integer(
         string="Druk. Totaal", compute='_compute_drukwerk_counts')
@@ -323,6 +331,18 @@ class MySchoolDashboard(models.Model):
                 and not rec.is_drukwerk_drukwerk
                 and not rec.is_drukwerk_boekhouding
             )
+            # Cross-module rol-flags
+            rec.has_role_directie = (
+                rec.is_act_directie or rec.is_prof_directie or rec.is_drukwerk_directie
+            )
+            rec.has_role_boekhouding = (
+                rec.is_act_boekhouding or rec.is_prof_boekhouding or rec.is_drukwerk_boekhouding
+            )
+            rec.has_role_vervangingen = (
+                rec.is_act_vervangingen or rec.is_prof_vervangingen
+            )
+            rec.has_role_aankoop = rec.is_act_aankoop
+            rec.has_role_drukkerij = rec.is_drukwerk_drukwerk
 
     # --- KPI ---
 
@@ -485,6 +505,59 @@ class MySchoolDashboard(models.Model):
             rec.druk_action_label = ' · '.join(p[1] for p in druk_parts)
 
     # --- Actions ---
+
+    # --- Info-knoppen: rol-gerichte links naar de externe ICT-handleiding ---
+    # Elke knop opent zijn rol-specifieke pagina op de ICT-website. URL's
+    # zijn configureerbaar via systeemparameters zodat het pad later
+    # aanpasbaar is zonder code te wijzigen.
+
+    _INFO_DEFAULTS = {
+        'leerkracht':
+            'https://sites.google.com/olvp.be/ictvoorleerkrachten/'
+            'myschool/leerkrachten?authuser=0',
+        'directie':
+            'https://sites.google.com/olvp.be/ictvoorleerkrachten/'
+            'myschool/directie?authuser=0',
+        'boekhouding':
+            'https://sites.google.com/olvp.be/ictvoorleerkrachten/'
+            'myschool/boekhouding?authuser=0',
+        'vervanging':
+            'https://sites.google.com/olvp.be/ictvoorleerkrachten/'
+            'myschool/vervanging?authuser=0',
+        'drukkerij':
+            'https://sites.google.com/olvp.be/ictvoorleerkrachten/'
+            'myschool/drukkerij?authuser=0',
+        'aankoop':
+            'https://sites.google.com/olvp.be/ictvoorleerkrachten/'
+            'myschool/aankoop?authuser=0',
+    }
+
+    def _open_info_url(self, key):
+        url = self.env['ir.config_parameter'].sudo().get_param(
+            f'myschool.info_url.{key}', self._INFO_DEFAULTS[key])
+        return {
+            'type': 'ir.actions.act_url',
+            'url': url,
+            'target': 'new',
+        }
+
+    def action_info_leerkracht(self):
+        return self._open_info_url('leerkracht')
+
+    def action_info_directie(self):
+        return self._open_info_url('directie')
+
+    def action_info_boekhouding(self):
+        return self._open_info_url('boekhouding')
+
+    def action_info_vervanging(self):
+        return self._open_info_url('vervanging')
+
+    def action_info_drukkerij(self):
+        return self._open_info_url('drukkerij')
+
+    def action_info_aankoop(self):
+        return self._open_info_url('aankoop')
 
     def action_open_prof_import(self):
         """Open de Historische Import-wizard voor professionaliseringen.

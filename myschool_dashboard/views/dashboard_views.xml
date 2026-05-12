@@ -93,6 +93,69 @@
                                 </div>
                             </div>
 
+                            <!-- Info & handleiding (per rol) -->
+                            <div class="ms-card">
+                                <div class="ms-card-header">Info &amp; handleiding</div>
+                                <div class="ms-card-body">
+                                    <div class="ms-quick-actions">
+                                        <button name="action_info_leerkracht" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="has_role_directie or has_role_boekhouding or has_role_vervangingen or has_role_aankoop or has_role_drukkerij">
+                                            <div class="ms-qa-icon c2"><i class="fa fa-info-circle"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Info leerkrachten</strong>
+                                                <span>ICT-handleiding</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_info_directie" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_role_directie">
+                                            <div class="ms-qa-icon c2"><i class="fa fa-info-circle"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Info directie</strong>
+                                                <span>ICT-handleiding</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_info_boekhouding" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_role_boekhouding">
+                                            <div class="ms-qa-icon c2"><i class="fa fa-info-circle"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Info boekhouding</strong>
+                                                <span>ICT-handleiding</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_info_vervanging" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_role_vervangingen">
+                                            <div class="ms-qa-icon c2"><i class="fa fa-info-circle"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Info vervanging</strong>
+                                                <span>ICT-handleiding</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_info_drukkerij" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_role_drukkerij">
+                                            <div class="ms-qa-icon c2"><i class="fa fa-info-circle"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Info drukkerij</strong>
+                                                <span>ICT-handleiding</span>
+                                            </div>
+                                        </button>
+                                        <button name="action_info_aankoop" type="object"
+                                                class="ms-qa-btn"
+                                                invisible="not has_role_aankoop">
+                                            <div class="ms-qa-icon c2"><i class="fa fa-info-circle"/></div>
+                                            <div class="ms-qa-text">
+                                                <strong>Info aankoop</strong>
+                                                <span>ICT-handleiding</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
 
                         <!-- RIGHT COLUMN: Aanvragen cards -->

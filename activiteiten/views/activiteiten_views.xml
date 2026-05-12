@@ -453,7 +453,7 @@
                         <p class="text-muted mb-2">
                             <i class="fa fa-info-circle me-1"/>
                             Vul telkens het <strong>totaalbedrag</strong> in voor de volledige
-                            activiteit, niet per leerling. Bijvoorbeeld: een busrit van € 250
+                            activiteit, niet per leerling. Bijvoorbeeld: verblijfskosten van € 250
                             in totaal → vul 250 in. De kost-per-leerling wordt onderaan
                             automatisch berekend.
                         </p>
@@ -465,6 +465,9 @@
                                        nolabel="1"
                                        readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval', 's_code', 'vervanging')">
                                     <list editable="bottom" create="1" delete="1">
+                                        <control>
+                                            <create string="Vaste kosten toevoegen"/>
+                                        </control>
                                         <field name="is_auto" column_invisible="1"/>
                                         <field name="kosten_type" column_invisible="1"/>
                                         <field name="omschrijving" readonly="is_auto"/>
@@ -480,6 +483,9 @@
                                        nolabel="1"
                                        readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval', 's_code', 'vervanging', 'done')">
                                     <list editable="bottom" create="1" delete="1">
+                                        <control>
+                                            <create string="Variabele kosten toevoegen"/>
+                                        </control>
                                         <field name="is_auto" column_invisible="1"/>
                                         <field name="kosten_type" column_invisible="1"/>
                                         <field name="omschrijving" readonly="is_auto"/>

@@ -22,15 +22,12 @@
         <field name="context">{'search_default_not_gestockeerd': 1}</field>
     </record>
 
+    <!-- Root Menu — klikken opent direct de Aanvragen-lijst,
+         net zoals Professionalisering en Activiteiten. -->
     <menuitem id="menu_drukwerk_root"
               name="Drukwerk"
-              sequence="75"/>
-
-    <menuitem id="menu_drukwerk_aanvragen"
-              name="Aanvragen"
-              parent="menu_drukwerk_root"
               action="action_drukwerk"
-              sequence="10"/>
+              sequence="75"/>
 
     <menuitem id="menu_drukwerk_voorraad"
               name="Archief"

@@ -90,7 +90,7 @@
         <field name="domain">[('employee_id.user_id', '=', uid)]</field>
     </record>
 
-    <!-- Root Menu -->
+    <!-- Root Menu — klikken opent direct de Aanvragen-lijst. -->
     <menuitem id="menu_professionalisering_root"
               name="Professionalisering"
               action="action_professionalisering_main"
