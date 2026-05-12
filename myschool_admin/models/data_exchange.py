@@ -193,7 +193,6 @@ class DataExchange(models.TransientModel):
                 'is_active': r.is_active,
                 'automatic_sync': r.automatic_sync,
                 'description': r.description or '',
-                'has_odoo_group': r.has_odoo_group,
             })
         return result
 
@@ -555,7 +554,6 @@ class DataExchange(models.TransientModel):
                     'is_active': item.get('is_active', True),
                     'automatic_sync': item.get('automatic_sync', True),
                     'description': item.get('description') or False,
-                    'has_odoo_group': item.get('has_odoo_group', False),
                 }
                 # Only set shortname when non-empty to avoid UNIQUE constraint
                 # violations from multiple roles with empty shortname

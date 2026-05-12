@@ -28,7 +28,7 @@ from odoo.tools import email_normalize, email_split
 class MailMail(models.Model):
     _inherit = 'mail.mail'
 
-    def send(self, auto_commit=False, raise_exception=False):
+    def send(self, auto_commit=False, raise_exception=False, post_send_callback=None):
         canonical = self.env['ir.config_parameter'].sudo().get_param(
             'mail.default.from')
         if canonical and '@' in canonical:
@@ -37,7 +37,10 @@ class MailMail(models.Model):
             for mail in self:
                 self._rewrite_email_from(mail, canonical_norm, canonical_domain)
         return super().send(
-            auto_commit=auto_commit, raise_exception=raise_exception)
+            auto_commit=auto_commit,
+            raise_exception=raise_exception,
+            post_send_callback=post_send_callback,
+        )
 
     @staticmethod
     def _rewrite_email_from(mail, canonical_from, canonical_domain):
