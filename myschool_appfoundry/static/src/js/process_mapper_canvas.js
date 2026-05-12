@@ -680,7 +680,7 @@ const DEFAULT_STEP_COLORS = {
 // Toolbar Component
 // ============================================================
 class ProcessMapperToolbar extends Component {
-    static template = "process_mapper.Toolbar";
+    static template = "myschool_process_mapper.Toolbar";
     static props = {
         onSave: { type: Function },
         onZoomIn: { type: Function },
@@ -751,14 +751,14 @@ const TTYPE_MAP_REVERSE = Object.fromEntries(
 );
 
 class FieldWidgetPreview extends Component {
-    static template = "process_mapper.FieldWidgetPreview";
+    static template = "myschool_process_mapper.FieldWidgetPreview";
     static props = {
         field: { type: Object },
     };
 }
 
 class FieldBuilder extends Component {
-    static template = "process_mapper.FieldBuilder";
+    static template = "myschool_process_mapper.FieldBuilder";
     static components = { FieldWidgetPreview };
     static props = {
         dataFields: { type: String },
@@ -1672,7 +1672,7 @@ class FieldBuilder extends Component {
 // Properties Panel Component
 // ============================================================
 class ProcessMapperProperties extends Component {
-    static template = "process_mapper.PropertiesPanel";
+    static template = "myschool_process_mapper.PropertiesPanel";
     static components = { FieldBuilder };
     static props = {
         selectedElement: { type: Object, optional: true },
@@ -1805,7 +1805,7 @@ class ProcessMapperProperties extends Component {
 // Minimap Component
 // ============================================================
 class ProcessMapperMinimap extends Component {
-    static template = "process_mapper.Minimap";
+    static template = "myschool_process_mapper.Minimap";
     static props = {
         steps: { type: Array },
         connections: { type: Array },
@@ -1905,7 +1905,7 @@ class ProcessMapperMinimap extends Component {
 // Version Panel Component
 // ============================================================
 class ProcessMapperVersionPanel extends Component {
-    static template = "process_mapper.VersionPanel";
+    static template = "myschool_process_mapper.VersionPanel";
     static props = {
         versions: { type: Array },
         onRestore: { type: Function },
@@ -1917,7 +1917,7 @@ class ProcessMapperVersionPanel extends Component {
 // Canvas Component (SVG)
 // ============================================================
 class ProcessMapperCanvas extends Component {
-    static template = "process_mapper.Canvas";
+    static template = "myschool_process_mapper.Canvas";
     static props = {
         steps: { type: Array },
         connections: { type: Array },
@@ -3133,7 +3133,7 @@ class ProcessMapperCanvas extends Component {
 // Main Client Action Component
 // ============================================================
 class ProcessMapperClient extends Component {
-    static template = "process_mapper.ProcessMapperClient";
+    static template = "myschool_process_mapper.ProcessMapperClient";
     static components = { ProcessMapperToolbar, ProcessMapperCanvas, ProcessMapperProperties, ProcessMapperMinimap, ProcessMapperVersionPanel };
     static props = ["*"];
 

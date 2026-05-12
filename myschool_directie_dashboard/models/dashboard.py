@@ -89,7 +89,7 @@ class MySchoolDirectieDashboard(models.Model):
         rec.total_cost_done = rec.total_cost_planned = 0.0
 
     def _fill_prof(self, rec, today):
-        Model = self.env['professionalisering.record']
+        Model = self.env['myschool_professionalisering.record']
         base = [
             ('employee_id', '=', rec.employee_id.id),
             ('start_date', '>=', rec.date_from),
@@ -104,14 +104,14 @@ class MySchoolDirectieDashboard(models.Model):
         rec.prof_cost_planned = sum(r.total_cost or 0.0 for r in planned)
 
     def _fill_act(self, rec, today):
-        # activiteiten.record links to myschool.person via leerkracht_ids (M2M)
+        # myschool_activiteiten.record links to myschool.person via leerkracht_ids (M2M)
         person = self.env['myschool.person'].search(
             [('odoo_employee_id', '=', rec.employee_id.id)], limit=1)
         if not person:
             rec.act_count_done = rec.act_count_planned = 0
             rec.act_cost_done = rec.act_cost_planned = 0.0
             return
-        Model = self.env['activiteiten.record']
+        Model = self.env['myschool_activiteiten.record']
         base = [
             ('leerkracht_ids', 'in', person.id),
             ('datetime', '>=', rec.date_from),
@@ -126,7 +126,7 @@ class MySchoolDirectieDashboard(models.Model):
         rec.act_cost_planned = sum(r.price or 0.0 for r in planned)
 
     def _fill_druk(self, rec, today):
-        Model = self.env['drukwerk.record']
+        Model = self.env['myschool_drukwerk.record']
         # Drukwerk uses create_uid as creator; map employee → user
         user = rec.employee_id.user_id
         if not user:
@@ -177,7 +177,7 @@ class MySchoolDirectieDashboard(models.Model):
         self.ensure_one()
         today = fields.Date.today()
         return self._open_records(
-            'professionalisering.record', 'employee_id', self.employee_id.id,
+            'myschool_professionalisering.record', 'employee_id', self.employee_id.id,
             'start_date', self.date_from, min(self.date_to, today),
             'Professionalisering — Gedaan',
         )
@@ -186,7 +186,7 @@ class MySchoolDirectieDashboard(models.Model):
         self.ensure_one()
         today = fields.Date.today()
         return self._open_records(
-            'professionalisering.record', 'employee_id', self.employee_id.id,
+            'myschool_professionalisering.record', 'employee_id', self.employee_id.id,
             'start_date', max(self.date_from, today), self.date_to,
             'Professionalisering — Gepland',
         )
@@ -202,7 +202,7 @@ class MySchoolDirectieDashboard(models.Model):
         if not person:
             return False
         return self._open_records(
-            'activiteiten.record', 'leerkracht_ids', person.id,
+            'myschool_activiteiten.record', 'leerkracht_ids', person.id,
             'datetime', self.date_from, min(self.date_to, today),
             'Activiteiten — Gedaan',
             employee_operator='in',
@@ -215,7 +215,7 @@ class MySchoolDirectieDashboard(models.Model):
         if not person:
             return False
         return self._open_records(
-            'activiteiten.record', 'leerkracht_ids', person.id,
+            'myschool_activiteiten.record', 'leerkracht_ids', person.id,
             'datetime', max(self.date_from, today), self.date_to,
             'Activiteiten — Gepland',
             employee_operator='in',
@@ -228,7 +228,7 @@ class MySchoolDirectieDashboard(models.Model):
         if not user:
             return False
         return self._open_records(
-            'drukwerk.record', 'create_uid', user.id,
+            'myschool_drukwerk.record', 'create_uid', user.id,
             'print_deadline', self.date_from, min(self.date_to, today),
             'Drukwerk — Gedaan',
         )
@@ -240,7 +240,7 @@ class MySchoolDirectieDashboard(models.Model):
         if not user:
             return False
         return self._open_records(
-            'drukwerk.record', 'create_uid', user.id,
+            'myschool_drukwerk.record', 'create_uid', user.id,
             'print_deadline', max(self.date_from, today), self.date_to,
             'Drukwerk — Gepland',
         )
@@ -253,7 +253,7 @@ class MySchoolDirectieDashboard(models.Model):
         verwijderaars (= meeste verwijderingen uit audit-log) binnen
         de geselecteerde periode."""
         for rec in self:
-            if 'drukwerk.record' not in self.env:
+            if 'myschool_drukwerk.record' not in self.env:
                 rec.druk_top_printers_html = False
                 rec.druk_top_deleters_html = False
                 continue
@@ -265,7 +265,7 @@ class MySchoolDirectieDashboard(models.Model):
             if rec.date_to:
                 domain_print.append(('create_date', '<=', rec.date_to))
                 domain_del.append(('create_date', '<=', rec.date_to))
-            top_print = self.env['drukwerk.record'].sudo().read_group(
+            top_print = self.env['myschool_drukwerk.record'].sudo().read_group(
                 domain=domain_print,
                 fields=['create_uid'],
                 groupby=['create_uid'],
@@ -275,7 +275,7 @@ class MySchoolDirectieDashboard(models.Model):
             rec.druk_top_printers_html = self._render_top_list(
                 top_print, key='create_uid',
                 label='aanvraag', label_p='aanvragen')
-            top_del = self.env['drukwerk.audit.log'].sudo().read_group(
+            top_del = self.env['myschool_drukwerk.audit.log'].sudo().read_group(
                 domain=domain_del,
                 fields=['actor_id'],
                 groupby=['actor_id'],

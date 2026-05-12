@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Main action (no domain, no search_default — Python injects defaults per role) -->
+    <record id="action_activiteiten_main" model="ir.actions.act_window">
+        <field name="name">Activiteiten</field>
+        <field name="res_model">myschool_activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Action: My Requests -->
+    <record id="action_activiteiten_my" model="ir.actions.act_window">
+        <field name="name">Mijn Aanvragen</field>
+        <field name="res_model">myschool_activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Action: Bus Controle (Aankoop) -->
+    <record id="action_activiteiten_bus_check" model="ir.actions.act_window">
+        <field name="name">Bus Controle</field>
+        <field name="res_model">myschool_activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_bus_check': 1}</field>
+    </record>
+
+    <!-- Action: Te Beoordelen (Directie) -->
+    <record id="action_activiteiten_approve" model="ir.actions.act_window">
+        <field name="name">Te Beoordelen</field>
+        <field name="res_model">myschool_activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_to_approve': 1}</field>
+    </record>
+
+    <!-- Action: S-Code (Boekhouding) -->
+    <record id="action_activiteiten_boekhouding" model="ir.actions.act_window">
+        <field name="name">S-Code &amp; Verzekering</field>
+        <field name="res_model">myschool_activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_s_code_pending': 1}</field>
+    </record>
+
+    <!-- Action: Vervangingen -->
+    <record id="action_activiteiten_vervangingen" model="ir.actions.act_window">
+        <field name="name">Vervangingen</field>
+        <field name="res_model">myschool_activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_replacement_pending': 1}</field>
+    </record>
+
+    <!-- Action: My Invitations -->
+    <record id="action_activiteiten_invites" model="ir.actions.act_window">
+        <field name="name">Mijn Uitnodigingen</field>
+        <field name="res_model">myschool_activiteiten.invite</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('person_id.odoo_user_id', '=', uid)]</field>
+    </record>
+
+    <!-- Action: All Requests (Admin) -->
+    <record id="action_activiteiten_all" model="ir.actions.act_window">
+        <field name="name">Alle Aanvragen</field>
+        <field name="res_model">myschool_activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Action: Per Leerkracht (Directie) — overzicht van afgeronde myschool_activiteiten per leerkracht -->
+    <record id="action_activiteiten_per_employee" model="ir.actions.act_window">
+        <field name="name">Per leerkracht</field>
+        <field name="res_model">myschool_activiteiten.record</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{
+            'search_default_state_done': 1,
+            'search_default_date_school_year': 1,
+            'search_default_group_leerkracht': 1,
+        }</field>
+    </record>
+
+    <!-- Root Menu — klikken opent direct de Aanvragen-lijst. -->
+    <menuitem id="menu_activiteiten_root"
+              name="Activiteiten"
+              action="action_activiteiten_main"
+              sequence="60"/>
+
+    <!-- Submenus -->
+    <menuitem id="menu_activiteiten_boekhouding"
+              name="S-Code &amp; Verzekering"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_boekhouding"
+              groups="myschool_activiteiten.group_activiteiten_boekhouding"
+              sequence="10"/>
+
+    <menuitem id="menu_activiteiten_approve"
+              name="Te Beoordelen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_approve"
+              groups="myschool_activiteiten.group_activiteiten_directie"
+              sequence="11"/>
+
+    <menuitem id="menu_activiteiten_bus_check"
+              name="Bus Controle"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_bus_check"
+              groups="myschool_activiteiten.group_activiteiten_aankoop"
+              sequence="12"/>
+
+    <menuitem id="menu_activiteiten_vervangingen"
+              name="Vervangingen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_vervangingen"
+              groups="myschool_activiteiten.group_activiteiten_vervangingen"
+              sequence="13"/>
+
+    <menuitem id="menu_activiteiten_all"
+              name="Alle Aanvragen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_all"
+              groups="myschool_activiteiten.group_activiteiten_directie,myschool_activiteiten.group_activiteiten_admin"
+              sequence="14"/>
+
+    <menuitem id="menu_activiteiten_per_employee"
+              name="Per leerkracht"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_per_employee"
+              groups="myschool_activiteiten.group_activiteiten_directie,myschool_activiteiten.group_activiteiten_admin"
+              sequence="15"/>
+
+    <menuitem id="menu_activiteiten_my"
+              name="Mijn Aanvragen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_my"
+              sequence="20"/>
+
+    <menuitem id="menu_activiteiten_invites"
+              name="Mijn Uitnodigingen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_invites"
+              sequence="21"/>
+
+    <menuitem id="menu_activiteiten_instellingen"
+              name="Instellingen"
+              parent="menu_activiteiten_root"
+              action="action_activiteiten_config_open"
+              groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+              sequence="30"/>
+</odoo>

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Form View -->
+    <record id="view_planner_form" model="ir.ui.view">
+        <field name="name">myschool_planner.record.form</field>
+        <field name="model">myschool_planner.record</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_submit"
+                            string="Indienen"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'gepland'"/>
+                    <button name="action_cancel"
+                            string="Annuleren"
+                            type="object"
+                            class="btn-danger"
+                            invisible="state != 'gepland'"/>
+                    <button name="action_replan"
+                            string="Opnieuw plannen"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state != 'cancelled'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="gepland,ingediend"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="afwezige_id"
+                                   readonly="state != 'gepland'"/>
+                            <field name="titel"
+                                   readonly="state != 'gepland'"/>
+                            <field name="leerkracht_id" readonly="1"
+                                   invisible="not leerkracht_id"/>
+                            <field name="klas_id" readonly="1"
+                                   invisible="not klas_id"/>
+                            <field name="afwezigheid_info" readonly="1"
+                                   invisible="not leerkracht_id and not klas_id"/>
+                        </group>
+                        <group>
+                            <field name="inhaal_date"
+                                   readonly="state != 'gepland'"/>
+                            <field name="tijdslot_ids" widget="many2many_tags"
+                                   readonly="state != 'gepland'"/>
+                            <field name="tijdslot_display" readonly="1"
+                                   invisible="not tijdslot_ids"/>
+                            <field name="verantwoordelijke_id"
+                                   readonly="state != 'gepland'"/>
+                            <button name="action_open_free_slot_wizard"
+                                    type="object"
+                                    string="Zoek vrij moment"
+                                    class="btn-secondary"
+                                    icon="fa-search"
+                                    invisible="state != 'gepland' or (not leerkracht_id and not klas_id)"/>
+                        </group>
+                    </group>
+
+                    <!-- Gemiste lessen — wat valt er weg door de afwezigheid -->
+                    <separator string="Gemiste lessen (uit lessenrooster)"
+                               invisible="not gemiste_lessen_ids"/>
+                    <field name="gemiste_lessen_ids" readonly="1"
+                           invisible="not gemiste_lessen_ids">
+                        <list create="false" delete="false" edit="false">
+                            <field name="dag"/>
+                            <field name="lesuur"/>
+                            <field name="vak"/>
+                            <field name="klas_id"/>
+                            <field name="leerkracht_id"/>
+                            <field name="lokaal_id" optional="hide"/>
+                        </list>
+                    </field>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="view_planner_list" model="ir.ui.view">
+        <field name="name">myschool_planner.record.list</field>
+        <field name="model">myschool_planner.record</field>
+        <field name="arch" type="xml">
+            <list default_order="inhaal_datum asc">
+                <field name="name"/>
+                <field name="titel"/>
+                <field name="afwezige_id" string="Afwezige"/>
+                <field name="inhaal_date"/>
+                <field name="tijdslot_display" string="Uren"/>
+                <field name="verantwoordelijke_id"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'gepland'"
+                       decoration-success="state == 'ingediend'"
+                       decoration-danger="state == 'cancelled'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Calendar View -->
+    <record id="view_planner_calendar" model="ir.ui.view">
+        <field name="name">myschool_planner.record.calendar</field>
+        <field name="model">myschool_planner.record</field>
+        <field name="arch" type="xml">
+            <calendar date_start="inhaal_datum" date_stop="inhaal_datum_end"
+                      color="state" mode="week" event_open_popup="1"
+                      quick_create="0">
+                <field name="titel"/>
+                <field name="afwezige_id"/>
+                <field name="verantwoordelijke_id"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_planner_search" model="ir.ui.view">
+        <field name="name">myschool_planner.record.search</field>
+        <field name="model">myschool_planner.record</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="titel"/>
+                <field name="name"/>
+                <field name="afwezige_id" string="Afwezige"/>
+                <filter string="Gepland" name="gepland"
+                        domain="[('state', '=', 'gepland')]"/>
+                <filter string="Ingediend" name="ingediend"
+                        domain="[('state', '=', 'ingediend')]"/>
+                <filter string="Geannuleerd" name="cancelled"
+                        domain="[('state', '=', 'cancelled')]"/>
+                <separator/>
+                <filter string="Vandaag" name="today"
+                        domain="[('inhaal_datum', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00')),
+                                 ('inhaal_datum', '&lt;=', context_today().strftime('%Y-%m-%d 23:59:59'))]"/>
+                <filter string="Deze week" name="this_week"
+                        domain="[('inhaal_datum', '&gt;=', (context_today() - relativedelta(days=context_today().weekday())).strftime('%Y-%m-%d 00:00:00')),
+                                 ('inhaal_datum', '&lt;', (context_today() + relativedelta(weeks=1, days=-context_today().weekday())).strftime('%Y-%m-%d 00:00:00'))]"/>
+                <separator/>
+                <filter string="Mijn planningen" name="my_plans"
+                        domain="[('verantwoordelijke_id', '=', uid)]"/>
+                <group>
+                    <filter string="Status" name="group_state"
+                            domain="[]" context="{'group_by': 'state'}"/>
+                    <filter string="Datum" name="group_datum"
+                            domain="[]" context="{'group_by': 'inhaal_datum:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+</odoo>

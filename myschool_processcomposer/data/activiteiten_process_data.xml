@@ -591,7 +591,7 @@
             <field name="name">kosten_ids</field>
             <field name="field_description">Kosten</field>
             <field name="ttype">one2many</field>
-            <field name="relation">activiteiten.kosten.line</field>
+            <field name="relation">myschool_activiteiten.kosten.line</field>
             <field name="relation_field">activiteit_id</field>
             <field name="help_text">Automatische lijnen: Bus (indien van toepassing) en Verzekering (2% van s_code_price + bus_price)</field>
         </record>

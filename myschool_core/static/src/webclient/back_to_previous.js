@@ -8,7 +8,7 @@ import { registry } from "@web/core/registry";
  * scrollpositie, sortering en groeperingen.
  *
  * Gebruikt vanuit `action_delete`-methodes van aanvraag-modules
- * (professionalisering, activiteiten, drukwerk, ...) zodat de gebruiker na
+ * (myschool_professionalisering, myschool_activiteiten, myschool_drukwerk, ...) zodat de gebruiker na
  * verwijderen vanuit de form view in dezelfde lijst-status terugkeert.
  *
  * Server-side gebruik:

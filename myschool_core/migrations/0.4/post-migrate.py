@@ -8,7 +8,7 @@ _logger = logging.getLogger(__name__)
 def migrate(cr, version):
     """Post-migrate 0.4: verwijder de gedeprecieerde `myschool_bus_seater`
     module als die nog geinstalleerd is. Sinds OLVP de busverdeling per
-    uitstap via `activiteiten.bus` afhandelt, is bus_seater niet meer nodig.
+    uitstap via `myschool_activiteiten.bus` afhandelt, is bus_seater niet meer nodig.
     De module is in zijn manifest op installable=False gezet, maar bestaande
     installs blijven anders zichtbaar in de Apps-drawer.
     """

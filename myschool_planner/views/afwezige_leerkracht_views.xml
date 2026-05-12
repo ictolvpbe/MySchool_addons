@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- List view -->
+    <record id="view_afwezige_leerkracht_list" model="ir.ui.view">
+        <field name="name">myschool_planner.afwezige.leerkracht.list</field>
+        <field name="model">myschool_planner.afwezige.leerkracht</field>
+        <field name="arch" type="xml">
+            <list default_order="datum asc" create="false" edit="false" delete="false">
+                <field name="datum"/>
+                <field name="datum_end" optional="show"/>
+                <field name="record_type" string="Type"/>
+                <field name="employee_name" string="Afwezige"/>
+                <field name="titel"/>
+                <field name="school_id"/>
+                <button name="action_plan_vervanging"
+                        string="Vervanging plannen"
+                        type="object"
+                        class="btn-primary btn-sm"
+                        icon="fa-calendar-plus-o"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_afwezige_leerkracht_search" model="ir.ui.view">
+        <field name="name">myschool_planner.afwezige.leerkracht.search</field>
+        <field name="model">myschool_planner.afwezige.leerkracht</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="employee_name" string="Afwezige"/>
+                <field name="titel" string="Titel"/>
+                <field name="school_id" string="School"/>
+                <filter string="Leerkrachten" name="leerkrachten"
+                        domain="[('record_type', '=', 'leerkracht')]"/>
+                <filter string="Klassen" name="klassen"
+                        domain="[('record_type', '=', 'klas')]"/>
+                <filter string="Professionalisering" name="professionalisering"
+                        domain="[('record_type', '=', 'professionalisering')]"/>
+                <separator/>
+                <filter string="Vandaag" name="today"
+                        domain="[('datum', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00')),
+                                 ('datum', '&lt;=', context_today().strftime('%Y-%m-%d 23:59:59'))]"/>
+                <filter string="Deze week" name="this_week"
+                        domain="[('datum', '&gt;=', (context_today() - relativedelta(days=context_today().weekday())).strftime('%Y-%m-%d 00:00:00')),
+                                 ('datum', '&lt;', (context_today() + relativedelta(weeks=1, days=-context_today().weekday())).strftime('%Y-%m-%d 00:00:00'))]"/>
+                <filter string="Toekomstig" name="future"
+                        domain="[('datum', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
+                <group>
+                    <filter string="Datum" name="group_datum"
+                            domain="[]" context="{'group_by': 'datum:day'}"/>
+                    <filter string="Type" name="group_type"
+                            domain="[]" context="{'group_by': 'record_type'}"/>
+                    <filter string="Afwezige" name="group_afwezige"
+                            domain="[]" context="{'group_by': 'employee_id'}"/>
+                    <filter string="School" name="group_school"
+                            domain="[]" context="{'group_by': 'school_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_afwezige_leerkrachten" model="ir.actions.act_window">
+        <field name="name">Afwezigen</field>
+        <field name="res_model">myschool_planner.afwezige.leerkracht</field>
+        <field name="view_mode">list</field>
+        <field name="context">{'search_default_future': 1, 'search_default_group_datum': 1}</field>
+    </record>
+</odoo>

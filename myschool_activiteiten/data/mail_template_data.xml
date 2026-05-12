@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Notificatie naar directie wanneer nieuwe aanvraag is ingediend.
+         Adressering gebeurt via _notify_directie_popup of de aankoop-flow,
+         niet via een vaste email_to. -->
+    <record id="email_template_notify_directie" model="mail.template">
+        <field name="name">Activiteiten - Notificatie Directie</field>
+        <field name="model_id" ref="model_myschool_activiteiten_record"/>
+        <field name="subject">Nieuwe aanvraag activiteit: {{ object.name }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste Directie,</p>
+    <p>Er is een nieuwe aanvraag voor een activiteit ingediend.</p>
+    <ul>
+        <li>Referentie: <t t-out="object.name or ''"/></li>
+        <li>Titel: <t t-out="object.titel or ''"/></li>
+        <li>Type: <t t-out="object.activity_type or ''"/></li>
+        <li>Datum: <t t-out="object.datetime or ''"/></li>
+        <li>Geschatte kost: <t t-out="object.price or 0"/></li>
+    </ul>
+    <p>Gelieve deze aanvraag te beoordelen.</p>
+</div>
+        </field>
+    </record>
+
+    <!-- Notificatie naar de aanvrager (leerkracht). email_to is verplicht
+         zodat send_mail() weet naar wie te sturen. -->
+    <record id="email_template_approved" model="mail.template">
+        <field name="name">Activiteiten - Goedgekeurd</field>
+        <field name="model_id" ref="model_myschool_activiteiten_record"/>
+        <field name="subject">Uw aanvraag {{ object.name }} is goedgekeurd</field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>Uw aanvraag voor activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong> is goedgekeurd.</p>
+    <p>De verdere afhandeling (S-Code, verzekering, vervanging) wordt opgestart.</p>
+</div>
+        </field>
+    </record>
+
+    <record id="email_template_rejected" model="mail.template">
+        <field name="name">Activiteiten - Afgekeurd</field>
+        <field name="model_id" ref="model_myschool_activiteiten_record"/>
+        <field name="subject">Uw aanvraag {{ object.name }} is afgekeurd</field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>Uw aanvraag voor activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong> is helaas afgekeurd.</p>
+    <p><strong>Reden:</strong> <t t-out="object.rejection_reason or '(geen reden opgegeven)'"/></p>
+    <p>U kunt de aanvraag aanpassen en opnieuw indienen via de knop "Opnieuw indienen".</p>
+</div>
+        </field>
+    </record>
+
+    <record id="email_template_bus_refused" model="mail.template">
+        <field name="name">Activiteiten - Bus geweigerd</field>
+        <field name="model_id" ref="model_myschool_activiteiten_record"/>
+        <field name="subject">Bus niet beschikbaar voor {{ object.name }}</field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>Er is helaas geen bus beschikbaar voor uw activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong>.</p>
+    <p>U kunt het formulier aanpassen en opnieuw indienen.</p>
+</div>
+        </field>
+    </record>
+
+    <record id="email_template_bus_approved" model="mail.template">
+        <field name="name">Activiteiten - Bus beschikbaar</field>
+        <field name="model_id" ref="model_myschool_activiteiten_record"/>
+        <field name="subject">Bus bevestigd voor {{ object.name }}</field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>Goed nieuws: de bus voor uw activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong> is bevestigd door Aankoop.</p>
+    <p>De aanvraag is nu doorgestuurd naar de Directie voor goedkeuring.</p>
+</div>
+        </field>
+    </record>
+
+    <!-- Reminder naar de leerkracht: aanwezigheid nog niet ingevuld -->
+    <record id="email_template_reminder_aanwezigheid" model="mail.template">
+        <field name="name">Activiteiten - Reminder aanwezigheid</field>
+        <field name="model_id" ref="model_myschool_activiteiten_record"/>
+        <field name="subject">Herinnering: vul de aanwezigheid in voor {{ object.name }}</field>
+        <field name="email_to">{{ (object.create_uid.partner_id.email or object.create_uid.email or '') }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste <t t-out="object.create_uid.name or ''"/>,</p>
+    <p>De activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong> is voorbij,
+       maar de aanwezigheid van de leerlingen werd nog niet bevestigd.</p>
+    <p>Gelieve via Mijn Activiteiten op het record naar <em>Aanwezigheid registreren</em> te gaan
+       en aan te vinken welke leerlingen effectief mee waren. Zo kan boekhouding de juiste
+       facturen opstellen.</p>
+    <p>Bedankt!</p>
+</div>
+        </field>
+    </record>
+
+    <!-- Reminder naar boekhouding: facturen op te stellen -->
+    <record id="email_template_reminder_facturen" model="mail.template">
+        <field name="name">Activiteiten - Reminder facturen</field>
+        <field name="model_id" ref="model_myschool_activiteiten_record"/>
+        <field name="subject">Herinnering: facturen op te stellen voor {{ object.name }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Beste Boekhouding,</p>
+    <p>De activiteit <strong><t t-out="object.name or ''"/> - <t t-out="object.titel or ''"/></strong>
+       wacht op het opstellen van de facturen.</p>
+    <ul>
+        <li>Aanwezig: <t t-out="object.aanwezig_count or 0"/> van <t t-out="object.aanwezig_total or 0"/> leerlingen</li>
+        <li>Per aanwezige leerling: <t t-out="'{:.2f}'.format(object.kost_per_aanwezig or 0)"/> €</li>
+        <li>Per afwezige leerling: <t t-out="'{:.2f}'.format(object.kost_per_afwezig or 0)"/> €</li>
+    </ul>
+    <p>Gelieve de facturen op te stellen en daarna <em>Kosten afsluiten</em> te gebruiken
+       om het dossier af te ronden.</p>
+</div>
+        </field>
+    </record>
+</odoo>

@@ -67,11 +67,11 @@ class MySchoolDashboard(models.Model):
         compute='_compute_access_rights')
     is_only_teacher = fields.Boolean(
         string='Alleen leerkracht', compute='_compute_access_rights',
-        help='True als de gebruiker geen manager/admin-rol heeft in activiteiten, '
-             'professionalisering of drukwerk.',
+        help='True als de gebruiker geen manager/admin-rol heeft in myschool_activiteiten, '
+             'myschool_professionalisering of myschool_drukwerk.',
     )
 
-    # Counts activiteiten (per actual state)
+    # Counts myschool_activiteiten (per actual state)
     act_total = fields.Integer(
         string="Act. Totaal", compute='_compute_activiteiten_counts')
     act_draft = fields.Integer(
@@ -99,7 +99,7 @@ class MySchoolDashboard(models.Model):
     act_done = fields.Integer(
         string="Act. Afgerond", compute='_compute_activiteiten_counts')
 
-    # Access drukwerk
+    # Access myschool_drukwerk
     has_drukwerk_access = fields.Boolean(
         compute='_compute_access_rights')
     is_drukwerk_drukwerk = fields.Boolean(
@@ -119,7 +119,7 @@ class MySchoolDashboard(models.Model):
     has_role_aankoop = fields.Boolean(compute='_compute_access_rights')
     has_role_drukkerij = fields.Boolean(compute='_compute_access_rights')
 
-    # Counts drukwerk
+    # Counts myschool_drukwerk
     druk_total = fields.Integer(
         string="Druk. Totaal", compute='_compute_drukwerk_counts')
     druk_draft = fields.Integer(
@@ -131,7 +131,7 @@ class MySchoolDashboard(models.Model):
     druk_done = fields.Integer(
         string="Druk. Afgerond", compute='_compute_drukwerk_counts')
 
-    # Counts professionalisering
+    # Counts myschool_professionalisering
     prof_total = fields.Integer(
         string="Prof. Totaal", compute='_compute_professionalisering_counts')
     prof_draft = fields.Integer(
@@ -156,60 +156,60 @@ class MySchoolDashboard(models.Model):
     druk_action_label = fields.Char(compute='_compute_action_banners')
 
     _DIRECTIE_GROUPS = {
-        'professionalisering.record':
-            'professionalisering.group_professionalisering_directie',
-        'activiteiten.record':
-            'activiteiten.group_activiteiten_directie',
+        'myschool_professionalisering.record':
+            'myschool_professionalisering.group_professionalisering_directie',
+        'myschool_activiteiten.record':
+            'myschool_activiteiten.group_activiteiten_directie',
     }
     _ADMIN_GROUPS = {
-        'professionalisering.record':
-            'professionalisering.group_professionalisering_admin',
-        'activiteiten.record':
-            'activiteiten.group_activiteiten_admin',
-        'drukwerk.record':
-            'drukwerk.group_drukwerk_admin',
+        'myschool_professionalisering.record':
+            'myschool_professionalisering.group_professionalisering_admin',
+        'myschool_activiteiten.record':
+            'myschool_activiteiten.group_activiteiten_admin',
+        'myschool_drukwerk.record':
+            'myschool_drukwerk.group_drukwerk_admin',
     }
     _ALL_GROUPS = {
-        'professionalisering.record': [
-            'professionalisering.group_professionalisering_user',
-            'professionalisering.group_professionalisering_boekhouding',
-            'professionalisering.group_professionalisering_vervangingen',
-            'professionalisering.group_professionalisering_directie',
-            'professionalisering.group_professionalisering_admin',
+        'myschool_professionalisering.record': [
+            'myschool_professionalisering.group_professionalisering_user',
+            'myschool_professionalisering.group_professionalisering_boekhouding',
+            'myschool_professionalisering.group_professionalisering_vervangingen',
+            'myschool_professionalisering.group_professionalisering_directie',
+            'myschool_professionalisering.group_professionalisering_admin',
         ],
-        'activiteiten.record': [
-            'activiteiten.group_activiteiten_personeelslid',
-            'activiteiten.group_activiteiten_aankoop',
-            'activiteiten.group_activiteiten_boekhouding',
-            'activiteiten.group_activiteiten_vervangingen',
-            'activiteiten.group_activiteiten_directie',
-            'activiteiten.group_activiteiten_admin',
+        'myschool_activiteiten.record': [
+            'myschool_activiteiten.group_activiteiten_personeelslid',
+            'myschool_activiteiten.group_activiteiten_aankoop',
+            'myschool_activiteiten.group_activiteiten_boekhouding',
+            'myschool_activiteiten.group_activiteiten_vervangingen',
+            'myschool_activiteiten.group_activiteiten_directie',
+            'myschool_activiteiten.group_activiteiten_admin',
         ],
-        'drukwerk.record': [
-            'drukwerk.group_drukwerk_personeelslid',
-            'drukwerk.group_drukwerk_drukwerk',
-            'drukwerk.group_drukwerk_boekhouding',
-            'drukwerk.group_drukwerk_admin',
+        'myschool_drukwerk.record': [
+            'myschool_drukwerk.group_drukwerk_personeelslid',
+            'myschool_drukwerk.group_drukwerk_drukwerk',
+            'myschool_drukwerk.group_drukwerk_boekhouding',
+            'myschool_drukwerk.group_drukwerk_admin',
         ],
     }
     _MANAGER_GROUPS = {
-        'professionalisering.record': [
-            'professionalisering.group_professionalisering_directie',
-            'professionalisering.group_professionalisering_admin',
-            'professionalisering.group_professionalisering_boekhouding',
-            'professionalisering.group_professionalisering_vervangingen',
+        'myschool_professionalisering.record': [
+            'myschool_professionalisering.group_professionalisering_directie',
+            'myschool_professionalisering.group_professionalisering_admin',
+            'myschool_professionalisering.group_professionalisering_boekhouding',
+            'myschool_professionalisering.group_professionalisering_vervangingen',
         ],
-        'activiteiten.record': [
-            'activiteiten.group_activiteiten_directie',
-            'activiteiten.group_activiteiten_admin',
-            'activiteiten.group_activiteiten_aankoop',
-            'activiteiten.group_activiteiten_boekhouding',
-            'activiteiten.group_activiteiten_vervangingen',
+        'myschool_activiteiten.record': [
+            'myschool_activiteiten.group_activiteiten_directie',
+            'myschool_activiteiten.group_activiteiten_admin',
+            'myschool_activiteiten.group_activiteiten_aankoop',
+            'myschool_activiteiten.group_activiteiten_boekhouding',
+            'myschool_activiteiten.group_activiteiten_vervangingen',
         ],
-        'drukwerk.record': [
-            'drukwerk.group_drukwerk_drukwerk',
-            'drukwerk.group_drukwerk_boekhouding',
-            'drukwerk.group_drukwerk_admin',
+        'myschool_drukwerk.record': [
+            'myschool_drukwerk.group_drukwerk_drukwerk',
+            'myschool_drukwerk.group_drukwerk_boekhouding',
+            'myschool_drukwerk.group_drukwerk_admin',
         ],
     }
 
@@ -267,8 +267,8 @@ class MySchoolDashboard(models.Model):
             return domain
         if self._is_manager(model_name):
             return domain
-        if model_name == 'activiteiten.record':
-            # Voor activiteiten: ook records waar de leerkracht is opgegeven
+        if model_name == 'myschool_activiteiten.record':
+            # Voor myschool_activiteiten: ook records waar de leerkracht is opgegeven
             # of via een invite uitgenodigd, niet enkel waar hij/zij aanmaker
             # is. Spiegelt de "Mijn aanvragen"-filter en record-rule.
             return domain + [
@@ -277,27 +277,27 @@ class MySchoolDashboard(models.Model):
                 ('leerkracht_ids.odoo_user_id', '=', self.env.uid),
                 ('invite_ids.person_id.odoo_user_id', '=', self.env.uid),
             ]
-        if model_name == 'drukwerk.record':
+        if model_name == 'myschool_drukwerk.record':
             return domain + [('create_uid', '=', self.env.uid)]
         return domain + [('employee_id.user_id', '=', self.env.uid)]
 
     @api.depends_context('uid')
     def _compute_access_rights(self):
-        professionalisering = self._has_access('professionalisering.record')
-        activiteiten = self._has_access('activiteiten.record')
-        drukwerk = self._has_access('drukwerk.record')
-        prof_mgr = self._is_manager('professionalisering.record')
-        acti_mgr = self._is_manager('activiteiten.record')
-        druk_mgr = self._is_manager('drukwerk.record')
-        is_admin = self._safe_has_group('activiteiten.group_activiteiten_admin')
-        prof_admin = self._safe_has_group('professionalisering.group_professionalisering_admin')
-        act_verv = is_admin or self._safe_has_group('activiteiten.group_activiteiten_vervangingen')
-        act_aank = is_admin or self._safe_has_group('activiteiten.group_activiteiten_aankoop')
-        act_boek = is_admin or self._safe_has_group('activiteiten.group_activiteiten_boekhouding')
-        act_dir = is_admin or self._safe_has_group('activiteiten.group_activiteiten_directie')
-        druk_drukwerk = self._safe_has_group('drukwerk.group_drukwerk_drukwerk')
-        druk_boekhouding = self._safe_has_group('drukwerk.group_drukwerk_boekhouding')
-        druk_directie = self._safe_has_group('drukwerk.group_drukwerk_directie')
+        professionalisering = self._has_access('myschool_professionalisering.record')
+        activiteiten = self._has_access('myschool_activiteiten.record')
+        drukwerk = self._has_access('myschool_drukwerk.record')
+        prof_mgr = self._is_manager('myschool_professionalisering.record')
+        acti_mgr = self._is_manager('myschool_activiteiten.record')
+        druk_mgr = self._is_manager('myschool_drukwerk.record')
+        is_admin = self._safe_has_group('myschool_activiteiten.group_activiteiten_admin')
+        prof_admin = self._safe_has_group('myschool_professionalisering.group_professionalisering_admin')
+        act_verv = is_admin or self._safe_has_group('myschool_activiteiten.group_activiteiten_vervangingen')
+        act_aank = is_admin or self._safe_has_group('myschool_activiteiten.group_activiteiten_aankoop')
+        act_boek = is_admin or self._safe_has_group('myschool_activiteiten.group_activiteiten_boekhouding')
+        act_dir = is_admin or self._safe_has_group('myschool_activiteiten.group_activiteiten_directie')
+        druk_drukwerk = self._safe_has_group('myschool_drukwerk.group_drukwerk_drukwerk')
+        druk_boekhouding = self._safe_has_group('myschool_drukwerk.group_drukwerk_boekhouding')
+        druk_directie = self._safe_has_group('myschool_drukwerk.group_drukwerk_directie')
         for rec in self:
             rec.has_professionalisering_access = professionalisering
             rec.has_activiteiten_access = activiteiten
@@ -317,9 +317,9 @@ class MySchoolDashboard(models.Model):
             rec.is_only_directie = act_dir and not act_aank and not act_boek and not act_verv
             rec.is_only_medewerker = not act_dir and not act_aank and not act_boek and not act_verv
             rec.is_only_vervangingen = act_verv and not act_dir and not act_aank and not act_boek
-            rec.is_prof_directie = prof_admin or self._safe_has_group('professionalisering.group_professionalisering_directie')
-            rec.is_prof_boekhouding = prof_admin or self._safe_has_group('professionalisering.group_professionalisering_boekhouding')
-            rec.is_prof_vervangingen = prof_admin or self._safe_has_group('professionalisering.group_professionalisering_vervangingen')
+            rec.is_prof_directie = prof_admin or self._safe_has_group('myschool_professionalisering.group_professionalisering_directie')
+            rec.is_prof_boekhouding = prof_admin or self._safe_has_group('myschool_professionalisering.group_professionalisering_boekhouding')
+            rec.is_prof_vervangingen = prof_admin or self._safe_has_group('myschool_professionalisering.group_professionalisering_vervangingen')
             rec.is_prof_only_directie = rec.is_prof_directie and not rec.is_prof_boekhouding and not rec.is_prof_vervangingen
             rec.is_prof_only_boekhouding = rec.is_prof_boekhouding and not rec.is_prof_directie and not rec.is_prof_vervangingen
             rec.is_prof_only_vervangingen = rec.is_prof_vervangingen and not rec.is_prof_directie and not rec.is_prof_boekhouding
@@ -361,8 +361,8 @@ class MySchoolDashboard(models.Model):
 
     @api.depends_context('uid')
     def _compute_professionalisering_counts(self):
-        raw = self._get_state_counts('professionalisering.record')
-        is_manager = self._is_manager('professionalisering.record')
+        raw = self._get_state_counts('myschool_professionalisering.record')
+        is_manager = self._is_manager('myschool_professionalisering.record')
         counts = {
             'draft': raw.get('selection_of_form', 0),
             'submitted': (
@@ -390,8 +390,8 @@ class MySchoolDashboard(models.Model):
 
     @api.depends_context('uid')
     def _compute_drukwerk_counts(self):
-        raw = self._get_state_counts('drukwerk.record')
-        is_manager = self._is_manager('drukwerk.record')
+        raw = self._get_state_counts('myschool_drukwerk.record')
+        is_manager = self._is_manager('myschool_drukwerk.record')
         for rec in self:
             rec.druk_draft = raw.get('draft', 0)
             rec.druk_form_invullen = raw.get('form_invullen', 0)
@@ -407,18 +407,18 @@ class MySchoolDashboard(models.Model):
 
     @api.depends_context('uid')
     def _compute_activiteiten_counts(self):
-        raw = self._get_state_counts('activiteiten.record')
+        raw = self._get_state_counts('myschool_activiteiten.record')
         # Determine which states are visible for this user
-        is_admin = self._safe_has_group('activiteiten.group_activiteiten_admin')
+        is_admin = self._safe_has_group('myschool_activiteiten.group_activiteiten_admin')
         if is_admin:
             visible_states = set(raw.keys())
         else:
             visible_states = set()
             manager_role_checks = {
-                'directie': 'activiteiten.group_activiteiten_directie',
-                'aankoop': 'activiteiten.group_activiteiten_aankoop',
-                'boekhouding': 'activiteiten.group_activiteiten_boekhouding',
-                'vervangingen': 'activiteiten.group_activiteiten_vervangingen',
+                'directie': 'myschool_activiteiten.group_activiteiten_directie',
+                'aankoop': 'myschool_activiteiten.group_activiteiten_aankoop',
+                'boekhouding': 'myschool_activiteiten.group_activiteiten_boekhouding',
+                'vervangingen': 'myschool_activiteiten.group_activiteiten_vervangingen',
             }
             has_manager_role = False
             for role, group in manager_role_checks.items():
@@ -561,27 +561,27 @@ class MySchoolDashboard(models.Model):
 
     def action_open_prof_import(self):
         """Open de Historische Import-wizard voor professionaliseringen.
-        Werkt enkel als de professionalisering-module geïnstalleerd is.
+        Werkt enkel als de myschool_professionalisering-module geïnstalleerd is.
         """
-        if 'professionalisering.import.wizard' not in self.env:
+        if 'myschool_professionalisering.import.wizard' not in self.env:
             return False
-        wiz = self.env['professionalisering.import.wizard'].sudo().create({})
+        wiz = self.env['myschool_professionalisering.import.wizard'].sudo().create({})
         return {
             'type': 'ir.actions.act_window',
             'name': 'Nascholingen importeren',
-            'res_model': 'professionalisering.import.wizard',
+            'res_model': 'myschool_professionalisering.import.wizard',
             'res_id': wiz.id,
             'view_mode': 'form',
             'target': 'new',
         }
 
     def action_open_professionalisering(self):
-        if 'professionalisering.record' not in self.env:
+        if 'myschool_professionalisering.record' not in self.env:
             return False
         action = {
             'type': 'ir.actions.act_window',
             'name': 'Professionalisering',
-            'res_model': 'professionalisering.record',
+            'res_model': 'myschool_professionalisering.record',
             'view_mode': 'list,form',
             'context': dict(self.env.context),
         }
@@ -591,17 +591,17 @@ class MySchoolDashboard(models.Model):
         if has_search_default:
             return action
         action['context'] = {}
-        model = 'professionalisering.record'
+        model = 'myschool_professionalisering.record'
         if self._is_admin(model):
             pass  # no filter for admin
         elif self._is_manager(model):
             # Managers see all records (filtered by record rules per school)
             # No domain filter, just a search default for convenience
-            if self._safe_has_group('professionalisering.group_professionalisering_directie'):
+            if self._safe_has_group('myschool_professionalisering.group_professionalisering_directie'):
                 pass  # directie sees all records from their school
-            elif self._safe_has_group('professionalisering.group_professionalisering_boekhouding'):
+            elif self._safe_has_group('myschool_professionalisering.group_professionalisering_boekhouding'):
                 action['context'] = {'search_default_state_done': 1}
-            elif self._safe_has_group('professionalisering.group_professionalisering_vervangingen'):
+            elif self._safe_has_group('myschool_professionalisering.group_professionalisering_vervangingen'):
                 action['context'] = {'search_default_replacement_pending': 1}
         else:
             action['context'] = {'search_default_my_requests': 1}
@@ -617,12 +617,12 @@ class MySchoolDashboard(models.Model):
     }
 
     def action_open_activiteiten_list(self):
-        if 'activiteiten.record' not in self.env:
+        if 'myschool_activiteiten.record' not in self.env:
             return False
         action = {
             'type': 'ir.actions.act_window',
             'name': 'Activiteiten',
-            'res_model': 'activiteiten.record',
+            'res_model': 'myschool_activiteiten.record',
             'view_mode': 'list,form',
             'context': dict(self.env.context),
         }
@@ -630,54 +630,54 @@ class MySchoolDashboard(models.Model):
         if has_search_default:
             return action
         action['context'] = {}
-        model = 'activiteiten.record'
+        model = 'myschool_activiteiten.record'
         if self._is_admin(model):
             pass
         elif self._is_manager(model):
-            if self._safe_has_group('activiteiten.group_activiteiten_directie'):
+            if self._safe_has_group('myschool_activiteiten.group_activiteiten_directie'):
                 pass  # directie sees all records from their schools
-            elif self._safe_has_group('activiteiten.group_activiteiten_aankoop'):
+            elif self._safe_has_group('myschool_activiteiten.group_activiteiten_aankoop'):
                 action['context'] = {'search_default_bus_check': 1}
-            elif self._safe_has_group('activiteiten.group_activiteiten_boekhouding'):
+            elif self._safe_has_group('myschool_activiteiten.group_activiteiten_boekhouding'):
                 # Boekhouding ziet standaard de volledige lijst zonder
                 # voor-gefilterde "S-Code openstaand" — ze gebruiken zelf
                 # de filter-knop wanneer nodig.
                 pass
-            elif self._safe_has_group('activiteiten.group_activiteiten_vervangingen'):
+            elif self._safe_has_group('myschool_activiteiten.group_activiteiten_vervangingen'):
                 action['context'] = {'search_default_replacement_pending': 1}
         else:
             action['context'] = {'search_default_my_requests': 1}
         return action
 
     def action_new_activiteit(self):
-        if 'activiteiten.record' not in self.env:
+        if 'myschool_activiteiten.record' not in self.env:
             return False
         return {
             'type': 'ir.actions.act_window',
             'name': 'Nieuwe activiteit',
-            'res_model': 'activiteiten.record',
+            'res_model': 'myschool_activiteiten.record',
             'view_mode': 'form',
             'target': 'current',
         }
 
     def action_new_professionalisering(self):
-        if 'professionalisering.record' not in self.env:
+        if 'myschool_professionalisering.record' not in self.env:
             return False
         return {
             'type': 'ir.actions.act_window',
-            'name': 'Nieuwe professionalisering',
-            'res_model': 'professionalisering.record',
+            'name': 'Nieuwe myschool_professionalisering',
+            'res_model': 'myschool_professionalisering.record',
             'view_mode': 'form',
             'target': 'current',
         }
 
     def action_open_drukwerk_list(self):
-        if 'drukwerk.record' not in self.env:
+        if 'myschool_drukwerk.record' not in self.env:
             return False
         action = {
             'type': 'ir.actions.act_window',
             'name': 'Drukwerk',
-            'res_model': 'drukwerk.record',
+            'res_model': 'myschool_drukwerk.record',
             'view_mode': 'list,form',
             'context': dict(self.env.context),
         }
@@ -685,48 +685,48 @@ class MySchoolDashboard(models.Model):
         if has_search_default:
             return action
         action['context'] = {}
-        model = 'drukwerk.record'
+        model = 'myschool_drukwerk.record'
         if self._is_admin(model):
             pass
         elif self._is_manager(model):
-            if self._safe_has_group('drukwerk.group_drukwerk_drukwerk'):
+            if self._safe_has_group('myschool_drukwerk.group_drukwerk_drukwerk'):
                 action['context'] = {'search_default_to_print': 1}
-            elif self._safe_has_group('drukwerk.group_drukwerk_boekhouding'):
+            elif self._safe_has_group('myschool_drukwerk.group_drukwerk_boekhouding'):
                 action['context'] = {'search_default_to_invoice': 1}
         else:
             action['context'] = {'search_default_my_requests': 1}
         return action
 
     def action_new_drukwerk(self):
-        if 'drukwerk.record' not in self.env:
+        if 'myschool_drukwerk.record' not in self.env:
             return False
         return {
             'type': 'ir.actions.act_window',
-            'name': 'Nieuw drukwerk',
-            'res_model': 'drukwerk.record',
+            'name': 'Nieuw myschool_drukwerk',
+            'res_model': 'myschool_drukwerk.record',
             'view_mode': 'form',
             'target': 'current',
         }
 
     def action_open_drukwerk_class_report(self):
-        if 'drukwerk.class.report' not in self.env:
+        if 'myschool_drukwerk.class.report' not in self.env:
             return False
         return {
             'type': 'ir.actions.act_window',
             'name': 'Overzicht per klas',
-            'res_model': 'drukwerk.class.report',
+            'res_model': 'myschool_drukwerk.class.report',
             'view_mode': 'list',
             'context': {'search_default_type_gewoon': 1},
             'target': 'current',
         }
 
     def action_open_drukwerk_student_report(self):
-        if 'drukwerk.student.report' not in self.env:
+        if 'myschool_drukwerk.student.report' not in self.env:
             return False
         return {
             'type': 'ir.actions.act_window',
             'name': 'Overzicht per leerling',
-            'res_model': 'drukwerk.student.report',
+            'res_model': 'myschool_drukwerk.student.report',
             'view_mode': 'list',
             'context': {'search_default_type_gewoon': 1},
             'target': 'current',
@@ -735,45 +735,45 @@ class MySchoolDashboard(models.Model):
     # --- Optional apps: view inheritance & menu deactivation ---
 
     _OPTIONAL_APPS = {
-        'professionalisering': {
+        'myschool_professionalisering': {
             'data_name': 'view_professionalisering_form_title',
-            'view_name': 'professionalisering.record.form.title',
-            'view_model': 'professionalisering.record',
-            'inherit_ref': 'professionalisering.view_professionalisering_form',
+            'view_name': 'myschool_professionalisering.record.form.title',
+            'view_model': 'myschool_professionalisering.record',
+            'inherit_ref': 'myschool_professionalisering.view_professionalisering_form',
             'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
                     '<h2 class="text-muted">Professionalisering</h2></xpath>',
-            'menu_ref': 'professionalisering.menu_professionalisering_root',
+            'menu_ref': 'myschool_professionalisering.menu_professionalisering_root',
             'reparent_under_dashboard': True,
             'reparent_sequence': 10,
             'keep_submenus': [
-                'professionalisering.menu_professionalisering_all',
-                'professionalisering.menu_professionalisering_per_employee',
-                'professionalisering.menu_professionalisering_addresses',
+                'myschool_professionalisering.menu_professionalisering_all',
+                'myschool_professionalisering.menu_professionalisering_per_employee',
+                'myschool_professionalisering.menu_professionalisering_addresses',
             ],
         },
-        'activiteiten': {
+        'myschool_activiteiten': {
             'data_name': 'view_activiteiten_form_title',
-            'view_name': 'activiteiten.record.form.title',
-            'view_model': 'activiteiten.record',
-            'inherit_ref': 'activiteiten.view_activiteiten_form',
+            'view_name': 'myschool_activiteiten.record.form.title',
+            'view_model': 'myschool_activiteiten.record',
+            'inherit_ref': 'myschool_activiteiten.view_activiteiten_form',
             'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
                     '<h2 class="text-muted">Activiteit</h2></xpath>',
-            'menu_ref': 'activiteiten.menu_activiteiten_root',
+            'menu_ref': 'myschool_activiteiten.menu_activiteiten_root',
             'reparent_under_dashboard': True,
             'reparent_sequence': 20,
             'keep_submenus': [
-                'activiteiten.menu_activiteiten_all',
-                'activiteiten.menu_activiteiten_per_employee',
+                'myschool_activiteiten.menu_activiteiten_all',
+                'myschool_activiteiten.menu_activiteiten_per_employee',
             ],
         },
-        'drukwerk': {
+        'myschool_drukwerk': {
             'data_name': 'view_drukwerk_form_title',
-            'view_name': 'drukwerk.record.form.title',
-            'view_model': 'drukwerk.record',
-            'inherit_ref': 'drukwerk.view_drukwerk_form',
+            'view_name': 'myschool_drukwerk.record.form.title',
+            'view_model': 'myschool_drukwerk.record',
+            'inherit_ref': 'myschool_drukwerk.view_drukwerk_form',
             'arch': '<xpath expr="//div[@class=\'oe_title\']" position="before">'
                     '<h2 class="text-muted">Drukwerk</h2></xpath>',
-            'menu_ref': 'drukwerk.menu_drukwerk_root',
+            'menu_ref': 'myschool_drukwerk.menu_drukwerk_root',
             'reparent_under_dashboard': True,
             'reparent_sequence': 30,
         },

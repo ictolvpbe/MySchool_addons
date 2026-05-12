@@ -40,7 +40,7 @@
     'assets': {
         'web.assets_backend': [
             'myschool_appfoundry/static/src/css/appfoundry.css',
-            'myschool_appfoundry/static/src/css/process_mapper.css',
+            'myschool_appfoundry/static/src/css/myschool_process_mapper.css',
             'myschool_appfoundry/static/src/js/process_mapper_canvas.js',
             'myschool_appfoundry/static/src/xml/process_mapper_canvas.xml',
             'myschool_appfoundry/static/src/js/process_mapper_appfoundry.js',

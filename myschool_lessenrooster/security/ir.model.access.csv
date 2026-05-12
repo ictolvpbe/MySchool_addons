@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_lessenrooster_line_user,myschool_lessenrooster.line.user,model_myschool_lessenrooster_line,base.group_user,1,0,0,0
+access_lessenrooster_line_admin,myschool_lessenrooster.line.admin,model_myschool_lessenrooster_line,myschool_core.group_myschool_core_admin,1,1,1,1
+access_lessenrooster_import_wizard,myschool_lessenrooster.import.wizard,model_myschool_lessenrooster_import_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_lessenrooster_klas_view,myschool_lessenrooster.klas.view,model_myschool_lessenrooster_klas_view,base.group_user,1,1,1,1

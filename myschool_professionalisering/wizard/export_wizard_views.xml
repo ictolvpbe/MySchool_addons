@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_professionalisering_export_wizard_form" model="ir.ui.view">
+        <field name="name">myschool_professionalisering.export.wizard.form</field>
+        <field name="model">myschool_professionalisering.export.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Export naar Excel">
+                <sheet>
+                    <p>
+                        Genereer een xlsx-overzicht van alle professionaliseringen
+                        in een gekozen schooljaar. Per leerkracht zie je de
+                        opleidingen, uren en status van het bewijs, met
+                        subtotalen en een eindtotaal.
+                    </p>
+                    <group>
+                        <field name="schoolyear"/>
+                        <field name="only_done"/>
+                    </group>
+                    <group string="Filteren (optioneel)">
+                        <field name="employee_ids" widget="many2many_tags"
+                               options="{'no_create': True}"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_export"
+                            string="Download xlsx"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-download"/>
+                    <button string="Annuleren"
+                            class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_professionalisering_export_wizard"
+            model="ir.actions.act_window">
+        <field name="name">Exporteren naar Excel</field>
+        <field name="res_model">myschool_professionalisering.export.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_professionalisering_export"
+              name="Exporteren naar Excel"
+              parent="menu_professionalisering_root"
+              action="action_professionalisering_export_wizard"
+              groups="base.group_system,myschool_professionalisering.group_professionalisering_admin,myschool_professionalisering.group_professionalisering_directie,myschool_professionalisering.group_professionalisering_boekhouding"
+              sequence="80"/>
+</odoo>

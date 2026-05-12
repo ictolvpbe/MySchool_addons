@@ -1,0 +1,746 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Form View -->
+    <record id="view_activiteiten_form" model="ir.ui.view">
+        <field name="name">myschool_activiteiten.record.form</field>
+        <field name="model">myschool_activiteiten.record</field>
+        <field name="arch" type="xml">
+            <form class="o_activiteiten_record_form">
+                <header>
+                    <!-- Personeelslid: open submit dialog (popup with tabs, then confirm) -->
+                    <button name="action_open_details"
+                            string="Volgende"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+
+                    <!-- Personeelslid: reset to form after rejection or bus refusal (owner) -->
+                    <button name="action_reset_to_form"
+                            string="Opnieuw indienen"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state not in ('rejected', 'bus_refused') or not is_owner"/>
+                    <!-- Admin: reset to form after rejection or bus refusal (non-owner) -->
+                    <button name="action_reset_to_form"
+                            string="Opnieuw indienen"
+                            type="object"
+                            class="btn-secondary"
+                            groups="myschool_activiteiten.group_activiteiten_admin"
+                            invisible="state not in ('rejected', 'bus_refused') or is_owner"/>
+
+                    <!-- Aankoop: bus check -->
+                    <button name="action_bus_approved"
+                            string="Bus beschikbaar"
+                            type="object"
+                            class="btn-primary"
+                            groups="myschool_activiteiten.group_activiteiten_aankoop,myschool_activiteiten.group_activiteiten_admin"
+                            invisible="state != 'bus_check'"/>
+                    <button name="action_bus_refused"
+                            string="Bus niet beschikbaar"
+                            type="object"
+                            class="btn-danger"
+                            groups="myschool_activiteiten.group_activiteiten_aankoop,myschool_activiteiten.group_activiteiten_admin"
+                            invisible="state != 'bus_check'"/>
+
+                    <!-- Directie: approve/reject -->
+                    <button name="action_approve"
+                            string="Goedkeuren"
+                            type="object"
+                            class="btn-primary"
+                            groups="myschool_activiteiten.group_activiteiten_directie,myschool_activiteiten.group_activiteiten_admin"
+                            invisible="state != 'pending_approval'"/>
+                    <button name="action_reject"
+                            string="Afkeuren"
+                            type="object"
+                            class="btn-danger"
+                            groups="myschool_activiteiten.group_activiteiten_directie,myschool_activiteiten.group_activiteiten_admin"
+                            invisible="state != 'pending_approval'"/>
+
+                    <!-- Boekhouding: S-Code bevestigen → state 'aanwezigheid' -->
+                    <button name="action_confirm_s_code"
+                            string="S-Code bevestigen"
+                            type="object"
+                            class="btn-primary"
+                            groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+                            invisible="state != 's_code'"/>
+
+                    <!-- Aanwezigheid afsluiten → state 'facturen' -->
+                    <button name="action_aanwezigheid_klaar"
+                            string="Aanwezigheid bevestigen"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'aanwezigheid'"/>
+
+                    <!-- Boekhouding: kosten afsluiten → state 'done' -->
+                    <button name="action_kosten_afsluiten"
+                            string="Kosten afsluiten"
+                            type="object"
+                            class="btn-success"
+                            groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+                            invisible="state != 'facturen'"
+                            confirm="Weet je zeker dat je de kosten wilt afsluiten? Daarna kunnen ze niet meer aangepast worden."/>
+
+
+
+                    <!-- Owner or Admin: delete unsubmitted only -->
+                    <field name="is_owner" invisible="1"/>
+                    <button name="action_delete"
+                            string="Verwijderen"
+                            type="object"
+                            class="btn-danger"
+                            invisible="(not is_owner) or state not in ('draft', 'form_invullen')"
+                            confirm="Weet u zeker dat u deze aanvraag wilt verwijderen?"/>
+                    <button name="action_delete"
+                            string="Verwijderen"
+                            type="object"
+                            class="btn-danger"
+                            groups="myschool_activiteiten.group_activiteiten_admin"
+                            invisible="is_owner or state not in ('draft', 'form_invullen')"
+                            confirm="Weet u zeker dat u deze aanvraag wilt verwijderen?"/>
+
+                    <!-- 'draft' wordt niet getoond: dat is een tijdelijke
+                         initiële state vóór activiteit-type gekozen is.
+                         'form_invullen' is de echte Concept-fase. -->
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="form_invullen,pending_approval,s_code,aanwezigheid,facturen,done"
+                           groups="myschool_activiteiten.group_activiteiten_directie,myschool_activiteiten.group_activiteiten_admin,myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_vervangingen,myschool_activiteiten.group_activiteiten_aankoop"/>
+                    <field name="display_state" widget="statusbar"
+                           statusbar_visible="form_invullen,pending_approval,approved,aanwezigheid,done"
+                           groups="!myschool_activiteiten.group_activiteiten_directie,!myschool_activiteiten.group_activiteiten_admin,!myschool_activiteiten.group_activiteiten_boekhouding,!myschool_activiteiten.group_activiteiten_vervangingen,!myschool_activiteiten.group_activiteiten_aankoop"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_snapshot_students"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-users"
+                                invisible="not klas_ids">
+                            <field name="student_count" string="Leerlingen" widget="statinfo"/>
+                        </button>
+                        <button name="action_open_snapshot_leerkrachten"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-user"
+                                invisible="not leerkracht_ids">
+                            <field name="leerkracht_count" string="Leerkrachten" widget="statinfo"/>
+                        </button>
+                        <!-- Aanwezigheid-counter: pas zichtbaar vanaf wanneer
+                             aanwezigheid relevant wordt (S-code toegekend) -->
+                        <button name="action_open_aanwezigheid"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-check-circle"
+                                invisible="state not in ('aanwezigheid', 'facturen', 'done')">
+                            <div class="o_stat_info">
+                                <field name="aanwezig_display" class="o_stat_value"/>
+                                <span class="o_stat_text">Aanwezig</span>
+                            </div>
+                        </button>
+                    </div>
+                    <!-- Form header: title + subtitle -->
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                        <h3 class="mt-1">
+                            <span class="text-muted">
+                                Gemaakt door: <field name="create_uid" readonly="1" class="oe_inline" nolabel="1"/>
+                                <span invisible="not titel"> — </span>
+                                <field name="titel" readonly="1" class="oe_inline" invisible="not titel"/>
+                            </span>
+                        </h3>
+                    </div>
+
+                    <field name="currency_id" invisible="1"/>
+                    <field name="allowed_school_json" invisible="1"/>
+                    <field name="available_klas_ids" invisible="1"/>
+                    <field name="available_leerkracht_ids" invisible="1"/>
+
+                    <!-- Twee compacte tellers naast elkaar: hoeveel leerlingen
+                         effectief mee zijn geweest vs. hoeveel er oorspronkelijk
+                         opgegeven waren. Klikbaar om de lijst te openen. -->
+                    <div class="d-flex gap-2 mb-3"
+                         invisible="state not in ('aanwezigheid', 'facturen', 'done')">
+                        <button name="action_open_aanwezig_present"
+                                type="object"
+                                class="card border-success text-center p-0"
+                                style="min-width: 130px; cursor: pointer;"
+                                title="Toon leerlingen die mee geweest zijn">
+                            <div class="card-body py-2 px-3">
+                                <small class="text-muted d-block">Mee geweest</small>
+                                <span class="h4 text-success mb-0">
+                                    <field name="aanwezig_count" readonly="1" nolabel="1" class="d-inline"/>
+                                </span>
+                            </div>
+                        </button>
+                        <button name="action_open_aanwezig_total"
+                                type="object"
+                                class="card border-secondary text-center p-0"
+                                style="min-width: 130px; cursor: pointer;"
+                                title="Toon alle opgegeven leerlingen">
+                            <div class="card-body py-2 px-3">
+                                <small class="text-muted d-block">Opgegeven (totaal)</small>
+                                <span class="h4 text-secondary mb-0">
+                                    <field name="aanwezig_total" readonly="1" nolabel="1" class="d-inline"/>
+                                </span>
+                            </div>
+                        </button>
+                        <!-- Kost-per-leerling — alleen zichtbaar voor
+                             boekhouding/admin tijdens facturatiefase -->
+                        <div class="card border-info text-center"
+                             style="min-width: 160px;"
+                             groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+                             invisible="state not in ('facturen', 'done')">
+                            <div class="card-body py-2 px-3">
+                                <small class="text-muted d-block">Aanwezige leerling betaalt</small>
+                                <span class="h5 text-info mb-0">
+                                    <field name="kost_per_aanwezig" readonly="1" nolabel="1" class="d-inline" widget="monetary"/>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="card border-warning text-center"
+                             style="min-width: 160px;"
+                             groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+                             invisible="state not in ('facturen', 'done') or aanwezig_count == aanwezig_total">
+                            <div class="card-body py-2 px-3">
+                                <small class="text-muted d-block">Afwezige leerling betaalt</small>
+                                <span class="h5 text-warning mb-0">
+                                    <field name="kost_per_afwezig" readonly="1" nolabel="1" class="d-inline" widget="monetary"/>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Two-column field grid with group titles -->
+                    <group>
+                        <!-- LEFT COLUMN: Activiteit + Planning -->
+                        <group>
+                            <separator string="Activiteit"/>
+                            <field name="activity_type"
+                                   required="1"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="titel"
+                                   placeholder="bv. Schooluitstap naar Technopolis"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="school_id"
+                                   options="{'no_open': True}"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="klas_ids" widget="many2many_tags"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="lokaal"
+                                   placeholder="bv. A101, Turnzaal, ..."
+                                   invisible="activity_type != 'binnenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="locatie_adres"
+                                   placeholder="bv. Technologielaan 1, 2800 Mechelen"
+                                   invisible="activity_type != 'buitenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <!-- Vervoer-keuze blijft enkel in pre-submit aanpasbaar.
+                                 Eens ingediend kan de aankoop-flow al lopen, dus
+                                 vervoer-wissels (bv. van bus naar te_voet) kunnen
+                                 problemen geven met de busverdeling — wijzig daar
+                                 enkel via "Opnieuw indienen" na bus-weigering. -->
+                            <field name="vervoer_type"
+                                   invisible="activity_type == 'binnenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                            <field name="bus_nodig" invisible="1"/>
+
+                            <!-- OV-detail wanneer vervoer = openbaar vervoer -->
+                            <field name="ov_type"
+                                   invisible="vervoer_type != 'openbaar_vervoer'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="ov_gratis_count"
+                                   invisible="vervoer_type != 'openbaar_vervoer'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="ov_betalend_count"
+                                   invisible="vervoer_type != 'openbaar_vervoer'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="ov_totaal_reizigers"
+                                   invisible="vervoer_type != 'openbaar_vervoer'"
+                                   readonly="1"/>
+
+                            <!-- Bestemming-details (enkel voor buitenschools) -->
+                            <separator string="Bestemming"
+                                       invisible="activity_type != 'buitenschools'"/>
+                            <field name="bestemming_naam"
+                                   placeholder="bv. Technopolis"
+                                   invisible="activity_type != 'buitenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="bestemming_adres"
+                                   placeholder="bv. Technologielaan 1, 2800 Mechelen"
+                                   invisible="activity_type != 'buitenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="bestemming_telefoon"
+                                   placeholder="bv. 015 12 34 56"
+                                   invisible="activity_type != 'buitenschools'"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+
+                            <!-- Leerplandoelstellingen -->
+                            <separator string="Leerplandoelstellingen"/>
+                            <label for="is_doel_vakgebonden" string="Categorieën"/>
+                            <div>
+                                <field name="is_doel_vakgebonden" class="oe_inline"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                                <label for="is_doel_vakgebonden" string="Vakgebonden" class="me-3"/>
+                                <field name="is_doel_gfl" class="oe_inline"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                                <label for="is_doel_gfl" string="GFL" class="me-3"/>
+                                <field name="is_doel_ict" class="oe_inline"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                                <label for="is_doel_ict" string="ICT" class="me-3"/>
+                                <field name="is_doel_financieel" class="oe_inline"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                                <label for="is_doel_financieel" string="Financieel-economisch"/>
+                            </div>
+                            <field name="doelstellingen_toelichting"
+                                   placeholder="Korte toelichting bij de aangeduide categorieën..."
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+
+                            <separator string="Planning"/>
+                            <field name="datetime"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="datetime_end"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="is_gratis"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                        </group>
+
+                        <!-- RIGHT COLUMN: Bus + Financieel -->
+                        <group>
+                            <!-- Bus section -->
+                            <separator string="Bus"
+                                       invisible="not bus_nodig or state in ('draft', 'form_invullen')"/>
+                            <field name="aantal_bussen"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   readonly="state not in ('bus_check', 'pending_approval')"
+                                   groups="myschool_activiteiten.group_activiteiten_aankoop,myschool_activiteiten.group_activiteiten_admin"/>
+                            <!-- Prijs per bus — verschillende bussen kunnen
+                                 verschillende prijzen hebben. Aankoop mag nog
+                                 bijwerken zolang directie nog niet goedgekeurd
+                                 heeft (bus_check + pending_approval). -->
+                            <label for="bus_ids" string="Prijs per bus"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   groups="myschool_activiteiten.group_activiteiten_aankoop,myschool_activiteiten.group_activiteiten_admin"/>
+                            <field name="bus_ids" nolabel="1"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   readonly="state not in ('bus_check', 'pending_approval')"
+                                   groups="myschool_activiteiten.group_activiteiten_aankoop,myschool_activiteiten.group_activiteiten_admin">
+                                <list editable="bottom" create="0" delete="0">
+                                    <field name="bus_nummer" string="Bus #" readonly="1"/>
+                                    <field name="prijs"/>
+                                    <field name="vertrekuur_school" widget="float_time" optional="show"/>
+                                    <field name="aankomstuur_bestemming" widget="float_time" optional="show"/>
+                                    <field name="vertrekuur_bestemming" widget="float_time" optional="show"/>
+                                    <field name="aankomstuur_school" widget="float_time" optional="show"/>
+                                    <field name="currency_id" column_invisible="1"/>
+                                </list>
+                            </field>
+                            <field name="bus_price" string="Totale busprijs"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen')"
+                                   readonly="1"
+                                   groups="myschool_activiteiten.group_activiteiten_aankoop,myschool_activiteiten.group_activiteiten_admin"/>
+                            <field name="bus_available"
+                                   invisible="not bus_nodig or state in ('draft', 'form_invullen', 'bus_check')"
+                                   readonly="1"/>
+                            <button name="action_open_busverdeling"
+                                    string="Busverdeling"
+                                    type="object"
+                                    class="btn-secondary"
+                                    icon="fa-bus"
+                                    invisible="not bus_nodig or state != 'done'"
+                                    groups="myschool_activiteiten.group_activiteiten_aankoop,myschool_activiteiten.group_activiteiten_admin"/>
+
+                            <!-- Financieel section -->
+                            <separator string="Financieel"
+                                       invisible="state not in ('s_code', 'vervanging', 'done')"/>
+                            <field name="can_edit_s_code" invisible="1"/>
+                            <field name="s_code_name"
+                                   placeholder="bv. S-1234"
+                                   invisible="state not in ('s_code', 'vervanging', 'done')"
+                                   readonly="not can_edit_s_code"/>
+                            <field name="verzekering_pct"
+                                   invisible="state not in ('s_code', 'vervanging', 'done')"
+                                   groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"/>
+                            <field name="verzekering_done"
+                                   readonly="1"
+                                   invisible="state not in ('s_code', 'vervanging', 'done')"/>
+                        </group>
+                    </group>
+
+                    <!-- Volgende-knop onderaan de form (links uitgelijnd) -->
+                    <div class="d-flex justify-content-start mt-3 mb-3"
+                         invisible="state not in ('draft', 'form_invullen', 'bus_refused')">
+                        <button name="action_open_details"
+                                string="Volgende"
+                                type="object"
+                                class="btn-primary"/>
+                    </div>
+
+                    <!-- Eén "Extra info" knop opent de dialog; van daar
+                         navigeer je tussen de stappen via de klikbare
+                         statusbar bovenaan de dialog. Extra rechter-marge
+                         zodat de zwevende Berichten-knop niet overlapt. -->
+                    <div class="d-flex justify-content-end mt-3 mb-3"
+                         style="padding-right: 160px;"
+                         invisible="not activity_type or state in ('draft', 'form_invullen', 'bus_refused')">
+                        <button name="action_open_details"
+                                string="Extra info"
+                                type="object"
+                                class="btn-secondary"
+                                icon="fa-edit"/>
+                    </div>
+
+                    <!-- Afkeuring: zichtbaar voor medewerker na afkeuring -->
+                    <div class="alert alert-danger" role="alert"
+                         invisible="state != 'rejected'">
+                        <strong>Afkeuring:</strong>
+                        <field name="rejection_reason" readonly="1" nolabel="1" class="oe_inline"/>
+                    </div>
+
+                    <!-- Afkeuring: directie moet reden invullen voor afkeuring -->
+                    <group groups="myschool_activiteiten.group_activiteiten_directie,myschool_activiteiten.group_activiteiten_admin"
+                           invisible="state != 'pending_approval'">
+                        <field name="rejection_reason"
+                               string="Reden voor afkeuring"
+                               placeholder="Geef de reden op waarom deze activiteit wordt afgekeurd..."/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Dialog Form View: Extra info (Begeleiders, Opmerkingen, Kosten, Documenten) -->
+    <record id="view_activiteiten_form_details" model="ir.ui.view">
+        <field name="name">myschool_activiteiten.record.form.details</field>
+        <field name="model">myschool_activiteiten.record</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <form string="Extra info" class="o_activiteiten_wizard_form">
+                <field name="activity_type" invisible="1"/>
+                <field name="available_leerkracht_ids" invisible="1"/>
+                <field name="can_manage_invites" invisible="1"/>
+                <field name="state" invisible="1"/>
+                <field name="is_gratis" invisible="1"/>
+                <header>
+                    <field name="wizard_step" widget="statusbar" options="{'clickable': True}"/>
+                </header>
+                <sheet>
+                    <!-- Stap 1: Begeleiders -->
+                    <group invisible="wizard_step != '1'">
+                        <field name="invite_ids" nolabel="1"
+                               readonly="not can_manage_invites or state not in ('draft', 'form_invullen', 'bus_refused', 'approved', 's_code', 'vervanging', 'done')">
+                            <list editable="bottom">
+                                <field name="person_id"
+                                       domain="[('id', 'in', parent.available_leerkracht_ids)]"
+                                       options="{'no_quick_create': True, 'no_create': True}"/>
+                            </list>
+                        </field>
+                    </group>
+                    <!-- Stap 2: Opmerkingen -->
+                    <group invisible="wizard_step != '2'">
+                        <field name="description" nolabel="1"
+                               placeholder="Geef een korte beschrijving van de activiteit, het doel en eventuele bijzonderheden..."
+                               readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                    </group>
+                    <!-- Stap 3: Kosten — bij gratis activiteit toont er
+                         enkel een info-banner i.p.v. de hele kostenlijst. -->
+                    <div class="alert alert-info" role="alert"
+                         invisible="wizard_step != '3' or not is_gratis">
+                        <strong>Gratis activiteit.</strong> Er hoeven geen kosten ingevuld te worden. Vink "Gratis activiteit" af op het hoofdformulier indien er toch kosten zijn.
+                    </div>
+                    <div invisible="wizard_step != '3' or is_gratis">
+                        <p class="text-muted mb-2">
+                            <i class="fa fa-info-circle me-1"/>
+                            Vul telkens het <strong>totaalbedrag</strong> in voor de volledige
+                            activiteit, niet per leerling. Bijvoorbeeld: verblijfskosten van € 250
+                            in totaal → vul 250 in. De kost-per-leerling wordt onderaan
+                            automatisch berekend.
+                        </p>
+                        <div class="row">
+                            <div class="col-6">
+                                <h4 class="mt-4 mb-3">Vaste kosten</h4>
+                                <field name="kosten_vast_ids"
+                                       context="{'default_kosten_type': 'vast'}"
+                                       nolabel="1"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval', 's_code', 'vervanging')">
+                                    <list editable="bottom" create="1" delete="1">
+                                        <control>
+                                            <create string="Vaste kosten toevoegen"/>
+                                        </control>
+                                        <field name="is_auto" column_invisible="1"/>
+                                        <field name="kosten_type" column_invisible="1"/>
+                                        <field name="omschrijving" readonly="is_auto"/>
+                                        <field name="bedrag" readonly="is_auto"/>
+                                        <field name="currency_id" column_invisible="1"/>
+                                    </list>
+                                </field>
+                            </div>
+                            <div class="col-6">
+                                <h4 class="mt-4 mb-3">Variabele kosten</h4>
+                                <field name="kosten_variabel_ids"
+                                       context="{'default_kosten_type': 'variabel'}"
+                                       nolabel="1"
+                                       readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval', 's_code', 'vervanging', 'done')">
+                                    <list editable="bottom" create="1" delete="1">
+                                        <control>
+                                            <create string="Variabele kosten toevoegen"/>
+                                        </control>
+                                        <field name="is_auto" column_invisible="1"/>
+                                        <field name="kosten_type" column_invisible="1"/>
+                                        <field name="omschrijving" readonly="is_auto"/>
+                                        <field name="bedrag" readonly="is_auto"/>
+                                        <field name="currency_id" column_invisible="1"/>
+                                    </list>
+                                </field>
+                            </div>
+                        </div>
+                        <group class="mt-3">
+                            <separator string="Boekhouding" colspan="2"/>
+                            <field name="bijdragen_regeling"
+                                   readonly="state not in ('s_code', 'draft', 'form_invullen', 'bus_refused', 'pending_approval')"
+                                   groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"/>
+                            <field name="bijdrageregeling_bedrag"
+                                   invisible="not bijdragen_regeling"
+                                   readonly="state not in ('s_code', 'draft', 'form_invullen', 'bus_refused', 'pending_approval')"
+                                   groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"/>
+                            <field name="heeft_overnachting"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="cash_bedrag_nodig"
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <separator string="Schatting van de leerkracht" colspan="2"/>
+                            <field name="price" string="Geschatte totale kost"
+                                   help="Vul hier een totaalbedrag in als ruwe schatting bij indienen. Boekhouding verfijnt dit later met de echte kosten-lijnen."
+                                   readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'bus_check', 'pending_approval')"/>
+                            <field name="totale_kost" readonly="1"/>
+                        </group>
+                    </div>
+                    <!-- Stap 4: Documenten -->
+                    <div invisible="wizard_step != '4'">
+                        <p class="text-muted mb-2">
+                            <i class="fa fa-info-circle me-1"/>
+                            Voeg bestanden toe (PDF, Word, Excel, ...) en/of een notitie
+                            met bv. een link naar een Google Drive document of spreadsheet.
+                        </p>
+                        <separator string="Bestanden"/>
+                        <field name="document_ids" widget="many2many_binary" nolabel="1"
+                               readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'pending_approval', 'bus_check', 'approved', 's_code', 'vervanging', 'done')"/>
+                        <!-- Boekhouding / admin kunnen via deze lijst de bestandsnamen
+                             aanpassen (bv. consistente facturatie-codes). -->
+                        <separator string="Bestandsnamen aanpassen (boekhouding)" class="mt-3"
+                                   groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+                                   invisible="not document_ids"/>
+                        <field name="document_ids" nolabel="1"
+                               groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+                               invisible="not document_ids">
+                            <list editable="bottom" create="0" delete="0">
+                                <field name="name" string="Bestandsnaam"/>
+                                <field name="mimetype" readonly="1" optional="hide"/>
+                                <field name="file_size" readonly="1" optional="hide"/>
+                            </list>
+                        </field>
+                        <separator string="Notitie / links" class="mt-3"/>
+                        <field name="document_notitie" nolabel="1"
+                               placeholder="bv. Programma op de Drive: https://drive.google.com/..."
+                               readonly="state not in ('draft', 'form_invullen', 'bus_refused', 'pending_approval', 'bus_check', 'approved', 's_code', 'vervanging', 'done')"/>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_wizard_prev"
+                            string="Vorige"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="wizard_step == '1'"/>
+                    <button name="action_wizard_next"
+                            string="Volgende"
+                            type="object"
+                            class="btn-primary"
+                            invisible="wizard_step == '4'"/>
+                    <button name="action_submit_from_dialog"
+                            string="Volgende &amp; bevestigen"
+                            type="object"
+                            class="btn-success"
+                            invisible="wizard_step != '4' or state not in ('draft', 'form_invullen', 'bus_refused')"/>
+                    <button string="Opslaan"
+                            class="btn-primary"
+                            special="save"
+                            invisible="wizard_step != '4' or state in ('draft', 'form_invullen', 'bus_refused')"/>
+                    <button string="Annuleren" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View -->
+    <record id="view_activiteiten_list" model="ir.ui.view">
+        <field name="name">myschool_activiteiten.record.list</field>
+        <field name="model">myschool_activiteiten.record</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="create_date" string="Aanvraagdatum" optional="show"/>
+                <field name="create_uid" string="Aangemaakt door" optional="show"/>
+                <field name="titel" optional="show"/>
+                <field name="school_id" optional="show"/>
+                <field name="klas_ids" widget="many2many_tags" optional="show"/>
+                <field name="activity_type" optional="show"/>
+                <field name="dates_display" widget="html" optional="show"/>
+                <field name="price" optional="hide"/>
+                <field name="kosten_display" string="Kosten" widget="html" optional="hide"
+                       groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"/>
+                <field name="totale_kost" string="Totaal" optional="show"
+                       groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"/>
+                <field name="is_active" optional="hide"/>
+                <field name="bus_available" optional="hide"/>
+                <field name="verzekering_done" optional="hide"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'draft'"
+                       decoration-warning="state in ('form_invullen', 'bus_check', 'pending_approval')"
+                       decoration-success="state in ('approved', 's_code', 'vervanging', 'done')"
+                       decoration-danger="state in ('rejected', 'bus_refused')"
+                       groups="myschool_activiteiten.group_activiteiten_directie,myschool_activiteiten.group_activiteiten_admin,myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_vervangingen,myschool_activiteiten.group_activiteiten_aankoop"/>
+                <field name="display_state" widget="badge"
+                       decoration-info="display_state == 'draft'"
+                       decoration-warning="display_state in ('form_invullen', 'bus_check', 'pending_approval')"
+                       decoration-success="display_state in ('approved', 'done')"
+                       decoration-danger="display_state in ('rejected', 'bus_refused')"
+                       groups="!myschool_activiteiten.group_activiteiten_directie,!myschool_activiteiten.group_activiteiten_admin,!myschool_activiteiten.group_activiteiten_boekhouding,!myschool_activiteiten.group_activiteiten_vervangingen,!myschool_activiteiten.group_activiteiten_aankoop"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_activiteiten_search" model="ir.ui.view">
+        <field name="name">myschool_activiteiten.record.search</field>
+        <field name="model">myschool_activiteiten.record</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="titel"/>
+                <field name="name"/>
+                <field name="activity_type"/>
+                <!-- Mijn aanvragen toont:
+                     - records die ik zelf aangemaakt heb (create_uid)
+                     - records waar ik als leerkracht ben opgegeven
+                     - records waar ik via een invite uitgenodigd ben
+                     Op die manier ziet een uitgenodigde collega de activiteit
+                     ook onder "Mijn aanvragen" zodra directie ze goedkeurt. -->
+                <filter string="Mijn aanvragen" name="my_requests"
+                        domain="['|', '|',
+                                 ('create_uid', '=', uid),
+                                 ('leerkracht_ids.odoo_user_id', '=', uid),
+                                 ('invite_ids.person_id.odoo_user_id', '=', uid)]"/>
+                <separator/>
+                <filter string="Binnenschools" name="binnenschools"
+                        domain="[('activity_type', '=', 'binnenschools')]"/>
+                <filter string="Buitenschools" name="buitenschools"
+                        domain="[('activity_type', '=', 'buitenschools')]"/>
+                <separator/>
+                <filter string="Te beoordelen" name="to_approve"
+                        domain="[('state', 'in', ('bus_check', 'pending_approval'))]"/>
+                <filter string="Bus controle" name="bus_check"
+                        domain="[('state', '=', 'bus_check')]"/>
+                <filter string="S-Code openstaand" name="s_code_pending"
+                        domain="[('state', '=', 's_code')]"/>
+                <filter string="Vervanging openstaand" name="replacement_pending"
+                        domain="[('state', '=', 'vervanging')]"/>
+                <separator/>
+                <filter string="Concepten" name="state_draft"
+                        domain="[('state', 'in', ('draft', 'form_invullen'))]"/>
+                <filter string="Bus geweigerd" name="state_bus_refused"
+                        domain="[('state', '=', 'bus_refused')]"/>
+                <filter string="Goedgekeurd" name="state_approved"
+                        domain="[('state', '=', 'approved')]"/>
+                <filter string="Afgekeurd" name="state_rejected"
+                        domain="[('state', '=', 'rejected')]"/>
+                <filter string="Aanwezigheid" name="state_aanwezigheid"
+                        domain="[('state', '=', 'aanwezigheid')]"/>
+                <filter string="Facturen op te stellen" name="state_facturen"
+                        domain="[('state', '=', 'facturen')]"/>
+                <filter string="Afgerond" name="state_done"
+                        domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter string="Deze maand" name="date_this_month"
+                        domain="[('datetime', '&gt;=', (context_today()).strftime('%Y-%m-01'))]"/>
+                <filter string="Vorige maand" name="date_last_month"
+                        domain="[('datetime', '&gt;=', (context_today() + relativedelta(months=-1)).strftime('%Y-%m-01')),
+                                 ('datetime', '&lt;', context_today().strftime('%Y-%m-01'))]"/>
+                <filter string="Dit jaar" name="date_this_year"
+                        domain="[('datetime', '&gt;=', (context_today()).strftime('%Y-01-01'))]"/>
+                <filter string="Dit schooljaar" name="date_school_year"
+                        domain="[('datetime', '&gt;=', (context_today() if context_today().month >= 9 else context_today() + relativedelta(years=-1)).strftime('%Y-09-01'))]"/>
+                <group>
+                    <filter string="Status" name="group_state"
+                            domain="[]" context="{'group_by': 'state'}"/>
+                    <filter string="Type" name="group_type"
+                            domain="[]" context="{'group_by': 'activity_type'}"/>
+                    <filter string="Leerkracht" name="group_leerkracht"
+                            domain="[]" context="{'group_by': 'leerkracht_ids'}"/>
+                    <filter string="Startdatum" name="group_datetime"
+                            domain="[]" context="{'group_by': 'datetime:month'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Server-actions voor de "alles aan/uit"-knoppen in de header van de
+         aanwezigheid-list. Moeten vóór de view-record gedefinieerd staan
+         zodat de %(...)d-referenties werken. -->
+    <record id="action_aanwezigheid_alles_aan" model="ir.actions.server">
+        <field name="name">Aanwezigheid: alles aan</field>
+        <field name="model_id" ref="model_myschool_activiteiten_snapshot_line"/>
+        <field name="binding_model_id" ref="model_myschool_activiteiten_snapshot_line"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+records.filtered(lambda l: l.snapshot_type == 'student').write({'aanwezig': True})
+        </field>
+    </record>
+
+    <record id="action_aanwezigheid_alles_uit" model="ir.actions.server">
+        <field name="name">Aanwezigheid: alles uit</field>
+        <field name="model_id" ref="model_myschool_activiteiten_snapshot_line"/>
+        <field name="binding_model_id" ref="model_myschool_activiteiten_snapshot_line"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+records.filtered(lambda l: l.snapshot_type == 'student').write({'aanwezig': False})
+        </field>
+    </record>
+
+    <!-- Aanwezigheid registreren: list view op snapshot.line -->
+    <record id="view_activiteiten_snapshot_line_list" model="ir.ui.view">
+        <field name="name">myschool_activiteiten.snapshot.line.list</field>
+        <field name="model">myschool_activiteiten.snapshot.line</field>
+        <field name="arch" type="xml">
+            <list editable="bottom" create="0" delete="0">
+                <header>
+                    <button name="%(myschool_activiteiten.action_aanwezigheid_alles_aan)d"
+                            string="Alles aanwezig"
+                            type="action"
+                            class="btn-secondary"
+                            display="always"/>
+                    <button name="%(myschool_activiteiten.action_aanwezigheid_alles_uit)d"
+                            string="Alles afwezig"
+                            type="action"
+                            class="btn-secondary"
+                            display="always"/>
+                </header>
+                <field name="klas_name" readonly="1"/>
+                <field name="person_name" readonly="1"/>
+                <field name="aanwezig" widget="boolean_toggle"/>
+                <!-- Factureren-toggle en bedrag: enkel boekhouding/admin
+                     mag hierop schrijven. Voor andere rollen wordt het
+                     veld onzichtbaar (niet enkel readonly, want anders
+                     zou de leerkracht de huidige aanrekening zien
+                     terwijl die hem niet aanbelangt). -->
+                <field name="factureren" widget="boolean_toggle"
+                       groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+                       optional="show"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="aangerekend_bedrag" widget="monetary"
+                       groups="myschool_activiteiten.group_activiteiten_boekhouding,myschool_activiteiten.group_activiteiten_admin"
+                       optional="show"/>
+            </list>
+        </field>
+    </record>
+</odoo>

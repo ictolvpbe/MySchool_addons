@@ -1,7 +1,7 @@
 {
     'name': 'Directie Dashboard',
     'version': '0.2',
-    'summary': 'Overzicht per leerkracht: activiteiten, professionalisering, drukwerk en uitgaven',
+    'summary': 'Overzicht per leerkracht: myschool_activiteiten, myschool_professionalisering, myschool_drukwerk en uitgaven',
     'author': 'MySchool',
     'license': 'LGPL-3',
     'category': 'MySchool',
@@ -9,9 +9,9 @@
         'base',
         'hr',
         'myschool_core',
-        'professionalisering',
-        'activiteiten',
-        'drukwerk',
+        'myschool_professionalisering',
+        'myschool_activiteiten',
+        'myschool_drukwerk',
     ],
     'data': [
         'security/security_groups.xml',

@@ -79,9 +79,9 @@ class MyschoolArchiveRunner(models.AbstractModel):
         # Roep per module hun eigen archive aan — als de module er niet
         # is, slaan we hem stil over.
         for model_name, method in (
-            ('activiteiten.record', '_auto_archive_old_done'),
-            ('professionalisering.record', '_auto_archive_old_done'),
-            ('drukwerk.record', '_auto_archive_old_done'),
+            ('myschool_activiteiten.record', '_auto_archive_old_done'),
+            ('myschool_professionalisering.record', '_auto_archive_old_done'),
+            ('myschool_drukwerk.record', '_auto_archive_old_done'),
         ):
             if model_name not in self.env:
                 continue
