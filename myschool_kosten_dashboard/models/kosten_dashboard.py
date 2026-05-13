@@ -28,8 +28,8 @@ class KostenPerMedewerker(models.Model):
     aantal_activiteiten = fields.Integer(string='Activiteiten', readonly=True)
     aantal_prof = fields.Integer(string='Professionaliseringen', readonly=True)
     aantal_totaal = fields.Integer(string='Totaal', readonly=True)
-    kost_activiteiten = fields.Float(string='Kost myschool_activiteiten', readonly=True)
-    kost_prof = fields.Float(string='Kost myschool_professionalisering', readonly=True)
+    kost_activiteiten = fields.Float(string='Kost activiteiten', readonly=True)
+    kost_prof = fields.Float(string='Kost professionalisering', readonly=True)
     totale_kost = fields.Float(string='Totale kost', readonly=True)
     detail_html = fields.Html(string='Uitgaven', compute='_compute_detail_html', sanitize=False)
 
@@ -194,7 +194,7 @@ class KostenPerMedewerker(models.Model):
 
 class KostenDetail(models.Model):
     _name = 'kosten.detail'
-    _description = 'Kosten detail per activiteit/myschool_professionalisering'
+    _description = 'Kosten detail per activiteit/professionalisering'
     _auto = False
     _order = 'datum desc'
 

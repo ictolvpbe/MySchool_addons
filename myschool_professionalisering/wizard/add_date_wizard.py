@@ -4,7 +4,7 @@ from odoo.exceptions import UserError
 
 class AddDateWizard(models.TransientModel):
     _name = 'myschool_professionalisering.add.date.wizard'
-    _description = 'Datum toevoegen aan myschool_professionalisering'
+    _description = 'Datum toevoegen aan professionalisering'
 
     record_id = fields.Many2one(
         'myschool_professionalisering.record', required=True, ondelete='cascade',

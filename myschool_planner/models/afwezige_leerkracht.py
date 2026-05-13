@@ -18,7 +18,7 @@ def _table_exists(cr, table_name):
 
 class AfwezigeLeerkracht(models.Model):
     _name = 'myschool_planner.afwezige.leerkracht'
-    _description = 'Afwezigen (vanuit myschool_activiteiten en myschool_professionalisering)'
+    _description = 'Afwezigen (vanuit activiteiten en professionalisering)'
     _auto = False
     _order = 'datum asc'
     _rec_name = 'display_label'

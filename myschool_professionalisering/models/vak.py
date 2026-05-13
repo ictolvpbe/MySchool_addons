@@ -7,7 +7,7 @@ class ProfessionaliseringVak(models.Model):
     Beheerbaar via MySchool Admin → Master Data → Vakken."""
 
     _name = 'myschool_professionalisering.vak'
-    _description = 'Vak voor myschool_professionalisering'
+    _description = 'Vak voor professionalisering'
     _order = 'sequence, name'
 
     name = fields.Char(string='Naam', required=True, translate=True)

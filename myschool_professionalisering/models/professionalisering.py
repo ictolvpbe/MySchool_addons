@@ -387,7 +387,7 @@ class ProfessionaliseringRecord(models.Model):
     # Gestructureerde motivatie (vervangt het oude vrije description-veld)
     motivatie_aanleiding = fields.Text(
         string='Aanleiding',
-        help='Wat triggerde deze keuze voor myschool_professionalisering?',
+        help='Wat triggerde deze keuze voor professionalisering?',
     )
     motivatie_doelstelling = fields.Text(
         string='Doelstelling',
@@ -710,7 +710,10 @@ class ProfessionaliseringRecord(models.Model):
             if vals.get('name', 'New') == 'New':
                 sequence = self.env['ir.sequence'].next_by_code('myschool_professionalisering.record')
                 if not sequence:
-                    raise UserError("Sequentie 'myschool_professionalisering.record' niet gevonden.")
+                    raise UserError(
+                        "Sequentie voor professionalisering-aanvragen niet gevonden. "
+                        "(Verwacht code: myschool_professionalisering.record)"
+                    )
                 vals['name'] = sequence
         return super().create(vals_list)
 
@@ -728,7 +731,7 @@ class ProfessionaliseringRecord(models.Model):
             if record.state != 'selection_of_form':
                 raise UserError("Alleen conceptaanvragen kunnen ingediend worden.")
             if not record.type:
-                raise UserError("Selecteer eerst een type myschool_professionalisering.")
+                raise UserError("Selecteer eerst een type professionalisering.")
             # Types that skip approval go straight to bewijs (user can upload bewijs)
             if not record.needs_approval:
                 record.state = 'bewijs'

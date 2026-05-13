@@ -4,7 +4,7 @@ from odoo.exceptions import UserError
 
 class ExtraKlasWizard(models.TransientModel):
     _name = 'myschool_drukwerk.extra.klas.wizard'
-    _description = 'Extra klas toevoegen aan myschool_drukwerk'
+    _description = 'Extra klas toevoegen aan drukwerk'
 
     drukwerk_id = fields.Many2one('myschool_drukwerk.record', required=True, ondelete='cascade')
     school_id = fields.Many2one('myschool.org', related='drukwerk_id.school_id', readonly=True)

@@ -358,7 +358,7 @@
         <field name="arch" type="xml">
             <!-- Standaard volgorde: type (examen/gewoon apart), dan deadline
                  oudste boven zodat de drukker de meest dringende job eerst ziet. -->
-            <list default_order="drukwerk_type, print_deadline asc, create_date asc">
+            <list default_order="drukwerk_type, printer_code, print_deadline asc, create_date asc">
                 <header>
                     <button name="action_stockeren"
                             type="object"
@@ -379,6 +379,8 @@
                 <field name="total_pages" string="Pagina's" optional="hide"/>
                 <field name="total_cost" string="Totale kost" optional="show"/>
                 <field name="cost_per_student" string="Kost / leerling" optional="hide"/>
+                <field name="printer_code" string="Printer-code" optional="show"
+                       groups="myschool_drukwerk.group_drukwerk_drukwerk,myschool_drukwerk.group_drukwerk_admin"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'draft'"
                        decoration-warning="state in ('form_invullen', 'afdrukken')"
@@ -390,6 +392,13 @@
                         type="object"
                         icon="fa-print"
                         class="btn-primary"
+                        groups="myschool_drukwerk.group_drukwerk_drukwerk,myschool_drukwerk.group_drukwerk_admin"
+                        invisible="state != 'afdrukken'"/>
+                <button name="action_download_for_acrobat"
+                        string="Download"
+                        type="object"
+                        icon="fa-download"
+                        class="btn-secondary"
                         groups="myschool_drukwerk.group_drukwerk_drukwerk,myschool_drukwerk.group_drukwerk_admin"
                         invisible="state != 'afdrukken'"/>
             </list>
@@ -404,6 +413,8 @@
             <search>
                 <field name="titel"/>
                 <field name="name"/>
+                <field name="printer_code" string="Printer-code"
+                       groups="myschool_drukwerk.group_drukwerk_drukwerk,myschool_drukwerk.group_drukwerk_admin"/>
                 <filter string="Mijn aanvragen" name="my_requests"
                         domain="[('create_uid', '=', uid)]"/>
                 <separator/>
@@ -429,6 +440,9 @@
                             domain="[]" context="{'group_by': 'school_id'}"/>
                     <filter string="Klas" name="group_klas"
                             domain="[]" context="{'group_by': 'klas_ids'}"/>
+                    <filter string="Printer-code" name="group_printer_code"
+                            domain="[]" context="{'group_by': 'printer_code'}"
+                            groups="myschool_drukwerk.group_drukwerk_drukwerk,myschool_drukwerk.group_drukwerk_admin"/>
                 </group>
             </search>
         </field>

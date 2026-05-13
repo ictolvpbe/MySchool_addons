@@ -23,7 +23,7 @@ def _current_schoolyear_start():
 
 class ActiviteitenExportWizard(models.TransientModel):
     _name = 'myschool_activiteiten.export.wizard'
-    _description = 'Export myschool_activiteiten naar xlsx'
+    _description = 'Export activiteiten naar xlsx'
 
     schoolyear = fields.Integer(
         string='Schooljaar (startjaar)',
@@ -36,7 +36,7 @@ class ActiviteitenExportWizard(models.TransientModel):
         domain=[('org_type_id.name', '=', 'SCHOOL')],
     )
     only_done = fields.Boolean(
-        string='Enkel afgeronde myschool_activiteiten',
+        string='Enkel afgeronde activiteiten',
         default=True,
         help='Aangevinkt = enkel state "Afgerond". Uit = ook nog-lopende.',
     )

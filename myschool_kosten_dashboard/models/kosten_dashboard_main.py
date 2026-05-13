@@ -15,9 +15,9 @@ class KostenDashboard(models.Model):
     kpi_totale_kost = fields.Float(string='Totale kost', compute='_compute_kpis')
     kpi_aantal_medewerkers = fields.Integer(string='Medewerkers', compute='_compute_kpis')
     kpi_gemiddelde_kost = fields.Float(string='Gemiddelde kost', compute='_compute_kpis')
-    kpi_kost_activiteiten = fields.Float(string='Kost myschool_activiteiten', compute='_compute_kpis')
-    kpi_kost_prof = fields.Float(string='Kost myschool_professionalisering', compute='_compute_kpis')
-    kpi_aantal_activiteiten = fields.Integer(string='Aantal myschool_activiteiten', compute='_compute_kpis')
+    kpi_kost_activiteiten = fields.Float(string='Kost activiteiten', compute='_compute_kpis')
+    kpi_kost_prof = fields.Float(string='Kost professionalisering', compute='_compute_kpis')
+    kpi_aantal_activiteiten = fields.Integer(string='Aantal activiteiten', compute='_compute_kpis')
     kpi_aantal_prof = fields.Integer(string='Aantal prof.', compute='_compute_kpis')
     kpi_aantal_totaal = fields.Integer(string='Totaal items', compute='_compute_kpis')
 

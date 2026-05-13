@@ -24,7 +24,7 @@ class DrukwerkAuditLog(models.Model):
     )
     record_name = fields.Char(
         string='Drukwerk', required=True,
-        help='Referentie van het verwijderde myschool_drukwerk (DWK-####).',
+        help='Referentie van het verwijderde drukwerk (DWK-####).',
     )
     record_titel = fields.Char(string='Titel')
     school_company_id = fields.Many2one(

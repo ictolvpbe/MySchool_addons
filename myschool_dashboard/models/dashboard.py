@@ -67,8 +67,8 @@ class MySchoolDashboard(models.Model):
         compute='_compute_access_rights')
     is_only_teacher = fields.Boolean(
         string='Alleen leerkracht', compute='_compute_access_rights',
-        help='True als de gebruiker geen manager/admin-rol heeft in myschool_activiteiten, '
-             'myschool_professionalisering of myschool_drukwerk.',
+        help='True als de gebruiker geen manager/admin-rol heeft in activiteiten, '
+             'professionalisering of drukwerk.',
     )
 
     # Counts myschool_activiteiten (per actual state)

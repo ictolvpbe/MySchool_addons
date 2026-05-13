@@ -25,9 +25,9 @@ class DrukwerkRecord(models.Model):
         default='New',
     )
     drukwerk_type = fields.Selection([
-        ('gewoon', 'Gewoon myschool_drukwerk'),
-        ('examen', 'Examen myschool_drukwerk'),
-    ], string='Type myschool_drukwerk', tracking=True)
+        ('gewoon', 'Gewoon drukwerk'),
+        ('examen', 'Examen drukwerk'),
+    ], string='Type drukwerk', tracking=True)
     examen_variant = fields.Selection([
         ('wit', 'Wit — geen hulpmiddelen'),
         ('groen', 'Groen — met hulpmiddelen'),
@@ -249,28 +249,60 @@ class DrukwerkRecord(models.Model):
                  'sorteren', 'a3_plooien', 'boekje_a4',
                  'gekleurd_papier', 'papier_kleur')
     def _compute_printer_code(self):
+        """Genereer een code die matched met de printer-presets in Acrobat.
+
+        Conventie van de drukkerij:
+        - Spaties als scheiding (geen streepjes)
+        - Volgorde: [LIGGEND] [Lade# kleur#] [R/V|RECTO] [PERFO|NIET|PERFO/NIET] [SORTEREN]
+        - PERFO/NIET met slash wanneer beide aangevinkt
+        - Pure R/V (zonder andere finishing) → automatisch SORTEREN
+        - BoekjeA4 / A3 plooien zijn standalone presets (overschrijven rest)
+        """
         for record in self:
-            codes = []
-            if record.dubbelzijdig:
-                codes.append('R/V')
-            if record.nieten:
-                codes.append('NIET')
-            if record.perforeren:
-                codes.append('PERFO')
-            if record.liggend:
-                codes.append('LIGGEND')
-            if record.sorteren:
-                codes.append('SORTEREN')
-            if record.a3_plooien:
-                codes.append('A3 plooien')
+            # Standalone presets (worden los gebruikt door de drukkerij)
             if record.boekje_a4:
-                codes.append('BoekjeA4')
+                record.printer_code = 'BoekjeA4'
+                continue
+            if record.a3_plooien:
+                record.printer_code = 'A3 plooien'
+                continue
+
+            parts = []
+
+            # 1. Liggend (landscape) als prefix
+            if record.liggend:
+                parts.append('LIGGEND')
+
+            # 2. Lade/kleur (mutually exclusive met standaard wit)
             if record.papier_kleur != 'geen':
                 if record.gekleurd_papier == 'gl4':
-                    codes.append('Lade4 kleur 1')
+                    parts.append('Lade4 kleur1')
                 elif record.gekleurd_papier == 'gl5':
-                    codes.append('Lade5 kleur 1')
-            record.printer_code = '-'.join(codes) if codes else ''
+                    parts.append('Lade5 kleur2')
+
+            # 3. R/V (dubbelzijdig) of RECTO (enkelzijdig)
+            parts.append('R/V' if record.dubbelzijdig else 'RECTO')
+
+            # 4. Finishing — PERFO/NIET met slash bij combo
+            if record.perforeren and record.nieten:
+                parts.append('PERFO/NIET')
+            elif record.perforeren:
+                parts.append('PERFO')
+            elif record.nieten:
+                parts.append('NIET')
+
+            # 5. Sorteren — default voor pure R/V job, of expliciet aangevinkt
+            is_pure_rv = (
+                record.dubbelzijdig
+                and not record.perforeren
+                and not record.nieten
+                and not record.liggend
+                and record.papier_kleur == 'geen'
+            )
+            if is_pure_rv or record.sorteren:
+                parts.append('SORTEREN')
+
+            record.printer_code = ' '.join(parts)
 
     @api.onchange('papier_kleur')
     def _onchange_papier_kleur(self):
@@ -470,7 +502,8 @@ class DrukwerkRecord(models.Model):
                 raise ValidationError("Alleen PDF-bestanden zijn toegestaan. Upload een .pdf bestand.")
 
     def _recount_pages(self):
-        """Update aantal_paginas and liggend by reading the PDF from document_file."""
+        """Update aantal_paginas, liggend en formaat door de PDF uit document_file
+        te lezen. Auto-detectie zodat de drukker zo min mogelijk hoeft aan te passen."""
         for record in self:
             if not record.document_file:
                 continue
@@ -480,6 +513,9 @@ class DrukwerkRecord(models.Model):
                 if page_count > 0:
                     record.aantal_paginas = page_count
                 record.liggend = self._is_pdf_landscape(pdf_data)
+                detected_format = self._detect_pdf_format(pdf_data)
+                if detected_format:
+                    record.formaat = detected_format
             except Exception:
                 _logger.warning('Could not read PDF info for %s', record.document_filename, exc_info=True)
 
@@ -521,6 +557,45 @@ class DrukwerkRecord(models.Model):
         except (ImportError, Exception):
             pass
         return False
+
+    # Standaard PDF-formaten in points (portrait). Match-tolerantie 50pt zodat
+    # licht-afwijkende exports (bv. 595.276 vs 595.28) niet missen.
+    _FORMAT_SIZES = {
+        'a4': (595.28, 841.89),
+        'a3': (841.89, 1190.55),
+    }
+
+    @classmethod
+    def _detect_pdf_format(cls, pdf_bytes):
+        """Detecteer A4/A3/... uit MediaBox van de eerste pagina.
+
+        Vergelijkt portrait-equivalent zodat oriëntatie het resultaat niet
+        beïnvloedt (die wordt apart in ``liggend`` gezet). Returnt de code
+        ('a4' / 'a3') of None bij onbekend formaat.
+        """
+        try:
+            from PyPDF2 import PdfReader
+            mb = PdfReader(io.BytesIO(pdf_bytes)).pages[0].mediabox
+            width, height = float(mb.width), float(mb.height)
+        except (ImportError, Exception):
+            try:
+                import pikepdf
+                with pikepdf.open(io.BytesIO(pdf_bytes)) as pdf:
+                    mb = pdf.pages[0].MediaBox
+                    width = float(mb[2]) - float(mb[0])
+                    height = float(mb[3]) - float(mb[1])
+            except (ImportError, Exception):
+                return None
+        # Vergelijk in portrait-oriëntatie
+        if width > height:
+            width, height = height, width
+        best_code, best_diff = None, float('inf')
+        for code, (fw, fh) in cls._FORMAT_SIZES.items():
+            diff = abs(width - fw) + abs(height - fh)
+            if diff < best_diff and diff < 50:
+                best_diff = diff
+                best_code = code
+        return best_code
 
     @staticmethod
     def _count_pdf_pages(pdf_bytes):
@@ -728,6 +803,18 @@ class DrukwerkRecord(models.Model):
                 'record_id': self.id,
                 'url': f'/myschool_drukwerk/print/{self.id}',
             },
+        }
+
+    def action_download_for_acrobat(self):
+        """Forceer download van de PDF zodat de drukkerij-PC hem in Acrobat
+        opent, met automatisch print-dialoog (via embedded OpenAction)."""
+        self.ensure_one()
+        if not self.document_file:
+            raise UserError("Geen document beschikbaar om af te drukken.")
+        return {
+            'type': 'ir.actions.act_url',
+            'url': f'/myschool_drukwerk/download/{self.id}',
+            'target': 'download',
         }
 
     # --- Shared actions ---

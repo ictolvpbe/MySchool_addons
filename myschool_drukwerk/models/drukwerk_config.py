@@ -31,7 +31,7 @@ class DrukwerkConfig(models.Model):
     printer_naam = fields.Char(
         string='Naam afdrukker',
         default='Drukkerij',
-        help='Naam van de fysieke printer waar myschool_drukwerk naartoe gaat. '
+        help='Naam van de fysieke printer waar drukwerk naartoe gaat. '
              'Wordt prominent op de afdrukpagina getoond zodat drukkerij '
              'weet welke printer te kiezen in het systeemdialoogvenster.',
     )
