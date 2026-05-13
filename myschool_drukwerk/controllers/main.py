@@ -91,12 +91,12 @@ class DrukwerkPrintController(http.Controller):
         rows_html += row(
             'Dubbelzijdig', 'Ja' if rec.dubbelzijdig else 'Nee',
             'yes' if rec.dubbelzijdig else 'no')
-        rows_html += row(
-            'Papier', papier_kleur_label,
-            'paper' if rec.papier_kleur and rec.papier_kleur != 'geen' else 'no')
-        rows_html += row(
-            'Kopie leerkracht', 'Ja' if rec.kopie_leerkracht else 'Nee',
-            'yes' if rec.kopie_leerkracht else 'no')
+        # Papier enkel tonen bij uitzondering (gekleurd papier)
+        if rec.papier_kleur and rec.papier_kleur != 'geen':
+            rows_html += row('Papier', papier_kleur_label, 'paper')
+        # Kopie leerkracht enkel tonen bij uitzondering (Ja)
+        if rec.kopie_leerkracht:
+            rows_html += row('Kopie leerkracht', 'Ja', 'yes')
 
         # Finishing alert prominent
         finishing_html = ''
