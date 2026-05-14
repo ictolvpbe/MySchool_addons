@@ -66,6 +66,7 @@
         'data/company_sync_cron.xml',
         'data/letter_task_types.xml',
         'data/letter_template_data.xml',
+        'data/password_wordlist_data.xml',
         # report/letter_report_templates.xml — dropped in v0.5
         # (replaced by direct WeasyPrint rendering, see letter_template.render_pdf)
 

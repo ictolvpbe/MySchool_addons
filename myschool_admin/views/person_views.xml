@@ -83,6 +83,13 @@
                             class="btn-secondary"
                             icon="fa-file-pdf-o"
                             title="Generate the welcome-letter PDF for this person and attach it to the record"/>
+                    <button name="action_provision_now"
+                            string="Provision Now"
+                            type="object"
+                            class="btn-warning"
+                            icon="fa-bolt"
+                            invisible="not pending_provisioning"
+                            title="Trigger the deferred LDAP / Cloud / Smartschool USER-cascades now. Use when you closed the details form without making changes (otherwise the cascades fire on save automatically)."/>
                 </header>
                 <sheet>
                     <!-- Stat Buttons -->
@@ -111,6 +118,8 @@
 
                     <!-- Inactive ribbon -->
                     <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="is_active"/>
+                    <!-- Pending provisioning ribbon -->
+                    <widget name="web_ribbon" title="PROVISIONING PENDING" bg_color="text-bg-warning" invisible="not pending_provisioning"/>
 
                     <!-- Identity Header -->
                     <div class="oe_title">

@@ -572,6 +572,11 @@
                     <field name="confirm_password" password="True"/>
                 </group>
                 <footer>
+                    <button name="action_generate_from_policy" type="object"
+                            string="Genereer volgens beleid"
+                            class="btn-info"
+                            icon="fa-magic"
+                            help="Resolveer school → beleid → regel en genereer of pick het wachtwoord automatisch."/>
                     <button name="action_save_password" type="object" string="Save Password" class="btn-primary"/>
                     <button name="action_clear_password" type="object" string="Clear Password" class="btn-warning"/>
                     <button string="Cancel" special="cancel" class="btn-secondary"/>

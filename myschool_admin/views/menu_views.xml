@@ -155,6 +155,11 @@
               sequence="60"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <!-- Wachtwoordbeleid: alleen toegankelijk via Instellingen-pagina
+         (sectie "Wachtwoordbeleid" — zie res_config_settings_views.xml).
+         Geen eigen menu-items zodat het Instellingen-menu een directe
+         actie blijft naar de res.config.settings-form. -->
+
     <menuitem id="menu_event_types"
               name="Eventtypes"
               parent="menu_types"

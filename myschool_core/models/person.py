@@ -21,7 +21,7 @@ For this model, the hr module needs to be installed and required in manifest.py
 
 """
 
-from odoo import models, fields, api
+from odoo import models, fields, api, _
 import json
 import logging
 
@@ -248,6 +248,15 @@ class Person(models.Model):
         default=True,
         required=True,
         help='Automatisch synchroniseren met externe systemen'
+    )
+    pending_provisioning = fields.Boolean(
+        string='Provisioning uitgesteld',
+        default=False,
+        help='Set door de "save + edit details" flow van de aanmaakwizard: '
+             'het person-record bestaat al, maar LDAP/Cloud/Smartschool '
+             'USER-cascades zijn nog niet getriggerd. De eerste ``write()`` '
+             'na deze vlag voert de cascades alsnog uit en zet de vlag '
+             'terug op False.'
     )
     # ------------------------------------------------------------------
     # Account-lifecycle dates
@@ -727,6 +736,16 @@ class Person(models.Model):
                 if not record.is_active:  # Was inactive, now being reactivated
                     record._on_reactivate()
 
+        # Snapshot persons whose deferred USER-provisioning should fire AFTER
+        # this write. Detected here (pre-super) so we can read the OLD value;
+        # ``'pending_provisioning' not in vals`` guards against self-triggering
+        # when we ourselves write the flag back to False below.
+        persons_to_provision = []
+        if not self.env.context.get('skip_provisioning_trigger'):
+            for record in self:
+                if record.pending_provisioning and 'pending_provisioning' not in vals:
+                    persons_to_provision.append(record.id)
+
         result = super().write(vals)
 
         # Only create MANUAL audit tasks when not processing backend tasks
@@ -751,7 +770,79 @@ class Person(models.Model):
                         changes=changes
                     )
 
+        # Fire deferred USER-provisioning cascades. This handles the
+        # "save and edit details" wizard flow: action_create only creates
+        # the person + PERSON-TREE + PPSBR with ``defer_user_provisioning``;
+        # the FIRST write triggered by the admin saving the details form
+        # now flushes LDAP/Cloud/Smartschool USER/ADD into the queue.
+        if persons_to_provision:
+            processor = self.env['myschool.betask.processor']
+            persons = self.browse(persons_to_provision)
+            for person in persons:
+                cascade_log = []
+                try:
+                    processor._emit_ldap_user_add_for_person(person, cascade_log)
+                    processor._emit_cloud_user_add_for_person(person, cascade_log)
+                    processor._emit_smartschool_user_add_for_person(person, cascade_log)
+                except Exception as e:
+                    _logger.warning(
+                        '[DEFERRED-PROVISIONING] cascade failed for %s: %s',
+                        person.name, e)
+                for line in cascade_log:
+                    _logger.info('[DEFERRED-PROVISIONING] %s: %s',
+                                 person.name, line)
+            # Clear the flag; skip_provisioning_trigger prevents recursion,
+            # skip_manual_audit prevents an extra UPD audit task for the
+            # internal flip.
+            persons.with_context(
+                skip_provisioning_trigger=True,
+                skip_manual_audit=True,
+            ).write({'pending_provisioning': False})
+
         return result
+
+    def action_provision_now(self):
+        """Manual fallback for the deferred-provisioning flow.
+
+        Same cascades as the write() hook would fire, but admin-triggered
+        from the person form. Use case: admin opened the details form
+        after a "save + edit details" wizard run, then closed it without
+        making any changes — the write() hook never fires, the
+        ``pending_provisioning`` flag would stay True indefinitely. The
+        button gives a visible exit.
+        """
+        processor = self.env['myschool.betask.processor']
+        for person in self:
+            if not person.pending_provisioning:
+                continue
+            cascade_log = []
+            try:
+                processor._emit_ldap_user_add_for_person(person, cascade_log)
+                processor._emit_cloud_user_add_for_person(person, cascade_log)
+                processor._emit_smartschool_user_add_for_person(person, cascade_log)
+            except Exception as e:
+                _logger.warning(
+                    '[MANUAL-PROVISION] cascade failed for %s: %s',
+                    person.name, e)
+            for line in cascade_log:
+                _logger.info('[MANUAL-PROVISION] %s: %s', person.name, line)
+            person.with_context(
+                skip_provisioning_trigger=True,
+                skip_manual_audit=True,
+            ).write({'pending_provisioning': False})
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Provisioning gestart'),
+                'message': _(
+                    'LDAP / Cloud / Smartschool USER/ADD tasks zijn gequeued. '
+                    'Check Operations → Backend Tasks voor status.'),
+                'type': 'success',
+                'sticky': False,
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+            }
+        }
 
     def unlink(self):
         """Override unlink to log audit trail for manual deletions."""

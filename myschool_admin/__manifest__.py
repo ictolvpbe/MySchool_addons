@@ -53,6 +53,9 @@
         'views/informat_sync_wizard_views.xml',
         'views/res_company_views.xml',
         'views/res_users_views.xml',
+        'views/password_wordlist_views.xml',
+        'views/password_template_views.xml',
+        'views/password_policy_views.xml',
         'views/field_template_views.xml',
 
         # Data Exchange

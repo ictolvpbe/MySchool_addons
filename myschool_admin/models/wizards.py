@@ -917,11 +917,22 @@ class CreatePersonWizard(models.TransientModel):
             })
 
     def action_create(self):
-        """Create the person via betask and open the person form."""
+        """Create the person via betask and open the person form.
+
+        Uses ``defer_user_provisioning`` so the LDAP/Cloud/Smartschool
+        USER-cascades are POSTPONED until the admin saves the details
+        form. The flag flips ``pending_provisioning=True`` on the person;
+        the first ``write()`` on that person (which is what saving the
+        details form triggers) flushes the cascades — see
+        ``myschool.person.write``.
+        """
         self.ensure_one()
 
+        data = self._build_person_task_data()
+        data['defer_user_provisioning'] = True
+
         service = self.env['myschool.manual.task.service']
-        task = service.create_manual_task('PERSON', 'ADD', self._build_person_task_data())
+        task = service.create_manual_task('PERSON', 'ADD', data)
 
         person_id = self._extract_person_id_from_task(task)
         if person_id:
@@ -2912,6 +2923,29 @@ class PasswordWizard(models.TransientModel):
             chars = string.ascii_letters + string.digits
             self.new_password = ''.join(random.choice(chars) for _ in range(8))
             self.confirm_password = self.new_password
+
+    def action_generate_from_policy(self):
+        """Resolve the wachtwoordbeleid voor deze persoon en vul het
+        new_password / confirm_password veld in met het resultaat.
+
+        Walks: person → school → policy → matching rule.
+        """
+        self.ensure_one()
+        if not self.person_id:
+            raise UserError("Geen persoon geselecteerd.")
+        Policy = self.env['myschool.password.policy']
+        try:
+            pwd = Policy.generate_password_for_person(self.person_id)
+        except UserError:
+            raise
+        except Exception as e:
+            raise UserError("Kon geen wachtwoord genereren: %s" % e)
+        self.new_password = pwd
+        self.confirm_password = pwd
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload_context',
+        }
     
     def action_save_password(self):
         """Save the new password."""

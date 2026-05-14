@@ -300,27 +300,43 @@ class ManualTaskProcessor(models.AbstractModel):
                     f"WARN: backend role '{ppsbr_role_name}' not found — PPSBR skipped")
 
         # ---------------------------------------------------------------
-        # LDAP/USER/ADD betask — only when the resolved school is set up
-        # for LDAP/AD provisioning (has_ou flag on the school or its
-        # OU-for-classes/groups parent).
+        # USER-provisioning cascades (LDAP + Smartschool).
+        # Skip when ``defer_user_provisioning`` is set by the wizard's
+        # "save and edit details" flow: the admin first fills in extra
+        # details (address, abbreviation, …) and only on save of THAT
+        # form do we want the external accounts to be created. The deferred
+        # cascade fires via ``myschool.person.write`` once
+        # ``pending_provisioning`` is True.
         # ---------------------------------------------------------------
-        if org and school_org:
-            wants_ldap = bool(
-                getattr(school_org, 'has_ou', False)
-                or getattr(org, 'has_ou', False)
-            )
-            if wants_ldap:
-                label = f"LDAP/USER/ADD for {person.first_name} {person.name}"
-                changes.append(f"Queued {label}")
-                self._create_and_run_task('LDAP', 'USER', 'ADD', {
-                    'person_id': person.id,
-                    'org_id': org.id,
-                }, changes, label=label)
+        if data.get('defer_user_provisioning'):
+            person.with_context(
+                skip_provisioning_trigger=True,
+                skip_manual_audit=True,
+            ).write({'pending_provisioning': True})
+            changes.append(
+                f"Deferred USER-provisioning until details are saved "
+                f"(pending_provisioning=True on person {person.id})")
+        else:
+            # LDAP/USER/ADD — only when the resolved school is set up for
+            # LDAP/AD provisioning (has_ou flag on the school or its
+            # OU-for-classes/groups parent).
+            if org and school_org:
+                wants_ldap = bool(
+                    getattr(school_org, 'has_ou', False)
+                    or getattr(org, 'has_ou', False)
+                )
+                if wants_ldap:
+                    label = f"LDAP/USER/ADD for {person.first_name} {person.name}"
+                    changes.append(f"Queued {label}")
+                    self._create_and_run_task('LDAP', 'USER', 'ADD', {
+                        'person_id': person.id,
+                        'org_id': org.id,
+                    }, changes, label=label)
 
-        # Smartschool cascade — same EMPLOYEE-only gate. Runs unconditionally
-        # of the LDAP gate above: Smartschool deployments are independent of
-        # AD provisioning at OLVP (per-platform config has its own org-link).
-        self._emit_smartschool_user_task(person, 'ADD', changes)
+            # Smartschool cascade — same EMPLOYEE-only gate. Runs unconditionally
+            # of the LDAP gate above: Smartschool deployments are independent of
+            # AD provisioning at OLVP (per-platform config has its own org-link).
+            self._emit_smartschool_user_task(person, 'ADD', changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -612,8 +628,13 @@ class ManualTaskProcessor(models.AbstractModel):
     def _emit_ldap_user_task(self, person, action, changes):
         """Queue *and run* an LDAP/USER/<action> betask if any of the
         person's active PERSON-TREE orgs is in an LDAP-enabled school.
-        Skips silently when no LDAP school is found."""
+        Skips silently when no LDAP school is found.
+
+        Honours ``person.automatic_sync=False`` as a veto — consistent
+        with the Smartschool emitter."""
         if not person:
+            return
+        if not person.automatic_sync:
             return
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
@@ -710,8 +731,13 @@ class ManualTaskProcessor(models.AbstractModel):
     def _emit_cloud_user_task(self, person, action, changes):
         """Mirror of ``_emit_ldap_user_task`` for Workspace. Queues +
         runs CLOUD/USER/<action> when the resolved school has cloud
-        provisioning enabled. Skips silently otherwise."""
+        provisioning enabled. Skips silently otherwise.
+
+        Honours ``person.automatic_sync=False`` as a veto — consistent
+        with the Smartschool emitter."""
         if not person:
+            return
+        if not person.automatic_sync:
             return
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
@@ -766,6 +792,8 @@ class ManualTaskProcessor(models.AbstractModel):
             return
         processor = self.env['myschool.betask.processor']
         if not processor._is_employee_person(person):
+            return
+        if not person.automatic_sync:
             return
         if not processor._school_wants_smartschool_for_person(person):
             return

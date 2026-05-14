@@ -193,7 +193,8 @@
     top: 100%;
     left: 0;
     right: 0;
-    background: white;
+    background: var(--ms-surface-1);
+    color: var(--ms-text);
     border: 1px solid var(--ms-border, #d6e4e4);
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 125, 140, 0.2);
@@ -1383,13 +1384,32 @@
 .ob-context-menu {
     position: fixed;
     z-index: 99999;
-    background: white;
+    background: var(--ms-surface-1) !important;
+    color: var(--ms-text) !important;
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 60, 60, 0.2);
     min-width: 180px;
     padding: 6px 0;
     animation: contextMenuFadeIn 0.15s ease;
-    border: 1px solid var(--ms-border, #d6e4e4);
+    border: 1px solid var(--ms-border, #d6e4e4) !important;
+}
+
+.ob-context-menu-header,
+.ob-context-menu-item {
+    color: var(--ms-text) !important;
+}
+
+.ob-context-menu-item i {
+    color: var(--ms-text-muted) !important;
+}
+
+.ob-context-menu-item-danger,
+.ob-context-menu-item-danger i {
+    color: var(--ms-error) !important;
+}
+
+[data-theme="dark"] .ob-context-menu {
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
 }
 
 @keyframes contextMenuFadeIn {
@@ -1468,7 +1488,8 @@
 }
 
 .ob-role-section {
-    background: white;
+    background: var(--ms-surface-1);
+    color: var(--ms-text);
     border-radius: 10px;
     padding: 24px;
     margin-bottom: 20px;

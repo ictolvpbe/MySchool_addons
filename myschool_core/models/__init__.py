@@ -44,6 +44,12 @@ from . import letter_template
 from . import res_company
 from . import res_users
 
+# Password policy (depends on org/person/role/person_type/proprelation)
+from . import password_wordlist
+from . import password_template
+from . import password_policy
+from . import org_password_policy
+
 # Process models
 from . import process
 from . import process_lane

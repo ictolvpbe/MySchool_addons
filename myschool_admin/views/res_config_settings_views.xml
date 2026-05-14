@@ -179,6 +179,27 @@
                         </setting>
                     </block>
 
+                    <block title="Wachtwoordbeleid" name="ms_admin_password_policy">
+                        <setting string="Beleid"
+                                 help="Beheer wachtwoordbeleid: bundels van regels die per persoon-type, rol en leeftijd bepalen hoe wachtwoorden worden gegenereerd of gekozen. Eén beleid koppelbaar aan één of meer scholen.">
+                            <button name="%(myschool_admin.action_myschool_password_policy)d"
+                                    type="action" icon="fa-shield"
+                                    string="Beheer wachtwoordbeleid" class="btn-link"/>
+                        </setting>
+                        <setting string="Templates"
+                                 help="Beheer herbruikbare templates voor wachtwoordgeneratie (complex of wachtzin). Eén template kan in meerdere regels en meerdere policies gebruikt worden.">
+                            <button name="%(myschool_admin.action_myschool_password_template)d"
+                                    type="action" icon="fa-magic"
+                                    string="Beheer templates" class="btn-link"/>
+                        </setting>
+                        <setting string="Woordenlijsten"
+                                 help="Beheer woordenlijsten: ofwel volledige wachtwoorden (voor jongere leerlingen) ofwel vocabulaire-woorden (voor wachtzin-compositie).">
+                            <button name="%(myschool_admin.action_myschool_password_wordlist)d"
+                                    type="action" icon="fa-list"
+                                    string="Beheer woordenlijsten" class="btn-link"/>
+                        </setting>
+                    </block>
+
                     <block title="Migratie &amp; Onderhoud" name="ms_admin_migration">
                         <setting string="AD-takeover"
                                  help="Migratie-assistent: ontdek AD-objecten die nog niet in de DB zitten en beslis per item.">

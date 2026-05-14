@@ -411,6 +411,33 @@ body[data-theme="dark"] {
 
 
 /* ============================================================
+   Navbar — force consistent brand background across all sections
+   (left brand area, middle menu items, right systray). Without this,
+   Bootstrap's `bg-inherit` chains can pull in dark-body backgrounds
+   so the middle of the navbar reads darker than the brand area.
+   ============================================================ */
+
+.o_main_navbar,
+.o_main_navbar > *,
+.o_main_navbar nav,
+.o_main_navbar .o_menu_sections,
+.o_main_navbar .o_menu_brand_container,
+.o_main_navbar .o_menu_systray,
+.o_main_navbar .bg-inherit {
+    background-color: var(--myschool-brand-1) !important;
+}
+
+/* Individual menu-section buttons stay transparent so hover/active
+   tints (set in layout.scss) remain visible on the brand backdrop. */
+.o_main_navbar .o_menu_sections > *,
+.o_main_navbar .o_menu_sections button,
+.o_main_navbar .o_menu_sections a,
+.o_main_navbar .o_menu_sections .dropdown-toggle,
+.o_main_navbar .o_menu_sections .o_nav_entry {
+    background-color: transparent !important;
+}
+
+/* ============================================================
    Theme toggle (navbar systray)
    ============================================================ */
 

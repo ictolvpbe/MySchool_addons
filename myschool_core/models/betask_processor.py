@@ -3555,6 +3555,8 @@ class BeTaskProcessor(models.AbstractModel):
         """
         if not person:
             return
+        if not person.automatic_sync:
+            return
         if not self._cloud_provisioning_enabled():
             return
         if not self._school_wants_ldap_for_person(person):
@@ -3602,8 +3604,13 @@ class BeTaskProcessor(models.AbstractModel):
 
         Idempotency: ``process_ldap_user_add`` skips when the user
         already exists in AD, and we dedupe pending tasks here so we
-        don't spam one queue per PPSBR."""
+        don't spam one queue per PPSBR.
+
+        Honours ``person.automatic_sync=False`` as a veto — consistent
+        with the Smartschool emitter."""
         if not person:
+            return
+        if not person.automatic_sync:
             return
         if not self._school_wants_ldap_for_person(person):
             return
@@ -3706,10 +3713,16 @@ class BeTaskProcessor(models.AbstractModel):
         ``process_smartschool_user_add`` (Fase 3) which re-resolves the
         person's school + platform at execution time, so the most up-to-date
         role/tree position wins. Dedupes against pending tasks for the same
-        person."""
+        person.
+
+        Honours ``person.automatic_sync=False`` as a veto so admins can
+        opt-out specific persons from Smartschool provisioning.
+        """
         if not person:
             return
         if not self._is_employee_person(person):
+            return
+        if not person.automatic_sync:
             return
         if not self._school_wants_smartschool_for_person(person):
             return
@@ -8828,23 +8841,26 @@ class BeTaskProcessor(models.AbstractModel):
                     person.account_deactivation_due_date)
                 # Queue AD-removal BEFORE flipping is_active so the LDAP
                 # handler still has access to the active person+org context.
-                try:
-                    BeTaskService.create_task('LDAP', 'USER', 'DEL', data={
-                        'person_id': person.id,
-                        'personId': person.sap_person_uuid or '',
-                        'reason': 'Account suspend: EmployeeSuspendPeriod elapsed',
-                    })
-                except Exception as e:
-                    _logger.error(
-                        '[LIFECYCLE-1] LDAP/USER/DEL queue failed for %s: %s',
-                        person.name, e)
+                # Honours ``automatic_sync=False`` as veto — admins use that
+                # flag to keep a person off the auto-managed external systems.
+                if person.automatic_sync:
+                    try:
+                        BeTaskService.create_task('LDAP', 'USER', 'DEL', data={
+                            'person_id': person.id,
+                            'personId': person.sap_person_uuid or '',
+                            'reason': 'Account suspend: EmployeeSuspendPeriod elapsed',
+                        })
+                    except Exception as e:
+                        _logger.error(
+                            '[LIFECYCLE-1] LDAP/USER/DEL queue failed for %s: %s',
+                            person.name, e)
 
                 # Also suspend the Workspace account (= Google's "disable").
                 # Mailbox + Drive content stay intact — the hard-delete
                 # follows in Phase 2 once google_account_delete_due_date
                 # has elapsed. Skip silently when Workspace isn't
                 # configured so AD-only installs aren't affected.
-                if self._cloud_provisioning_enabled():
+                if person.automatic_sync and self._cloud_provisioning_enabled():
                     try:
                         BeTaskService.create_task('CLOUD', 'USER', 'DEACT', data={
                             'person_id': person.id,
@@ -8860,6 +8876,7 @@ class BeTaskProcessor(models.AbstractModel):
                 # configured. saveUser-with-status / setAccountStatus is
                 # idempotent so re-running is safe.
                 if (self._is_employee_person(person)
+                        and person.automatic_sync
                         and self._school_wants_smartschool_for_person(person)):
                     try:
                         BeTaskService.create_task('SMARTSCHOOL', 'USER', 'DEACT', data={
