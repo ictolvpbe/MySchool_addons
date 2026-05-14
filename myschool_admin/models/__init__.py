@@ -15,8 +15,10 @@ from . import server_benchmark
 from . import create_filialen_wizard
 from . import health_check
 from . import task_debug_runner
+from . import smartschool_test_runner
 from . import domain_rename_wizard
 from . import bulk_cleanup_wizard
 from . import ad_takeover
 from . import informat_sync_wizard
 from . import res_config_settings
+from . import res_users

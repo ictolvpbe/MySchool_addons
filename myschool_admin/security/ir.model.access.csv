@@ -47,6 +47,7 @@ access_health_check_issue,myschool.health.check.issue,model_myschool_health_chec
 access_ir_cron_admin,ir.cron beheer voor myschool admin,base.model_ir_cron,myschool_core.group_myschool_core_admin,1,1,1,1
 access_ir_actions_server_admin,ir.actions.server beheer voor myschool admin,base.model_ir_actions_server,myschool_core.group_myschool_core_admin,1,1,1,1
 access_task_debug_runner,myschool.task.debug.runner,model_myschool_task_debug_runner,myschool_core.group_myschool_core_admin,1,1,1,1
+access_smartschool_test_runner,myschool.smartschool.test.runner,model_myschool_smartschool_test_runner,myschool_core.group_myschool_core_admin,1,1,1,1
 access_domain_rename_wizard,myschool.domain.rename.wizard,model_myschool_domain_rename_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_bulk_cleanup_wizard,myschool.bulk.cleanup.wizard,model_myschool_bulk_cleanup_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
 access_ad_takeover_session,myschool.ad.takeover.session,model_myschool_ad_takeover_session,myschool_core.group_myschool_core_admin,1,1,1,1

@@ -1,8 +1,95 @@
 /** @odoo-module **/
 
 import { registry } from "@web/core/registry";
-import { Component, useState, onWillStart, useRef, onMounted, onWillUnmount } from "@odoo/owl";
+import { Component, useState, onWillStart, useRef, onMounted, onWillUnmount, onWillUpdateProps } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
+
+/**
+ * Single source of truth for the actions available on a node.
+ *
+ * Returns an ordered list of action descriptors:
+ *   { key, label, iconClass, danger?, inQuick?, inMenu?, divider?,
+ *     quickLabel?, quickIconClass?, when? }
+ *
+ * - ContextMenu filters by `inMenu` and inserts dividers where flagged.
+ * - DetailsPanel quick-action bar filters by `inQuick`. When a quick
+ *   variant of the label/icon is appropriate (e.g. "Edit" vs "Properties"),
+ *   `quickLabel` / `quickIconClass` override the base label/iconClass.
+ * - `when(node)` is an optional predicate; the action is dropped if false.
+ *
+ * Action keys mirror the cases handled in onContextMenuAction so existing
+ * dispatch logic stays unchanged.
+ */
+export function actionsForNode(node) {
+    if (!node) return [];
+    // Tree-rendered persongroups have type='org' + org_type_name='PERSONGROUP'.
+    // Member-pane clicks send type='persongroup' from the DOM dataset.
+    // Accept either shape so both entry points get the same action set.
+    const isPersongroup = (node.type === 'org' && node.org_type_name === 'PERSONGROUP')
+        || node.type === 'persongroup';
+
+    if (isPersongroup) {
+        return [
+            { key: 'open', label: 'Properties', iconClass: 'fa fa-cog', inMenu: true },
+            { divider: true, inMenu: true },
+            { key: 'manage_members', label: 'Members', iconClass: 'fa fa-users', inMenu: true, inQuick: true },
+            { key: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders', inMenu: true, inQuick: true },
+            { divider: true, inMenu: true },
+            { key: 'move_org', label: 'Move', iconClass: 'fa fa-arrows', inMenu: true, inQuick: true,
+              quickLabel: 'Move' },
+            { divider: true, inMenu: true },
+            { key: 'delete', label: 'Delete', iconClass: 'fa fa-trash', danger: true, inMenu: true, inQuick: true },
+        ];
+    }
+
+    if (node.type === 'org') {
+        return [
+            { key: 'open', label: 'Properties', iconClass: 'fa fa-cog', inMenu: true },
+            { divider: true, inMenu: true },
+            { key: 'create_person', label: 'Create Person', iconClass: 'fa fa-user-plus', inMenu: true, inQuick: true },
+            { key: 'add_child_org', label: 'Add Sub-Org', iconClass: 'fa fa-plus-circle', inMenu: true, inQuick: true },
+            { key: 'create_persongroup', label: 'Create Persongroup', iconClass: 'fa fa-users', inMenu: true },
+            { divider: true, inMenu: true },
+            { key: 'manage_org_roles', label: 'Roles', iconClass: 'fa fa-id-badge', inMenu: true, inQuick: true },
+            { key: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders', inMenu: true, inQuick: true },
+            { divider: true, inMenu: true },
+            { key: 'move_org', label: 'Move', iconClass: 'fa fa-arrows', inMenu: true, inQuick: true },
+            { divider: true, inMenu: true },
+            { key: 'delete', label: 'Delete', iconClass: 'fa fa-trash', danger: true, inMenu: true, inQuick: true },
+        ];
+    }
+
+    if (node.type === 'person') {
+        return [
+            // "open" surfaces as "Properties" in the context menu and
+            // "Edit" in the quick-action bar (same action key).
+            { key: 'open', label: 'Properties', iconClass: 'fa fa-cog',
+              inMenu: true, inQuick: true,
+              quickLabel: 'Edit', quickIconClass: 'fa fa-pencil' },
+            { divider: true, inMenu: true },
+            { key: 'manage_person_roles', label: 'Manage Roles', iconClass: 'fa fa-id-badge', inMenu: true, inQuick: true },
+            { key: 'move_person', label: 'Move', iconClass: 'fa fa-arrows', inMenu: true, inQuick: true },
+            { divider: true, inMenu: true },
+            { key: 'deactivate_person', label: 'Deactivate', iconClass: 'fa fa-ban', danger: true,
+              inMenu: true, inQuick: true },
+            { key: 'delete_person', label: 'Delete', iconClass: 'fa fa-trash', danger: true, inMenu: true },
+            // Unlink only makes sense when the person sits in ≥2 orgs.
+            { divider: true, inMenu: true,
+              when: (n) => (n.other_active_org_count || 0) > 0 },
+            { key: 'remove_from_org', label: 'Unlink from this Org',
+              iconClass: 'fa fa-user-times', danger: true, inMenu: true,
+              when: (n) => (n.other_active_org_count || 0) > 0 },
+        ];
+    }
+
+    if (node.type === 'role') {
+        return [
+            { key: 'open', label: 'Properties', iconClass: 'fa fa-cog', inMenu: true },
+        ];
+    }
+
+    return [];
+}
 
 /**
  * TreeNode component - renders a single node with expand/collapse, drag-drop, selection
@@ -49,9 +136,9 @@ export class TreeNode extends Component {
     }
     
     get hasChildren() {
+        // Tree shows org hierarchy only — persons live in the members pane.
         const node = this.props.node;
-        return (node.children && node.children.length > 0) || 
-               (node.persons && node.persons.length > 0);
+        return !!(node.children && node.children.length > 0);
     }
     
     get level() {
@@ -179,16 +266,87 @@ export class DetailsPanel extends Component {
         onOpenRecord: { type: Function, optional: true },
         onEditCi: { type: Function, optional: true },
         onRemoveCi: { type: Function, optional: true },
+        onNavigateToOrg: { type: Function, optional: true },
     };
 
+    // CSS-style for the person-type badge — mirrors avatarStyle()
+    // tinting so the badge matches the person's icon color.
+    get personTypeBadgeStyle() {
+        const hex = this.props.node?.person_type_color || '';
+        if (!hex) return '';
+        const v = hex.startsWith('#') ? hex.slice(1) : hex;
+        const isShort = v.length === 3;
+        const r = parseInt(isShort ? v[0] + v[0] : v.slice(0, 2), 16);
+        const g = parseInt(isShort ? v[1] + v[1] : v.slice(2, 4), 16);
+        const b = parseInt(isShort ? v[2] + v[2] : v.slice(4, 6), 16);
+        if ([r, g, b].some(x => Number.isNaN(x))) return '';
+        return `background: rgba(${r},${g},${b},0.16); color: ${hex};`;
+    }
+
+    onParentOrgClick() {
+        const orgId = this.props.node?.parent_org_id || this.props.node?.org_id;
+        if (orgId && this.props.onNavigateToOrg) {
+            this.props.onNavigateToOrg(orgId);
+        }
+    }
+
     get isPersongroup() {
-        return this.props.node?.type === 'org' && this.props.node?.org_type_name === 'PERSONGROUP';
+        // Tree-rendered persongroups arrive as type='org' + org_type_name='PERSONGROUP';
+        // member-pane clicks arrive as type='persongroup'. Accept both shapes.
+        const n = this.props.node;
+        return (n?.type === 'org' && n?.org_type_name === 'PERSONGROUP')
+            || n?.type === 'persongroup';
+    }
+
+    // True for any org-like node (regular org, sub-org, persongroup). Used in
+    // the template to gate the org info-cards branch so it also fires for
+    // member-pane clicks where node.type === 'persongroup'.
+    get isOrgLike() {
+        const t = this.props.node?.type;
+        return t === 'org' || t === 'persongroup';
+    }
+
+    // Tint for the header icon-bubble. Mirrors avatarStyle() in
+    // MembersPanel but kept local to avoid coupling components.
+    get headerIconStyle() {
+        const n = this.props.node;
+        if (!n) return '';
+        const hex = n.org_type_color || n.person_type_color || '';
+        if (!hex) return '';
+        const v = hex.startsWith('#') ? hex.slice(1) : hex;
+        const isShort = v.length === 3;
+        const r = parseInt(isShort ? v[0] + v[0] : v.slice(0, 2), 16);
+        const g = parseInt(isShort ? v[1] + v[1] : v.slice(2, 4), 16);
+        const b = parseInt(isShort ? v[2] + v[2] : v.slice(4, 6), 16);
+        if ([r, g, b].some(x => Number.isNaN(x))) return '';
+        return `background: rgba(${r},${g},${b},0.16); color: ${hex};`;
     }
 
     get pgpMembers() {
         return this.props.members?.persons || [];
     }
-    
+
+    // Quick-action buttons rendered above the info-grid. Derived from
+    // the canonical action list so context-menu and quick-actions stay
+    // in lockstep (see actionsForNode in this module).
+    get quickActions() {
+        const node = this.props.node;
+        if (!node) return [];
+        return actionsForNode(node)
+            .filter(a => a.inQuick)
+            .filter(a => !a.when || a.when(node))
+            .map(a => ({
+                key: a.key,
+                label: a.quickLabel || a.label,
+                iconClass: a.quickIconClass || a.iconClass,
+                danger: a.danger,
+            }));
+    }
+
+    onQuickAction(key) {
+        if (this.props.onAction) this.props.onAction(key);
+    }
+
     openRecord() {
         if (this.props.onOpenRecord) {
             this.props.onOpenRecord();
@@ -209,70 +367,140 @@ export class DetailsPanel extends Component {
         }
     }
     
+    // Used by the inline "Manage" button next to the persongroup
+    // members section heading — keeps that single shortcut explicit
+    // even though all generic actions flow through onQuickAction.
+    onManageMembersClick() {
+        if (this.props.onAction) this.props.onAction('manage_members');
+    }
+
+    // Used by the inline "View"/"Configuration" link in the CI count card.
     onConfigurationClick() {
-        if (this.props.onAction) {
-            this.props.onAction('configuration');
-        }
+        if (this.props.onAction) this.props.onAction('configuration');
     }
-    
-    onCreatePersonClick() {
-        if (this.props.onAction) {
-            this.props.onAction('create_person');
-        }
+}
+
+/**
+ * SlideOverDetails component — overlay panel that slides in from the right
+ * with the same content as DetailsPanel, organised in tabs (Info /
+ * Configuration). Triggered by double-click on a member row or the
+ * "Details" button in the members header.
+ */
+export class SlideOverDetails extends Component {
+    static template = "myschool_admin.SlideOverDetails";
+    static props = {
+        node: { type: [Object, { value: null }], optional: true },
+        ciRelations: { type: Array, optional: true },
+        ciLoading: { type: Boolean, optional: true },
+        onClose: { type: Function, optional: true },
+        onAction: { type: Function, optional: true },
+        onOpenRecord: { type: Function, optional: true },
+        onEditCi: { type: Function, optional: true },
+        onRemoveCi: { type: Function, optional: true },
+        onAddCi: { type: Function, optional: true },
+    };
+
+    setup() {
+        this.rootRef = useRef("root");
+        this.state = useState({
+            tab: 'info',
+            ciLoading: false,
+        });
+
+        onMounted(() => {
+            // Focus the panel root so Escape works.
+            this.rootRef.el?.focus();
+        });
     }
-    
-    onAddChildOrgClick() {
-        if (this.props.onAction) {
-            this.props.onAction('add_child_org');
-        }
+
+    // Reset to Info tab whenever a different node is loaded. Without this,
+    // re-opening with a new person while previously on 'config' would
+    // leave a possibly-empty/irrelevant tab visible.
+    setTab(tab) {
+        this.state.tab = tab;
     }
-    
-    onMoveOrgClick() {
-        if (this.props.onAction) {
-            this.props.onAction('move_org');
-        }
+
+    get isPersongroup() {
+        const n = this.props.node;
+        return (n?.type === 'org' && n?.org_type_name === 'PERSONGROUP')
+            || n?.type === 'persongroup';
     }
-    
-    onManageOrgRolesClick() {
-        if (this.props.onAction) {
-            this.props.onAction('manage_org_roles');
-        }
+
+    get isOrgLike() {
+        const t = this.props.node?.type;
+        return t === 'org' || t === 'persongroup';
     }
-    
-    onDeleteOrgClick() {
-        if (this.props.onAction) {
-            this.props.onAction('delete');
-        }
+
+    // Configuration tab only makes sense for orgs (CI relations live on orgs).
+    get hasConfigTab() {
+        return this.isOrgLike;
     }
-    
-    onManagePersonRolesClick() {
-        if (this.props.onAction) {
-            this.props.onAction('manage_person_roles');
-        }
+
+    get ciRelations() {
+        return this.props.ciRelations || [];
     }
-    
-    onMovePersonClick() {
-        if (this.props.onAction) {
-            this.props.onAction('move_person');
-        }
+
+    get ciCount() {
+        return this.ciRelations.length;
     }
-    
-    onDeactivatePersonClick() {
-        if (this.props.onAction) {
-            this.props.onAction('deactivate_person');
-        }
+
+    get headerIconStyle() {
+        const n = this.props.node;
+        if (!n) return '';
+        const hex = n.org_type_color || n.person_type_color || '';
+        if (!hex) return '';
+        const v = hex.startsWith('#') ? hex.slice(1) : hex;
+        const isShort = v.length === 3;
+        const r = parseInt(isShort ? v[0] + v[0] : v.slice(0, 2), 16);
+        const g = parseInt(isShort ? v[1] + v[1] : v.slice(2, 4), 16);
+        const b = parseInt(isShort ? v[2] + v[2] : v.slice(4, 6), 16);
+        if ([r, g, b].some(x => Number.isNaN(x))) return '';
+        return `background: rgba(${r},${g},${b},0.16); color: ${hex};`;
     }
-    
-    onDeletePersonClick() {
-        if (this.props.onAction) {
-            this.props.onAction('delete_person');
+
+    get quickActions() {
+        const node = this.props.node;
+        if (!node) return [];
+        return actionsForNode(node)
+            .filter(a => a.inQuick)
+            .filter(a => !a.when || a.when(node))
+            .map(a => ({
+                key: a.key,
+                label: a.quickLabel || a.label,
+                iconClass: a.quickIconClass || a.iconClass,
+                danger: a.danger,
+            }));
+    }
+
+    onQuickAction(key) {
+        if (this.props.onAction) this.props.onAction(key, this.props.node);
+    }
+
+    openRecord() {
+        if (this.props.onOpenRecord) this.props.onOpenRecord(this.props.node);
+    }
+
+    onCloseClick() {
+        if (this.props.onClose) this.props.onClose();
+    }
+
+    onKeyDown(ev) {
+        if (ev.key === 'Escape') {
+            ev.preventDefault();
+            this.onCloseClick();
         }
     }
 
-    onManageMembersClick() {
-        if (this.props.onAction) {
-            this.props.onAction('manage_members');
-        }
+    onEditCi(ciId) {
+        if (this.props.onEditCi) this.props.onEditCi(ciId);
+    }
+
+    onRemoveCi(ciId) {
+        if (this.props.onRemoveCi) this.props.onRemoveCi(ciId);
+    }
+
+    onAddCi() {
+        if (this.props.onAddCi) this.props.onAddCi();
     }
 }
 
@@ -287,17 +515,312 @@ export class MembersPanel extends Component {
         loading: { type: Boolean, optional: true },
         onOpenRecord: { type: Function, optional: true },
         onMemberContextMenu: { type: Function, optional: true },
+        onPanelContextMenu: { type: Function, optional: true },
         onMemberSelect: { type: Function, optional: true },
+        onMemberAction: { type: Function, optional: true },
+        onMemberKebab: { type: Function, optional: true },
+        onMemberOpenDetails: { type: Function, optional: true },
+        onOpenOrgDetails: { type: Function, optional: true },
+        onMemberDragStart: { type: Function, optional: true },
+        onMemberDragEnd: { type: Function, optional: true },
         onPasswordClick: { type: Function, optional: true },
+        onFocus: { type: Function, optional: true },
         selectedMemberId: { type: Number, optional: true },
         selectedMemberType: { type: String, optional: true },
         selectedMemberIds: { type: Object, optional: true },
+        focused: { type: Boolean, optional: true },
     };
-    
+
+    // Static catalogue of all optional columns. The header row + each
+    // member row iterate this to decide which columns to render.
+    static get COLUMN_OPTIONS() {
+        return [
+            { key: 'roles',   label: 'Rol' },
+            { key: 'type',    label: 'Type' },
+            { key: 'email',   label: 'E-mail' },
+            { key: 'sap_ref', label: 'SAP-ref' },
+            { key: 'active',  label: 'Status' },
+        ];
+    }
+
+    static get DEFAULT_VISIBLE_COLUMNS() {
+        return { roles: true, type: false, email: false, sap_ref: false, active: false };
+    }
+
+    static get DEFAULT_COLUMN_ORDER() {
+        return ['roles', 'type', 'email', 'sap_ref', 'active'];
+    }
+
+    static get DEFAULT_COLUMN_WIDTHS() {
+        return { roles: 110, type: 110, email: 220, sap_ref: 120, active: 90 };
+    }
+
+    static get MIN_COLUMN_WIDTH() { return 60; }
+
+    static get _LS_KEY() { return 'myschool_admin.members.columnConfig'; }
+
     setup() {
+        const cfg = this._loadConfig();
         this.state = useState({
             filterText: '',
+            showColumnConfig: false,
+            visibleColumns: cfg.visibleColumns,
+            columnOrder: cfg.columnOrder,
+            columnWidths: cfg.columnWidths,
+            dragOverColumn: null,
         });
+        // Track in-progress drag/resize (not in reactive state to avoid
+        // unnecessary re-renders during continuous mousemove).
+        this._resize = null;
+        this._dragKey = null;
+        this._onColumnResizeMove = this._onColumnResizeMove.bind(this);
+        this._onColumnResizeEnd = this._onColumnResizeEnd.bind(this);
+
+        // Reset the in-pane filter whenever the active org changes, so a
+        // filter typed for org A doesn't silently hide all members of
+        // org B (which would otherwise look like "count right, list empty").
+        onWillUpdateProps((nextProps) => {
+            const oldId = this.props.node?.id;
+            const newId = nextProps.node?.id;
+            if (oldId !== newId && this.state.filterText) {
+                this.state.filterText = '';
+            }
+        });
+    }
+
+    // --- Persisted config: visibility + order + widths ----------------
+
+    _loadConfig() {
+        const defaults = {
+            visibleColumns: { ...MembersPanel.DEFAULT_VISIBLE_COLUMNS },
+            columnOrder:   [...MembersPanel.DEFAULT_COLUMN_ORDER],
+            columnWidths:  { ...MembersPanel.DEFAULT_COLUMN_WIDTHS },
+        };
+        try {
+            const raw = window.localStorage.getItem(MembersPanel._LS_KEY);
+            if (!raw) return defaults;
+            const parsed = JSON.parse(raw);
+            return {
+                visibleColumns: { ...defaults.visibleColumns, ...(parsed.visibleColumns || {}) },
+                columnOrder: this._sanitiseOrder(parsed.columnOrder),
+                columnWidths:  { ...defaults.columnWidths,  ...(parsed.columnWidths  || {}) },
+            };
+        } catch (e) {
+            return defaults;
+        }
+    }
+
+    // Strip unknown keys and append any new keys at the end so newer
+    // columns become visible without manual reset.
+    _sanitiseOrder(order) {
+        const valid = new Set(MembersPanel.COLUMN_OPTIONS.map(c => c.key));
+        const seen = new Set();
+        const out = [];
+        for (const k of (Array.isArray(order) ? order : [])) {
+            if (valid.has(k) && !seen.has(k)) {
+                out.push(k);
+                seen.add(k);
+            }
+        }
+        for (const c of MembersPanel.COLUMN_OPTIONS) {
+            if (!seen.has(c.key)) out.push(c.key);
+        }
+        return out;
+    }
+
+    _saveConfig() {
+        try {
+            window.localStorage.setItem(
+                MembersPanel._LS_KEY,
+                JSON.stringify({
+                    visibleColumns: this.state.visibleColumns,
+                    columnOrder: this.state.columnOrder,
+                    columnWidths: this.state.columnWidths,
+                }));
+        } catch (e) { /* ignore */ }
+    }
+
+    get visibleColumns() {
+        return this.state.visibleColumns;
+    }
+
+    get columnOptions() {
+        return MembersPanel.COLUMN_OPTIONS;
+    }
+
+    // Ordered + visible-only column descriptors, ready for t-foreach.
+    get visibleOrderedColumns() {
+        const labelFor = (k) => MembersPanel.COLUMN_OPTIONS.find(c => c.key === k)?.label || k;
+        return this.state.columnOrder
+            .filter(k => this.state.visibleColumns[k])
+            .map(k => ({ key: k, label: labelFor(k) }));
+    }
+
+    // Inline style for a data/header cell. Returns "" when width is
+    // unset, letting the default CSS flex-basis apply.
+    columnStyle(key) {
+        const w = this.state.columnWidths[key];
+        return w ? `flex: 0 0 ${w}px; width: ${w}px;` : '';
+    }
+
+    onToggleColumnConfig() {
+        this.state.showColumnConfig = !this.state.showColumnConfig;
+    }
+
+    onColumnToggle(key, checked) {
+        this.state.visibleColumns = { ...this.state.visibleColumns, [key]: !!checked };
+        this._saveConfig();
+    }
+
+    resetColumns() {
+        this.state.visibleColumns = { ...MembersPanel.DEFAULT_VISIBLE_COLUMNS };
+        this.state.columnOrder    = [...MembersPanel.DEFAULT_COLUMN_ORDER];
+        this.state.columnWidths   = { ...MembersPanel.DEFAULT_COLUMN_WIDTHS };
+        this._saveConfig();
+    }
+
+    // --- Drag-to-reorder ----------------------------------------------
+
+    onColumnDragStart(ev, key) {
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', `col:${key}`);
+        this._dragKey = key;
+    }
+
+    onColumnDragOver(ev, key) {
+        if (!this._dragKey || this._dragKey === key) return;
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        if (this.state.dragOverColumn !== key) {
+            this.state.dragOverColumn = key;
+        }
+    }
+
+    onColumnDragLeave() {
+        if (this.state.dragOverColumn) this.state.dragOverColumn = null;
+    }
+
+    onColumnDrop(ev, key) {
+        ev.preventDefault();
+        const fromKey = this._dragKey;
+        this._dragKey = null;
+        this.state.dragOverColumn = null;
+        if (!fromKey || fromKey === key) return;
+        const order = [...this.state.columnOrder];
+        const fromIdx = order.indexOf(fromKey);
+        const toIdx   = order.indexOf(key);
+        if (fromIdx < 0 || toIdx < 0) return;
+        order.splice(fromIdx, 1);
+        order.splice(toIdx, 0, fromKey);
+        this.state.columnOrder = order;
+        this._saveConfig();
+    }
+
+    onColumnDragEnd() {
+        this._dragKey = null;
+        this.state.dragOverColumn = null;
+    }
+
+    // --- Resize handle on right edge of a column header ---------------
+
+    onColumnResizeStart(ev, key) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const w = this.state.columnWidths[key] || MembersPanel.DEFAULT_COLUMN_WIDTHS[key] || 100;
+        this._resize = { key, startX: ev.clientX, startW: w };
+        document.addEventListener('mousemove', this._onColumnResizeMove);
+        document.addEventListener('mouseup', this._onColumnResizeEnd);
+        document.body.classList.add('ob-resizing');
+    }
+
+    _onColumnResizeMove(ev) {
+        if (!this._resize) return;
+        const delta = ev.clientX - this._resize.startX;
+        const next = Math.max(
+            MembersPanel.MIN_COLUMN_WIDTH,
+            this._resize.startW + delta,
+        );
+        this.state.columnWidths = {
+            ...this.state.columnWidths,
+            [this._resize.key]: next,
+        };
+    }
+
+    _onColumnResizeEnd() {
+        document.removeEventListener('mousemove', this._onColumnResizeMove);
+        document.removeEventListener('mouseup', this._onColumnResizeEnd);
+        document.body.classList.remove('ob-resizing');
+        this._resize = null;
+        this._saveConfig();
+    }
+
+    // --- Row interactions ---
+
+    // Row hover-action button. Action keys mirror onContextMenuAction
+    // so the parent can dispatch via its existing switch.
+    onRowAction(ev, action, member, type) {
+        if (this.props.onMemberAction) {
+            const node = {
+                id: member.id,
+                name: member.name,
+                type: type,
+                model: member.model,
+                org_id: this.props.node?.id,
+                other_active_org_count: member.other_active_org_count || 0,
+                org_type_name: member.org_type_name,  // for persongroup-org distinction
+            };
+            this.props.onMemberAction(action, node);
+        }
+    }
+
+    // Kebab button → open the context menu at the button's position.
+    onRowKebab(ev, member, type) {
+        if (this.props.onMemberKebab) {
+            const rect = ev.currentTarget.getBoundingClientRect();
+            const synthEv = { clientX: rect.left, clientY: rect.bottom + 4,
+                              preventDefault: () => {}, stopPropagation: () => {} };
+            const node = {
+                id: member.id,
+                name: member.name,
+                type: type,
+                model: member.model,
+                org_id: this.props.node?.id,
+                other_active_org_count: member.other_active_org_count || 0,
+                org_type_name: member.org_type_name,
+            };
+            this.props.onMemberKebab(synthEv, node);
+        }
+    }
+
+    // Double-click → open the slide-over details (Phase 3).
+    onMemberDblClick(ev, member, type) {
+        if (this.props.onMemberOpenDetails) {
+            const node = {
+                id: member.id,
+                name: member.name,
+                type: type,
+                model: member.model,
+                org_id: this.props.node?.id,
+                person_type: member.person_type,
+                person_type_color: member.person_type_color,
+                person_type_icon_fa: member.person_type_icon_fa,
+                person_type_icon_url: member.person_type_icon_url,
+                org_type_name: member.org_type_name,
+                org_type_color: member.org_type_color,
+                org_type_icon_fa: member.org_type_icon_fa,
+                org_type_icon_url: member.org_type_icon_url,
+                email: member.email,
+                sap_ref: member.sap_ref,
+                roles: member.roles,
+                is_active: member.is_active,
+            };
+            this.props.onMemberOpenDetails(node);
+        }
+    }
+
+    // Members-header "Details" button → open slide-over for current org.
+    onOrgDetailsClick() {
+        if (this.props.onOpenOrgDetails) this.props.onOpenOrgDetails();
     }
     
     getInitials(name) {
@@ -305,6 +828,23 @@ export class MembersPanel extends Component {
         const parts = name.replace(',', '').split(/\s+/).filter(p => p.length > 0);
         if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
         return name.substring(0, 2).toUpperCase();
+    }
+
+    // Build a CSS `style` string for an avatar circle given a hex tint.
+    // Light tint as background, solid colour for icon/initials text.
+    // Empty input → empty string so the inline style attribute drops out
+    // and the avatar-class default takes over.
+    avatarStyle(hex) {
+        if (!hex || typeof hex !== 'string') return '';
+        // hex with optional leading '#'; accept #rgb or #rrggbb
+        const v = hex.startsWith('#') ? hex.slice(1) : hex;
+        const isShort = v.length === 3;
+        const r = parseInt(isShort ? v[0] + v[0] : v.slice(0, 2), 16);
+        const g = parseInt(isShort ? v[1] + v[1] : v.slice(2, 4), 16);
+        const b = parseInt(isShort ? v[2] + v[2] : v.slice(4, 6), 16);
+        if ([r, g, b].some(n => Number.isNaN(n))) return '';
+        // 16/255 ≈ 0.063 — same alpha as the existing brand-tint pastels.
+        return `background: rgba(${r},${g},${b},0.16); color: ${hex};`;
     }
 
     get filteredPersons() {
@@ -340,19 +880,38 @@ export class MembersPanel extends Component {
         const type = ev.currentTarget.dataset.type;
 
         if (this.props.onMemberSelect && id) {
-            // Create a node object and select it to show in details panel
-            const node = {
-                id: id,
-                name: name,
-                type: type,
-                model: model,
-                org_id: this.props.node?.id,
-            };
+            const node = this._buildMemberNode(id, name, type, model);
             this.props.onMemberSelect(node, {
                 ctrlKey: ev.ctrlKey || ev.metaKey,
                 shiftKey: ev.shiftKey,
             });
         }
+    }
+
+    // Build a fully-populated node from a member click. Member-pane
+    // entries carry rich data (person_type, email, sap_ref, roles, …)
+    // that the details pane needs — copy it onto the node instead of
+    // shipping a stub. Also tag the parent org name/id so the details
+    // pane can render the "Organisatie" card without an extra lookup.
+    _buildMemberNode(id, name, type, model) {
+        const parentOrg = this.props.node || null;
+        const base = {
+            id,
+            name,
+            type,
+            model,
+            org_id: parentOrg?.id || null,
+            parent_org_id: parentOrg?.id || null,
+            parent_org_name: parentOrg?.full_name || parentOrg?.name || '',
+        };
+        if (type === 'person') {
+            const full = (this.props.members?.persons || []).find(p => p.id === id);
+            if (full) Object.assign(base, full, base);  // base wins for org_id
+        } else if (type === 'org' || type === 'persongroup') {
+            const full = (this.props.members?.persongroups || []).find(g => g.id === id);
+            if (full) Object.assign(base, full, base);
+        }
+        return base;
     }
     
     onMemberContextMenu(ev) {
@@ -367,17 +926,25 @@ export class MembersPanel extends Component {
             ev.currentTarget.dataset.otherOrgs || '0', 10) || 0;
 
         if (this.props.onMemberContextMenu && id) {
-            // Create a node object for the context menu
-            const node = {
-                id: id,
-                name: name,
-                type: type,
-                model: model,
-                org_id: this.props.node?.id,  // Parent org for person context
-                other_active_org_count: otherOrgs,
-            };
+            const node = this._buildMemberNode(id, name, type, model);
+            node.other_active_org_count = otherOrgs;
             this.props.onMemberContextMenu(ev, node);
         }
+    }
+
+    // Right-click on the empty area of the panel (i.e. NOT on a member
+    // row — row handlers stop propagation). Surfaces a create-context
+    // menu for the parent org so admins can quickly add a person or
+    // sub-org without first hunting for the right-click target in the
+    // tree. Skipped when the active container is a persongroup —
+    // persongroups have their own member-management flow.
+    onPanelContextMenu(ev) {
+        if (!this.props.onPanelContextMenu) return;
+        const org = this.props.node;
+        if (!org || org.type !== 'org') return;
+        if (org.org_type_name === 'PERSONGROUP') return;
+        ev.preventDefault();
+        this.props.onPanelContextMenu(ev, org);
     }
     
     onPasswordClick(ev, person) {
@@ -405,6 +972,27 @@ export class MembersPanel extends Component {
         const key = `${memberType}_${memberId}`;
         return !!(this.props.selectedMemberIds && this.props.selectedMemberIds[key]);
     }
+
+    onMemberDragStart(ev, member, type) {
+        const node = this._buildMemberNode(member.id, member.name, type, member.model);
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', JSON.stringify({
+            type: node.type, id: node.id, name: node.name,
+        }));
+        if (this.props.onMemberDragStart) {
+            this.props.onMemberDragStart(node);
+        }
+    }
+
+    onMemberDragEnd(ev) {
+        if (this.props.onMemberDragEnd) {
+            this.props.onMemberDragEnd();
+        }
+    }
+
+    onPaneClick() {
+        if (this.props.onFocus) this.props.onFocus();
+    }
 }
 
 /**
@@ -416,68 +1004,31 @@ export class ContextMenu extends Component {
         x: Number,
         y: Number,
         node: Object,
-        bulkSource: { type: String, optional: true },
+        bulkSource: { type: [String, { value: null }], optional: true },
         bulkCount: { type: Number, optional: true },
         onAction: Function,
         onClose: Function,
     };
 
     get menuItems() {
-        const items = [];
         const node = this.props.node;
         const bulkCount = this.props.bulkCount || 0;
         const hasBulk = bulkCount > 1 && this.props.bulkSource;
-        
-        if (node.type === 'org' && node.org_type_name === 'PERSONGROUP') {
-            items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
-            items.push({ divider: true });
-            items.push({ action: 'manage_members', label: 'Manage Members', iconClass: 'fa fa-users' });
-            items.push({ action: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders' });
-            items.push({ divider: true });
-            items.push({ action: 'move_org', label: 'Move Organization', iconClass: 'fa fa-arrows' });
-            items.push({ divider: true });
-            items.push({ action: 'delete', label: 'Delete', iconClass: 'fa fa-trash', danger: true });
-        } else if (node.type === 'org') {
-            items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
-            items.push({ divider: true });
-            items.push({ action: 'create_person', label: 'Create Person', iconClass: 'fa fa-user-plus' });
-            items.push({ action: 'add_child_org', label: 'Add Sub-Organization', iconClass: 'fa fa-plus-circle' });
-            items.push({ action: 'create_persongroup', label: 'Create Persongroup', iconClass: 'fa fa-users' });
-            items.push({ divider: true });
-            items.push({ action: 'manage_org_roles', label: 'Roles', iconClass: 'fa fa-id-badge' });
-            items.push({ action: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders' });
-            items.push({ divider: true });
-            items.push({ action: 'move_org', label: 'Move Organization', iconClass: 'fa fa-arrows' });
-            items.push({ divider: true });
-            items.push({ action: 'delete', label: 'Delete', iconClass: 'fa fa-trash', danger: true });
-        } else if (node.type === 'person') {
-            items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
-            items.push({ divider: true });
-            items.push({ action: 'manage_person_roles', label: 'Roles', iconClass: 'fa fa-id-badge' });
-            items.push({ action: 'move_person', label: 'Move to Org', iconClass: 'fa fa-arrows' });
-            items.push({ divider: true });
-            items.push({ action: 'deactivate_person', label: 'Deactivate', iconClass: 'fa fa-ban', danger: true });
-            items.push({ action: 'delete_person', label: 'Delete', iconClass: 'fa fa-trash', danger: true });
-            // "Remove from this Org" only makes sense when the person
-            // is still attached to at least one OTHER org — otherwise
-            // it leaves a dangling person record with no placement.
-            // For single-org persons "Delete" is the right action.
-            if ((node.other_active_org_count || 0) > 0) {
-                items.push({ divider: true });
-                items.push({
-                    action: 'remove_from_org',
-                    label: 'Unlink from this Org',
-                    iconClass: 'fa fa-user-times',
-                    danger: true,
+
+        // Filter the canonical list to context-menu entries, apply `when`
+        // predicates, and translate keys to the {action,...} shape the
+        // template expects.
+        const items = actionsForNode(node)
+            .filter(a => a.inMenu)
+            .filter(a => !a.when || a.when(node))
+            .map(a => a.divider
+                ? { divider: true }
+                : {
+                    action: a.key,
+                    label: a.label,
+                    iconClass: a.iconClass,
+                    danger: a.danger,
                 });
-            }
-        } else if (node.type === 'persongroup') {
-            items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
-            items.push({ divider: true });
-            items.push({ action: 'manage_members', label: 'Manage Members', iconClass: 'fa fa-users' });
-        } else if (node.type === 'role') {
-            items.push({ action: 'open', label: 'Properties', iconClass: 'fa fa-cog' });
-        }
 
         if (hasBulk) {
             items.push({ divider: true });
@@ -506,13 +1057,14 @@ export class ContextMenu extends Component {
  */
 export class ObjectBrowserClient extends Component {
     static template = "myschool_admin.ObjectBrowserClient";
-    static components = { TreeNode, ContextMenu, DetailsPanel, MembersPanel };
+    static components = { TreeNode, ContextMenu, DetailsPanel, MembersPanel, SlideOverDetails };
     
     setup() {
         this.orm = useService("orm");
         this.action = useService("action");
         this.notification = useService("notification");
         this.containerRef = useRef("container");
+        this.globalSearchRef = useRef("globalSearch");
         
         this.state = useState({
             loading: true,
@@ -538,6 +1090,20 @@ export class ObjectBrowserClient extends Component {
             selectedMemberIds: {},
             // Anchor for shift+click range select on members pane.
             lastSelectedMemberKey: null,
+            // Active splitter ('tree' | 'members' | null) — used to apply
+            // a hover-locked class and a global resize cursor while dragging.
+            resizing: null,
+            // Which pane has keyboard focus ('tree' | 'members'). Updated
+            // by mousedown on a pane; arrow keys navigate within it.
+            focusedPane: 'tree',
+            // Global-search scope: 'all' | 'orgs' | 'persons' | 'roles'.
+            // Filter is applied client-side on the result set.
+            searchScope: 'all',
+            // Slide-over (Phase 3): when set, the SlideOverDetails panel
+            // is rendered as an overlay above the members pane. null = closed.
+            slideOverNode: null,
+            slideOverCiRelations: [],
+            slideOverCiLoading: false,
         });
         
         // Bind methods that are passed as props
@@ -545,11 +1111,29 @@ export class ObjectBrowserClient extends Component {
         this.onContextMenu = this.onContextMenu.bind(this);
         this.onMemberContextMenu = this.onMemberContextMenu.bind(this);
         this.onMemberSelect = this.onMemberSelect.bind(this);
+        this.onMemberRowAction = this.onMemberRowAction.bind(this);
+        this.onMemberRowKebab = this.onMemberRowKebab.bind(this);
+        this.onMembersPanelContextMenu = this.onMembersPanelContextMenu.bind(this);
+        this.onMemberOpenDetails = this.onMemberOpenDetails.bind(this);
+        this.onOpenOrgDetails = this.onOpenOrgDetails.bind(this);
+        this.closeSlideOver = this.closeSlideOver.bind(this);
+        this.onSlideOverAction = this.onSlideOverAction.bind(this);
+        this.onSlideOverOpenRecord = this.onSlideOverOpenRecord.bind(this);
+        this.openAddCiForActiveOrg = this.openAddCiForActiveOrg.bind(this);
         this.onPasswordClick = this.onPasswordClick.bind(this);
         this.onToggleSelect = this.onToggleSelect.bind(this);
         this.onDragStart = this.onDragStart.bind(this);
         this.onDragOver = this.onDragOver.bind(this);
         this.onDrop = this.onDrop.bind(this);
+        this.onMemberDragStart = this.onMemberDragStart.bind(this);
+        this.onMemberDragEnd = this.onMemberDragEnd.bind(this);
+        this.onBreadcrumbClick = this.onBreadcrumbClick.bind(this);
+        this.onSplitterMouseDown = this.onSplitterMouseDown.bind(this);
+        this.onSplitterDoubleClick = this.onSplitterDoubleClick.bind(this);
+        this._onSplitterMouseMove = this._onSplitterMouseMove.bind(this);
+        this._onSplitterMouseUp = this._onSplitterMouseUp.bind(this);
+        this.onKeyDown = this.onKeyDown.bind(this);
+        this.onPaneFocus = this.onPaneFocus.bind(this);
         this.onContextMenuAction = this.onContextMenuAction.bind(this);
         this.onCloseContextMenu = this.onCloseContextMenu.bind(this);
         this.onDetailsAction = this.onDetailsAction.bind(this);
@@ -558,26 +1142,139 @@ export class ObjectBrowserClient extends Component {
         this.openRemoveCiWizard = this.openRemoveCiWizard.bind(this);
         this.onDocumentClick = this.onDocumentClick.bind(this);
         this.openRecord = this.openRecord.bind(this);
+        this.navigateToOrg = this.navigateToOrg.bind(this);
         this.onToggleExpand = this.onToggleExpand.bind(this);
         this.onGlobalSearchInput = this.onGlobalSearchInput.bind(this);
         this.onGlobalSearchKeydown = this.onGlobalSearchKeydown.bind(this);
         this.onGlobalSearchResultClick = this.onGlobalSearchResultClick.bind(this);
-        
+        this.onSearchScopeChange = this.onSearchScopeChange.bind(this);
+
         onWillStart(async () => {
             await this.loadData();
         });
-        
+
         onMounted(() => {
             document.addEventListener('click', this.onDocumentClick);
+            // Container ref is available now — restore persisted pane widths.
+            this._loadPaneWidths();
+            // Give the container initial focus so keydown is delivered.
+            this.containerRef.el?.focus();
         });
-        
+
         onWillUnmount(() => {
             document.removeEventListener('click', this.onDocumentClick);
+            // Defensive: drop dangling splitter listeners if unmount during resize.
+            document.removeEventListener('mousemove', this._onSplitterMouseMove);
+            document.removeEventListener('mouseup', this._onSplitterMouseUp);
+            document.body.classList.remove('ob-resizing');
         });
     }
     
     get selectedCount() {
         return Object.keys(this.state.selectedIds).filter(k => this.state.selectedIds[k]).length;
+    }
+
+    get memberSelectedCount() {
+        return Object.keys(this.state.selectedMemberIds).filter(k => this.state.selectedMemberIds[k]).length;
+    }
+
+    get totalSelectedCount() {
+        return this.selectedCount + this.memberSelectedCount;
+    }
+
+    // Resolve a person -> their parent org node by walking the tree.
+    // Persons appear under their org via state.treeData.organizations[*].persons.
+    findOrgNodeForPersonId(personId) {
+        if (!personId) return null;
+        const walk = (nodes) => {
+            if (!nodes) return null;
+            for (const n of nodes) {
+                if (n.persons) {
+                    for (const p of n.persons) {
+                        if (p.id === personId) return n;
+                    }
+                }
+                if (n.children) {
+                    const found = walk(n.children);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+        return walk(this.state.treeData?.organizations || []);
+    }
+
+    // Jump tree+members+details to a specific org (used by the
+    // "Organisatie" card in the details pane). Expands the path so
+    // the org is visible, then selects it to drive _loadOrgContext.
+    async navigateToOrg(orgId) {
+        if (!orgId) return;
+        this.expandPathToOrg(orgId);
+        const orgNode = this.findOrgNodeById(orgId)
+            || { id: orgId, type: 'org', model: 'myschool.org', name: '' };
+        await this.onSelectNode(orgNode);
+    }
+
+    // Resolve an org id -> its node anywhere in the tree.
+    findOrgNodeById(orgId) {
+        if (!orgId) return null;
+        const walk = (nodes) => {
+            if (!nodes) return null;
+            for (const n of nodes) {
+                if (n.id === orgId && n.type === 'org') return n;
+                if (n.children) {
+                    const found = walk(n.children);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+        return walk(this.state.treeData?.organizations || []);
+    }
+
+    // Breadcrumb path for the currently focused thing. Returns an array of
+    // segment objects { id, name, type, model } from root org down to the
+    // active node (org or person). Empty list when nothing is selected.
+    get breadcrumbPath() {
+        const path = [];
+        const buildOrgPath = (orgId) => {
+            const segs = [];
+            const walk = (nodes, trail) => {
+                if (!nodes) return false;
+                for (const n of nodes) {
+                    if (n.type !== 'org') continue;
+                    const here = [...trail, n];
+                    if (n.id === orgId) {
+                        for (const s of here) {
+                            segs.push({ id: s.id, name: s.name, type: 'org', model: 'myschool.org' });
+                        }
+                        return true;
+                    }
+                    if (n.children && walk(n.children, here)) return true;
+                }
+                return false;
+            };
+            walk(this.state.treeData?.organizations || [], []);
+            return segs;
+        };
+        const node = this.state.activeNode;
+        if (!node) return path;
+        if (node.type === 'org') {
+            return buildOrgPath(node.id);
+        }
+        if (node.type === 'person') {
+            const orgId = node.org_id || this.state.activeOrgNode?.id;
+            const segs = orgId ? buildOrgPath(orgId) : [];
+            segs.push({ id: node.id, name: node.name, type: 'person', model: 'myschool.person' });
+            return segs;
+        }
+        if (node.type === 'persongroup') {
+            const orgId = node.org_id || this.state.activeOrgNode?.id;
+            const segs = orgId ? buildOrgPath(orgId) : [];
+            segs.push({ id: node.id, name: node.name, type: 'persongroup', model: 'myschool.org' });
+            return segs;
+        }
+        return path;
     }
     
     async loadData() {
@@ -639,55 +1336,416 @@ export class ObjectBrowserClient extends Component {
         
         findAndExpandParents(this.state.treeData.organizations || [], orgId);
     }
-    
-    // Node selection for details panel
-    async onSelectNode(node) {
-        this.state.activeNode = node;
-        
-        console.log('onSelectNode called with node:', node);
-        
-        // Load CI relations and members for orgs
-        if (node.type === 'org') {
-            // Track this org for members panel
-            this.state.activeOrgNode = node;
-            this.state.membersData = { persons: [], persongroups: [] };
-            
-            // Load CI relations
+
+    // Centralised post-mutation refresh. Wizards that create / edit /
+    // delete persons or orgs should call this from their onClose hook
+    // so all visible state catches up:
+    //   1. Reload the tree (loadData) — picks up new orgs, deletions,
+    //      moves, count badges, etc.
+    //   2. Reload the members of the currently-active org so the rows
+    //      in the members pane appear/disappear immediately.
+    //   3. If the slide-over is open for that same org, refresh its
+    //      CI relations too so the Configuration tab stays in sync.
+    //
+    // ``focusOrgId`` (optional): the org whose path should be expanded
+    // in the tree afterwards (typically the wizard's target org).
+    async _refreshTreeAndMembers(focusOrgId = null) {
+        await this.loadData();
+        if (focusOrgId) this.expandPathToOrg(focusOrgId);
+
+        const activeOrg = this.state.activeOrgNode;
+        if (activeOrg?.id) {
+            // Use the freshly-loaded tree node when available — that one
+            // has the most recent display name, child_count, etc.
+            const fresh = this.findOrgNodeById(activeOrg.id) || activeOrg;
+            await this._loadOrgContext(fresh, { setActive: false });
+        }
+
+        const slideOrg = this.state.slideOverNode;
+        if (slideOrg && (slideOrg.type === 'org' || slideOrg.type === 'persongroup')) {
             try {
                 const ciRelations = await this.orm.call(
                     'myschool.object.browser',
                     'get_ci_relations_for_org',
-                    [node.id]
+                    [slideOrg.id],
                 );
-                this.state.activeNode = { ...node, ciRelations: ciRelations };
-                this.state.activeOrgNode = { ...node, ciRelations: ciRelations };
-            } catch (error) {
-                console.warn('Could not load CI relations:', error);
-                this.state.activeNode = { ...node, ciRelations: [] };
-                this.state.activeOrgNode = { ...node, ciRelations: [] };
+                this.state.slideOverCiRelations = ciRelations || [];
+            } catch (e) {
+                // Non-fatal: the slide-over keeps its current state.
             }
-            
-            // Load members (persons and persongroups)
-            this.state.membersLoading = true;
-            try {
-                console.log('Calling get_members_for_org with org_id:', node.id);
-                const membersData = await this.orm.call(
-                    'myschool.object.browser',
-                    'get_members_for_org',
-                    [node.id]
-                );
-                console.log('get_members_for_org returned:', membersData);
-                this.state.membersData = membersData || { persons: [], persongroups: [] };
-                console.log('membersData set to:', this.state.membersData);
-            } catch (error) {
-                console.error('Could not load members:', error);
-                this.state.membersData = { persons: [], persongroups: [] };
+        }
+    }
+
+    // Node selection for details panel
+    async onSelectNode(node) {
+        // Enrich person nodes with parent_org_name so the details pane
+        // can render the "Organisatie" card without an extra lookup.
+        if (node.type === 'person' && node.org_id && !node.parent_org_name) {
+            const orgNode = this.findOrgNodeById(node.org_id);
+            if (orgNode) {
+                node = {
+                    ...node,
+                    parent_org_id: node.org_id,
+                    parent_org_name: orgNode.full_name || orgNode.name || '',
+                };
             }
-            this.state.membersLoading = false;
+        }
+        this.state.activeNode = node;
+
+        // For persons, make the members panel context follow: switch
+        // activeOrgNode to the person's parent org and load its members
+        // (if different from what's already shown). This keeps the 3
+        // panes coherent — selecting a person never leaves the middle
+        // pane pointing at an unrelated org.
+        if (node.type === 'person') {
+            const orgId = node.org_id;
+            if (orgId && this.state.activeOrgNode?.id !== orgId) {
+                const orgNode = this.findOrgNodeById(orgId)
+                    || { id: orgId, type: 'org', model: 'myschool.org', name: '' };
+                await this._loadOrgContext(orgNode);
+            }
+            return;
+        }
+
+        // Load CI relations and members for orgs
+        if (node.type === 'org') {
+            await this._loadOrgContext(node, { setActive: true });
         }
         // For persons, don't clear members data - keep showing the org's members
     }
-    
+
+    // Load the org-scoped context: CI relations + members. Shared by
+    // direct org clicks (setActive=true) and indirect activation via
+    // a person click (setActive=false — activeNode stays on the person).
+    async _loadOrgContext(node, { setActive = true } = {}) {
+        this.state.activeOrgNode = node;
+        this.state.membersData = { persons: [], persongroups: [] };
+
+        try {
+            const ciRelations = await this.orm.call(
+                'myschool.object.browser',
+                'get_ci_relations_for_org',
+                [node.id]
+            );
+            const merged = { ...node, ciRelations };
+            this.state.activeOrgNode = merged;
+            if (setActive) this.state.activeNode = merged;
+        } catch (error) {
+            console.warn('Could not load CI relations:', error);
+            const merged = { ...node, ciRelations: [] };
+            this.state.activeOrgNode = merged;
+            if (setActive) this.state.activeNode = merged;
+        }
+
+        this.state.membersLoading = true;
+        try {
+            const membersData = await this.orm.call(
+                'myschool.object.browser',
+                'get_members_for_org',
+                [node.id],
+                {
+                    show_inactive: this.state.showInactive,
+                    show_administrative: this.state.showAdministrative,
+                },
+            );
+            this.state.membersData = membersData || { persons: [], persongroups: [] };
+        } catch (error) {
+            console.error('Could not load members:', error);
+            this.state.membersData = { persons: [], persongroups: [] };
+        }
+        this.state.membersLoading = false;
+    }
+
+    // ============================================================
+    // Pane resize (splitters between Tree | Members | Details)
+    // ============================================================
+    // Widths persist per browser via localStorage; reset to defaults on
+    // dblclick of a splitter handle. Defaults match the CSS fallbacks.
+    static get _PANE_DEFAULTS() { return { tree: 320, members: 400 }; }
+    static get _PANE_MIN() { return { tree: 180, members: 220 }; }
+    static get _LS_KEY() { return 'myschool_admin.object_browser.paneWidths'; }
+
+    _loadPaneWidths() {
+        try {
+            const raw = window.localStorage.getItem(ObjectBrowserClient._LS_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            this._applyPaneWidth('tree', parsed.tree);
+            this._applyPaneWidth('members', parsed.members);
+        } catch (e) {
+            // Bad localStorage data — ignore and fall back to defaults.
+        }
+    }
+
+    _savePaneWidths() {
+        const data = {
+            tree: this._currentPaneWidth('tree'),
+            members: this._currentPaneWidth('members'),
+        };
+        try {
+            window.localStorage.setItem(
+                ObjectBrowserClient._LS_KEY, JSON.stringify(data));
+        } catch (e) {
+            // Quota / private mode — silently skip.
+        }
+    }
+
+    _currentPaneWidth(which) {
+        const root = this.containerRef.el;
+        if (!root) return ObjectBrowserClient._PANE_DEFAULTS[which];
+        const varName = which === 'tree' ? '--ob-tree-width' : '--ob-members-width';
+        const cur = root.style.getPropertyValue(varName);
+        if (cur) {
+            const n = parseInt(cur, 10);
+            if (!Number.isNaN(n)) return n;
+        }
+        return ObjectBrowserClient._PANE_DEFAULTS[which];
+    }
+
+    _applyPaneWidth(which, px) {
+        const root = this.containerRef.el;
+        if (!root) return;
+        const min = ObjectBrowserClient._PANE_MIN[which];
+        const value = Math.max(min, parseInt(px, 10) || ObjectBrowserClient._PANE_DEFAULTS[which]);
+        const varName = which === 'tree' ? '--ob-tree-width' : '--ob-members-width';
+        root.style.setProperty(varName, `${value}px`);
+    }
+
+    onSplitterMouseDown(ev, which) {
+        ev.preventDefault();
+        this.state.resizing = which;
+        this._resizeStart = {
+            x: ev.clientX,
+            width: this._currentPaneWidth(which),
+            which,
+        };
+        document.addEventListener('mousemove', this._onSplitterMouseMove);
+        document.addEventListener('mouseup', this._onSplitterMouseUp);
+        document.body.classList.add('ob-resizing');
+    }
+
+    _onSplitterMouseMove(ev) {
+        if (!this._resizeStart) return;
+        const dx = ev.clientX - this._resizeStart.x;
+        this._applyPaneWidth(this._resizeStart.which, this._resizeStart.width + dx);
+    }
+
+    _onSplitterMouseUp() {
+        document.removeEventListener('mousemove', this._onSplitterMouseMove);
+        document.removeEventListener('mouseup', this._onSplitterMouseUp);
+        document.body.classList.remove('ob-resizing');
+        this.state.resizing = null;
+        this._resizeStart = null;
+        this._savePaneWidths();
+    }
+
+    onSplitterDoubleClick(which) {
+        this._applyPaneWidth(which, ObjectBrowserClient._PANE_DEFAULTS[which]);
+        this._savePaneWidths();
+    }
+
+
+    // ============================================================
+    // Keyboard navigation
+    // ============================================================
+
+    onPaneFocus(pane) {
+        if (this.state.focusedPane !== pane) {
+            this.state.focusedPane = pane;
+        }
+        // Re-focus the container so keydown events keep flowing.
+        // (Inputs inside panes will keep their own focus — that's fine,
+        // the keydown handler bails out when target is an input.)
+        const root = this.containerRef.el;
+        if (root && document.activeElement && !root.contains(document.activeElement)) {
+            root.focus();
+        }
+    }
+
+    // Visible-orgs flattener for tree navigation (depth-first, expanded only).
+    flattenVisibleTreeOrgs() {
+        const out = [];
+        const walk = (nodes) => {
+            if (!nodes) return;
+            for (const n of nodes) {
+                if (n.type !== 'org') continue;
+                out.push(n);
+                const key = `${n.type}_${n.id}`;
+                const expanded = (key in this.state.expandedIds)
+                    ? this.state.expandedIds[key]
+                    : true;  // level-0 default-open; deeper levels default-closed
+                if (expanded && n.children?.length) walk(n.children);
+            }
+        };
+        walk(this.state.treeData?.organizations || []);
+        return out;
+    }
+
+    onKeyDown(ev) {
+        // Don't interfere when user is typing in an input/textarea/contentEditable.
+        const tag = (ev.target?.tagName || '').toLowerCase();
+        const isTyping = tag === 'input' || tag === 'textarea' || ev.target?.isContentEditable;
+        if (isTyping && ev.key !== 'Escape') {
+            return;
+        }
+
+        // Ctrl+K / Cmd+K → focus global search (works from any pane).
+        if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'k' || ev.key === 'K')) {
+            ev.preventDefault();
+            const input = this.globalSearchRef.el
+                || this.containerRef.el?.querySelector('.ob-global-search');
+            if (input) {
+                input.focus();
+                input.select?.();
+            }
+            return;
+        }
+
+        if (ev.key === 'Escape') {
+            // Inside an input → let onGlobalSearchKeydown handle its own state.
+            // At pane level, drop selection and close context menu.
+            if (!isTyping) {
+                if (this.state.contextMenu) this.state.contextMenu = null;
+                this.state.selectedIds = {};
+                this.state.selectedMemberIds = {};
+            }
+            return;
+        }
+
+        const pane = this.state.focusedPane;
+        if (pane === 'tree') return this._handleKeyTree(ev);
+        if (pane === 'members') return this._handleKeyMembers(ev);
+    }
+
+    _handleKeyTree(ev) {
+        const flat = this.flattenVisibleTreeOrgs();
+        if (!flat.length) return;
+        const activeId = this.state.activeNode?.type === 'org' ? this.state.activeNode.id : null;
+        const idx = activeId != null ? flat.findIndex(n => n.id === activeId) : -1;
+
+        const move = (delta) => {
+            ev.preventDefault();
+            const next = idx < 0 ? 0 : Math.max(0, Math.min(flat.length - 1, idx + delta));
+            this.onSelectNode(flat[next]);
+        };
+
+        switch (ev.key) {
+            case 'ArrowDown': return move(1);
+            case 'ArrowUp':   return move(-1);
+            case 'ArrowRight': {
+                if (idx < 0) return;
+                ev.preventDefault();
+                const node = flat[idx];
+                const key = `${node.type}_${node.id}`;
+                if (node.children?.length) {
+                    this.state.expandedIds[key] = true;
+                }
+                return;
+            }
+            case 'ArrowLeft': {
+                if (idx < 0) return;
+                ev.preventDefault();
+                const node = flat[idx];
+                const key = `${node.type}_${node.id}`;
+                const expanded = (key in this.state.expandedIds)
+                    ? this.state.expandedIds[key] : true;
+                if (expanded && node.children?.length) {
+                    this.state.expandedIds[key] = false;
+                }
+                return;
+            }
+            case 'Enter': {
+                if (idx < 0) return;
+                ev.preventDefault();
+                const node = flat[idx];
+                this.openRecord(node.model, node.id);
+                return;
+            }
+            case 'Tab': {
+                ev.preventDefault();
+                this.state.focusedPane = 'members';
+                return;
+            }
+            case ' ': /* Space */ {
+                if (idx < 0) return;
+                ev.preventDefault();
+                const node = flat[idx];
+                const key = `${node.type}_${node.id}`;
+                const cur = !!this.state.selectedIds[key];
+                this.state.selectedIds = { ...this.state.selectedIds, [key]: !cur };
+                return;
+            }
+        }
+    }
+
+    _handleKeyMembers(ev) {
+        const flat = this.flattenVisibleMembers();
+        if (!flat.length) {
+            if (ev.key === 'Tab' || ev.key === 'ArrowLeft') {
+                ev.preventDefault();
+                this.state.focusedPane = 'tree';
+            }
+            return;
+        }
+        const an = this.state.activeNode;
+        const activeKey = (an && an.type !== 'org')
+            ? `${an.type}_${an.id}` : null;
+        const idx = activeKey
+            ? flat.findIndex(n => `${n.type}_${n.id}` === activeKey)
+            : -1;
+
+        const selectAt = (i) => {
+            const target = flat[i];
+            const members = this.state.membersData || {};
+            const obj = target.type === 'person'
+                ? (members.persons || []).find(p => p.id === target.id)
+                : (members.persongroups || []).find(g => g.id === target.id);
+            if (!obj) return;
+            // Build the "node" shape that onMemberSelect expects.
+            const node = {
+                id: obj.id,
+                name: obj.name,
+                type: target.type,
+                model: obj.model,
+                org_id: this.state.activeOrgNode?.id,
+            };
+            this.onMemberSelect(node, { ctrlKey: false, shiftKey: false });
+        };
+
+        switch (ev.key) {
+            case 'ArrowDown':
+                ev.preventDefault();
+                return selectAt(idx < 0 ? 0 : Math.min(flat.length - 1, idx + 1));
+            case 'ArrowUp':
+                ev.preventDefault();
+                return selectAt(idx < 0 ? 0 : Math.max(0, idx - 1));
+            case 'Enter': {
+                if (idx < 0) return;
+                ev.preventDefault();
+                const target = flat[idx];
+                this.openRecord(
+                    target.type === 'person' ? 'myschool.person' : 'myschool.org',
+                    target.id);
+                return;
+            }
+            case ' ': /* Space — toggle multi-select */ {
+                if (idx < 0) return;
+                ev.preventDefault();
+                const target = flat[idx];
+                const key = `${target.type}_${target.id}`;
+                const cur = !!this.state.selectedMemberIds[key];
+                this.state.selectedMemberIds = { ...this.state.selectedMemberIds, [key]: !cur };
+                return;
+            }
+            case 'Tab':
+            case 'ArrowLeft': {
+                ev.preventDefault();
+                this.state.focusedPane = 'tree';
+                return;
+            }
+        }
+    }
+
     // Flat list of members shown in the panel (persons then persongroups,
     // matching template order). Used for shift+click range selection.
     flattenVisibleMembers() {
@@ -745,8 +1803,31 @@ export class ObjectBrowserClient extends Component {
         // Plain click — reset multi-set, focus this one in the details pane.
         this.state.selectedMemberIds = {};
         this.state.lastSelectedMemberKey = memberKey;
+
+        // Org-typed members (persongroups + sub-orgs) drill in: switch
+        // members panel to that org and load its CI relations. Mirrors
+        // tree-click semantics. Member-pane clicks may arrive as
+        // type='persongroup' (DOM dataset literal); the tree always uses
+        // type='org'. Use the tree's representation of the node so the
+        // TreeNode active-highlight check matches, and expand the path
+        // so the row is actually visible in the tree.
+        // Also close any open slide-over so its stale content for a
+        // previously-clicked member doesn't linger over the new context.
+        if (node.type === 'org' || node.type === 'persongroup') {
+            if (this.state.slideOverNode) this.closeSlideOver();
+            const treeNode = this.findOrgNodeById(node.id) || {
+                ...node,
+                type: 'org',
+                model: node.model || 'myschool.org',
+            };
+            this.expandPathToOrg(node.id);
+            this._loadOrgContext(treeNode, { setActive: true });
+            return;
+        }
+
         this.state.activeNode = node;
-        // Don't change activeOrgNode or membersData - keep members panel showing
+        // For person clicks, keep activeOrgNode/membersData unchanged
+        // so the members panel keeps showing the org context.
     }
     
     openActiveRecord() {
@@ -776,14 +1857,11 @@ export class ObjectBrowserClient extends Component {
             target: 'new',  // Open in dialog to preserve tree state
         }, {
             onClose: async () => {
-                await this.loadData();
-                if (activeOrgId) {
-                    this.expandPathToOrg(activeOrgId);
-                }
+                await this._refreshTreeAndMembers(activeOrgId);
             }
         });
     }
-    
+
     // Search
     onSearchInput(ev) {
         this.state.searchText = ev.target.value;
@@ -845,9 +1923,36 @@ export class ObjectBrowserClient extends Component {
         // Clear search
         this.state.globalSearchText = '';
         this.state.globalSearchResults = [];
-        
+
         // Open the record
         this.openRecord(result.model, result.id);
+    }
+
+    // Scope chips for the global search. Static — kept here so the
+    // template can iterate over them.
+    get searchScopes() {
+        return [
+            { key: 'all', label: 'Alles', iconClass: 'fa fa-asterisk' },
+            { key: 'orgs', label: 'Orgs', iconClass: 'fa fa-building' },
+            { key: 'persons', label: 'Personen', iconClass: 'fa fa-user' },
+            { key: 'roles', label: 'Rollen', iconClass: 'fa fa-id-badge' },
+        ];
+    }
+
+    // Client-side filter on the result set based on the current scope.
+    // Avoids extra round-trips since global_search() returns mixed types.
+    get filteredGlobalResults() {
+        const results = this.state.globalSearchResults || [];
+        const scope = this.state.searchScope;
+        if (scope === 'all') return results;
+        // Map scope-name to the result `type` field returned by backend.
+        const typeForScope = { orgs: 'org', persons: 'person', roles: 'role' };
+        const wanted = typeForScope[scope];
+        return wanted ? results.filter(r => r.type === wanted) : results;
+    }
+
+    onSearchScopeChange(scope) {
+        this.state.searchScope = scope;
     }
     
     // Password management
@@ -864,24 +1969,20 @@ export class ObjectBrowserClient extends Component {
         }, {
             onClose: async () => {
                 // Refresh after password change
-                const activeOrgId = this.state.activeOrgNode?.id;
-                await this.loadData();
-                if (activeOrgId) {
-                    this.expandPathToOrg(activeOrgId);
-                }
+                await this._refreshTreeAndMembers(this.state.activeOrgNode?.id);
             }
         });
     }
-    
+
     // Filters
     onToggleInactive(ev) {
         this.state.showInactive = ev.target.checked;
-        this.loadData();
+        this._refreshTreeAndMembers(this.state.activeOrgNode?.id);
     }
-    
+
     onToggleAdministrative(ev) {
         this.state.showAdministrative = ev.target.checked;
-        this.loadData();
+        this._refreshTreeAndMembers(this.state.activeOrgNode?.id);
     }
     
     // Refresh
@@ -961,6 +2062,103 @@ export class ObjectBrowserClient extends Component {
             bulkCount: mb.inSet && mb.count > 1 ? mb.count : 0,
         };
         // Don't change activeNode - keep the org selected so members panel stays visible
+    }
+
+    // Bridge: hover-action button on a member row dispatches an action
+    // key that matches one of the cases in onContextMenuAction. We just
+    // forward the call; no special handling needed.
+    onMemberRowAction(action, node) {
+        return this.onContextMenuAction(action, node);
+    }
+
+    // Right-click on the empty area of the members panel → context menu
+    // scoped to the parent org. Reuses onContextMenu (the same one tree
+    // nodes use), so all org-level actions are available.
+    onMembersPanelContextMenu(ev, orgNode) {
+        return this.onContextMenu(ev, orgNode);
+    }
+
+    // Bridge: kebab button opens the context menu at the button's
+    // position. Same as right-click on the row.
+    onMemberRowKebab(ev, node) {
+        return this.onMemberContextMenu(ev, node);
+    }
+
+    // Open the slide-over for a member (double-click on row).
+    // For persongroup/sub-org members: drilling-in is more useful than
+    // showing details (single-click does the same — making both gestures
+    // consistent). Use the "Details" button in the members header to see
+    // info about the current persongroup instead.
+    onMemberOpenDetails(node) {
+        if (node && (node.type === 'persongroup' || node.type === 'org')) {
+            if (this.state.slideOverNode) this.closeSlideOver();
+            const treeNode = this.findOrgNodeById(node.id) || {
+                ...node,
+                type: 'org',
+                model: node.model || 'myschool.org',
+            };
+            this.expandPathToOrg(node.id);
+            return this._loadOrgContext(treeNode, { setActive: true });
+        }
+        return this._openSlideOver(node);
+    }
+
+    // Open the slide-over for the currently-selected org (header button).
+    onOpenOrgDetails() {
+        const org = this.state.activeOrgNode;
+        if (org) this._openSlideOver(org);
+    }
+
+    async _openSlideOver(node) {
+        if (!node) return;
+        this.state.slideOverNode = node;
+        // Load CI relations for orgs (also persongroups have org_type_id).
+        const isOrgLike = node.type === 'org' || node.type === 'persongroup';
+        if (isOrgLike) {
+            this.state.slideOverCiLoading = true;
+            this.state.slideOverCiRelations = [];
+            try {
+                const ciRelations = await this.orm.call(
+                    'myschool.object.browser',
+                    'get_ci_relations_for_org',
+                    [node.id]
+                );
+                this.state.slideOverCiRelations = ciRelations || [];
+            } catch (e) {
+                console.warn('Could not load CI relations:', e);
+                this.state.slideOverCiRelations = [];
+            }
+            this.state.slideOverCiLoading = false;
+        } else {
+            this.state.slideOverCiRelations = [];
+        }
+    }
+
+    closeSlideOver() {
+        this.state.slideOverNode = null;
+        this.state.slideOverCiRelations = [];
+    }
+
+    // Quick-action click inside the slide-over → reuse the canonical
+    // context-menu-action dispatcher.
+    onSlideOverAction(action, node) {
+        this.onContextMenuAction(action, node || this.state.slideOverNode);
+    }
+
+    // "Open form" link inside the slide-over header.
+    onSlideOverOpenRecord(node) {
+        const n = node || this.state.slideOverNode;
+        if (n && n.model && n.id) {
+            this.openRecord(n.model, n.id);
+        }
+    }
+
+    // "Add Configuration Item" button on the empty-state of the Config tab.
+    openAddCiForActiveOrg() {
+        const n = this.state.slideOverNode;
+        if (n && (n.type === 'org' || n.type === 'persongroup')) {
+            this.openAddCiWizard(n.id);
+        }
     }
     
     onCloseContextMenu() {
@@ -1045,12 +2243,11 @@ export class ObjectBrowserClient extends Component {
             onClose: async () => {
                 const refreshOrgId = this._pendingRefreshOrgId;
                 this._pendingRefreshOrgId = null;
-                await this.loadData();
-                if (refreshOrgId) this.expandPathToOrg(refreshOrgId);
+                await this._refreshTreeAndMembers(refreshOrgId);
             }
         });
     }
-    
+
     openAddChildOrgWizard(orgNode) {
         const orgId = orgNode.id;
         // Store context for when dialogs close
@@ -1068,12 +2265,11 @@ export class ObjectBrowserClient extends Component {
             onClose: async () => {
                 const refreshOrgId = this._pendingRefreshOrgId;
                 this._pendingRefreshOrgId = null;
-                await this.loadData();
-                if (refreshOrgId) this.expandPathToOrg(refreshOrgId);
+                await this._refreshTreeAndMembers(refreshOrgId);
             }
         });
     }
-    
+
     openCreatePersongroupWizard(orgNode) {
         const orgId = orgNode.id;
         this._pendingRefreshOrgId = orgId;
@@ -1090,8 +2286,7 @@ export class ObjectBrowserClient extends Component {
             onClose: async () => {
                 const refreshOrgId = this._pendingRefreshOrgId;
                 this._pendingRefreshOrgId = null;
-                await this.loadData();
-                if (refreshOrgId) this.expandPathToOrg(refreshOrgId);
+                await this._refreshTreeAndMembers(refreshOrgId);
             }
         });
     }
@@ -1111,8 +2306,7 @@ export class ObjectBrowserClient extends Component {
             },
         }, {
             onClose: async () => {
-                await this.loadData();
-                if (orgId) this.expandPathToOrg(orgId);
+                await this._refreshTreeAndMembers(orgId);
             }
         });
     }
@@ -1131,12 +2325,11 @@ export class ObjectBrowserClient extends Component {
             },
         }, {
             onClose: async () => {
-                await this.loadData();
-                this.expandPathToOrg(orgId);
+                await this._refreshTreeAndMembers(orgId);
             }
         });
     }
-    
+
     openMovePersonWizard(personNode) {
         const orgId = personNode.org_id;
         if (orgId) this.expandPathToOrg(orgId);
@@ -1151,12 +2344,11 @@ export class ObjectBrowserClient extends Component {
             },
         }, {
             onClose: async () => {
-                await this.loadData();
-                if (orgId) this.expandPathToOrg(orgId);
+                await this._refreshTreeAndMembers(orgId);
             }
         });
     }
-    
+
     async openManageOrgRolesWizard(orgNode) {
         const orgId = orgNode.id;
         this.expandPathToOrg(orgId);
@@ -1167,12 +2359,11 @@ export class ObjectBrowserClient extends Component {
         );
         this.action.doAction(action, {
             onClose: async () => {
-                await this.loadData();
-                this.expandPathToOrg(orgId);
+                await this._refreshTreeAndMembers(orgId);
             }
         });
     }
-    
+
     async openManagePersonRolesWizard(personNode) {
         const orgId = personNode.org_id;
         if (orgId) this.expandPathToOrg(orgId);
@@ -1183,12 +2374,11 @@ export class ObjectBrowserClient extends Component {
         );
         this.action.doAction(action, {
             onClose: async () => {
-                await this.loadData();
-                if (orgId) this.expandPathToOrg(orgId);
+                await this._refreshTreeAndMembers(orgId);
             }
         });
     }
-    
+
     openManageCiWizard(orgNode) {
         const orgId = orgNode.id;
         this.expandPathToOrg(orgId);
@@ -1202,12 +2392,11 @@ export class ObjectBrowserClient extends Component {
             },
         }, {
             onClose: async () => {
-                await this.loadData();
-                this.expandPathToOrg(orgId);
+                await this._refreshTreeAndMembers(orgId);
             }
         });
     }
-    
+
     openLinkRoleWizard(orgNode) {
         const orgId = orgNode.id;
         this.expandPathToOrg(orgId);
@@ -1221,8 +2410,7 @@ export class ObjectBrowserClient extends Component {
             },
         }, {
             onClose: async () => {
-                await this.loadData();
-                this.expandPathToOrg(orgId);
+                await this._refreshTreeAndMembers(orgId);
             }
         });
     }
@@ -1395,8 +2583,7 @@ export class ObjectBrowserClient extends Component {
             this.notification.add('Person removed from organization', { type: 'success' });
             const orgId = personNode.org_id;
             this.state.activeNode = null;
-            await this.loadData();
-            if (orgId) this.expandPathToOrg(orgId);
+            await this._refreshTreeAndMembers(orgId);
         } catch (error) {
             this.notification.add('Error removing person', { type: 'danger' });
         }
@@ -1416,8 +2603,7 @@ export class ObjectBrowserClient extends Component {
             );
             this.notification.add('Person deactivated successfully', { type: 'success' });
             this.state.activeNode = null;
-            await this.loadData();
-            if (orgId) this.expandPathToOrg(orgId);
+            await this._refreshTreeAndMembers(orgId);
         } catch (error) {
             let message = 'Error deactivating person';
             if (error.data && error.data.message) {
@@ -1443,8 +2629,7 @@ export class ObjectBrowserClient extends Component {
             );
             this.notification.add('Person deleted successfully', { type: 'success' });
             this.state.activeNode = null;
-            await this.loadData();
-            if (orgId) this.expandPathToOrg(orgId);
+            await this._refreshTreeAndMembers(orgId);
         } catch (error) {
             let message = 'Error deleting person';
             if (error.data && error.data.message) {
@@ -1472,8 +2657,7 @@ export class ObjectBrowserClient extends Component {
             );
             this.notification.add('Deleted successfully', { type: 'success' });
             this.state.activeNode = null;
-            await this.loadData();
-            if (orgId) this.expandPathToOrg(orgId);
+            await this._refreshTreeAndMembers(orgId);
         } catch (error) {
             // Extract the error message from various possible locations in Odoo's error structure
             let message = 'Error deleting';
@@ -1505,6 +2689,51 @@ export class ObjectBrowserClient extends Component {
     onDragStart(node) {
         this.state.draggedNode = node;
     }
+
+    // Drag from members pane → tree (or tree-cross-pane). Same drop target
+    // logic as tree drag (an org node, handled by onDrop).
+    onMemberDragStart(node) {
+        this.state.draggedNode = node;
+    }
+
+    // Jump to a breadcrumb segment. Org segments select the org (loading
+    // its members context); a persongroup segment is treated as org with
+    // its members; person segments select the person (members pane keeps
+    // showing the persons's parent org).
+    async onBreadcrumbClick(seg) {
+        if (seg.type === 'org' || seg.type === 'persongroup') {
+            const orgNode = this.findOrgNodeById(seg.id);
+            if (orgNode) {
+                this.expandPathToOrg(seg.id);
+                await this.onSelectNode(orgNode);
+            } else {
+                await this.onSelectNode({
+                    id: seg.id, type: 'org',
+                    model: seg.model || 'myschool.org',
+                    name: seg.name,
+                });
+            }
+            return;
+        }
+        if (seg.type === 'person') {
+            // Already showing this person if it's the last segment — no-op.
+            await this.onSelectNode({
+                id: seg.id, type: 'person',
+                model: seg.model || 'myschool.person',
+                name: seg.name,
+                org_id: this.state.activeOrgNode?.id,
+            });
+        }
+    }
+
+    onMemberDragEnd() {
+        // dragend may fire before drop on some browsers; the actual drop
+        // sets this back to false anyway. Keep here as cleanup if no drop.
+        // (Race window is negligible; onDrop's finally branch wins.)
+        if (this.state.draggedNode) {
+            this.state.draggedNode = false;
+        }
+    }
     
     onDragOver(ev, node) {
         // Visual feedback handled in TreeNode
@@ -1535,7 +2764,8 @@ export class ObjectBrowserClient extends Component {
                 );
                 this.notification.add(`Moved ${draggedNode.name} to ${targetNode.name}`, { type: 'success' });
             }
-            this.loadData();
+            // Refresh both source (current org) and target view.
+            await this._refreshTreeAndMembers(targetNode.id);
         } catch (error) {
             console.error('Drop error:', error);
             this.notification.add('Error moving item', { type: 'danger' });
@@ -1544,14 +2774,34 @@ export class ObjectBrowserClient extends Component {
         }
     }
     
+    // Persons selected in the members pane (selectedMemberIds keys are
+    // type_id strings; type is 'person' or 'persongroup'). Returns a
+    // simple list of { id, type } records.
+    getMemberSelectedByType(type) {
+        const ids = this.state.selectedMemberIds || {};
+        return Object.keys(ids)
+            .filter(k => ids[k])
+            .map(k => {
+                const idx = k.indexOf('_');
+                return { type: k.slice(0, idx), id: parseInt(k.slice(idx + 1)) };
+            })
+            .filter(r => r.type === type);
+    }
+
     // Bulk Actions
     async bulkAssignRole() {
-        const selectedPersons = this.getSelectedByType('person');
+        // Persons can be selected either from members pane or, legacy, from tree.
+        const fromTree = this.getSelectedByType('person');
+        const fromMembers = this.getMemberSelectedByType('person');
+        const byId = new Map();
+        for (const p of fromTree) byId.set(p.id, p);
+        for (const p of fromMembers) if (!byId.has(p.id)) byId.set(p.id, p);
+        const selectedPersons = Array.from(byId.values());
         if (selectedPersons.length === 0) {
             this.notification.add('Select at least one person', { type: 'warning' });
             return;
         }
-        
+
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: 'myschool.bulk.assign.role.wizard',
@@ -1562,14 +2812,29 @@ export class ObjectBrowserClient extends Component {
             },
         });
     }
-    
+
     async bulkMoveToOrg() {
-        const selected = this.getSelectedByType('person').concat(this.getSelectedByType('org'));
+        // Orgs come from the tree-selection; persons can come from tree
+        // (legacy) or the members pane.
+        const persons = [
+            ...this.getSelectedByType('person'),
+            ...this.getMemberSelectedByType('person'),
+        ];
+        const orgs = this.getSelectedByType('org');
+        // De-dup persons by id (tree+members overlap is unlikely but harmless).
+        const seen = new Set();
+        const selected = [];
+        for (const r of [...orgs, ...persons]) {
+            const key = `${r.type}_${r.id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            selected.push(r);
+        }
         if (selected.length === 0) {
             this.notification.add('Select at least one item', { type: 'warning' });
             return;
         }
-        
+
         this.action.doAction({
             type: 'ir.actions.act_window',
             res_model: 'myschool.bulk.move.wizard',
@@ -1579,6 +2844,51 @@ export class ObjectBrowserClient extends Component {
                 default_item_ids: JSON.stringify(selected.map(s => ({ type: s.type, id: s.id }))),
             },
         });
+    }
+
+    // Combined delete that handles whichever selection sets have items.
+    // Replaces the old `bulkDelete` button (still kept for tree-only path).
+    async bulkDeleteAll() {
+        const hasTree = this.selectedCount > 0;
+        const hasMembers = this.memberSelectedCount > 0;
+        if (!hasTree && !hasMembers) return;
+        if (hasTree && hasMembers) {
+            if (!confirm(`Delete ${this.totalSelectedCount} selected items (tree + members)?`)) return;
+            await this._deleteSelectedSet(this.state.selectedIds);
+            await this._deleteSelectedSet(this.state.selectedMemberIds);
+            this.state.selectedIds = {};
+            this.state.selectedMemberIds = {};
+            this.state.activeNode = null;
+            await this._refreshTreeAndMembers(this.state.activeOrgNode?.id);
+            return;
+        }
+        if (hasTree) return this.bulkDelete();
+        return this.bulkDeleteMembers();
+    }
+
+    async _deleteSelectedSet(idsObj) {
+        const items = Object.keys(idsObj)
+            .filter(k => idsObj[k])
+            .map(k => {
+                const idx = k.indexOf('_');
+                return { type: k.slice(0, idx), id: parseInt(k.slice(idx + 1)) };
+            });
+        for (const item of items) {
+            try {
+                await this.orm.call(
+                    'myschool.object.browser',
+                    'delete_node',
+                    [item.type, item.id]
+                );
+            } catch (error) {
+                console.error('Error deleting:', item, error);
+            }
+        }
+    }
+
+    clearAllSelections() {
+        this.state.selectedIds = {};
+        this.state.selectedMemberIds = {};
     }
     
     async bulkDelete() {
@@ -1611,7 +2921,7 @@ export class ObjectBrowserClient extends Component {
         this.notification.add(`Deleted ${selected.length} items`, { type: 'success' });
         this.state.selectedIds = {};
         this.state.activeNode = null;
-        this.loadData();
+        await this._refreshTreeAndMembers(this.state.activeOrgNode?.id);
     }
 
     async bulkDeleteMembers() {
@@ -1660,14 +2970,7 @@ export class ObjectBrowserClient extends Component {
 
         this.state.selectedMemberIds = {};
         this.state.activeNode = null;
-        await this.loadData();
-        if (orgId) {
-            this.expandPathToOrg(orgId);
-            // Reload members panel so the deleted rows disappear.
-            const refreshed = { id: orgId, type: 'org', model: 'myschool.org',
-                                 name: this.state.activeOrgNode?.name };
-            await this.onSelectNode(refreshed);
-        }
+        await this._refreshTreeAndMembers(orgId);
 
         if (errors.length) {
             const detail = errors.slice(0, 5).join('\n')

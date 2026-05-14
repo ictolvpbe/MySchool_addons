@@ -48,9 +48,17 @@
                     <span class="ob-toggle ob-toggle-empty"></span>
                 </t>
                 
-                <!-- Icon -->
+                <!-- Icon — uploaded image → per-type fa-class → generic fallback.
+                     icon_color (hex) overrides the fa-icon glyph colour. -->
                 <span class="ob-icon">
-                    <t t-if="props.node.type === 'org' and props.node.org_type_name === 'PERSONGROUP'">
+                    <t t-if="props.node.org_type_icon_url">
+                        <img class="ob-icon-img" t-att-src="props.node.org_type_icon_url" alt=""/>
+                    </t>
+                    <t t-elif="props.node.org_type_icon_fa">
+                        <i t-att-class="props.node.org_type_icon_fa + ' ob-icon-fa'"
+                           t-att-style="props.node.org_type_color ? ('color: ' + props.node.org_type_color) : ''"/>
+                    </t>
+                    <t t-elif="props.node.type === 'org' and props.node.org_type_name === 'PERSONGROUP'">
                         <i class="fa fa-users text-info"/>
                     </t>
                     <t t-elif="props.node.type === 'org'">
@@ -104,40 +112,283 @@
                         </t>
                     </t>
                     
-                    <!-- Persons under this org -->
-                    <t t-if="props.node.persons">
-                        <t t-foreach="props.node.persons" t-as="person" t-key="person.id">
-                            <TreeNode node="person" 
-                                      level="childLevel" 
-                                      activeNodeId="props.activeNodeId"
-                                      activeNodeType="props.activeNodeType"
-                                      onSelectNode="props.onSelectNode"
-                                      onContextMenu="props.onContextMenu"
-                                      onDragStart="props.onDragStart"
-                                      onDragOver="props.onDragOver"
-                                      onDrop="props.onDrop"
-                                      selectedIds="props.selectedIds"
-                                      draggedNode="props.draggedNode"
-                                      expandedIds="props.expandedIds"
-                                      onToggleExpand="props.onToggleExpand"/>
-                        </t>
-                    </t>
                 </div>
             </t>
         </div>
     </t>
 
+    <!-- ========================================================
+         Slide-over details panel (Info + Configuration tabs)
+         Triggered by double-click on a member row, or by the
+         "Details" button in the members header for the current org.
+         ======================================================== -->
+    <t t-name="myschool_admin.SlideOverDetails" owl="1">
+        <t t-if="props.node">
+            <div class="ob-slideover-backdrop" t-on-click="onCloseClick"/>
+            <div class="ob-slideover"
+                 t-ref="root"
+                 tabindex="-1"
+                 t-on-keydown="onKeyDown">
+                <!-- Header -->
+                <div class="ob-slideover-header">
+                    <div t-att-class="'ob-details-icon ' + (isOrgLike ? 'ob-details-icon-org' : 'ob-details-icon-person')"
+                         t-att-style="headerIconStyle">
+                        <t t-if="props.node.org_type_icon_url">
+                            <img class="ob-details-icon-img" t-att-src="props.node.org_type_icon_url" alt=""/>
+                        </t>
+                        <t t-elif="props.node.org_type_icon_fa">
+                            <i t-att-class="props.node.org_type_icon_fa"/>
+                        </t>
+                        <t t-elif="props.node.person_type_icon_url">
+                            <img class="ob-details-icon-img" t-att-src="props.node.person_type_icon_url" alt=""/>
+                        </t>
+                        <t t-elif="props.node.person_type_icon_fa">
+                            <i t-att-class="props.node.person_type_icon_fa"/>
+                        </t>
+                        <t t-elif="isOrgLike">
+                            <i class="fa fa-building"/>
+                        </t>
+                        <t t-elif="props.node.type === 'person'">
+                            <i class="fa fa-user"/>
+                        </t>
+                    </div>
+                    <div class="ob-slideover-title-block">
+                        <h3><t t-esc="props.node.full_name or props.node.name"/></h3>
+                        <span class="ob-slideover-sub">
+                            <t t-if="isPersongroup">Persongroup</t>
+                            <t t-elif="isOrgLike">Organisatie</t>
+                            <t t-elif="props.node.type === 'person'">
+                                <t t-if="props.node.person_type">
+                                    <t t-esc="props.node.person_type"/>
+                                </t>
+                                <t t-else="">Persoon</t>
+                            </t>
+                            <t t-if="props.node.sap_ref"> • SAP: <t t-esc="props.node.sap_ref"/></t>
+                        </span>
+                    </div>
+                    <a class="ob-slideover-open-link" t-on-click="openRecord" title="Open volledig formulier">
+                        <i class="fa fa-external-link"/>
+                    </a>
+                    <button class="ob-slideover-close" t-on-click="onCloseClick" title="Sluit (Esc)">
+                        <i class="fa fa-times"/>
+                    </button>
+                </div>
+
+                <!-- Quick actions -->
+                <t t-if="quickActions.length">
+                    <div class="ob-quick-actions-bar ob-slideover-actions">
+                        <t t-foreach="quickActions" t-as="qa" t-key="qa.key">
+                            <button t-att-class="'ob-qa-btn' + (qa.danger ? ' ob-qa-btn-danger' : '')"
+                                    t-on-click="() => this.onQuickAction(qa.key)">
+                                <i t-att-class="qa.iconClass"/> <t t-esc="qa.label"/>
+                            </button>
+                        </t>
+                    </div>
+                </t>
+
+                <!-- Tabs -->
+                <div class="ob-slideover-tabs">
+                    <button t-att-class="'ob-slideover-tab' + (state.tab === 'info' ? ' ob-slideover-tab-active' : '')"
+                            t-on-click="() => this.setTab('info')">
+                        <i class="fa fa-info-circle"/> Info
+                    </button>
+                    <t t-if="hasConfigTab">
+                        <button t-att-class="'ob-slideover-tab' + (state.tab === 'config' ? ' ob-slideover-tab-active' : '')"
+                                t-on-click="() => this.setTab('config')">
+                            <i class="fa fa-sliders"/> Configuration
+                            <t t-if="ciCount">
+                                <span class="ob-slideover-tab-count"><t t-esc="ciCount"/></span>
+                            </t>
+                        </button>
+                    </t>
+                </div>
+
+                <!-- Body -->
+                <div class="ob-slideover-body">
+                    <t t-if="state.tab === 'info'">
+                        <div class="ob-info-grid">
+                            <t t-if="isOrgLike">
+                                <div class="ob-info-card">
+                                    <div class="ob-info-label">Short Name</div>
+                                    <div class="ob-info-value"><t t-esc="props.node.name"/></div>
+                                </div>
+                                <t t-if="props.node.full_name and props.node.full_name !== props.node.name">
+                                    <div class="ob-info-card">
+                                        <div class="ob-info-label">Full Name</div>
+                                        <div class="ob-info-value"><t t-esc="props.node.full_name"/></div>
+                                    </div>
+                                </t>
+                                <t t-if="props.node.child_count">
+                                    <div class="ob-info-card">
+                                        <div class="ob-info-label">Sub-organizations</div>
+                                        <div class="ob-info-value"><t t-esc="props.node.child_count"/></div>
+                                    </div>
+                                </t>
+                                <t t-if="props.node.person_count">
+                                    <div class="ob-info-card">
+                                        <div class="ob-info-label">Persons</div>
+                                        <div class="ob-info-value"><t t-esc="props.node.person_count"/></div>
+                                    </div>
+                                </t>
+                                <t t-if="props.node.org_type_name">
+                                    <div class="ob-info-card">
+                                        <div class="ob-info-label">Type</div>
+                                        <div class="ob-info-value">
+                                            <span class="ob-badge ob-badge-role">
+                                                <t t-esc="props.node.org_type_name"/>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </t>
+                                <t t-if="props.node.is_administrative">
+                                    <div class="ob-info-card">
+                                        <div class="ob-info-label">Administratief</div>
+                                        <div class="ob-info-value"><span class="ob-badge ob-badge-admin">Ja</span></div>
+                                    </div>
+                                </t>
+                                <t t-if="props.node.name_tree">
+                                    <div class="ob-info-card ob-info-card-wide">
+                                        <div class="ob-info-label">Tree Position</div>
+                                        <div class="ob-info-value ob-info-mono"><t t-esc="props.node.name_tree"/></div>
+                                    </div>
+                                </t>
+                            </t>
+
+                            <t t-if="props.node.type === 'person'">
+                                <t t-if="props.node.person_type">
+                                    <div class="ob-info-card">
+                                        <div class="ob-info-label">Person type</div>
+                                        <div class="ob-info-value"><t t-esc="props.node.person_type"/></div>
+                                    </div>
+                                </t>
+                                <t t-if="props.node.email">
+                                    <div class="ob-info-card ob-info-card-wide">
+                                        <div class="ob-info-label">E-mail Cloud</div>
+                                        <div class="ob-info-value"><t t-esc="props.node.email"/></div>
+                                    </div>
+                                </t>
+                                <t t-if="props.node.sap_ref">
+                                    <div class="ob-info-card">
+                                        <div class="ob-info-label">SAP-ref</div>
+                                        <div class="ob-info-value ob-info-mono"><t t-esc="props.node.sap_ref"/></div>
+                                    </div>
+                                </t>
+                                <t t-if="props.node.roles and props.node.roles.length">
+                                    <div class="ob-info-card ob-info-card-wide">
+                                        <div class="ob-info-label">Roles</div>
+                                        <div class="ob-info-value">
+                                            <t t-foreach="props.node.roles" t-as="role" t-key="role">
+                                                <span class="ob-badge ob-badge-role"><t t-esc="role"/></span>
+                                            </t>
+                                        </div>
+                                    </div>
+                                </t>
+                            </t>
+                        </div>
+                    </t>
+
+                    <t t-elif="state.tab === 'config'">
+                        <t t-if="state.ciLoading">
+                            <div class="ob-members-loading">
+                                <i class="fa fa-spinner fa-spin"/>
+                                <span>Configuration loading…</span>
+                            </div>
+                        </t>
+                        <t t-elif="ciRelations.length">
+                            <table class="ob-ci-table">
+                                <thead>
+                                    <tr>
+                                        <th>Naam</th>
+                                        <th>Waarde</th>
+                                        <th style="width: 70px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="ciRelations" t-as="ci" t-key="ci.id">
+                                        <tr>
+                                            <td><t t-esc="ci.name"/></td>
+                                            <td class="ob-info-mono"><t t-esc="ci.value"/></td>
+                                            <td>
+                                                <div class="ob-ci-actions">
+                                                    <button class="ob-ci-btn"
+                                                            t-on-click="() => this.onEditCi(ci.id)"
+                                                            title="Bewerken">
+                                                        <i class="fa fa-pencil"/>
+                                                    </button>
+                                                    <button class="ob-ci-btn ob-ci-btn-danger"
+                                                            t-on-click="() => this.onRemoveCi(ci.id)"
+                                                            title="Verwijderen">
+                                                        <i class="fa fa-times"/>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </t>
+                        <t t-else="">
+                            <div class="ob-slideover-empty">
+                                <i class="fa fa-sliders fa-2x text-muted"/>
+                                <p>Geen configuration items voor deze organisatie</p>
+                                <button class="ob-btn ob-btn-sm" t-on-click="onAddCi">
+                                    <i class="fa fa-plus"/> Item toevoegen
+                                </button>
+                            </div>
+                        </t>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </t>
+
     <!-- Members Panel Template -->
     <t t-name="myschool_admin.MembersPanel" owl="1">
-        <div class="ob-members">
+        <div class="ob-members"
+             t-att-class="{ 'ob-pane-focused': props.focused }"
+             t-on-mousedown="onPaneClick"
+             t-on-contextmenu="onPanelContextMenu">
             <div class="ob-members-header">
                 <div class="ob-panel-title">
                     <t t-if="props.node">
+                        <i class="fa fa-users ob-members-header-icon"/>
                         Members of <t t-esc="props.node.name"/>
                         <span class="ob-panel-count"><t t-esc="filteredPersons.length + filteredPersongroups.length"/></span>
                     </t>
                     <t t-else="">Members</t>
                 </div>
+                <t t-if="props.node and props.node.type === 'org'">
+                    <div class="ob-members-header-tools">
+                        <button class="ob-icon-btn"
+                                title="Details van deze organisatie"
+                                t-on-click="onOrgDetailsClick">
+                            <i class="fa fa-info-circle"/>
+                        </button>
+                        <button class="ob-icon-btn"
+                                title="Kolommen tonen / verbergen"
+                                t-on-click="onToggleColumnConfig">
+                            <i class="fa fa-columns"/>
+                        </button>
+                        <t t-if="state.showColumnConfig">
+                            <div class="ob-column-config-popover" t-on-click.stop="">
+                                <div class="ob-popover-label">Zichtbare kolommen</div>
+                                <t t-foreach="columnOptions" t-as="col" t-key="col.key">
+                                    <label class="ob-column-config-item">
+                                        <input type="checkbox"
+                                               t-att-checked="visibleColumns[col.key]"
+                                               t-on-change="(ev) => this.onColumnToggle(col.key, ev.target.checked)"/>
+                                        <t t-esc="col.label"/>
+                                    </label>
+                                </t>
+                                <div class="ob-popover-actions">
+                                    <button class="ob-popover-btn ob-popover-btn-link" t-on-click="resetColumns">
+                                        Reset
+                                    </button>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
+                </t>
             </div>
             <div class="ob-members-content">
                 <t t-if="!props.node">
@@ -162,9 +413,31 @@
                     <!-- Filter Search -->
                     <div class="ob-panel-filter">
                         <input type="text"
-                               placeholder="Filter members..."
+                               placeholder="Filter leden in deze pane…"
                                t-att-value="state.filterText"
                                t-on-input="onFilterInput"/>
+                    </div>
+
+                    <!-- Column Header Row (draggable to reorder + resize handles) -->
+                    <div class="ob-mrow ob-mrow-header">
+                        <div class="ob-mcol ob-mcol-kebab"></div>
+                        <div class="ob-mcol ob-mcol-name">Naam</div>
+                        <t t-foreach="visibleOrderedColumns" t-as="col" t-key="col.key">
+                            <div t-att-class="'ob-mcol ob-mcol-' + col.key + ' ob-mcol-h' + (state.dragOverColumn === col.key ? ' ob-mcol-dragover' : '')"
+                                 t-att-style="columnStyle(col.key)"
+                                 draggable="true"
+                                 t-on-dragstart="(ev) => this.onColumnDragStart(ev, col.key)"
+                                 t-on-dragover="(ev) => this.onColumnDragOver(ev, col.key)"
+                                 t-on-dragleave="onColumnDragLeave"
+                                 t-on-drop="(ev) => this.onColumnDrop(ev, col.key)"
+                                 t-on-dragend="onColumnDragEnd">
+                                <span class="ob-mcol-label"><t t-esc="col.label"/></span>
+                                <span class="ob-mcol-resize"
+                                      title="Sleep om breedte aan te passen"
+                                      t-on-mousedown="(ev) => this.onColumnResizeStart(ev, col.key)"/>
+                            </div>
+                        </t>
+                        <div class="ob-mcol ob-mcol-actions"></div>
                     </div>
 
                     <!-- Members List -->
@@ -172,31 +445,84 @@
                         <!-- Persons -->
                         <t t-if="filteredPersons.length">
                             <t t-foreach="filteredPersons" t-as="person" t-key="person.id">
-                                <div class="ob-member-row"
-                                     t-att-class="{ 'ob-member-row-selected': props.selectedMemberId === person.id and props.selectedMemberType === 'person', 'ob-member-row-multi': isMemberMultiSelected(person.id, 'person') }"
+                                <div class="ob-mrow ob-mrow-person"
+                                     t-att-class="{ 'ob-mrow-selected': props.selectedMemberId === person.id and props.selectedMemberType === 'person', 'ob-mrow-multi': isMemberMultiSelected(person.id, 'person') }"
                                      t-on-click="onMemberClick"
+                                     t-on-dblclick="(ev) => this.onMemberDblClick(ev, person, 'person')"
                                      t-on-contextmenu="onMemberContextMenu"
+                                     draggable="true"
+                                     t-on-dragstart="(ev) => this.onMemberDragStart(ev, person, 'person')"
+                                     t-on-dragend="onMemberDragEnd"
                                      t-att-data-model="person.model"
                                      t-att-data-id="person.id"
                                      t-att-data-name="person.name"
                                      t-att-data-type="'person'"
                                      t-att-data-other-orgs="person.other_active_org_count || 0">
-                                    <div t-att-class="'ob-member-avatar ' + (person.person_type === 'STUDENT' ? 'ob-avatar-student' : 'ob-avatar-employee')">
-                                        <t t-esc="getInitials(person.name)"/>
+                                    <!-- Kebab (always visible at front) -->
+                                    <div class="ob-mcol ob-mcol-kebab">
+                                        <button class="ob-row-action ob-row-action-kebab"
+                                                title="Meer acties"
+                                                t-on-click.stop="(ev) => this.onRowKebab(ev, person, 'person')">
+                                            <i class="fa fa-ellipsis-v"/>
+                                        </button>
                                     </div>
-                                    <div class="ob-member-info">
-                                        <div class="ob-member-name"><t t-esc="person.name"/></div>
-                                        <div class="ob-member-meta">
-                                            <t t-if="person.sap_ref">SAP: <t t-esc="person.sap_ref"/></t>
-                                            <t t-if="person.sap_ref and person.email"> &#x2022; </t>
-                                            <t t-if="person.email"><t t-esc="person.email"/></t>
+                                    <!-- Name col with avatar -->
+                                    <div class="ob-mcol ob-mcol-name">
+                                        <div t-att-class="'ob-member-avatar ' + (person.person_type === 'STUDENT' ? 'ob-avatar-student' : 'ob-avatar-employee')"
+                                             t-att-style="avatarStyle(person.person_type_color)">
+                                            <t t-if="person.person_type_icon_url">
+                                                <img class="ob-avatar-img" t-att-src="person.person_type_icon_url" alt=""/>
+                                            </t>
+                                            <t t-elif="person.person_type_icon_fa">
+                                                <i t-att-class="person.person_type_icon_fa"/>
+                                            </t>
+                                            <t t-else="">
+                                                <t t-esc="getInitials(person.name)"/>
+                                            </t>
                                         </div>
+                                        <span class="ob-member-name"><t t-esc="person.name"/></span>
                                     </div>
-                                    <t t-if="person.roles?.length">
-                                        <span t-att-class="'ob-role-chip ' + (person.person_type === 'STUDENT' ? 'ob-chip-student' : 'ob-chip-employee')">
-                                            <t t-esc="person.roles[0]"/>
-                                        </span>
+                                    <!-- Configurable columns (order + widths user-driven) -->
+                                    <t t-foreach="visibleOrderedColumns" t-as="col" t-key="col.key">
+                                        <div t-att-class="'ob-mcol ob-mcol-' + col.key"
+                                             t-att-style="columnStyle(col.key)">
+                                            <t t-if="col.key === 'roles' and person.roles?.length">
+                                                <span t-att-class="'ob-role-chip ' + (person.person_type === 'STUDENT' ? 'ob-chip-student' : 'ob-chip-employee')">
+                                                    <t t-esc="person.roles[0]"/>
+                                                </span>
+                                            </t>
+                                            <t t-elif="col.key === 'type'">
+                                                <t t-esc="person.person_type or ''"/>
+                                            </t>
+                                            <t t-elif="col.key === 'email'">
+                                                <t t-esc="person.email or ''"/>
+                                            </t>
+                                            <t t-elif="col.key === 'sap_ref'">
+                                                <t t-esc="person.sap_ref or ''"/>
+                                            </t>
+                                            <t t-elif="col.key === 'active'">
+                                                <t t-if="person.is_active === false">
+                                                    <span class="ob-status-chip ob-status-inactive">Inactief</span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="ob-status-chip ob-status-active">Actief</span>
+                                                </t>
+                                            </t>
+                                        </div>
                                     </t>
+                                    <!-- Hover actions (right) -->
+                                    <div class="ob-mcol ob-mcol-actions">
+                                        <button class="ob-row-action"
+                                                title="Bewerken"
+                                                t-on-click.stop="(ev) => this.onRowAction(ev, 'open', person, 'person')">
+                                            <i class="fa fa-pencil"/>
+                                        </button>
+                                        <button class="ob-row-action"
+                                                title="Rollen beheren"
+                                                t-on-click.stop="(ev) => this.onRowAction(ev, 'manage_person_roles', person, 'person')">
+                                            <i class="fa fa-id-badge"/>
+                                        </button>
+                                    </div>
                                 </div>
                             </t>
                         </t>
@@ -204,33 +530,64 @@
                         <!-- Person Groups + Sub-orgs -->
                         <t t-if="filteredPersongroups.length">
                             <t t-foreach="filteredPersongroups" t-as="group" t-key="group.id">
-                                <div class="ob-member-row"
-                                     t-att-class="{ 'ob-member-row-selected': props.selectedMemberId === group.id and props.selectedMemberType === 'persongroup', 'ob-member-row-multi': isMemberMultiSelected(group.id, 'persongroup') }"
+                                <div class="ob-mrow ob-mrow-group"
+                                     t-att-class="{ 'ob-mrow-selected': props.selectedMemberId === group.id and props.selectedMemberType === 'persongroup', 'ob-mrow-multi': isMemberMultiSelected(group.id, 'persongroup') }"
                                      t-on-click="onMemberClick"
+                                     t-on-dblclick="(ev) => this.onMemberDblClick(ev, group, 'persongroup')"
                                      t-on-contextmenu="onMemberContextMenu"
+                                     draggable="true"
+                                     t-on-dragstart="(ev) => this.onMemberDragStart(ev, group, 'persongroup')"
+                                     t-on-dragend="onMemberDragEnd"
                                      t-att-data-model="group.model"
                                      t-att-data-id="group.id"
                                      t-att-data-name="group.name"
                                      t-att-data-type="'persongroup'">
-                                    <div t-att-class="'ob-member-avatar ' + (group.is_persongroup ? 'ob-avatar-group' : 'ob-avatar-suborg')">
-                                        <t t-if="group.is_persongroup">
-                                            <i class="fa fa-users"/>
-                                        </t>
-                                        <t t-else="">
-                                            <i class="fa fa-building"/>
-                                        </t>
+                                    <div class="ob-mcol ob-mcol-kebab">
+                                        <button class="ob-row-action ob-row-action-kebab"
+                                                title="Meer acties"
+                                                t-on-click.stop="(ev) => this.onRowKebab(ev, group, 'persongroup')">
+                                            <i class="fa fa-ellipsis-v"/>
+                                        </button>
                                     </div>
-                                    <div class="ob-member-info">
-                                        <div class="ob-member-name"><t t-esc="group.name"/></div>
-                                        <div class="ob-member-meta">
-                                            <t t-if="group.org_type_name and !group.is_persongroup">
-                                                <t t-esc="group.org_type_name"/>
-                                                <t t-if="group.full_name and group.full_name !== group.name"> &#x2022; </t>
+                                    <div class="ob-mcol ob-mcol-name">
+                                        <div t-att-class="'ob-member-avatar ' + (group.is_persongroup ? 'ob-avatar-group' : 'ob-avatar-suborg')"
+                                             t-att-style="avatarStyle(group.org_type_color)">
+                                            <t t-if="group.org_type_icon_url">
+                                                <img class="ob-avatar-img" t-att-src="group.org_type_icon_url" alt=""/>
                                             </t>
-                                            <t t-if="group.full_name and group.full_name !== group.name">
-                                                <t t-esc="group.full_name"/>
+                                            <t t-elif="group.org_type_icon_fa">
+                                                <i t-att-class="group.org_type_icon_fa"/>
+                                            </t>
+                                            <t t-elif="group.is_persongroup">
+                                                <i class="fa fa-users"/>
+                                            </t>
+                                            <t t-else="">
+                                                <i class="fa fa-building"/>
                                             </t>
                                         </div>
+                                        <span class="ob-member-name"><t t-esc="group.name"/></span>
+                                    </div>
+                                    <t t-foreach="visibleOrderedColumns" t-as="col" t-key="col.key">
+                                        <div t-att-class="'ob-mcol ob-mcol-' + col.key"
+                                             t-att-style="columnStyle(col.key)">
+                                            <t t-if="col.key === 'type'">
+                                                <t t-esc="group.org_type_name or ''"/>
+                                            </t>
+                                        </div>
+                                    </t>
+                                    <div class="ob-mcol ob-mcol-actions">
+                                        <button class="ob-row-action"
+                                                title="Open"
+                                                t-on-click.stop="(ev) => this.onRowAction(ev, 'open', group, 'persongroup')">
+                                            <i class="fa fa-external-link"/>
+                                        </button>
+                                        <t t-if="group.is_persongroup">
+                                            <button class="ob-row-action"
+                                                    title="Leden beheren"
+                                                    t-on-click.stop="(ev) => this.onRowAction(ev, 'manage_members', group, 'persongroup')">
+                                                <i class="fa fa-users"/>
+                                            </button>
+                                        </t>
                                     </div>
                                 </div>
                             </t>
@@ -260,23 +617,39 @@
             <t t-else="">
                 <!-- Header -->
                 <div class="ob-details-header">
-                    <div t-att-class="'ob-details-icon ' + (props.node.type === 'org' ? 'ob-details-icon-org' : 'ob-details-icon-person')">
-                        <t t-if="props.node.type === 'org'">
+                    <div t-att-class="'ob-details-icon ' + (isOrgLike ? 'ob-details-icon-org' : 'ob-details-icon-person')"
+                         t-att-style="headerIconStyle">
+                        <t t-if="props.node.org_type_icon_url">
+                            <img class="ob-details-icon-img" t-att-src="props.node.org_type_icon_url" alt=""/>
+                        </t>
+                        <t t-elif="props.node.org_type_icon_fa">
+                            <i t-att-class="props.node.org_type_icon_fa"/>
+                        </t>
+                        <t t-elif="props.node.person_type_icon_url">
+                            <img class="ob-details-icon-img" t-att-src="props.node.person_type_icon_url" alt=""/>
+                        </t>
+                        <t t-elif="props.node.person_type_icon_fa">
+                            <i t-att-class="props.node.person_type_icon_fa"/>
+                        </t>
+                        <t t-elif="isOrgLike">
                             <i class="fa fa-building"/>
                         </t>
                         <t t-elif="props.node.type === 'person'">
                             <i class="fa fa-user"/>
                         </t>
+                        <t t-elif="props.node.type === 'role'">
+                            <i class="fa fa-id-badge"/>
+                        </t>
                     </div>
                     <div class="ob-details-title">
                         <h3><t t-esc="props.node.full_name or props.node.name"/></h3>
                         <span class="ob-details-sub">
-                            <t t-if="props.node.type === 'org'">Organization</t>
-                            <t t-elif="props.node.type === 'person'">
-                                <t t-if="props.node.person_type"><t t-esc="props.node.person_type"/></t>
-                                <t t-else="">Person</t>
+                            <t t-if="isOrgLike">
+                                <t t-if="isPersongroup">Persongroup</t>
+                                <t t-else="">Organization</t>
                             </t>
-                            <t t-if="props.node.sap_ref"> &#x2022; SAP: <t t-esc="props.node.sap_ref"/></t>
+                            <t t-elif="props.node.type === 'person'">Person</t>
+                            <t t-elif="props.node.type === 'role'">Role</t>
                             <t t-if="props.node.is_active !== undefined">
                                 &#x2022; <t t-if="props.node.is_active">Active</t><t t-else="">Inactive</t>
                             </t>
@@ -287,76 +660,36 @@
 
                 <!-- Details Body -->
                 <div class="ob-details-body">
-                    <!-- Quick Actions Bar -->
+                    <!-- Quick Actions Bar — generated from actionsForNode() -->
                     <div class="ob-quick-actions-bar">
-                        <t t-if="props.node.type === 'org' and props.node.org_type_name === 'PERSONGROUP'">
-                            <button class="ob-qa-btn" t-on-click="onManageMembersClick">
-                                <i class="fa fa-users"/> Members
-                            </button>
-                            <button class="ob-qa-btn" t-on-click="onConfigurationClick">
-                                <i class="fa fa-sliders"/> Configuration
-                            </button>
-                            <button class="ob-qa-btn" t-on-click="onMoveOrgClick">
-                                <i class="fa fa-arrows"/> Move
-                            </button>
-                            <button class="ob-qa-btn ob-qa-btn-danger" t-on-click="onDeleteOrgClick">
-                                <i class="fa fa-trash"/> Delete
-                            </button>
-                        </t>
-                        <t t-elif="props.node.type === 'org'">
-                            <button class="ob-qa-btn" t-on-click="onCreatePersonClick">
-                                <i class="fa fa-user-plus"/> Create Person
-                            </button>
-                            <button class="ob-qa-btn" t-on-click="onAddChildOrgClick">
-                                <i class="fa fa-plus-circle"/> Add Sub-Org
-                            </button>
-                            <button class="ob-qa-btn" t-on-click="onManageOrgRolesClick">
-                                <i class="fa fa-id-badge"/> Roles
-                            </button>
-                            <button class="ob-qa-btn" t-on-click="onConfigurationClick">
-                                <i class="fa fa-sliders"/> Configuration
-                            </button>
-                            <button class="ob-qa-btn" t-on-click="onMoveOrgClick">
-                                <i class="fa fa-arrows"/> Move
-                            </button>
-                            <button class="ob-qa-btn ob-qa-btn-danger" t-on-click="onDeleteOrgClick">
-                                <i class="fa fa-trash"/> Delete
-                            </button>
-                        </t>
-                        <t t-if="props.node.type === 'person'">
-                            <button class="ob-qa-btn" t-on-click="openRecord">
-                                <i class="fa fa-pencil"/> Edit
-                            </button>
-                            <button class="ob-qa-btn" t-on-click="onManagePersonRolesClick">
-                                <i class="fa fa-id-badge"/> Manage Roles
-                            </button>
-                            <button class="ob-qa-btn" t-on-click="onMovePersonClick">
-                                <i class="fa fa-arrows"/> Move
-                            </button>
-                            <button class="ob-qa-btn ob-qa-btn-danger" t-on-click="onDeactivatePersonClick">
-                                <i class="fa fa-ban"/> Deactivate
+                        <t t-foreach="quickActions" t-as="qa" t-key="qa.key">
+                            <button t-att-class="'ob-qa-btn' + (qa.danger ? ' ob-qa-btn-danger' : '')"
+                                    t-on-click="() => this.onQuickAction(qa.key)">
+                                <i t-att-class="qa.iconClass"/> <t t-esc="qa.label"/>
                             </button>
                         </t>
                     </div>
 
                     <!-- Info Cards Grid -->
                     <div class="ob-info-grid">
-                        <t t-if="props.node.type === 'org'">
+                        <t t-if="isOrgLike">
                             <div class="ob-info-card">
                                 <div class="ob-info-label">Short Name</div>
                                 <div class="ob-info-value"><t t-esc="props.node.name"/></div>
                             </div>
-                            <div class="ob-info-card">
-                                <div class="ob-info-label">Full Name</div>
-                                <div class="ob-info-value"><t t-esc="props.node.full_name or props.node.name"/></div>
-                            </div>
-                            <t t-if="props.node.child_count">
+                            <t t-if="props.node.full_name and props.node.full_name !== props.node.name">
+                                <div class="ob-info-card">
+                                    <div class="ob-info-label">Full Name</div>
+                                    <div class="ob-info-value"><t t-esc="props.node.full_name"/></div>
+                                </div>
+                            </t>
+                            <t t-if="!isPersongroup and props.node.child_count">
                                 <div class="ob-info-card">
                                     <div class="ob-info-label">Sub-organizations</div>
                                     <div class="ob-info-value"><t t-esc="props.node.child_count"/></div>
                                 </div>
                             </t>
-                            <t t-if="props.node.person_count">
+                            <t t-if="!isPersongroup and props.node.person_count">
                                 <div class="ob-info-card">
                                     <div class="ob-info-label">Persons</div>
                                     <div class="ob-info-value"><t t-esc="props.node.person_count"/></div>
@@ -377,14 +710,40 @@
                         </t>
 
                         <t t-if="props.node.type === 'person'">
-                            <div class="ob-info-card">
-                                <div class="ob-info-label">Full Name</div>
-                                <div class="ob-info-value"><t t-esc="props.node.full_name or props.node.name"/></div>
-                            </div>
+                            <t t-if="props.node.person_type">
+                                <div class="ob-info-card">
+                                    <div class="ob-info-label">Person type</div>
+                                    <div class="ob-info-value">
+                                        <span class="ob-badge ob-badge-role" t-att-style="personTypeBadgeStyle">
+                                            <t t-if="props.node.person_type_icon_fa">
+                                                <i t-att-class="props.node.person_type_icon_fa" style="margin-right: 4px;"/>
+                                            </t>
+                                            <t t-esc="props.node.person_type"/>
+                                        </span>
+                                    </div>
+                                </div>
+                            </t>
+                            <t t-if="props.node.parent_org_name">
+                                <div class="ob-info-card">
+                                    <div class="ob-info-label">Organisatie</div>
+                                    <div class="ob-info-value">
+                                        <a href="#" class="ob-details-org-link" t-on-click.prevent="onParentOrgClick">
+                                            <i class="fa fa-building" style="margin-right: 4px;"/>
+                                            <t t-esc="props.node.parent_org_name"/>
+                                        </a>
+                                    </div>
+                                </div>
+                            </t>
                             <t t-if="props.node.email">
                                 <div class="ob-info-card">
                                     <div class="ob-info-label">E-mail Cloud</div>
                                     <div class="ob-info-value"><t t-esc="props.node.email"/></div>
+                                </div>
+                            </t>
+                            <t t-if="props.node.sap_ref">
+                                <div class="ob-info-card">
+                                    <div class="ob-info-label">SAP-ref</div>
+                                    <div class="ob-info-value ob-info-mono"><t t-esc="props.node.sap_ref"/></div>
                                 </div>
                             </t>
                             <t t-if="props.node.roles and props.node.roles.length">
@@ -397,17 +756,20 @@
                                     </div>
                                 </div>
                             </t>
-                            <t t-if="props.node.is_administrative">
+                        </t>
+
+                        <t t-if="props.node.type === 'role'">
+                            <t t-if="props.node.shortname and props.node.shortname !== props.node.name">
                                 <div class="ob-info-card">
-                                    <div class="ob-info-label">Type</div>
-                                    <div class="ob-info-value"><span class="ob-badge ob-badge-admin">Administrative</span></div>
+                                    <div class="ob-info-label">Short Name</div>
+                                    <div class="ob-info-value"><t t-esc="props.node.shortname"/></div>
                                 </div>
                             </t>
                         </t>
                     </div>
 
                     <!-- Configuration Items Table -->
-                    <t t-if="props.node.type === 'org'">
+                    <t t-if="isOrgLike">
                         <t t-if="props.node.ciRelations and props.node.ciRelations.length">
                             <div class="ob-section-title">Configuration Items</div>
                             <table class="ob-ci-table">
@@ -500,30 +862,55 @@
 
     <!-- Main Object Browser Template -->
     <t t-name="myschool_admin.ObjectBrowserClient" owl="1">
-        <div class="ob-container" t-ref="container">
+        <div class="ob-container"
+             tabindex="-1"
+             t-ref="container"
+             t-on-keydown="onKeyDown">
             <!-- Toolbar -->
             <div class="ob-toolbar-bar">
-                <div class="ob-toolbar-title">Organisation Manager</div>
-                <div class="ob-toolbar-sep"></div>
                 <div class="ob-global-search-wrapper">
                     <span class="ob-search-icon-inline"><i class="fa fa-search"/></span>
                     <input type="text"
                            class="ob-global-search"
-                           placeholder="Global search..."
+                           placeholder="Zoek overal in orgs, personen, rollen…"
                            t-att-value="state.globalSearchText"
                            t-on-input="onGlobalSearchInput"
-                           t-on-keydown="onGlobalSearchKeydown"/>
-                    <t t-if="state.globalSearchResults?.length > 0">
+                           t-on-keydown="onGlobalSearchKeydown"
+                           t-ref="globalSearch"/>
+                    <span class="ob-search-kbd-hint">Ctrl+K</span>
+                    <!-- Scope chips (client-side filter on the result list) -->
+                    <div class="ob-search-scopes">
+                        <button t-foreach="searchScopes" t-as="scope" t-key="scope.key"
+                                t-att-class="'ob-search-scope' + (state.searchScope === scope.key ? ' ob-search-scope-active' : '')"
+                                t-on-click="() => this.onSearchScopeChange(scope.key)">
+                            <i t-att-class="scope.iconClass"/>
+                            <t t-esc="scope.label"/>
+                        </button>
+                    </div>
+                    <t t-if="state.globalSearchText.length >= 2">
                         <div class="ob-global-search-results">
-                            <t t-foreach="state.globalSearchResults" t-as="result" t-key="result.id + '_' + result.type">
-                                <div class="ob-global-search-item"
-                                     t-on-click="() => this.onGlobalSearchResultClick(result)">
-                                    <i t-att-class="result.type === 'org' ? 'fa fa-building' : 'fa fa-user'"/>
-                                    <div class="ob-global-search-item-info">
-                                        <div class="ob-global-search-item-name"><t t-esc="result.name"/></div>
-                                        <div class="ob-global-search-item-type"><t t-esc="result.type === 'org' ? 'Organization' : 'Person'"/></div>
-                                    </div>
+                            <t t-if="filteredGlobalResults.length === 0">
+                                <div class="ob-global-search-empty">
+                                    <i class="fa fa-search" style="margin-right: 6px;"/>
+                                    Geen resultaten in "<t t-esc="state.searchScope === 'all' ? 'alles' : state.searchScope"/>" voor "<t t-esc="state.globalSearchText"/>"
                                 </div>
+                            </t>
+                            <t t-else="">
+                                <t t-foreach="filteredGlobalResults" t-as="result" t-key="result.id + '_' + result.type">
+                                    <div class="ob-global-search-item"
+                                         t-on-click="() => this.onGlobalSearchResultClick(result)">
+                                        <i t-att-class="result.type === 'org' ? 'fa fa-building' : (result.type === 'person' ? 'fa fa-user' : 'fa fa-id-badge')"/>
+                                        <div class="ob-global-search-item-info">
+                                            <div class="ob-global-search-item-name"><t t-esc="result.name"/></div>
+                                            <div class="ob-global-search-item-type">
+                                                <t t-if="result.type === 'org'">Organisatie</t>
+                                                <t t-elif="result.type === 'person'">Persoon</t>
+                                                <t t-elif="result.type === 'role'">Rol</t>
+                                                <t t-else=""><t t-esc="result.type"/></t>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </t>
                             </t>
                         </div>
                     </t>
@@ -551,26 +938,29 @@
             <div class="ob-tabs">
                 <button t-att-class="'ob-tab' + (state.activeTab === 'orgs' ? ' ob-tab-active' : '')"
                         t-on-click="onSwitchToOrgsTab">
-                    <i class="fa fa-building"/> Organisation Manager
+                    <i class="fa fa-building"/> Structuur
                 </button>
                 <button t-att-class="'ob-tab' + (state.activeTab === 'roles' ? ' ob-tab-active' : '')"
                         t-on-click="onSwitchToRolesTab">
-                    <i class="fa fa-id-badge"/> Role Relations Manager
+                    <i class="fa fa-id-badge"/> Rolrelaties
                 </button>
             </div>
             
-            <!-- Bulk Actions Bar (shown whenever ≥1 item is selected) -->
-            <t t-if="selectedCount > 0">
+            <!-- Bulk Actions Bar (shown whenever ≥1 item is selected in tree OR members) -->
+            <t t-if="totalSelectedCount > 0">
                 <div class="ob-bulk-bar">
-                    <span class="ob-bulk-count"><t t-esc="selectedCount"/> geselecteerd</span>
+                    <span class="ob-bulk-count"><t t-esc="totalSelectedCount"/> geselecteerd</span>
                     <button class="ob-btn ob-btn-sm" t-on-click="bulkAssignRole">
                         <i class="fa fa-id-badge" style="margin-right: 4px;"/>Assign Role
                     </button>
                     <button class="ob-btn ob-btn-sm" t-on-click="bulkMoveToOrg">
                         <i class="fa fa-arrows" style="margin-right: 4px;"/>Move to Org
                     </button>
-                    <button class="ob-btn ob-btn-sm ob-btn-danger" t-on-click="bulkDelete">
+                    <button class="ob-btn ob-btn-sm ob-btn-danger" t-on-click="bulkDeleteAll">
                         <i class="fa fa-trash" style="margin-right: 4px;"/>Verwijderen
+                    </button>
+                    <button class="ob-btn ob-btn-sm" t-on-click="clearAllSelections">
+                        <i class="fa fa-times" style="margin-right: 4px;"/>Deselecteer
                     </button>
                 </div>
             </t>
@@ -585,14 +975,41 @@
             
             <!-- Organisation Manager Tab Content -->
             <t t-if="state.activeTab === 'orgs'">
+
+            <!-- Breadcrumb (path to current activeNode) -->
+            <t t-if="breadcrumbPath.length">
+                <div class="ob-breadcrumb">
+                    <i class="fa fa-sitemap ob-breadcrumb-icon"/>
+                    <t t-foreach="breadcrumbPath" t-as="seg" t-key="seg.type + '_' + seg.id">
+                        <t t-if="!seg_first">
+                            <span class="ob-breadcrumb-sep">›</span>
+                        </t>
+                        <a class="ob-breadcrumb-seg"
+                           t-att-class="{ 'ob-breadcrumb-seg-active': seg_last,
+                                         'ob-breadcrumb-seg-person': seg.type === 'person' }"
+                           t-on-click="() => this.onBreadcrumbClick(seg)">
+                            <t t-if="seg.type === 'person'">
+                                <i class="fa fa-user" style="margin-right: 4px;"/>
+                            </t>
+                            <t t-elif="seg.type === 'persongroup'">
+                                <i class="fa fa-users" style="margin-right: 4px;"/>
+                            </t>
+                            <t t-esc="seg.name"/>
+                        </a>
+                    </t>
+                </div>
+            </t>
+
             <!-- Main Content: Tree + Members + Details -->
             <div class="ob-main">
                 <!-- Tree Panel -->
-                <div class="ob-tree-panel">
+                <div class="ob-tree-panel"
+                     t-att-class="{ 'ob-pane-focused': state.focusedPane === 'tree' }"
+                     t-on-mousedown="() => this.onPaneFocus('tree')">
                     <div class="ob-tree-header">
                         <input type="text"
                                class="ob-tree-search"
-                               placeholder="Filter tree..."
+                               placeholder="Filter zichtbare orgs…"
                                t-att-value="state.searchText"
                                t-on-input="onSearchInput"/>
                     </div>
@@ -629,27 +1046,91 @@
                         </t>
                     </div>
                 </div>
-                
-                <!-- Members Panel -->
-                <MembersPanel
-                    node="state.activeOrgNode"
-                    members="state.membersData"
-                    loading="state.membersLoading"
-                    onOpenRecord="openRecord"
-                    onMemberContextMenu="onMemberContextMenu"
-                    onMemberSelect="onMemberSelect"
-                    onPasswordClick="onPasswordClick"
-                    selectedMemberId="state.activeNode?.id"
-                    selectedMemberType="state.activeNode?.type"
-                    selectedMemberIds="state.selectedMemberIds"/>
-                
-                <!-- Details Panel -->
-                <DetailsPanel node="state.activeNode"
-                              members="state.membersData"
-                              onAction="onDetailsAction"
-                              onOpenRecord="openActiveRecord"
-                              onEditCi="openEditCiWizard"
-                              onRemoveCi="openRemoveCiWizard"/>
+
+                <!-- Onboarding (no selection yet) — spans the full right side -->
+                <t t-if="!state.activeOrgNode and !state.activeNode">
+                    <div class="ob-onboarding">
+                        <div class="ob-onboarding-inner">
+                            <i class="fa fa-sitemap ob-onboarding-hero"/>
+                            <h2>Welkom bij de Organisation Manager</h2>
+                            <p class="ob-onboarding-lead">
+                                Kies links een organisatie om de leden te zien.
+                            </p>
+                            <ol class="ob-onboarding-steps">
+                                <li>
+                                    <span class="ob-step-num">1</span>
+                                    <div>
+                                        <strong>Kies links een organisatie</strong>
+                                        <span class="ob-step-meta">Klik in de boom — sub-orgs klap je uit met ▸.</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span class="ob-step-num">2</span>
+                                    <div>
+                                        <strong>Bekijk de leden in het rechter paneel</strong>
+                                        <span class="ob-step-meta">Hover over een rij voor snelle acties; rechts-klik voor het volledige menu.</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span class="ob-step-num">3</span>
+                                    <div>
+                                        <strong>Open details met dubbel-klik of de <i class="fa fa-pencil"/>-knop</strong>
+                                        <span class="ob-step-meta">Een slide-over toont alle details en configuratie.</span>
+                                    </div>
+                                </li>
+                            </ol>
+                            <div class="ob-onboarding-tips">
+                                <div class="ob-onboarding-tip"><kbd>Ctrl</kbd>+<kbd>K</kbd> — zoek overal</div>
+                                <div class="ob-onboarding-tip"><kbd>↑</kbd> <kbd>↓</kbd> — navigeer in de actieve pane</div>
+                                <div class="ob-onboarding-tip"><kbd>Tab</kbd> — wissel tussen panes</div>
+                                <div class="ob-onboarding-tip">Sleep een lid naar een org om te verplaatsen</div>
+                            </div>
+                        </div>
+                    </div>
+                </t>
+
+                <t t-else="">
+                    <!-- Splitter: tree ↔ members -->
+                    <div class="ob-splitter"
+                         t-att-class="{ 'ob-splitter-active': state.resizing === 'tree' }"
+                         t-on-mousedown="(ev) => this.onSplitterMouseDown(ev, 'tree')"
+                         t-on-dblclick="() => this.onSplitterDoubleClick('tree')"
+                         title="Versleep om tree breder/smaller te maken (dubbelklik = reset)"/>
+
+                    <!-- Members Panel (now flex:1) -->
+                    <MembersPanel
+                        node="state.activeOrgNode"
+                        members="state.membersData"
+                        loading="state.membersLoading"
+                        onOpenRecord="openRecord"
+                        onMemberContextMenu="onMemberContextMenu"
+                        onPanelContextMenu="onMembersPanelContextMenu"
+                        onMemberSelect="onMemberSelect"
+                        onMemberAction="onMemberRowAction"
+                        onMemberKebab="onMemberRowKebab"
+                        onMemberOpenDetails="onMemberOpenDetails"
+                        onMemberDragStart="onMemberDragStart"
+                        onMemberDragEnd="onMemberDragEnd"
+                        onOpenOrgDetails="onOpenOrgDetails"
+                        onPasswordClick="onPasswordClick"
+                        onFocus="() => this.onPaneFocus('members')"
+                        focused="state.focusedPane === 'members'"
+                        selectedMemberId="state.activeNode?.id"
+                        selectedMemberType="state.activeNode?.type"
+                        selectedMemberIds="state.selectedMemberIds"/>
+                </t>
+
+                <!-- Slide-over Details (overlay) -->
+                <SlideOverDetails
+                    node="state.slideOverNode"
+                    onClose="closeSlideOver"
+                    onAction="onSlideOverAction"
+                    onOpenRecord="onSlideOverOpenRecord"
+                    onEditCi="openEditCiWizard"
+                    onRemoveCi="openRemoveCiWizard"
+                    onAddCi="openAddCiForActiveOrg"
+                    ciRelations="state.slideOverCiRelations"
+                    ciLoading="state.slideOverCiLoading"/>
             </div>
             </t>
             

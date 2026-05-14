@@ -20,11 +20,34 @@ Per-module sidebar ordering uses the ``priority`` attribute on each
 ir.ui.view (lower = earlier). Core uses 10 — first in the sidebar.
 """
 
-from odoo import models
+from odoo import models, fields
 
 
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
+
+    # ------------------------------------------------------------------
+    # Global safeguard mode — applies to every external integration
+    # (Smartschool today; LDAP / Google Workspace can opt into the same
+    # parameter later by reading ``ir.config_parameter myschool.safeguard_mode``).
+    # ``live``        — per-config dry_run decides (default, backwards-compat)
+    # ``dry_run_all`` — force all platforms into dry-run regardless of config
+    # ``read_only``   — reject every mutating call hard
+    # ------------------------------------------------------------------
+
+    myschool_safeguard_mode = fields.Selection(
+        selection=[
+            ('live', 'Live — per-config dry_run decides'),
+            ('dry_run_all', 'Dry run (all platforms) — simulate every mutating call'),
+            ('read_only', 'Read-only — reject every mutating call'),
+        ],
+        string='Safeguard Mode',
+        config_parameter='myschool.safeguard_mode',
+        default='live',
+        help='Global override that protects all external integrations '
+             '(Smartschool, LDAP, Google Workspace) against unintended '
+             'writes. "Live" defers to each platform\'s own dry_run flag.',
+    )
 
     # ------------------------------------------------------------------
     # Shortcut actions — open existing tools without leaving the
@@ -34,3 +57,7 @@ class ResConfigSettings(models.TransientModel):
     def action_open_google_workspace(self):
         return self.env.ref(
             'myschool_core.action_google_workspace_config').read()[0]
+
+    def action_open_smartschool(self):
+        return self.env.ref(
+            'myschool_core.action_smartschool_config').read()[0]

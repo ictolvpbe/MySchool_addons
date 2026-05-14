@@ -221,14 +221,46 @@ class DataExchange(models.TransientModel):
 
     # --- main model exports ---
 
+    def _serialize_org(self, r):
+        """One-record serializer used by every org-category export so
+        the wire format stays identical regardless of which toggle
+        produced the record."""
+        return {
+            'inst_nr': r.inst_nr,
+            'name': r.name,
+            'name_short': r.name_short,
+            'name_tree': r.name_tree or '',
+            'org_type': r.org_type_id.name if r.org_type_id else '',
+            'is_active': r.is_active,
+            'automatic_sync': r.automatic_sync,
+            'is_administrative': r.is_administrative,
+            'street': r.street or '',
+            'street_nr': r.street_nr or '',
+            'postal_code': r.postal_code or '',
+            'community': r.community or '',
+            'country': r.country or '',
+            'sap_provider': r.sap_provider or '',
+            'sap_login': r.sap_login or '',
+            'domain_internal': r.domain_internal or '',
+            'domain_external': r.domain_external or '',
+            'has_ou': r.has_ou,
+            'has_comgroup': r.has_comgroup,
+            'has_secgroup': r.has_secgroup,
+            'ou_fqdn_internal': r.ou_fqdn_internal or '',
+            'ou_fqdn_external': r.ou_fqdn_external or '',
+            'com_group_fqdn_internal': r.com_group_fqdn_internal or '',
+            'com_group_fqdn_external': r.com_group_fqdn_external or '',
+            'sec_group_fqdn_internal': r.sec_group_fqdn_internal or '',
+            'sec_group_fqdn_external': r.sec_group_fqdn_external or '',
+            'com_group_name': r.com_group_name or '',
+            'com_group_email': r.com_group_email or '',
+            'sec_group_name': r.sec_group_name or '',
+        }
+
     def _export_orgs(self, scope_ids=None):
         """Export "regular" orgs — anything that's not a classgroup or
         persongroup. Classgroups + persongroups have their own toggles
-        so admins can decide per category.
-
-        When ``scope_ids`` is provided, the export is restricted to
-        those org-ids (typically a SCHOOL + descendants).
-        """
+        so admins can decide per category."""
         excluded_type_ids = self.env['myschool.org.type'].search(
             [('name', 'in', list(EXCLUDE_ORG_TYPES))]).ids
         domain = []
@@ -237,38 +269,75 @@ class DataExchange(models.TransientModel):
         if scope_ids is not None:
             domain.append(('id', 'in', list(scope_ids)))
         records = self.env['myschool.org'].search(domain)
+        return [self._serialize_org(r) for r in records]
+
+    def _export_persongroups(self, scope_ids=None):
+        """Export PERSONGROUP-type orgs. Same wire format as ``orgs`` —
+        kept in its own section so importers can decide whether to
+        load them (typically rebuilt per school year, so usually
+        skipped)."""
+        domain = [('org_type_id.name', '=', 'PERSONGROUP')]
+        if scope_ids is not None:
+            domain.append(('id', 'in', list(scope_ids)))
+        records = self.env['myschool.org'].search(domain)
+        return [self._serialize_org(r) for r in records]
+
+    def _export_classgroups(self, scope_ids=None):
+        """Export CLASSGROUP-type orgs. Same caveats as persongroups."""
+        domain = [('org_type_id.name', '=', 'CLASSGROUP')]
+        if scope_ids is not None:
+            domain.append(('id', 'in', list(scope_ids)))
+        records = self.env['myschool.org'].search(domain)
+        return [self._serialize_org(r) for r in records]
+
+    def _export_persons(self, scope_ids=None):
+        """Export myschool.person records.
+
+        Privacy / data-protection: persons are not part of the default
+        export. Opt-in via ``include_persons``.
+
+        ``scope_ids`` filters to persons whose **active** PERSON-TREE
+        org is within scope. Their proprelations (PERSON-TREE, PPSBR,
+        PG-P) are intentionally not exported — re-sync from Informat
+        after import to rebuild them.
+        """
+        Person = self.env['myschool.person']
+        if scope_ids is not None:
+            PropRelation = self.env['myschool.proprelation']
+            PropRelationType = self.env['myschool.proprelation.type']
+            pt_type = PropRelationType.search(
+                [('name', '=', 'PERSON-TREE')], limit=1)
+            if not pt_type:
+                return []
+            rels = PropRelation.search([
+                ('proprelation_type_id', '=', pt_type.id),
+                ('id_org', 'in', list(scope_ids)),
+                ('is_active', '=', True),
+                ('id_person', '!=', False),
+            ])
+            person_ids = list({r.id_person.id for r in rels})
+            records = Person.browse(person_ids)
+        else:
+            records = Person.search([])
         result = []
         for r in records:
             result.append({
-                'inst_nr': r.inst_nr,
-                'name': r.name,
-                'name_short': r.name_short,
-                'name_tree': r.name_tree or '',
-                'org_type': r.org_type_id.name if r.org_type_id else '',
+                'sap_person_uuid': r.sap_person_uuid or '',
+                'sap_ref': r.sap_ref or '',
+                'first_name': r.first_name or '',
+                'name': r.name or '',
+                'last_name': r.last_name or '' if 'last_name' in r._fields else '',
+                'abbreviation': r.abbreviation or '',
+                'gender': r.gender or '' if 'gender' in r._fields else '',
+                'email_cloud': r.email_cloud or '',
+                'email_private': r.email_private or '',
+                'person_type': r.person_type_id.name if r.person_type_id else '',
                 'is_active': r.is_active,
-                'automatic_sync': r.automatic_sync,
-                'is_administrative': r.is_administrative,
-                'street': r.street or '',
-                'street_nr': r.street_nr or '',
-                'postal_code': r.postal_code or '',
-                'community': r.community or '',
-                'country': r.country or '',
-                'sap_provider': r.sap_provider or '',
-                'sap_login': r.sap_login or '',
-                'domain_internal': r.domain_internal or '',
-                'domain_external': r.domain_external or '',
-                'has_ou': r.has_ou,
-                'has_comgroup': r.has_comgroup,
-                'has_secgroup': r.has_secgroup,
-                'ou_fqdn_internal': r.ou_fqdn_internal or '',
-                'ou_fqdn_external': r.ou_fqdn_external or '',
-                'com_group_fqdn_internal': r.com_group_fqdn_internal or '',
-                'com_group_fqdn_external': r.com_group_fqdn_external or '',
-                'sec_group_fqdn_internal': r.sec_group_fqdn_internal or '',
-                'sec_group_fqdn_external': r.sec_group_fqdn_external or '',
-                'com_group_name': r.com_group_name or '',
-                'com_group_email': r.com_group_email or '',
-                'sec_group_name': r.sec_group_name or '',
+                'automatic_sync': r.automatic_sync if 'automatic_sync' in r._fields else True,
+                'person_fqdn_internal': r.person_fqdn_internal or ''
+                    if 'person_fqdn_internal' in r._fields else '',
+                'person_fqdn_external': r.person_fqdn_external or ''
+                    if 'person_fqdn_external' in r._fields else '',
             })
         return result
 
@@ -303,7 +372,7 @@ class DataExchange(models.TransientModel):
             })
         return result
 
-    def _export_proprelations(self):
+    def _export_proprelations(self, scope_ids=None):
         pr_type_ids = self.env['myschool.proprelation.type'].search(
             [('name', 'in', list(EXPORT_PR_TYPES))]).ids
         if not pr_type_ids:
@@ -311,12 +380,14 @@ class DataExchange(models.TransientModel):
         records = self.env['myschool.proprelation'].search(
             [('proprelation_type_id', 'in', pr_type_ids)])
 
-        # Build set of exported org ids for filtering
+        # Build set of exported org ids for filtering.
         excluded_type_ids = self.env['myschool.org.type'].search(
             [('name', 'in', list(EXCLUDE_ORG_TYPES))]).ids
         domain = []
         if excluded_type_ids:
             domain = [('org_type_id', 'not in', excluded_type_ids)]
+        if scope_ids is not None:
+            domain.append(('id', 'in', list(scope_ids)))
         exported_org_ids = set(self.env['myschool.org'].search(domain).ids)
 
         result = []
@@ -369,8 +440,16 @@ class DataExchange(models.TransientModel):
             result.append(entry)
         return result
 
-    def _export_config_items(self):
-        records = self.env['myschool.config.item'].search([('is_encrypted', '=', False)])
+    def _export_config_items(self, scope_ids=None):
+        domain = [('is_encrypted', '=', False)]
+        # Scope filter: when set, only ship CIs explicitly bound to a
+        # scope-org via the org_id field. Global / module-scoped CIs
+        # are always shipped because they're not org-bound.
+        if scope_ids is not None:
+            domain.append('|')
+            domain.append(('org_id', 'in', list(scope_ids)))
+            domain.append(('org_id', '=', False))
+        records = self.env['myschool.config.item'].search(domain)
         result = []
         for r in records:
             result.append({
@@ -465,19 +544,43 @@ class DataExchange(models.TransientModel):
         errors = []
         # Use sudo to bypass sync record rules during import.
         sudo_self = self.sudo()
-        stats['org_types'] = sudo_self._import_org_types(data.get('org_types', []), errors)
-        stats['person_types'] = sudo_self._import_person_types(data.get('person_types', []), errors)
-        stats['role_types'] = sudo_self._import_role_types(data.get('role_types', []), errors)
-        stats['period_types'] = sudo_self._import_period_types(data.get('period_types', []), errors)
-        stats['proprelation_types'] = sudo_self._import_proprelation_types(data.get('proprelation_types', []), errors)
-        stats['config_items'] = sudo_self._import_config_items(data.get('config_items', []), errors)
-        stats['orgs'] = sudo_self._import_orgs(data.get('orgs', []), errors)
-        stats['roles'] = sudo_self._import_roles(data.get('roles', []), errors)
-        stats['periods'] = sudo_self._import_periods(data.get('periods', []), errors)
-        stats['proprelations'] = sudo_self._import_proprelations(data.get('proprelations', []), errors)
-        stats['ci_relations'] = sudo_self._import_ci_relations(data.get('ci_relations', []), errors)
-        stats['betask_types'] = sudo_self._import_betask_types(data.get('betask_types', []), errors)
-        stats['betasks'] = sudo_self._import_betasks(data.get('betasks', []), errors)
+        # Each section honours the same ``include_*`` toggles as the
+        # export. An admin can import a full export but cherry-pick
+        # which categories to materialise. Sections missing from the
+        # JSON are skipped automatically.
+        if self.include_types:
+            if 'org_types' in data:
+                stats['org_types'] = sudo_self._import_org_types(data['org_types'], errors)
+            if 'person_types' in data:
+                stats['person_types'] = sudo_self._import_person_types(data['person_types'], errors)
+            if 'role_types' in data:
+                stats['role_types'] = sudo_self._import_role_types(data['role_types'], errors)
+            if 'period_types' in data:
+                stats['period_types'] = sudo_self._import_period_types(data['period_types'], errors)
+            if 'proprelation_types' in data:
+                stats['proprelation_types'] = sudo_self._import_proprelation_types(data['proprelation_types'], errors)
+        if self.include_config_items and 'config_items' in data:
+            stats['config_items'] = sudo_self._import_config_items(data['config_items'], errors)
+        if self.include_orgs and 'orgs' in data:
+            stats['orgs'] = sudo_self._import_orgs(data['orgs'], errors)
+        if self.include_persongroups and 'persongroups' in data:
+            stats['persongroups'] = sudo_self._import_orgs(data['persongroups'], errors)
+        if self.include_classgroups and 'classgroups' in data:
+            stats['classgroups'] = sudo_self._import_orgs(data['classgroups'], errors)
+        if self.include_roles and 'roles' in data:
+            stats['roles'] = sudo_self._import_roles(data['roles'], errors)
+        if self.include_periods and 'periods' in data:
+            stats['periods'] = sudo_self._import_periods(data['periods'], errors)
+        if self.include_proprelations and 'proprelations' in data:
+            stats['proprelations'] = sudo_self._import_proprelations(data['proprelations'], errors)
+        if self.include_ci_relations and 'ci_relations' in data:
+            stats['ci_relations'] = sudo_self._import_ci_relations(data['ci_relations'], errors)
+        if self.include_betask_types and 'betask_types' in data:
+            stats['betask_types'] = sudo_self._import_betask_types(data['betask_types'], errors)
+        if self.include_betasks and 'betasks' in data:
+            stats['betasks'] = sudo_self._import_betasks(data['betasks'], errors)
+        if self.include_persons and 'persons' in data:
+            stats['persons'] = sudo_self._import_persons(data['persons'], errors)
 
         meta = data.get('metadata', {})
         lines = [
@@ -923,6 +1026,73 @@ class DataExchange(models.TransientModel):
             except Exception as e:
                 self.env.cr.rollback()
                 errors.append(f"betask '{name}': {e}")
+                skipped += 1
+        return (created, updated, skipped)
+
+    def _import_persons(self, items, errors):
+        """Import myschool.person records.
+
+        Matched by ``sap_person_uuid`` when present (Informat-synced),
+        otherwise by ``(first_name, name)``. Proprelations are NOT
+        loaded — admins are expected to re-sync from Informat after
+        import to rebuild PERSON-TREE / PPSBR / PG-P. Skip rows for
+        which the linked ``person_type`` doesn't exist.
+        """
+        Person = self.env['myschool.person']
+        PersonType = self.env['myschool.person.type']
+        created = updated = skipped = 0
+        for item in items:
+            first_name = (item.get('first_name') or '').strip()
+            name = (item.get('name') or '').strip()
+            uuid = (item.get('sap_person_uuid') or '').strip()
+            if not name and not first_name and not uuid:
+                skipped += 1
+                continue
+            try:
+                pt_name = (item.get('person_type') or '').strip()
+                pt = PersonType.search([('name', '=', pt_name)], limit=1) \
+                    if pt_name else None
+                vals = {
+                    'first_name': first_name or False,
+                    'name': name or first_name,
+                    'abbreviation': item.get('abbreviation') or False,
+                    'email_cloud': item.get('email_cloud') or False,
+                    'email_private': item.get('email_private') or False,
+                    'sap_ref': item.get('sap_ref') or False,
+                    'sap_person_uuid': uuid or False,
+                    'is_active': item.get('is_active', True),
+                }
+                if pt:
+                    vals['person_type_id'] = pt.id
+                # Optional fields — only set when the column exists on
+                # this DB's schema.
+                for fname in ('last_name', 'gender', 'automatic_sync',
+                              'person_fqdn_internal', 'person_fqdn_external'):
+                    if fname in Person._fields and fname in item:
+                        v = item.get(fname)
+                        vals[fname] = v if v not in ('', None) else False
+
+                # Match: prefer sap_person_uuid (stable Informat key),
+                # fall back to first_name + name.
+                existing = None
+                if uuid:
+                    existing = Person.search(
+                        [('sap_person_uuid', '=', uuid)], limit=1)
+                if not existing:
+                    existing = Person.search([
+                        ('first_name', '=', first_name or False),
+                        ('name', '=', name or first_name),
+                    ], limit=1)
+                if existing:
+                    existing.write(vals)
+                    updated += 1
+                else:
+                    Person.create(vals)
+                    created += 1
+            except Exception as e:
+                self.env.cr.rollback()
+                errors.append(
+                    f"person '{first_name} {name}': {e}")
                 skipped += 1
         return (created, updated, skipped)
 

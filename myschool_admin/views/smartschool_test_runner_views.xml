@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="view_smartschool_test_runner_form" model="ir.ui.view">
+        <field name="name">myschool.smartschool.test.runner.form</field>
+        <field name="model">myschool.smartschool.test.runner</field>
+        <field name="arch" type="xml">
+            <form string="Smartschool Test Runner">
+                <header>
+                    <button name="action_run_dry_run"
+                            string="1. Dry-run uitvoeren"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state == 'live_done'"/>
+                    <button name="action_run_live"
+                            string="2. Live uitvoeren"
+                            type="object"
+                            class="btn-danger"
+                            invisible="state != 'dry_run_done'"
+                            confirm="Live uitvoering doet ECHTE mutaties op het Smartschool-platform. Doorgaan?"/>
+                    <button name="action_reset"
+                            string="Reset"
+                            type="object"
+                            invisible="state == 'draft'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,dry_run_done,live_done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h2>Smartschool integratie testen</h2>
+                        <p class="text-muted">
+                            Stap 1: kies actie + persoon, klik <b>Dry-run</b>.
+                            Geen mutatie op Smartschool — alleen audit-trail in
+                            <i>sys_event</i>. Stap 2: review het resultaat en
+                            klik <b>Live uitvoeren</b> voor de echte SOAP-call.
+                        </p>
+                    </div>
+
+                    <group string="Selectie">
+                        <group>
+                            <field name="action"
+                                   readonly="state != 'draft'"/>
+                            <field name="person_id"
+                                   readonly="state != 'draft'"
+                                   invisible="action == 'test_connection'"
+                                   required="action != 'test_connection'"/>
+                            <field name="config_picker_id"
+                                   readonly="state != 'draft'"
+                                   invisible="action != 'test_connection'"
+                                   required="action == 'test_connection'"/>
+                        </group>
+                        <group string="Resolved context">
+                            <field name="config_id" readonly="1"
+                                   invisible="action == 'test_connection'"/>
+                            <field name="target_username" readonly="1"
+                                   invisible="action == 'test_connection'"/>
+                            <field name="target_internnumber" readonly="1"
+                                   invisible="action == 'test_connection'"/>
+                            <field name="safeguard_mode" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not safeguard_warning">
+                        <field name="safeguard_warning" readonly="1" nolabel="1"/>
+                    </div>
+
+                    <notebook>
+                        <page string="Dry-run resultaat" name="dry_run"
+                              invisible="state == 'draft'">
+                            <group col="4">
+                                <field name="dry_run_at" readonly="1"/>
+                                <field name="dry_run_status"
+                                       widget="badge" readonly="1"
+                                       decoration-success="dry_run_status == 'ok'"
+                                       decoration-danger="dry_run_status == 'error'"/>
+                                <field name="dry_run_betask_id" readonly="1" colspan="2"/>
+                            </group>
+                            <field name="dry_run_summary" readonly="1"/>
+                            <separator string="Captured log"/>
+                            <field name="dry_run_log" readonly="1"
+                                   widget="text" nolabel="1"/>
+                        </page>
+                        <page string="Live resultaat" name="live"
+                              invisible="state != 'live_done'">
+                            <group col="4">
+                                <field name="live_at" readonly="1"/>
+                                <field name="live_status"
+                                       widget="badge" readonly="1"
+                                       decoration-success="live_status == 'ok'"
+                                       decoration-danger="live_status == 'error'"/>
+                                <field name="live_betask_id" readonly="1" colspan="2"/>
+                            </group>
+                            <field name="live_summary" readonly="1"/>
+                            <separator string="Captured log"/>
+                            <field name="live_log" readonly="1"
+                                   widget="text" nolabel="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_smartschool_test_runner" model="ir.actions.act_window">
+        <field name="name">Smartschool Test Runner</field>
+        <field name="res_model">myschool.smartschool.test.runner</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+    </record>
+
+    <!-- Menuitem leeft in views/menu_views.xml (project convention:
+         every <menuitem> is grouped there so manifest load-order doesn't
+         break the parent ref). -->
+
+</odoo>

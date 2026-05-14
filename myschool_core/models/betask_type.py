@@ -33,6 +33,7 @@ class BeTaskType(models.Model):
             ('LDAP', 'LDAP/Active Directory'),
             ('AD', 'Active Directory'),
             ('CLOUD', 'Cloud Service'),
+            ('SMARTSCHOOL', 'Smartschool Platform'),
             ('API', 'External API'),
             ('EMAIL', 'Email Service'),
             ('LETTER', 'Letter / Document Generation'),

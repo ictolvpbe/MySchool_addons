@@ -15,27 +15,63 @@
                 <!-- EXPORT MODE -->
                 <div invisible="mode != 'export'" class="mb-3">
                     <div class="alert alert-info" role="alert">
-                        <strong>Export structural data</strong> to a JSON file for deployment on another server.
-                        <br/>Includes: organization types, person types, role types, period types,
-                        relation types, organizations (excl. classgroups/persongroups),
-                        roles, periods, proprelations (ORG-TREE, BRSO, SR-BR),
-                        config items (excl. encrypted), CI relations, betask types, and betasks.
-                        <br/>Excludes: persons, classgroups, persongroups, system events, encrypted credentials.
+                        <strong>Export</strong> a JSON snapshot of MySchool data. Kies
+                        eventueel een scope (één school of koepel) en/of selecteer
+                        welke secties je wil opnemen. Niet-aangevinkte secties komen
+                        niet in het JSON-bestand.
                     </div>
                 </div>
 
                 <!-- IMPORT MODE -->
                 <div invisible="mode != 'import'" class="mb-3">
                     <div class="alert alert-warning" role="alert">
-                        <strong>Import structural data</strong> from a previously exported JSON file.
-                        <br/>Existing records will be updated (matched by natural key).
-                        New records will be created.
+                        <strong>Import</strong> een eerder geëxporteerde JSON. Alleen
+                        de hieronder aangevinkte secties worden ingelezen — zo kan je
+                        bv. één bestand uploaden en cherry-picken wat je wil
+                        materialiseren. Bestaande records worden gematcht via hun
+                        natural key en bijgewerkt.
                     </div>
                     <group>
                         <field name="import_file" filename="import_filename" string="JSON File"/>
                         <field name="import_filename" invisible="1"/>
                     </group>
                 </div>
+
+                <!-- SCOPE + INCLUDE TOGGLES (visible in both modes) -->
+                <group string="Scope">
+                    <field name="scope_org_id"
+                           options="{'no_create': True, 'no_create_edit': True}"
+                           placeholder="Laat leeg voor hele database"/>
+                </group>
+
+                <notebook>
+                    <page string="Wat opnemen" name="includes">
+                        <group>
+                            <group string="Structureel">
+                                <field name="include_types"/>
+                                <field name="include_orgs"/>
+                                <field name="include_roles"/>
+                                <field name="include_periods"/>
+                                <field name="include_proprelations"/>
+                            </group>
+                            <group string="Optioneel / privacygevoelig">
+                                <field name="include_persongroups"/>
+                                <field name="include_classgroups"/>
+                                <field name="include_persons"/>
+                                <field name="include_betasks"/>
+                            </group>
+                        </group>
+                        <group>
+                            <group string="Configuratie">
+                                <field name="include_config_items"/>
+                                <field name="include_ci_relations"/>
+                            </group>
+                            <group string="Backend tasks">
+                                <field name="include_betask_types"/>
+                            </group>
+                        </group>
+                    </page>
+                </notebook>
 
                 <!-- RESULT -->
                 <div invisible="not result_summary">

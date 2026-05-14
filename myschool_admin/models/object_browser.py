@@ -22,6 +22,16 @@ class ObjectBrowser(models.TransientModel):
 
     name = fields.Char(default='Object Browser')
 
+    @staticmethod
+    def _icon_url(model, rec_id, write_date):
+        """Build a stable URL to a binary ``icon_image`` field. Includes a
+        ``unique`` cache-buster bound to ``write_date`` so the browser
+        fetches a fresh image after an admin upload."""
+        unique = ''
+        if write_date:
+            unique = write_date.strftime('%Y%m%d%H%M%S')
+        return f'/web/image/{model}/{rec_id}/icon_image?unique={unique}'
+
     # =========================================================================
     # DATA RETRIEVAL
     # =========================================================================
@@ -204,6 +214,15 @@ class ObjectBrowser(models.TransientModel):
         persons.mapped('name')
         persons.mapped('first_name')
         persons.mapped('is_active')
+        if 'email_cloud' in persons._fields:
+            persons.mapped('email_cloud')
+        if 'sap_ref' in persons._fields:
+            persons.mapped('sap_ref')
+        # Person-type warm-up so icon resolution doesn't trigger N queries.
+        if 'person_type_id' in persons._fields:
+            persons.mapped('person_type_id.icon_fa_class')
+            persons.mapped('person_type_id.icon_image')
+            persons.mapped('person_type_id.write_date')
         roles = rels.mapped('id_role')
         roles.mapped('shortname')
         roles.mapped('name')
@@ -228,15 +247,42 @@ class ObjectBrowser(models.TransientModel):
             key = (org_id, pid)
             entry = agg.get(key)
             if entry is None:
-                name = person.name or 'Unknown'
-                if getattr(person, 'first_name', None):
-                    name = f"{person.first_name} {person.name}"
+                # Build display name from first_name + last_name. Avoid
+                # ``person.name`` here — it stores "Achternaam, Voornaam"
+                # and would duplicate the first name in the result.
+                first = getattr(person, 'first_name', '') or ''
+                lastname = getattr(person, 'last_name', '') or person.name or 'Unknown'
+                if first and lastname and lastname != 'Unknown':
+                    name = f"{first} {lastname}"
+                elif first:
+                    name = first
+                else:
+                    name = lastname
+                # Per-type visual identity. Prefer uploaded icon, fall
+                # back to FA-class, frontend falls further back to the
+                # gekleurde initialen-avatar when both are empty.
+                pt = getattr(person, 'person_type_id', None)
+                p_type_name = (pt.name if pt else '') or ''
+                p_icon_fa = (pt.icon_fa_class if pt else '') or ''
+                p_color = (pt.icon_color if pt else '') or ''
+                p_icon_url = ''
+                if pt and getattr(pt, 'icon_image', False):
+                    p_icon_url = self._icon_url(
+                        'myschool.person.type', pt.id, pt.write_date)
                 entry = {
                     'id': pid,
                     'name': name,
+                    'lastname': lastname,
                     'type': 'person',
                     'model': 'myschool.person',
                     'org_id': org_id,
+                    'person_type': p_type_name,
+                    'person_type_icon_fa': p_icon_fa,
+                    'person_type_icon_url': p_icon_url,
+                    'person_type_color': p_color,
+                    'email': getattr(person, 'email_cloud', '') or '',
+                    'sap_ref': getattr(person, 'sap_ref', '') or '',
+                    'is_active': bool(getattr(person, 'is_active', True)),
                     'roles': [],
                 }
                 agg[key] = entry
@@ -246,6 +292,8 @@ class ObjectBrowser(models.TransientModel):
                 role_name = role.shortname or role.name
                 if role_name and role_name not in entry['roles']:
                     entry['roles'].append(role_name)
+        for entries in by_org.values():
+            entries.sort(key=lambda e: (e.get('lastname') or '').lower())
         return by_org
 
     def _prefetch_ci_count_by_org(self, all_org_ids):
@@ -299,6 +347,9 @@ class ObjectBrowser(models.TransientModel):
 
         child_ids = org_children.get(org.id, [])
         child_ids = [cid for cid in child_ids if cid in org_dict]
+        # Sort children alphabetically by their display name so the tree
+        # is stable regardless of proprelation insertion order.
+        child_ids.sort(key=lambda cid: (self._get_display_name(org_dict[cid]) or '').lower())
 
         # ----- persons -------------------------------------------------------
         if person_tree_by_org is None:
@@ -323,8 +374,21 @@ class ObjectBrowser(models.TransientModel):
         
         # Get org type name for icon differentiation
         org_type_name = ''
+        org_type_id = 0
+        org_type_icon_fa = ''
+        org_type_icon_url = ''
+        org_type_color = ''
         if hasattr(org, 'org_type_id') and org.org_type_id:
-            org_type_name = org.org_type_id.name or ''
+            ot = org.org_type_id
+            org_type_name = ot.name or ''
+            org_type_id = ot.id
+            org_type_icon_fa = getattr(ot, 'icon_fa_class', '') or ''
+            org_type_color = getattr(ot, 'icon_color', '') or ''
+            if getattr(ot, 'icon_image', False):
+                # write_date is part of the URL so browsers re-fetch
+                # when the admin uploads a new icon.
+                org_type_icon_url = self._icon_url(
+                    'myschool.org.type', ot.id, ot.write_date)
 
         node = {
             'id': org.id,
@@ -332,7 +396,11 @@ class ObjectBrowser(models.TransientModel):
             'full_name': org.name,  # Keep full name for tooltips/details
             'name_tree': name_tree,  # Full tree path for display in wizards
             'type': 'org',
+            'org_type_id': org_type_id,
             'org_type_name': org_type_name,
+            'org_type_icon_fa': org_type_icon_fa,
+            'org_type_icon_url': org_type_icon_url,
+            'org_type_color': org_type_color,
             'model': 'myschool.org',
             'child_count': len(child_ids),
             'person_count': person_count,
@@ -847,10 +915,17 @@ class ObjectBrowser(models.TransientModel):
         return result
 
     @api.model
-    def get_members_for_org(self, org_id):
+    def get_members_for_org(self, org_id, show_inactive=False,
+                            show_administrative=False):
         """
         Get all persons and persongroup orgs related to the selected org.
         Returns persons linked via PERSON-TREE proprelation and persongroups via ORG-TREE.
+
+        ``show_administrative`` filters child orgs marked as administrative
+        out of the ``persongroups`` list, matching the tree-side filter.
+        ``show_inactive`` is currently informational (PERSON-TREE/PG-P
+        queries always filter is_active=True; sub-org rows already skip
+        inactive orgs).
         """
         result = {
             'persons': [],
@@ -861,7 +936,8 @@ class ObjectBrowser(models.TransientModel):
             _logger.info("get_members_for_org called with no org_id")
             return result
 
-        _logger.info(f"get_members_for_org called for org_id={org_id}")
+        _logger.info(f"get_members_for_org called for org_id={org_id} "
+                     f"show_admin={show_administrative} show_inactive={show_inactive}")
 
         # Check if proprelation model exists
         if 'myschool.proprelation' not in self.env:
@@ -899,9 +975,14 @@ class ObjectBrowser(models.TransientModel):
             
             pid = person.id
             if pid not in person_dict:
-                name = person.name or 'Unknown'
-                if hasattr(person, 'first_name') and person.first_name:
-                    name = f"{person.first_name} {person.name}"
+                first = getattr(person, 'first_name', '') or ''
+                lastname = getattr(person, 'last_name', '') or person.name or 'Unknown'
+                if first and lastname and lastname != 'Unknown':
+                    name = f"{first} {lastname}"
+                elif first:
+                    name = first
+                else:
+                    name = lastname
 
                 email = ''
                 if hasattr(person, 'email_cloud') and person.email_cloud:
@@ -910,8 +991,17 @@ class ObjectBrowser(models.TransientModel):
                     email = person.email
 
                 person_type = ''
+                p_icon_fa = ''
+                p_icon_url = ''
+                p_color = ''
                 if hasattr(person, 'person_type_id') and person.person_type_id:
-                    person_type = person.person_type_id.name or ''
+                    pt = person.person_type_id
+                    person_type = pt.name or ''
+                    p_icon_fa = getattr(pt, 'icon_fa_class', '') or ''
+                    p_color = getattr(pt, 'icon_color', '') or ''
+                    if getattr(pt, 'icon_image', False):
+                        p_icon_url = self._icon_url(
+                            'myschool.person.type', pt.id, pt.write_date)
 
                 sap_ref = ''
                 if hasattr(person, 'sap_ref') and person.sap_ref:
@@ -920,8 +1010,12 @@ class ObjectBrowser(models.TransientModel):
                 person_dict[pid] = {
                     'id': pid,
                     'name': name,
+                    'lastname': lastname,
                     'email': email,
                     'person_type': person_type,
+                    'person_type_icon_fa': p_icon_fa,
+                    'person_type_icon_url': p_icon_url,
+                    'person_type_color': p_color,
                     'sap_ref': sap_ref,
                     'is_active': person.is_active if hasattr(person, 'is_active') else True,
                     'model': 'myschool.person',
@@ -955,7 +1049,10 @@ class ObjectBrowser(models.TransientModel):
                 entry['other_active_org_count'] = len(
                     other_orgs_by_person.get(pid, ()))
 
-        result['persons'] = list(person_dict.values())
+        result['persons'] = sorted(
+            person_dict.values(),
+            key=lambda p: (p.get('lastname') or '').lower(),
+        )
         _logger.info(f"Returning {len(result['persons'])} persons")
 
         # Get all child orgs linked to this org (via ORG-TREE).
@@ -1004,9 +1101,18 @@ class ObjectBrowser(models.TransientModel):
                         child_org_ids.add(child_org.id)
 
             if child_org_ids:
-                child_orgs = Org.browse(list(child_org_ids))
+                child_orgs = Org.browse(list(child_org_ids)).sorted(
+                    key=lambda o: (
+                        (o.name_short if hasattr(o, 'name_short') and o.name_short else o.name) or ''
+                    ).lower()
+                )
                 for sub in child_orgs:
                     if hasattr(sub, 'is_active') and not sub.is_active:
+                        continue
+                    # Honour the toolbar "Administrative" checkbox —
+                    # without this, admin sub-orgs leak into the members
+                    # pane even when the tree hides them.
+                    if not show_administrative and getattr(sub, 'is_administrative', False):
                         continue
 
                     display_name = sub.name
@@ -1014,8 +1120,17 @@ class ObjectBrowser(models.TransientModel):
                         display_name = sub.name_short
 
                     org_type_name = ''
+                    org_type_icon_fa = ''
+                    org_type_icon_url = ''
+                    org_type_color = ''
                     if hasattr(sub, 'org_type_id') and sub.org_type_id:
-                        org_type_name = sub.org_type_id.name or ''
+                        ot = sub.org_type_id
+                        org_type_name = ot.name or ''
+                        org_type_icon_fa = getattr(ot, 'icon_fa_class', '') or ''
+                        org_type_color = getattr(ot, 'icon_color', '') or ''
+                        if getattr(ot, 'icon_image', False):
+                            org_type_icon_url = self._icon_url(
+                                'myschool.org.type', ot.id, ot.write_date)
 
                     result['persongroups'].append({
                         'id': sub.id,
@@ -1023,6 +1138,9 @@ class ObjectBrowser(models.TransientModel):
                         'full_name': sub.name,
                         'model': 'myschool.org',
                         'org_type_name': org_type_name,
+                        'org_type_icon_fa': org_type_icon_fa,
+                        'org_type_icon_url': org_type_icon_url,
+                        'org_type_color': org_type_color,
                         'is_persongroup': org_type_name == 'PERSONGROUP',
                     })
         else:
@@ -1049,23 +1167,42 @@ class ObjectBrowser(models.TransientModel):
                             continue
                         pid = person.id
                         if pid not in person_dict:
-                            name = person.name or 'Unknown'
-                            if hasattr(person, 'first_name') and person.first_name:
-                                name = f"{person.first_name} {person.name}"
+                            first = getattr(person, 'first_name', '') or ''
+                            lastname = getattr(person, 'last_name', '') or person.name or 'Unknown'
+                            if first and lastname and lastname != 'Unknown':
+                                name = f"{first} {lastname}"
+                            elif first:
+                                name = first
+                            else:
+                                name = lastname
                             email = ''
                             if hasattr(person, 'email_cloud') and person.email_cloud:
                                 email = person.email_cloud
+                            pt = person.person_type_id
+                            p_icon_fa = (pt.icon_fa_class if pt else '') or ''
+                            p_color = (pt.icon_color if pt else '') or ''
+                            p_icon_url = ''
+                            if pt and getattr(pt, 'icon_image', False):
+                                p_icon_url = self._icon_url(
+                                    'myschool.person.type', pt.id, pt.write_date)
                             person_dict[pid] = {
                                 'id': pid,
                                 'name': name,
+                                'lastname': lastname,
                                 'email': email,
-                                'person_type': person.person_type_id.name if person.person_type_id else '',
+                                'person_type': pt.name if pt else '',
+                                'person_type_icon_fa': p_icon_fa,
+                                'person_type_icon_url': p_icon_url,
+                                'person_type_color': p_color,
                                 'sap_ref': person.sap_ref or '',
                                 'model': 'myschool.person',
                                 'is_active': person.is_active,
                                 'roles': [],
                             }
-                    result['persons'] = list(person_dict.values())
+                    result['persons'] = sorted(
+                        person_dict.values(),
+                        key=lambda p: (p.get('lastname') or '').lower(),
+                    )
                     _logger.info(f"Added {len(pgp_rels)} PG-P members for persongroup {org.name}")
 
         return result
@@ -1116,9 +1253,14 @@ class ObjectBrowser(models.TransientModel):
             ], limit=limit_per_type)
             
             for person in persons:
-                name = person.name or 'Unknown'
-                if hasattr(person, 'first_name') and person.first_name:
-                    name = f"{person.first_name} {person.name}"
+                first = getattr(person, 'first_name', '') or ''
+                lastname = getattr(person, 'last_name', '') or person.name or 'Unknown'
+                if first and lastname and lastname != 'Unknown':
+                    name = f"{first} {lastname}"
+                elif first:
+                    name = first
+                else:
+                    name = lastname
                 results.append({
                     'id': person.id,
                     'name': name,

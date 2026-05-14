@@ -26,6 +26,16 @@
     --ms-border: var(--myschool-border, #d6e4e4);
     --ms-border-light: var(--myschool-border-light, #e8f0f0);
 
+    /* Layered surfaces for theme-aware panels. Use these instead of
+       raw #fff / #f5fafa / etc. so dark-mode just works. */
+    --ms-surface-base: #f5fafa;     /* widget canvas (page bg) */
+    --ms-surface-1: #ffffff;        /* primary panel (cards, pane bodies) */
+    --ms-surface-2: #f5fafa;        /* secondary surface (headers, inputs) */
+    --ms-surface-3: #e6f7f8;        /* tertiary tint */
+    --ms-hover: #f0f8f8;            /* row hover */
+    --ms-active: #d9f2f4;           /* selected row / active state */
+    --ms-overlay-strong: rgba(0,0,0,0.08);
+
     /* Semantic */
     --ms-success: #0d9488;
     --ms-success-bg: #ccfbf1;
@@ -37,6 +47,393 @@
     --ms-info-bg: #e0f2fe;
 }
 
+/* ============================================================
+   Dark mode — applied on <body data-theme="dark"> by the
+   myschool_theme JS service.
+
+   We override BOTH the new --ms-* tokens AND the legacy
+   --myschool-* tokens (used by myschool_theme/layout.scss for
+   .o_web_client / .o_content / .o_control_panel backgrounds),
+   so the whole webclient chrome follows along.
+
+   Specificity boost: chain three selectors so the rule wins
+   over any `:root { --ms-*: ... }` redefinition that other
+   modules ship later in the bundle (e.g. myschool_dashboard).
+   ============================================================ */
+[data-theme="dark"],
+[data-theme="dark"]:root,
+body[data-theme="dark"] {
+    /* --- legacy --myschool-* (used by SCSS layout/components) --- */
+    --myschool-text: #e4eff0;
+    --myschool-text-muted: #a5bdbd;
+    --myschool-bg: #0b1417;
+    --myschool-bg-card: #131e22;
+    --myschool-border: #2e3f44;
+    --myschool-border-light: #233136;
+    --myschool-hover-row: rgba(255,255,255,0.05);
+    --myschool-hover-btn: rgba(255,255,255,0.07);
+    --myschool-sidebar-bg: #050c0e;
+    --myschool-statusbar-current: #5fc7d2;
+    --myschool-statusbar-done: #2a4f55;
+    --myschool-statusbar-future: #233136;
+    --myschool-brand-1: #5fc7d2;
+    --myschool-brand-2: #00bcd1;
+    --myschool-brand-3: #34d0e0;
+    --myschool-brand-4: #5fe0f0;
+
+    /* --- new --ms-* surface tokens --- */
+    --ms-text: #e4eff0;
+    --ms-text-muted: #a5bdbd;
+    --ms-black: #f0f4f4;
+    --ms-gray: #8a9c9c;
+
+    --ms-bg: #0b1417;
+    --ms-bg-card: #131e22;
+    --ms-border: #2e3f44;
+    --ms-border-light: #233136;
+
+    --ms-surface-base: #0b1417;
+    --ms-surface-1: #131e22;
+    --ms-surface-2: #182429;
+    --ms-surface-3: #1d2c32;
+    --ms-hover: rgba(255,255,255,0.05);
+    --ms-active: rgba(0,148,164,0.22);
+    --ms-overlay-strong: rgba(0,0,0,0.4);
+
+    /* Brand tints stay readable on dark — shift to lighter teal. */
+    --ms-brand-1: #5fc7d2;
+    --ms-brand-2: #00bcd1;
+    --ms-brand-3: #34d0e0;
+
+    /* Semantic backgrounds: dim down so they read as accents, not blocks. */
+    --ms-success-bg: rgba(13,148,136,0.18);
+    --ms-error-bg: rgba(220,38,38,0.18);
+    --ms-warning-bg: rgba(217,119,6,0.18);
+    --ms-info-bg: rgba(2,132,199,0.22);
+}
+
+/* ============================================================
+   Dark mode — Odoo native widget overrides
+
+   The variable block above re-tints --ms-* and --myschool-*, but
+   Odoo's stock form / list / card / modal / dropdown widgets ship
+   with Bootstrap-hardcoded backgrounds (#fff, etc) and don't read
+   our tokens. We re-skin the most visible ones below so the whole
+   backend feels dark, not just our own widgets.
+
+   Selector pattern: scope under `[data-theme="dark"]` (matches body)
+   and target the native Odoo class. Keep specificity moderate; rely
+   on the cascade for child elements that inherit colour.
+   ============================================================ */
+
+/* ---- Form views ------------------------------------------ */
+[data-theme="dark"] .o_form_view,
+[data-theme="dark"] .o_form_sheet_bg,
+[data-theme="dark"] .o_form_renderer,
+[data-theme="dark"] .o_inner_group,
+[data-theme="dark"] .o_group {
+    background-color: var(--ms-surface-base) !important;
+    color: var(--ms-text);
+}
+
+[data-theme="dark"] .o_form_sheet {
+    background-color: var(--ms-surface-1) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border);
+    box-shadow: none;
+}
+
+[data-theme="dark"] .o_form_view .o_field_widget,
+[data-theme="dark"] .o_form_view label,
+[data-theme="dark"] .o_form_view .o_form_label,
+[data-theme="dark"] .o_form_view .o_horizontal_separator {
+    color: var(--ms-text);
+}
+
+[data-theme="dark"] .o_form_view .o_horizontal_separator {
+    border-color: var(--ms-border);
+}
+
+/* ---- List views ------------------------------------------ */
+[data-theme="dark"] .o_list_view,
+[data-theme="dark"] .o_list_renderer,
+[data-theme="dark"] .o_list_table {
+    background-color: var(--ms-surface-1) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border);
+}
+
+[data-theme="dark"] .o_list_table thead {
+    background-color: var(--ms-surface-2) !important;
+    color: var(--ms-text-muted);
+    border-bottom-color: var(--ms-border) !important;
+}
+
+[data-theme="dark"] .o_list_table th,
+[data-theme="dark"] .o_list_table td {
+    border-color: var(--ms-border-light) !important;
+    background-color: transparent;
+}
+
+[data-theme="dark"] .o_list_table .o_data_row {
+    background-color: var(--ms-surface-1);
+    color: var(--ms-text);
+}
+
+[data-theme="dark"] .o_list_table .o_data_row:hover {
+    background-color: var(--ms-hover) !important;
+}
+
+[data-theme="dark"] .o_list_table .o_data_row.o_row_selected,
+[data-theme="dark"] .o_list_table .o_data_row.o_selected_row {
+    background-color: var(--ms-active) !important;
+}
+
+[data-theme="dark"] .o_optional_columns_dropdown {
+    background-color: var(--ms-surface-2) !important;
+}
+
+/* ---- Kanban view ----------------------------------------- */
+[data-theme="dark"] .o_kanban_view,
+[data-theme="dark"] .o_kanban_renderer,
+[data-theme="dark"] .o_kanban_group {
+    background-color: var(--ms-surface-base) !important;
+}
+
+[data-theme="dark"] .o_kanban_record {
+    background-color: var(--ms-surface-1) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border);
+}
+
+[data-theme="dark"] .o_kanban_record:hover {
+    background-color: var(--ms-surface-2) !important;
+}
+
+[data-theme="dark"] .o_kanban_header {
+    background-color: var(--ms-surface-2) !important;
+    color: var(--ms-text);
+}
+
+/* ---- Bootstrap cards ------------------------------------- */
+[data-theme="dark"] .card,
+[data-theme="dark"] .card-body,
+[data-theme="dark"] .card-footer {
+    background-color: var(--ms-surface-1) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border) !important;
+}
+
+[data-theme="dark"] .card-header {
+    background-color: var(--ms-surface-2) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border) !important;
+}
+
+/* ---- Modals / dialogs ------------------------------------ */
+[data-theme="dark"] .modal-content {
+    background-color: var(--ms-surface-1) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border);
+}
+
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-footer {
+    background-color: var(--ms-surface-2) !important;
+    border-color: var(--ms-border) !important;
+    color: var(--ms-text);
+}
+
+[data-theme="dark"] .modal-body {
+    background-color: var(--ms-surface-1) !important;
+    color: var(--ms-text);
+}
+
+[data-theme="dark"] .modal-backdrop {
+    background-color: #000 !important;
+}
+
+/* ---- Dropdowns ------------------------------------------- */
+[data-theme="dark"] .dropdown-menu,
+[data-theme="dark"] .o-dropdown--menu,
+[data-theme="dark"] .o_dropdown_menu {
+    background-color: var(--ms-surface-1) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+}
+
+[data-theme="dark"] .dropdown-item,
+[data-theme="dark"] .o-dropdown-item,
+[data-theme="dark"] .o-dropdown--menu-item {
+    color: var(--ms-text) !important;
+}
+
+[data-theme="dark"] .dropdown-item:hover,
+[data-theme="dark"] .dropdown-item:focus,
+[data-theme="dark"] .o-dropdown-item:hover,
+[data-theme="dark"] .o-dropdown--menu-item:hover {
+    background-color: var(--ms-hover) !important;
+    color: var(--ms-text) !important;
+}
+
+[data-theme="dark"] .dropdown-divider {
+    border-color: var(--ms-border) !important;
+}
+
+/* ---- Search bar / control panel -------------------------- */
+[data-theme="dark"] .o_searchview {
+    background-color: var(--ms-surface-1) !important;
+    border-color: var(--ms-border) !important;
+    color: var(--ms-text);
+}
+
+[data-theme="dark"] .o_searchview input,
+[data-theme="dark"] .o_searchview .o_searchview_input {
+    background-color: transparent !important;
+    color: var(--ms-text) !important;
+}
+
+[data-theme="dark"] .o_searchview .o_facet_values,
+[data-theme="dark"] .o_searchview .o_searchview_facet {
+    background-color: var(--ms-active) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border);
+}
+
+[data-theme="dark"] .o_cp_searchview .o_searchview_dropdown_toggler {
+    color: var(--ms-text-muted) !important;
+}
+
+/* ---- Notebooks / tabs ------------------------------------ */
+[data-theme="dark"] .o_notebook > .o_notebook_headers,
+[data-theme="dark"] .nav-tabs {
+    background-color: var(--ms-surface-1) !important;
+    border-bottom-color: var(--ms-border) !important;
+}
+
+[data-theme="dark"] .o_notebook .nav-link,
+[data-theme="dark"] .nav-tabs .nav-link {
+    color: var(--ms-text-muted) !important;
+    background-color: transparent !important;
+    border-color: transparent !important;
+}
+
+[data-theme="dark"] .o_notebook .nav-link.active,
+[data-theme="dark"] .nav-tabs .nav-link.active {
+    color: var(--ms-brand-1) !important;
+    background-color: var(--ms-surface-1) !important;
+    border-color: var(--ms-border) var(--ms-border) var(--ms-surface-1) !important;
+}
+
+/* ---- Inputs & selects ------------------------------------ */
+[data-theme="dark"] .o_input,
+[data-theme="dark"] .o_field_widget input:not([type='checkbox']):not([type='radio']),
+[data-theme="dark"] .o_field_widget select,
+[data-theme="dark"] .o_field_widget textarea,
+[data-theme="dark"] input.form-control,
+[data-theme="dark"] select.form-select,
+[data-theme="dark"] textarea.form-control {
+    background-color: var(--ms-surface-2) !important;
+    color: var(--ms-text) !important;
+    border-color: var(--ms-border) !important;
+}
+
+[data-theme="dark"] .o_input:focus,
+[data-theme="dark"] .o_field_widget input:focus,
+[data-theme="dark"] input.form-control:focus,
+[data-theme="dark"] select.form-select:focus,
+[data-theme="dark"] textarea.form-control:focus {
+    background-color: var(--ms-surface-1) !important;
+    border-color: var(--ms-brand-2) !important;
+    color: var(--ms-text) !important;
+}
+
+[data-theme="dark"] .o_field_widget.o_readonly_modifier {
+    color: var(--ms-text-muted);
+}
+
+/* ---- Tables outside list view ---------------------------- */
+[data-theme="dark"] table:not(.o_list_table) {
+    color: var(--ms-text);
+}
+
+[data-theme="dark"] table:not(.o_list_table) thead {
+    background-color: var(--ms-surface-2);
+    color: var(--ms-text-muted);
+}
+
+/* ---- Status bar / buttons row ---------------------------- */
+[data-theme="dark"] .o_form_statusbar {
+    background-color: var(--ms-surface-2) !important;
+    border-color: var(--ms-border) !important;
+    color: var(--ms-text);
+}
+
+[data-theme="dark"] .o_form_statusbar .o_statusbar_buttons .btn {
+    color: var(--ms-text);
+}
+
+/* ---- Chatter --------------------------------------------- */
+[data-theme="dark"] .o-mail-Chatter,
+[data-theme="dark"] .o_chatter {
+    background-color: var(--ms-surface-1) !important;
+    color: var(--ms-text);
+    border-color: var(--ms-border);
+}
+
+[data-theme="dark"] .o-mail-Message,
+[data-theme="dark"] .o_Message {
+    background-color: var(--ms-surface-1);
+    color: var(--ms-text);
+    border-color: var(--ms-border);
+}
+
+/* ---- Text colour fallbacks ------------------------------- */
+[data-theme="dark"] .text-muted,
+[data-theme="dark"] small.text-muted {
+    color: var(--ms-text-muted) !important;
+}
+
+[data-theme="dark"] .text-body,
+[data-theme="dark"] .text-dark {
+    color: var(--ms-text) !important;
+}
+
+/* Bootstrap default border helpers */
+[data-theme="dark"] .border,
+[data-theme="dark"] .border-top,
+[data-theme="dark"] .border-bottom,
+[data-theme="dark"] .border-start,
+[data-theme="dark"] .border-end {
+    border-color: var(--ms-border) !important;
+}
+
+
+/* ============================================================
+   Theme toggle (navbar systray)
+   ============================================================ */
+
+.ms-theme-toggle .ms-theme-toggle-btn {
+    color: #fff !important;
+    background: transparent !important;
+    border: 0 !important;
+    padding: 0.4rem 0.7rem !important;
+    font-size: 18px;
+    line-height: 1;
+    border-radius: 6px;
+    transition: background-color 0.15s, color 0.15s;
+    text-decoration: none !important;
+    box-shadow: none !important;
+    position: relative;
+    top: 8px;
+}
+
+.ms-theme-toggle .ms-theme-toggle-btn:hover,
+.ms-theme-toggle .ms-theme-toggle-btn:focus {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+    color: #fff !important;
+}
 
 /* ============================================================
    Admin layout fix — ensure content area scrolls

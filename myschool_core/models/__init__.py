@@ -30,6 +30,7 @@ from . import sys_event_service
 from . import informat_service
 from . import informat_service_config
 from . import informat_dto
+from . import smartschool_config
 from . import smartschool_service
 from . import ldap_server_config
 from . import ldap_service

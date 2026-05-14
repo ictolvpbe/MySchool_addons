@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Add the MySchool theme preference to the user-preferences form
+        (the "Preferences" page reachable via the top-right user menu).
+        The base view exposes a `<group name="other_preferences"/>` slot
+        specifically for module extensions.
+    -->
+    <record id="view_users_form_simple_modif_myschool" model="ir.ui.view">
+        <field name="name">res.users.preferences.form.myschool_theme</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='other_preferences']" position="inside">
+                <field name="myschool_theme_mode"
+                       widget="selection"
+                       readonly="0"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!--
+        Also expose the field in the full admin user form so admins can
+        inspect/change another user's preference if needed.
+    -->
+    <record id="view_users_form_myschool" model="ir.ui.view">
+        <field name="name">res.users.form.myschool_theme</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='other_preferences']" position="inside">
+                <field name="myschool_theme_mode"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

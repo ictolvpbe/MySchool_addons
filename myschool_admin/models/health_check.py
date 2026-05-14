@@ -722,9 +722,13 @@ class HealthCheck(models.TransientModel):
     # email_cloud. The respective probe steps gate on the per-system
     # toggles, so a missing identifier only becomes an issue when the
     # matching probe-toggle is on.
+    # Labels stored untranslated — class-body ``_()`` runs at import-time
+    # before any request context, so Odoo 19 emits a "no translation
+    # language detected" warning. Translation happens at the point of use
+    # in ``_check_person_identifier_fields`` (see ``_(label)`` below).
     _PERSON_IDENTIFIER_FIELDS = {
-        'ad': ('person_fqdn_internal', _('FQDN intern')),
-        'google': ('email_cloud', _('E-mail cloud')),
+        'ad': ('person_fqdn_internal', 'FQDN intern'),
+        'google': ('email_cloud', 'E-mail cloud'),
     }
 
     def _run_person_checks(self, ext_state):
@@ -762,7 +766,7 @@ class HealthCheck(models.TransientModel):
                 n += self._add_issue(
                     person, object_type='person',
                     severity='warning', issue_kind='field_missing',
-                    description=_('AD-sync aan maar %s is leeg') % label,
+                    description=_('AD-sync aan maar %s is leeg') % _(label),
                     field_name=fname, fix_kind='open_record')
         if self.check_person_google_sync:
             fname, label = self._PERSON_IDENTIFIER_FIELDS['google']
@@ -770,7 +774,7 @@ class HealthCheck(models.TransientModel):
                 n += self._add_issue(
                     person, object_type='person',
                     severity='warning', issue_kind='field_missing',
-                    description=_('Google-sync aan maar %s is leeg') % label,
+                    description=_('Google-sync aan maar %s is leeg') % _(label),
                     field_name=fname, fix_kind='open_record')
         return n
 

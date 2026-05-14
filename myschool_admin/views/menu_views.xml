@@ -342,6 +342,13 @@
               sequence="50"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <menuitem id="menu_smartschool_test_runner"
+              name="Smartschool Test Runner"
+              parent="menu_sync_triggers"
+              action="action_smartschool_test_runner"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <!-- ========================================= -->
     <!-- 6. ONDERHOUD                               -->
     <!-- Zelden-gebruikte recompute / bulk / cleanup

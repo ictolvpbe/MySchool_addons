@@ -77,6 +77,13 @@
                      name="myschool_core"
                      groups="myschool_core.group_myschool_core_admin">
 
+                    <block title="Veiligheid — Integraties" name="ms_core_safeguard">
+                        <setting string="Safeguard Mode"
+                                 help="Globale veiligheidsmodus voor ALLE externe integraties (Smartschool, LDAP, Google Workspace). 'Live' = per-platform dry_run beslist; 'Dry run (all platforms)' = elke mutating call gesimuleerd ongeacht config; 'Read-only' = mutating calls hard geweigerd. Dry-run en read-only schrijven elke gesimuleerde/geweigerde call in myschool.sys.event onder code SMARTSCHOOL-SAFEGUARD-*.">
+                            <field name="myschool_safeguard_mode" widget="radio"/>
+                        </setting>
+                    </block>
+
                     <block title="Integraties — Cloud" name="ms_core_cloud">
                         <setting string="Google Workspace"
                                  help="Beheer Google Workspace-tenants (customer ID, domein, service-account, OAuth-scopes). Eén actieve config per organisatie via de scope-link.">
@@ -92,6 +99,15 @@
                             <button name="action_open_ldap_servers"
                                     type="object" icon="fa-server"
                                     string="Beheer LDAP-servers" class="btn-link"/>
+                        </setting>
+                    </block>
+
+                    <block title="Integraties — Smartschool" name="ms_core_smartschool">
+                        <setting string="Smartschool"
+                                 help="Beheer Smartschool-platformen (één per school): platform-URL, API-key, standaardrol voor leerkrachten. Accounts worden via de betask-pipeline gepusht.">
+                            <button name="action_open_smartschool"
+                                    type="object" icon="fa-graduation-cap"
+                                    string="Beheer Smartschool-platformen" class="btn-link"/>
                         </setting>
                     </block>
 
