@@ -29,6 +29,9 @@ from . import sys_event_type_service
 from . import sys_event
 from . import sys_event_service
 
+from . import sap_sync_change
+from . import sap_sync_run
+from . import sap_sync_service
 from . import informat_service
 from . import informat_service_config
 from . import informat_dto

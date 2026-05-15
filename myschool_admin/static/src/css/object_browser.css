@@ -543,6 +543,17 @@
     font-size: 14px;
 }
 
+/* Klikbare tree-iconen openen de slide-over met details. Subtiele
+   hover-highlight zodat de affordance duidelijk is. */
+.ob-icon-clickable {
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 120ms ease;
+}
+.ob-icon-clickable:hover {
+    background-color: var(--ms-color-hover-btn, rgba(0, 148, 164, 0.12));
+}
+
 /* Avatar image override — used when a person-type or org-type icon is
    uploaded. Replaces the initials/icon glyph inside the circular badge. */
 .ob-avatar-img {
@@ -870,6 +881,21 @@
     align-items: center;
     justify-content: center;
     margin-left: -4px;  /* tighter to row left edge */
+}
+
+/* Oog-knop tussen kebab en naam — zelfde breedte als kebab voor
+   visuele symmetrie. Klik opent de slide-over-details voor de row. */
+.ob-mcol-details {
+    flex: 0 0 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.ob-row-action-details {
+    color: var(--ms-text-muted, #6c757d);
+}
+.ob-row-action-details:hover {
+    color: var(--ms-brand-2, #0094A4);
 }
 
 .ob-mcol-name {

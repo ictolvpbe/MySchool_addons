@@ -262,27 +262,34 @@ class InformatService(models.AbstractModel):
     @api.model
     def execute_sync(self, dev_mode: bool = None,
                      inst_nrs: Optional[List[str]] = None,
-                     phases: Optional[Dict[str, bool]] = None) -> bool:
+                     phases: Optional[Dict[str, bool]] = None,
+                     trigger: str = 'cron',
+                     require_review: bool = False,
+                     auto_commit_on_no_breach: bool = True) -> Any:
         """
         Main synchronization method - retrieves data from SAP, analyzes it,
         and creates the required tasks.
 
-        This method is designed to be called by a scheduled cron job.
-        Equivalent to Java: executeSync()
+        Vanaf v0.7 splitst dit in twee fasen: ANALYSE (via deze methode)
+        en COMMIT (via ``myschool.sap.sync.service.commit_run``). Tijdens
+        de analyse worden geplande mutaties weggeschreven naar
+        ``myschool.sap.sync.change``-records in plaats van rechtstreeks
+        naar betasks. Als de drempel niet overschreden is en
+        ``auto_commit_on_no_breach=True``, gebeurt de commit automatisch
+        aan het einde van deze methode — dan blijft het netto-effect
+        gelijk aan de oude flow.
 
         @param dev_mode: If provided, overrides config setting.
-            Otherwise reads from config.
         @param inst_nrs: When given, restrict the sync to schools whose
-            ``inst_nr`` is in the list. Used by the per-school sync
-            button — debugs one school in isolation instead of all 5.
-            ``None`` means all schools with ``sap_provider=INFORMAT``.
-        @param phases: When given, override the per-phase config flags
-            for this run only. Keys are ``sync_roles``, ``sync_employees``,
-            ``sync_classes``, ``sync_students``. Missing keys fall back
-            to the persistent config. Used by the targeted-sync wizard
-            so admins can run e.g. only the student phase without
-            permanently flipping the config flags.
-        @return: True if successful, False if errors occurred
+            ``inst_nr`` is in the list. ``None`` = all SAP-provider schools.
+        @param phases: When given, override the per-phase config flags.
+        @param trigger: 'cron' of 'manual' — gebruikt in run-record.
+        @param require_review: Manueel vinkje uit de wizard — forceert
+            de review-UI ongeacht drempel.
+        @param auto_commit_on_no_breach: Default True. Op False zet je
+            uitsluitend de planned-changes klaar zonder commit (handig
+            voor tests/dry-run).
+        @return: De sync.run-record (bij analyse-succes) of False bij fout.
         """
         # Load configuration
         config = self.env['myschool.informat.service.config'].get_config()
@@ -321,17 +328,37 @@ class InformatService(models.AbstractModel):
         SysEvent = self.env.get('myschool.sys.event.service')
         SysEvent.create_sys_event("SAPSYNC-001", "Start Syncing information", True)
 
+        # Blocking-check eerst — vóór start_run, want start_run zou
+        # bestaande awaiting_approval-runs als 'cancelled' kunnen
+        # markeren via de supersede-logica.
+        # ``sap_sync_trigger`` zegt aan _check_blocking_tasks of we via
+        # cron of manueel draaien.
+        self = self.with_context(sap_sync_trigger=trigger)
+        if self._check_blocking_tasks():
+            return False
+
+        # Open een sync.run en hou hem mee op de context — _create_betask
+        # leest die en routeert zijn output naar de safeguard-pijplijn
+        # (sync.change) in plaats van rechtstreeks naar betask.
+        sap_service = self.env['myschool.sap.sync.service']
+        run = sap_service.start_run(
+            trigger=trigger,
+            inst_nrs=inst_nrs,
+            phases=phases,
+            require_review=require_review,
+        )
+        self = self.with_context(sap_sync_run_id=run.id)
+
         try:
             # Ensure storage directories exist
             if not self._ensure_storage_directories(dev_mode):
+                run.write({'state': 'failed',
+                           'finished_at': fields.Datetime.now(),
+                           'error_description': 'storage dirs niet ok'})
                 return False
 
             # Calculate timestamp for last sync (15 days ago)
             timestamp_latest_sync = (datetime.now() - timedelta(days=15)).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-
-            # Check for blocking tasks
-            if self._check_blocking_tasks():
-                return False
 
             # =====================================================
             # PHASE 1a: Role Processing
@@ -350,8 +377,8 @@ class InformatService(models.AbstractModel):
 
             if config.sync_roles and all_imported_employee_assignments is not None:
                 self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
-                self._process_betasks('DB', 'ROLE', 'ADD')
-                self._process_betasks('DB', 'ROLE', 'UPD')
+                # Geen tussen-commit meer: commit gebeurt collectief
+                # aan het einde via sap_sync_service.finalise_analysis.
 
             # =====================================================
             # PHASE 1b: Employee Processing
@@ -362,14 +389,31 @@ class InformatService(models.AbstractModel):
 
                 if all_imported_employees is None:
                     self._create_sys_error("SAPSYNC-900", "Error in getEmployeesFromInformat")
-                    return False
+                    # Niet meer hard return: laat de andere fasen en de
+                    # finalise-stap nog draaien zodat de run zichtbaar
+                    # blijft in het overzicht (state=failed met details).
+                    run.write({
+                        'state': 'failed',
+                        'finished_at': fields.Datetime.now(),
+                        'error_description': (run.error_description or '')
+                            + 'Phase Employees: API-fetch faalde — '
+                              'controleer SI CurrentSchoolYear + '
+                              'SapInformatJSONApiId/Password.\n',
+                    })
+                    return run
 
                 if not self._sync_employees(
                     all_imported_employees,
                     all_imported_employee_assignments
                 ):
                     self._create_sys_error("SAPSYNC-900", "Error in _sync_employees")
-                    return False
+                    run.write({
+                        'state': 'failed',
+                        'finished_at': fields.Datetime.now(),
+                        'error_description': (run.error_description or '')
+                            + 'Phase Employees: _sync_employees faalde.\n',
+                    })
+                    return run
 
             # =====================================================
             # PHASE 2a: Class (Org) Processing
@@ -384,12 +428,18 @@ class InformatService(models.AbstractModel):
 
                 if all_imported_registrations is None:
                     self._create_sys_error("SAPSYNC-900", "Error in getRegistrationsFromInformat")
-                    return False
+                    run.write({
+                        'state': 'failed',
+                        'finished_at': fields.Datetime.now(),
+                        'error_description': (run.error_description or '')
+                            + 'Phase Classes/Students: registrations-fetch '
+                              'faalde — controleer SI CurrentSchoolYear.\n',
+                    })
+                    return run
 
             if config.sync_classes and all_imported_registrations is not None:
                 self._analyze_student_data_and_create_org_tasks(all_imported_registrations)
-                self._process_betasks('DB', 'ORG', 'ADD')
-                self._process_betasks('DB', 'ORG', 'UPD')
+                # Geen tussen-commit meer.
 
             # =====================================================
             # PHASE 2b: Student Processing
@@ -400,54 +450,54 @@ class InformatService(models.AbstractModel):
 
                 if all_imported_students is None:
                     self._create_sys_error("SAPSYNC-900", "Error in getStudentsFromInformat")
-                    return False
+                    run.write({
+                        'state': 'failed',
+                        'finished_at': fields.Datetime.now(),
+                        'error_description': (run.error_description or '')
+                            + 'Phase Students: students-fetch faalde.\n',
+                    })
+                    return run
 
                 # Process Students (needs registrations too)
                 if all_imported_registrations is not None:
                     self._analyze_data_and_create_student_tasks(all_imported_registrations, all_imported_students)
-                    self._process_betasks('DB', 'PERSON', 'ADD')
-                    self._process_betasks('DB', 'PERSON', 'UPD')
-                    # DEACT was missing — student sync queued
-                    # DB/PERSON/DEACT tasks (e.g. when a registration's
-                    # ``einddatum`` is set, see _analyze_data_and_create_student_tasks
-                    # line ~2110) but never executed them. Without this
-                    # call a student with a fresh registration end-date
-                    # stays is_active=True until something else picks
-                    # the task up.
-                    self._process_betasks('DB', 'PERSON', 'DEACT')
-
-
+                    # Tussen-commits per fase zijn vervallen — alles
+                    # passeert via sync.change-records en wordt aan het
+                    # einde collectief gecommit (of opgeschort op de
+                    # drempel-check).
 
                 # Process Relations
-                # self._analyze_data_and_create_relation_tasks(all_imported_students)   TODO: reactivate when parents need to be able to login
-                # self._process_betasks('DB', 'RELATION', 'ADD')
-                # self._process_betasks('DB', 'RELATION', 'UPD')
+                # self._analyze_data_and_create_relation_tasks(all_imported_students)
+                # ^ TODO: reactivate when parents need to be able to login
 
-
-
-            # Drain the betask queue once after the sync's targeted
-            # DB/* processing. The cron runs only every 15 min, and
-            # the targeted ``_process_betasks(...)`` calls above only
-            # cover DB/{ORG,PERSON,...}/{ADD,UPD,DEACT} — anything the
-            # cascade queues (LDAP/USER/ADD, LDAP/ORG/ADD, CLOUD/*,
-            # LETTER/*, …) would otherwise sit at status='new' until
-            # the next cron tick. Calling ``process_all_pending`` here
-            # makes the click-Sync flow feel synchronous: by the time
-            # the user sees "All tasks processed", the AD/Cloud side
-            # has actually been touched.
+            # Sluit de analyse-fase af. Drempel-check + (eventueel) auto-
+            # commit gebeurt hier; betask-cascade (LDAP/CLOUD/...) wordt
+            # opgepikt door commit_run zelf via process_all_pending.
             try:
-                processor = self.env['myschool.betask.processor']
-                processor.process_all_pending()
+                result = sap_service.finalise_analysis(
+                    run, auto_commit_on_no_breach=auto_commit_on_no_breach)
             except Exception:
-                _logger.exception(
-                    'SAPSYNC: process_all_pending failed — pending '
-                    'tasks will be retried on the next cron tick')
+                _logger.exception('SAPSYNC: finalise_analysis faalde')
+                run.write({'state': 'failed',
+                           'finished_at': fields.Datetime.now(),
+                           'error_description': traceback.format_exc()})
+                self._create_sys_error("SAPSYNC-900",
+                    f"Finalise error: {traceback.format_exc()}")
+                return False
 
-            self._create_sys_event("SAPSYNC", "All tasks processed without errors")
-            return True
+            self._create_sys_event(
+                "SAPSYNC",
+                f"Analyse klaar — state={result.get('state')}, "
+                f"breach={result.get('breach')}, "
+                f"committed={result.get('committed')}")
+            return run
 
         except Exception as e:
             self._create_sys_error("SAPSYNC-900", f"Executesync error: {traceback.format_exc()}")
+            if run.exists():
+                run.write({'state': 'failed',
+                           'finished_at': fields.Datetime.now(),
+                           'error_description': traceback.format_exc()})
             return False
 
     @api.model
@@ -2793,31 +2843,42 @@ class InformatService(models.AbstractModel):
     # =========================================================================
 
     def _check_blocking_tasks(self) -> bool:
-        """Check for system blocking tasks."""
+        """Check for system blocking tasks of openstaande safeguard-runs."""
         BeTask = self.env.get(self.BETASK_MODEL)
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
-        
+
         if not self.BETASK_MODEL or self.BETASK_TYPE_MODEL in self.env:
             _logger.warning(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
             return False
 
+        # Stap 1: SYSTEM/BLOCKINGMESSAGE betasks (oude check).
         blocking_task_type = BeTaskType.search([
             (self.BETASKTYPE_TARGET_FIELD, '=', 'SYSTEM'),
             (self.BETASKTYPE_OBJECT_FIELD, '=', 'BLOCKINGMESSAGE'),
             (self.BETASKTYPE_ACTION_FIELD, '=', 'MANUAL')
         ], limit=1)
-        
+
         if blocking_task_type:
             blocking_tasks = BeTask.search([
                 (self.BETASK_TYPE_FIELD, '=', blocking_task_type.id),
                 (self.BETASK_STATUS_FIELD, '=', self.STATUS_NEW)
             ])
-            
+
             if blocking_tasks:
-                self._create_sys_error("SAPSYNC-900", 
+                self._create_sys_error("SAPSYNC-900",
                     "A System Blocking Task is found. Please check, correct and set status to COMPLETED_OK")
                 return True
-        
+
+        # Stap 2: safeguard — geen nieuwe cron-run als er nog een vorige
+        # run wacht op goedkeuring (manueel-getriggerde runs mogen wel
+        # door, want de beheerder is aan zet).
+        if self.env.context.get('sap_sync_trigger') == 'cron' and \
+                self.env['myschool.sap.sync.service'].has_pending_approval_runs():
+            self._create_sys_error("SAPSYNC-901",
+                "Vorige SAP-sync wacht nog op goedkeuring — automatische "
+                "run wordt overgeslagen. Keur de openstaande run eerst goed.")
+            return True
+
         return False
 
     def _check_manual_role_tasks(self) -> bool:
@@ -2869,41 +2930,65 @@ class InformatService(models.AbstractModel):
 
     def _create_betask(self, target: str, obj: str, action: str, data: str, data2: str) -> Any:
         """
-        Create a BeTask record.
-        
-        @param target: Task target
-        @param obj: Task object
-        @param action: Task action
-        @param data: JSON data for the task
-        @param data2: Additional JSON data
-        @return: Created BeTask record
+        Plan een mutatie of (bij gebrek aan actieve sync.run) maak meteen
+        een BeTask aan.
+
+        In de nieuwe analyse-fase wordt deze methode aangeroepen vanuit
+        de _analyze_*-helpers. Als er een actieve ``sap_sync_run_id`` op
+        de context staat, slaan we de mutatie op als
+        ``myschool.sap.sync.change`` zodat de safeguard-/review-flow
+        beslist wanneer ze effectief een betask wordt. Zonder run-context
+        valt de methode terug op het oude pad (rechtstreekse betask) —
+        dit pad is enkel relevant voor losse aanroepen buiten een sync
+        (bv. unit-tests of legacy-code) en mag stilaan verdwijnen.
         """
-        # BeTaskService = self.env.get('myschool.betask.service')
-        # if BeTaskService and hasattr(BeTaskService, 'create_betask'):
-        #     return BeTaskService.create_betask(target, obj, action, data, data2)
-        #
-        # # Fallback: create directly
+        run_id = self.env.context.get('sap_sync_run_id')
+        if run_id:
+            try:
+                source_key, display_name = self._extract_change_identity(
+                    obj, data)
+                # ORG-records met type PERSONGROUP zijn semantisch een
+                # eigen objectklasse (klasgroepen) — splitsen helpt de
+                # review-UI om aparte drempels te tonen.
+                object_type = obj
+                if obj == 'ORG':
+                    try:
+                        jd = json.loads(data) if isinstance(data, str) else (
+                            data or {})
+                        if (jd.get('org_type') or '').upper() == 'PERSONGROUP':
+                            object_type = 'ORGGROUP'
+                    except Exception:
+                        pass
+                return self.env['myschool.sap.sync.service'] \
+                    .record_planned_change(
+                        run=self.env['myschool.sap.sync.run'].browse(run_id),
+                        object_type=object_type,
+                        action=action,
+                        source_key=source_key,
+                        display_name=display_name,
+                        payload_new=data,
+                        betask_target=target,
+                        betask_data2=data2 or None,
+                    )
+            except Exception:
+                _logger.exception(
+                    'SAP-SYNC: kon planned change niet registreren — '
+                    'fallback op directe betask')
+                # vallen door naar het legacy-pad
+
+        # ---- Legacy-pad: directe betask-creatie ----
         BeTask = self.env.get(self.BETASK_MODEL)
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
-        #
-        # if not BeTask or not BeTaskType:
-        #     _logger.error(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
-        #     return None
-        #
         task_type = BeTaskType.search([
             (self.BETASKTYPE_TARGET_FIELD, '=', target),
             (self.BETASKTYPE_OBJECT_FIELD, '=', obj),
             (self.BETASKTYPE_ACTION_FIELD, '=', action)
         ], limit=1)
-        
+
         if task_type:
             try:
-
                 json_data = json.loads(data)
-
-                # Default taskname
                 taskname = f"{action} {obj}"
-
                 pt = json_data.get('person_type', task_type.object).upper()
                 if pt in ('EMPLOYEE', 'STUDENT', 'PERSON'):
                     taskname = action + " " + pt + ": " + json_data.get("sortName", json_data.get("personId", json_data.get("uuid", json_data.get("persoonId", "unknown"))))
@@ -2912,7 +2997,6 @@ class InformatService(models.AbstractModel):
                 elif task_type.object == "ORG":
                     taskname = action + " " + obj + ": " + json_data.get("name", json_data.get("orgId", "unknown"))
                 elif task_type.object == "PROPRELATION":
-                    # Handle both ADD (has person_db_id) and DEACT (has proprelation_id) data structures
                     if "person_db_id" in json_data:
                         taskname = action + " " + obj + ": person_id=" + str(json_data["person_db_id"])
                     elif "proprelation_id" in json_data:
@@ -2925,20 +3009,58 @@ class InformatService(models.AbstractModel):
                     self.BETASK_STATUS_FIELD: self.STATUS_NEW,
                     self.BETASK_NAME_FIELD: taskname
                 }
-                # Only add data fields if they exist in the model
                 if self.BETASK_DATA_FIELD in BeTask._fields:
                     vals[self.BETASK_DATA_FIELD] = data
                 if data2 and self.BETASK_DATA2_FIELD in BeTask._fields:
                     vals[self.BETASK_DATA2_FIELD] = data2
-                    
+
                 return BeTask.create(vals)
             except Exception as e:
                 _logger.error(f"Error creating BeTask: {e}")
                 return None
         else:
             _logger.warning(f"BeTaskType not found for: {target}-{obj}-{action}")
-        
+
         return None
+
+    def _extract_change_identity(self, obj: str, data: str):
+        """Haal source_key + display_name uit een payload (best-effort)."""
+        try:
+            json_data = json.loads(data) if isinstance(data, str) else (
+                data or {})
+        except Exception:
+            return '', ''
+
+        pt = (json_data.get('person_type') or obj or '').upper()
+        if pt in ('EMPLOYEE', 'STUDENT', 'PERSON'):
+            return (
+                str(json_data.get('persoonId')
+                    or json_data.get('personId')
+                    or json_data.get('uuid')
+                    or ''),
+                json_data.get('sortName')
+                or json_data.get('name', '') or '',
+            )
+        if obj == 'ROLE':
+            return json_data.get('name', '') or '', json_data.get(
+                'name', '') or ''
+        if obj == 'ORG':
+            return (
+                str(json_data.get('orgId') or json_data.get('inst_nr') or ''),
+                json_data.get('name', '') or '',
+            )
+        if obj == 'PROPRELATION':
+            person_id = (
+                json_data.get('person_db_id')
+                or json_data.get('personId')
+                or '')
+            proprel_id = json_data.get('proprelation_id') or ''
+            return (
+                f'person:{person_id}' if person_id
+                else (f'proprel:{proprel_id}' if proprel_id else ''),
+                json_data.get('person_sortName', '') or '',
+            )
+        return '', ''
 
     def _create_sys_event(self, code: str, message: str) -> None:
         """Create a system event log entry."""

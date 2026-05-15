@@ -33,6 +33,10 @@
                         </group>
                     </group>
 
+                    <group string="Veiligheid &amp; review">
+                        <field name="require_review"/>
+                    </group>
+
                     <div class="alert alert-info" role="alert"
                          invisible="state != 'draft'">
                         <strong>Tips bij testen:</strong>
@@ -40,6 +44,7 @@
                             <li>Eerst <strong>Classes</strong> dan <strong>Students</strong> — students hebben hun klas-org nodig.</li>
                             <li>Eerst <strong>Roles</strong> dan <strong>Employees</strong> — employee-PPSBR's verwijzen naar BACKEND-rollen.</li>
                             <li>Combineer met <em>Backend Tasks → Debug taken</em> om de cascade-tasks die hier gequeued worden gericht te draaien.</li>
+                            <li><em>Preview tonen</em> opent een review-UI per object_type voordat de wijzigingen effectief gecommit worden.</li>
                         </ul>
                     </div>
 
@@ -57,11 +62,19 @@
 
                     <group invisible="state != 'done'" string="Resultaat">
                         <field name="summary" readonly="1" nolabel="1"/>
+                        <field name="last_run_id" readonly="1"
+                               options="{'no_create': True, 'no_open': False}"/>
                     </group>
                     <footer invisible="state != 'done'">
+                        <button name="action_open_last_run_review"
+                                type="object"
+                                string="Open review"
+                                class="btn-primary"
+                                icon="fa-search"
+                                invisible="not last_run_id"/>
                         <button special="cancel"
                                 string="Sluit"
-                                class="btn-primary"/>
+                                class="btn-secondary"/>
                     </footer>
 
                     <field name="state" invisible="1"/>

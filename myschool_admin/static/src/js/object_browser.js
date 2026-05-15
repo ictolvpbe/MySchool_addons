@@ -112,6 +112,7 @@ export class TreeNode extends Component {
         draggedNode: { type: [Object, Boolean], optional: true },
         expandedIds: { type: Object, optional: true },
         onToggleExpand: { type: Function, optional: true },
+        onOpenSlideOver: { type: Function, optional: true },
     };
     
     setup() {
@@ -191,6 +192,15 @@ export class TreeNode extends Component {
         ev.stopPropagation();
         if (this.props.onSelectNode) {
             this.props.onSelectNode(this.props.node);
+        }
+    }
+
+    // Klik op het icoon vóór de naam → open slide-over voor org/persongroup
+    // (single-click op de rest van de rij doet drilling-in via onSelectNode).
+    onIconClick(ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (this.props.onOpenSlideOver) {
+            this.props.onOpenSlideOver(this.props.node);
         }
     }
     
@@ -518,6 +528,7 @@ export class MembersPanel extends Component {
         onMemberAction: { type: Function, optional: true },
         onMemberKebab: { type: Function, optional: true },
         onMemberOpenDetails: { type: Function, optional: true },
+        onMemberShowDetails: { type: Function, optional: true },
         onOpenOrgDetails: { type: Function, optional: true },
         onMemberDragStart: { type: Function, optional: true },
         onMemberDragEnd: { type: Function, optional: true },
@@ -819,6 +830,33 @@ export class MembersPanel extends Component {
     // Members-header "Details" button → open slide-over for current org.
     onOrgDetailsClick() {
         if (this.props.onOpenOrgDetails) this.props.onOpenOrgDetails();
+    }
+
+    // Klik op de oog-knop links van de naam → open slide-over voor
+    // deze member. Werkt voor zowel persons als orgs/persongroups —
+    // de slide-over is een 1-klik shortcut zonder drilling.
+    onRowShowDetails(ev, member, type) {
+        if (!this.props.onMemberShowDetails) return;
+        const node = {
+            id: member.id,
+            name: member.name,
+            type: type,
+            model: member.model,
+            org_id: this.props.node?.id,
+            person_type: member.person_type,
+            person_type_color: member.person_type_color,
+            person_type_icon_fa: member.person_type_icon_fa,
+            person_type_icon_url: member.person_type_icon_url,
+            org_type_name: member.org_type_name,
+            org_type_color: member.org_type_color,
+            org_type_icon_fa: member.org_type_icon_fa,
+            org_type_icon_url: member.org_type_icon_url,
+            email: member.email,
+            sap_ref: member.sap_ref,
+            roles: member.roles,
+            is_active: member.is_active,
+        };
+        this.props.onMemberShowDetails(node);
     }
     
     getInitials(name) {
@@ -1126,6 +1164,8 @@ export class ObjectBrowserClient extends Component {
         this.onMemberDragStart = this.onMemberDragStart.bind(this);
         this.onMemberDragEnd = this.onMemberDragEnd.bind(this);
         this.onBreadcrumbClick = this.onBreadcrumbClick.bind(this);
+        this.onTreeIconClick = this.onTreeIconClick.bind(this);
+        this.onMemberShowDetails = this.onMemberShowDetails.bind(this);
         this.onSplitterMouseDown = this.onSplitterMouseDown.bind(this);
         this.onSplitterDoubleClick = this.onSplitterDoubleClick.bind(this);
         this._onSplitterMouseMove = this._onSplitterMouseMove.bind(this);
@@ -2084,6 +2124,26 @@ export class ObjectBrowserClient extends Component {
     // position. Same as right-click on the row.
     onMemberRowKebab(ev, node) {
         return this.onMemberContextMenu(ev, node);
+    }
+
+    // Klik op het icoon vóór een naam in de tree → open de slide-over
+    // met details. Aparte hitbox van onRowClick zodat een gebruiker
+    // tegelijk kan drillen (rij-klik) en bekijken (icoon-klik) zonder
+    // dubbelklikken te hoeven.
+    onTreeIconClick(node) {
+        if (!node) return;
+        if (this.state.slideOverNode) this.closeSlideOver();
+        return this._openSlideOver(node);
+    }
+
+    // Klik op de oog-knop in een member-row → open slide-over voor zowel
+    // persons als sub-orgs / persongroups. Anders dan de dubbelklik-flow
+    // (`onMemberOpenDetails`) drilt deze NOOIT door — het is een snelle
+    // 1-klik shortcut naar de details.
+    onMemberShowDetails(node) {
+        if (!node) return;
+        if (this.state.slideOverNode) this.closeSlideOver();
+        return this._openSlideOver(node);
     }
 
     // Open the slide-over for a member (double-click on row).

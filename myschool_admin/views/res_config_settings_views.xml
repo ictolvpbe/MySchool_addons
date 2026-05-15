@@ -74,7 +74,7 @@
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
                 <app data-string="MySchool Core" string="MySchool Core"
-                     name="myschool_core"
+                     name="ms_core"
                      groups="myschool_core.group_myschool_core_admin">
 
                     <block title="Veiligheid — Integraties" name="ms_core_safeguard">
@@ -165,7 +165,7 @@
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
                 <app data-string="MySchool Admin" string="MySchool Admin"
-                     name="myschool_admin"
+                     name="ms_admin"
                      groups="myschool_core.group_myschool_core_admin">
 
                     <block title="Diagnostiek" name="ms_admin_diagnostics">
@@ -250,7 +250,7 @@
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
                 <app data-string="MySchool Theme" string="MySchool Theme"
-                     name="myschool_theme">
+                     name="ms_theme">
 
                     <block title="Brand Colors" name="ms_theme_brand"
                            help="Primary brand palette used across the interface">

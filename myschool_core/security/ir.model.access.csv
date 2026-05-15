@@ -84,3 +84,7 @@ access_myschool_password_policy_rule_user,myschool.password.policy.rule.user,mod
 access_myschool_password_policy_rule_admin,myschool.password.policy.rule.admin,model_myschool_password_policy_rule,myschool_core.group_myschool_core_admin,1,1,1,1
 access_myschool_password_template_user,myschool.password.template.user,model_myschool_password_template,myschool_core.group_myschool_core_user,1,0,0,0
 access_myschool_password_template_admin,myschool.password.template.admin,model_myschool_password_template,myschool_core.group_myschool_core_admin,1,1,1,1
+access_myschool_sap_sync_run_user,myschool.sap.sync.run.user,model_myschool_sap_sync_run,myschool_core.group_myschool_core_user,1,0,0,0
+access_myschool_sap_sync_run_admin,myschool.sap.sync.run.admin,model_myschool_sap_sync_run,myschool_core.group_myschool_core_admin,1,1,1,1
+access_myschool_sap_sync_change_user,myschool.sap.sync.change.user,model_myschool_sap_sync_change,myschool_core.group_myschool_core_user,1,0,0,0
+access_myschool_sap_sync_change_admin,myschool.sap.sync.change.admin,model_myschool_sap_sync_change,myschool_core.group_myschool_core_admin,1,1,1,1

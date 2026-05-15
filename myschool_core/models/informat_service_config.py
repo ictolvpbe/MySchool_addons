@@ -135,6 +135,48 @@ class InformatServiceConfig(models.Model):
         help='Default organization short name for config lookups'
     )
     
+    # =====================================================================
+    # Safeguard / drempel-instellingen
+    # =====================================================================
+    # Bij overschrijden van het ingestelde % per object_type schort de
+    # service de sync op (state=awaiting_approval) en stuurt een mail
+    # naar de admins. Default = 20%. Werkt enkel als ``safeguard_enabled``.
+
+    safeguard_enabled = fields.Boolean(
+        string='Safeguard ingeschakeld',
+        default=True,
+        help='Als uitgeschakeld: drempel-check wordt overgeslagen en '
+             'syncs committeren zoals voorheen (geen mail-alarm).'
+    )
+
+    threshold_person_pct = fields.Float(
+        string='Drempel PERSON (%)',
+        default=20.0,
+        help='Maximaal toegestaan % wijzigende personen voor een '
+             'automatische commit. Boven dit % wacht de run op '
+             'expliciete goedkeuring.'
+    )
+    threshold_org_pct = fields.Float(
+        string='Drempel ORG (%)',
+        default=20.0,
+    )
+    threshold_orggroup_pct = fields.Float(
+        string='Drempel ORGGROUP (%)',
+        default=20.0,
+        help='Drempel voor org-records van type PERSONGROUP (klasgroepen e.d.).'
+    )
+    threshold_proprelation_pct = fields.Float(
+        string='Drempel PROPRELATION (%)',
+        default=20.0,
+    )
+
+    safeguard_min_changes = fields.Integer(
+        string='Min. wijzigingen om alarm te triggeren',
+        default=5,
+        help='Voorkomt valse alarmen op kleine populaties: drempel '
+             'wordt enkel toegepast vanaf dit absolute aantal mutaties.'
+    )
+
     # Last Sync Information
     last_sync_timestamp = fields.Datetime(
         string='Last Sync Timestamp',

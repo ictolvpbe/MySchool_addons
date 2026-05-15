@@ -22,12 +22,17 @@
     <!-- ROOT                                       -->
     <!-- ========================================= -->
 
+    <!-- App-tegel opent direct de Organisation Manager (meest gebruikte
+         entry point). Dashboard blijft beschikbaar als sub-menu. -->
     <menuitem id="menu_myschool_root"
               name="MySchool Admin"
               sequence="10"
-              action="action_dashboard_client"
+              action="action_object_browser_client"
               web_icon="school,static/description/icon.png"
               groups="myschool_core.group_myschool_core_admin"/>
+
+    <!-- Organisation Manager: geen eigen menu-item — bereikbaar via
+         klik op de "MySchool Admin"-app-tegel zelf. -->
 
     <!-- ========================================= -->
     <!-- 1. DASHBOARD                              -->
@@ -338,6 +343,13 @@
               parent="menu_sync_triggers"
               action="action_informat_sync_wizard"
               sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_sap_sync_run"
+              name="SAP-sync overzicht"
+              parent="menu_sync_triggers"
+              action="action_sap_sync_run_list"
+              sequence="45"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_sync_test_runner"

@@ -77,6 +77,30 @@
                             </group>
                         </page>
                         
+                        <page string="Veiligheid (safeguard)" name="safeguard">
+                            <group>
+                                <group string="Algemeen">
+                                    <field name="safeguard_enabled" widget="boolean_toggle"/>
+                                    <field name="safeguard_min_changes"/>
+                                </group>
+                                <group string="Drempels per objecttype (%)"
+                                       help="Boven deze drempel wordt de sync opgeschort en de admin verwittigd.">
+                                    <field name="threshold_person_pct"/>
+                                    <field name="threshold_org_pct"/>
+                                    <field name="threshold_orggroup_pct"/>
+                                    <field name="threshold_proprelation_pct"/>
+                                </group>
+                            </group>
+                            <div class="alert alert-info" role="alert">
+                                Drempels worden enkel toegepast vanaf
+                                <strong><field name="safeguard_min_changes" readonly="1" nolabel="1"/></strong>
+                                absolute wijzigingen — kleine populaties triggeren géén alarm.
+                                Beheerders met admin-rol krijgen een mail bij overschrijding.
+                                Iedere admin kan in zijn/haar gebruikersprofiel kiezen om de
+                                review-UI altijd te zien (ook zonder drempel-overschrijding).
+                            </div>
+                        </page>
+
                         <page string="Last Sync Status" name="status">
                             <group>
                                 <group string="Status">

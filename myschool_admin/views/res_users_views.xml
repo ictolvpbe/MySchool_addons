@@ -15,6 +15,9 @@
                 <field name="myschool_theme_mode"
                        widget="selection"
                        readonly="0"/>
+                <field name="myschool_sap_sync_always_review"
+                       widget="boolean_toggle"
+                       readonly="0"/>
             </xpath>
         </field>
     </record>
@@ -30,6 +33,7 @@
         <field name="arch" type="xml">
             <xpath expr="//group[@name='other_preferences']" position="inside">
                 <field name="myschool_theme_mode"/>
+                <field name="myschool_sap_sync_always_review"/>
             </xpath>
         </field>
     </record>

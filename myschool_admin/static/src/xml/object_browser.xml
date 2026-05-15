@@ -49,8 +49,12 @@
                 </t>
                 
                 <!-- Icon — uploaded image → per-type fa-class → generic fallback.
-                     icon_color (hex) overrides the fa-icon glyph colour. -->
-                <span class="ob-icon">
+                     icon_color (hex) overrides the fa-icon glyph colour.
+                     Klik op het icoon (niet op de rij) opent de slide-over
+                     met details, zonder de actieve node te wijzigen. -->
+                <span class="ob-icon ob-icon-clickable"
+                      title="Klik voor details"
+                      t-on-click.stop="onIconClick">
                     <t t-if="props.node.org_type_icon_url">
                         <img class="ob-icon-img" t-att-src="props.node.org_type_icon_url" alt=""/>
                     </t>
@@ -96,8 +100,8 @@
                     <!-- Child Organizations -->
                     <t t-if="props.node.children">
                         <t t-foreach="props.node.children" t-as="child" t-key="child.id">
-                            <TreeNode node="child" 
-                                      level="childLevel" 
+                            <TreeNode node="child"
+                                      level="childLevel"
                                       activeNodeId="props.activeNodeId"
                                       activeNodeType="props.activeNodeType"
                                       onSelectNode="props.onSelectNode"
@@ -108,7 +112,8 @@
                                       selectedIds="props.selectedIds"
                                       draggedNode="props.draggedNode"
                                       expandedIds="props.expandedIds"
-                                      onToggleExpand="props.onToggleExpand"/>
+                                      onToggleExpand="props.onToggleExpand"
+                                      onOpenSlideOver="props.onOpenSlideOver"/>
                         </t>
                     </t>
                     
@@ -421,6 +426,7 @@
                     <!-- Column Header Row (draggable to reorder + resize handles) -->
                     <div class="ob-mrow ob-mrow-header">
                         <div class="ob-mcol ob-mcol-kebab"></div>
+                        <div class="ob-mcol ob-mcol-details"></div>
                         <div class="ob-mcol ob-mcol-name">Naam</div>
                         <t t-foreach="visibleOrderedColumns" t-as="col" t-key="col.key">
                             <div t-att-class="'ob-mcol ob-mcol-' + col.key + ' ob-mcol-h' + (state.dragOverColumn === col.key ? ' ob-mcol-dragover' : '')"
@@ -464,6 +470,14 @@
                                                 title="Meer acties"
                                                 t-on-click.stop="(ev) => this.onRowKebab(ev, person, 'person')">
                                             <i class="fa fa-ellipsis-v"/>
+                                        </button>
+                                    </div>
+                                    <!-- Show details (slide-over) -->
+                                    <div class="ob-mcol ob-mcol-details">
+                                        <button class="ob-row-action ob-row-action-details"
+                                                title="Toon details"
+                                                t-on-click.stop="(ev) => this.onRowShowDetails(ev, person, 'person')">
+                                            <i class="fa fa-eye"/>
                                         </button>
                                     </div>
                                     <!-- Name col with avatar -->
@@ -547,6 +561,14 @@
                                                 title="Meer acties"
                                                 t-on-click.stop="(ev) => this.onRowKebab(ev, group, 'persongroup')">
                                             <i class="fa fa-ellipsis-v"/>
+                                        </button>
+                                    </div>
+                                    <!-- Show details (slide-over) -->
+                                    <div class="ob-mcol ob-mcol-details">
+                                        <button class="ob-row-action ob-row-action-details"
+                                                title="Toon details"
+                                                t-on-click.stop="(ev) => this.onRowShowDetails(ev, group, 'persongroup')">
+                                            <i class="fa fa-eye"/>
                                         </button>
                                     </div>
                                     <div class="ob-mcol ob-mcol-name">
@@ -1041,7 +1063,8 @@
                                           selectedIds="state.selectedIds"
                                           draggedNode="state.draggedNode"
                                           expandedIds="state.expandedIds"
-                                          onToggleExpand="onToggleExpand"/>
+                                          onToggleExpand="onToggleExpand"
+                                          onOpenSlideOver="onTreeIconClick"/>
                             </t>
                         </t>
                     </div>
@@ -1109,6 +1132,7 @@
                         onMemberAction="onMemberRowAction"
                         onMemberKebab="onMemberRowKebab"
                         onMemberOpenDetails="onMemberOpenDetails"
+                        onMemberShowDetails="onMemberShowDetails"
                         onMemberDragStart="onMemberDragStart"
                         onMemberDragEnd="onMemberDragEnd"
                         onOpenOrgDetails="onOpenOrgDetails"

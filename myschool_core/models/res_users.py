@@ -37,6 +37,16 @@ class ResUsers(models.Model):
 
     school_ids = fields.Many2many('myschool.org', string='Scholen')
 
+    # Per-user voorkeur voor de SAP-sync wizard: default-waarde voor de
+    # "Preview tonen voor commit"-checkbox. Beheerders die routine-syncs
+    # draaien kunnen dit uitvinken; voorzichtigere admins laten het aan.
+    myschool_sap_sync_always_review = fields.Boolean(
+        string='Altijd SAP-sync preview tonen',
+        default=True,
+        help='Default voor de "Preview tonen"-checkbox in de Informat-'
+             'sync wizard. Je kan dit nog steeds per run aanpassen.',
+    )
+
     @api.onchange('company_ids')
     def _onchange_company_ids_set_schools(self):
         """Auto-fill school_ids based on the schools linked to the user's companies."""
