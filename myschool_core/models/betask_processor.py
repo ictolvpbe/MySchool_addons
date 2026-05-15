@@ -1204,7 +1204,7 @@ class BeTaskProcessor(models.AbstractModel):
         PeriodType = self.env['myschool.period.type']
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
 
         # --- Determine active class from inschrKlassen ---
         inschr_klassen = registration_json.get('inschrKlassen', []) or registration_json.get('inschrklassen', [])
@@ -1283,8 +1283,9 @@ class BeTaskProcessor(models.AbstractModel):
                     break
                 current = candidate
 
-        # Get OuForClasses CI to find the parent org for classgroups
-        ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')
+        # Get OuForClasses SI to find the parent org for classgroups.
+        # ORG-TREE inheritance gebeurt nu intern in SettingsItem.get().
+        ou_value = SettingsItem.get('OuForClasses', org=ci_lookup_org)
 
         class_org = None
         if ou_value:
@@ -2401,7 +2402,7 @@ class BeTaskProcessor(models.AbstractModel):
                 PropRelation = self.env['myschool.proprelation']
                 PropRelationType = self.env['myschool.proprelation.type']
                 OrgType = self.env['myschool.org.type']
-                ConfigItem = self.env['myschool.config.item']
+                SettingsItem = self.env['myschool.settings.item']
                 classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
                 school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
                 org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
@@ -2452,7 +2453,7 @@ class BeTaskProcessor(models.AbstractModel):
 
                 # Create ORG-TREE: place classgroup under OuForClasses org
                 if parent_school and org_tree_type:
-                    ou_value = ConfigItem.get_ci_value_by_org_and_name(parent_school.name_short, 'OuForClasses')
+                    ou_value = SettingsItem.get('OuForClasses', org=parent_school)
                     if ou_value:
                         child_rels = PropRelation.search([
                             ('proprelation_type_id', '=', org_tree_type.id),
@@ -2483,7 +2484,7 @@ class BeTaskProcessor(models.AbstractModel):
                             # Set AD/OU fields inherited from parent
                             self._populate_classgroup_ad_fields(
                                 new_org, ou_for_classes_org, parent_school,
-                                org_tree_type, ConfigItem, changes)
+                                org_tree_type, changes)
                         else:
                             _logger.warning(f'[ORG-ADD] OuForClasses org "{ou_value}" not found under {parent_school.name_short}')
                     else:
@@ -2502,13 +2503,14 @@ class BeTaskProcessor(models.AbstractModel):
             raise
     
     def _populate_classgroup_ad_fields(self, new_org, ou_for_classes_org, parent_school,
-                                       org_tree_type, ConfigItem, changes):
+                                       org_tree_type, changes):
         """Populate AD/OU fields for a newly created classgroup org.
 
         Sets: domain_internal, domain_external, has_ou, has_comgroup,
         has_secgroup, ou_fqdn_internal, ou_fqdn_external, com_group_name,
         sec_group_name, com/sec_group_fqdn_internal/external, name_tree.
         """
+        SettingsItem = self.env['myschool.settings.item']
         org_update = {
             'has_ou': True,
             'has_comgroup': True,
@@ -2599,8 +2601,8 @@ class BeTaskProcessor(models.AbstractModel):
         # under the parent SCHOOL* — not under OuForClasses (parent_fqdn_*).
         # Anchoring on OuForClasses would produce nested duplicates like
         # ou=cgroup,ou=klassen,... whenever the classgroup OU was nested.
-        ou_for_groups = ConfigItem.get_ci_value_by_org_and_name(
-            parent_school.name_short, 'OuForGroups') if parent_school else None
+        ou_for_groups = SettingsItem.get(
+            'OuForGroups', org=parent_school) if parent_school else None
         school_fqdn_int = (parent_school.ou_fqdn_internal or '').lower() if parent_school else ''
         school_fqdn_ext = (parent_school.ou_fqdn_external or '').lower() if parent_school else ''
 
@@ -2690,7 +2692,7 @@ class BeTaskProcessor(models.AbstractModel):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         OrgType = self.env['myschool.org.type']
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
 
         classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
         school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
@@ -2733,9 +2735,9 @@ class BeTaskProcessor(models.AbstractModel):
             return
 
         # Find OuForClasses org under parent school
-        ou_value = ConfigItem.get_ci_value_by_org_and_name(parent_school.name_short, 'OuForClasses')
+        ou_value = SettingsItem.get('OuForClasses', org=parent_school)
         if not ou_value:
-            _logger.warning(f'[ORG-UPD] No OuForClasses CI found for {parent_school.name_short}')
+            _logger.warning(f'[ORG-UPD] No OuForClasses SI found for {parent_school.name_short}')
             return
 
         child_rels = PropRelation.search([
@@ -2758,7 +2760,7 @@ class BeTaskProcessor(models.AbstractModel):
 
         self._populate_classgroup_ad_fields(
             org, ou_for_classes_org, parent_school,
-            org_tree_type, ConfigItem, changes)
+            org_tree_type, changes)
 
     @api.model
     def process_db_org_upd(self, task):
@@ -8050,11 +8052,10 @@ class BeTaskProcessor(models.AbstractModel):
         """
         if not school_org:
             return None, None
-        ConfigItem = self.env['myschool.config.item']
-        ou_value = ConfigItem.get_ci_value_by_org_and_name(
-            school_org.name_short, 'OuForGroups')
+        SettingsItem = self.env['myschool.settings.item']
+        ou_value = SettingsItem.get('OuForGroups', org=school_org)
         if not ou_value:
-            _logger.warning(f'[PG-SYNC] No OuForGroups CI found for {school_org.name_short}')
+            _logger.warning(f'[PG-SYNC] No OuForGroups SI found for {school_org.name_short}')
             return None, None
 
         PropRelation = self.env['myschool.proprelation']

@@ -1253,62 +1253,12 @@ class AddChildOrgWizard(models.TransientModel):
         """
         if not self.parent_org_id:
             return None
-        
-        # Check if CI models exist
-        if 'myschool.config.item' not in self.env:
+        # SI-lookup doet ORG-TREE walk + inherit_to_children intern.
+        # De manuele walk-fallback uit de oude code is hierdoor overbodig.
+        SettingsItem = self.env.get('myschool.settings.item')
+        if SettingsItem is None:
             return None
-        
-        ConfigItem = self.env['myschool.config.item']
-        
-        # Try to get via ConfigItem's method if available
-        if hasattr(ConfigItem, 'get_ci_value_by_org_and_name'):
-            parent_short = self.parent_org_id.name_short if hasattr(self.parent_org_id, 'name_short') else self.parent_org_id.name
-            value = ConfigItem.get_ci_value_by_org_and_name(parent_short, 'OuForGroups')
-            if value:
-                return value
-        
-        # Fallback: search directly in CiRelation
-        if 'myschool.ci.relation' in self.env:
-            CiRelation = self.env['myschool.ci.relation']
-            PropRelationType = self.env['myschool.proprelation.type']
-
-            # Get ORG-TREE type
-            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-
-            # Walk up the org hierarchy to find the CI (only via ORG-TREE relations)
-            current_org = self.parent_org_id
-            visited = set()
-
-            while current_org and current_org.id not in visited:
-                visited.add(current_org.id)
-
-                # Search for OuForGroups CI linked to this org
-                ci_relation = CiRelation.search([
-                    ('id_org', '=', current_org.id),
-                    ('id_ci.name', '=', 'OuForGroups'),
-                    ('isactive', '=', True)
-                ], limit=1)
-
-                if ci_relation and ci_relation.id_ci and ci_relation.id_ci.string_value:
-                    return ci_relation.id_ci.string_value
-
-                # Move to parent org via ORG-TREE relation only
-                try:
-                    PropRelation = self.env['myschool.proprelation']
-                    search_domain = [
-                        ('id_org', '=', current_org.id),
-                        ('id_org_parent', '!=', False),
-                        ('is_active', '=', True),
-                    ]
-                    if org_tree_type:
-                        search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
-
-                    parent_rel = PropRelation.search(search_domain, limit=1)
-                    current_org = parent_rel.id_org_parent if parent_rel else None
-                except KeyError:
-                    break
-
-        return None
+        return SettingsItem.get('OuForGroups', org=self.parent_org_id)
     
     def _update_com_group_fqdns(self):
         """Update communication group FQDNs based on group name and OU paths.
@@ -1704,292 +1654,12 @@ class BulkMoveWizard(models.TransientModel):
 
 
 # =============================================================================
-# Configuration Item Wizards
+# Settings Item / Settings Value beheer gebeurt nu via:
+#   - myschool.settings.item (catalogus) — eigen list/form views
+#   - myschool.settings.value (waarden)  — eigen list/form views + One2many
+#                                          op myschool.org (tab Settings)
+# Geen wizards meer nodig. Zie myschool_admin/views/settings_item_views.xml.
 # =============================================================================
-
-class ManageCiRelationsWizard(models.TransientModel):
-    """Wizard to manage Configuration Item relations for an organization."""
-    _name = 'myschool.manage.ci.relations.wizard'
-    _description = 'Manage Configuration Items'
-
-    org_id = fields.Many2one('myschool.org', string='Organization', required=True)
-    org_name = fields.Char(string='Organization Name', compute='_compute_org_name')
-    ci_relation_count = fields.Integer(compute='_compute_ci_relation_count')
-    
-    @api.depends('org_id')
-    def _compute_org_name(self):
-        for wizard in self:
-            if wizard.org_id:
-                wizard.org_name = wizard.org_id.name_tree or wizard.org_id.name
-            else:
-                wizard.org_name = ''
-    
-    @api.depends('org_id')
-    def _compute_ci_relation_count(self):
-        CiRelation = self.env['myschool.ci.relation']
-        for wizard in self:
-            if wizard.org_id:
-                wizard.ci_relation_count = CiRelation.search_count([
-                    ('id_org', '=', wizard.org_id.id),
-                    ('isactive', '=', True)
-                ])
-            else:
-                wizard.ci_relation_count = 0
-    
-    def action_add_ci(self):
-        """Open wizard to add a new CI relation."""
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.add.ci.relation.wizard',
-            'views': [[False, 'form']],
-            'target': 'new',
-            'context': {
-                'default_org_id': self.org_id.id,
-            },
-        }
-    
-    def action_view_all(self):
-        """View all CI relations for this org in a list."""
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.ci.relation',
-            'views': [[False, 'tree'], [False, 'form']],
-            'target': 'current',
-            'domain': [('id_org', '=', self.org_id.id)],
-            'context': {
-                'default_id_org': self.org_id.id,
-            },
-        }
-
-
-class AddCiRelationWizard(models.TransientModel):
-    """Wizard to add a Configuration Item relation to an organization."""
-    _name = 'myschool.add.ci.relation.wizard'
-    _description = 'Add Configuration Item'
-
-    org_id = fields.Many2one('myschool.org', string='Organization', required=True)
-    org_name = fields.Char(string='Organization Name', compute='_compute_org_name')
-    
-    # Option 1: Select existing CI
-    use_existing_ci = fields.Boolean(string='Use Existing Config Item', default=True)
-    existing_ci_id = fields.Many2one('myschool.config.item', string='Config Item',
-        domain=[('is_active', '=', True)])
-    
-    # Option 2: Create new CI
-    new_ci_name = fields.Char(string='Name')
-    new_ci_scope = fields.Selection([
-        ('global', 'Global'),
-        ('local', 'Local'),
-        ('module', 'Module'),
-        ('org', 'Organization'),
-        ('user', 'User'),
-    ], string="Scope", default='org')
-    new_ci_type = fields.Selection([
-        ('config', 'Configuration'),
-        ('status', 'Status'),
-        ('setting', 'Setting'),
-        ('parameter', 'Parameter'),
-        ('credential', 'Credential'),
-        ('api', 'API Setting'),
-    ], string="Type", default='config')
-    
-    # Value fields
-    value_type = fields.Selection([
-        ('string', 'Text'),
-        ('integer', 'Number'),
-        ('boolean', 'Yes/No'),
-    ], string="Value Type", default='string')
-    string_value = fields.Char(string='Text Value')
-    integer_value = fields.Integer(string='Number Value')
-    boolean_value = fields.Boolean(string='Yes/No Value')
-    
-    new_ci_description = fields.Text(string='Description')
-    
-    @api.depends('org_id')
-    def _compute_org_name(self):
-        for wizard in self:
-            if wizard.org_id:
-                wizard.org_name = wizard.org_id.name_tree or wizard.org_id.name
-            else:
-                wizard.org_name = ''
-    
-    def action_add(self):
-        """Add the CI relation."""
-        self.ensure_one()
-        
-        CiRelation = self.env['myschool.ci.relation']
-        ConfigItem = self.env['myschool.config.item']
-        
-        if self.use_existing_ci:
-            if not self.existing_ci_id:
-                raise UserError("Please select a Configuration Item")
-            config_item = self.existing_ci_id
-        else:
-            if not self.new_ci_name:
-                raise UserError("Please enter a name for the Configuration Item")
-            
-            # Create new ConfigItem
-            ci_vals = {
-                'name': self.new_ci_name,
-                'scope': self.new_ci_scope,
-                'type': self.new_ci_type,
-                'is_active': True,
-            }
-            
-            # Set value based on type
-            if self.value_type == 'string':
-                ci_vals['string_value'] = self.string_value
-            elif self.value_type == 'integer':
-                ci_vals['integer_value'] = self.integer_value
-            elif self.value_type == 'boolean':
-                ci_vals['boolean_value'] = self.boolean_value
-            
-            if self.new_ci_description:
-                ci_vals['description'] = self.new_ci_description
-            
-            config_item = ConfigItem.create(ci_vals)
-        
-        # Check if relation already exists
-        existing = CiRelation.search([
-            ('id_org', '=', self.org_id.id),
-            ('id_ci', '=', config_item.id),
-            ('isactive', '=', True),
-        ], limit=1)
-        
-        if existing:
-            raise UserError(f"Configuration Item '{config_item.name}' is already linked to this organization")
-        
-        # Create the relation
-        CiRelation.create({
-            'id_org': self.org_id.id,
-            'id_ci': config_item.id,
-            'isactive': True,
-        })
-        
-        return {'type': 'ir.actions.act_window_close'}
-    
-    def action_add_and_new(self):
-        """Add the CI relation and open wizard for another."""
-        self.action_add()
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.add.ci.relation.wizard',
-            'views': [[False, 'form']],
-            'target': 'new',
-            'context': {
-                'default_org_id': self.org_id.id,
-            },
-        }
-
-
-class EditCiRelationWizard(models.TransientModel):
-    """Wizard to edit a Configuration Item relation value."""
-    _name = 'myschool.edit.ci.relation.wizard'
-    _description = 'Edit Configuration Item'
-
-    ci_relation_id = fields.Many2one('myschool.ci.relation', string='Relation', required=True)
-    ci_name = fields.Char(string='Config Item', readonly=True)
-    org_name = fields.Char(string='Organization', readonly=True)
-    
-    # Value fields
-    value_type = fields.Selection([
-        ('string', 'Text'),
-        ('integer', 'Number'),
-        ('boolean', 'Yes/No'),
-    ], string="Value Type", default='string')
-    string_value = fields.Char(string='Text Value')
-    integer_value = fields.Integer(string='Number Value')
-    boolean_value = fields.Boolean(string='Yes/No Value')
-    
-    @api.model
-    def default_get(self, fields_list):
-        """Load current values from the CI relation."""
-        res = super().default_get(fields_list)
-        
-        if 'ci_relation_id' in res and res['ci_relation_id']:
-            relation = self.env['myschool.ci.relation'].browse(res['ci_relation_id'])
-            if relation.exists() and relation.id_ci:
-                ci = relation.id_ci
-                res['ci_name'] = ci.name
-                if relation.id_org:
-                    res['org_name'] = relation.id_org.name_tree or relation.id_org.name
-                else:
-                    res['org_name'] = ''
-                
-                # Determine value type and load value
-                if ci.string_value:
-                    res['value_type'] = 'string'
-                    res['string_value'] = ci.string_value
-                elif ci.integer_value:
-                    res['value_type'] = 'integer'
-                    res['integer_value'] = ci.integer_value
-                elif ci.boolean_value is not None:
-                    res['value_type'] = 'boolean'
-                    res['boolean_value'] = ci.boolean_value
-        
-        return res
-    
-    def action_save(self):
-        """Save the updated value."""
-        self.ensure_one()
-        
-        if not self.ci_relation_id or not self.ci_relation_id.id_ci:
-            raise UserError("Invalid Configuration Item relation")
-        
-        ci = self.ci_relation_id.id_ci
-        
-        # Update value based on type
-        vals = {
-            'string_value': False,
-            'integer_value': 0,
-            'boolean_value': False,
-        }
-        
-        if self.value_type == 'string':
-            vals['string_value'] = self.string_value
-        elif self.value_type == 'integer':
-            vals['integer_value'] = self.integer_value
-        elif self.value_type == 'boolean':
-            vals['boolean_value'] = self.boolean_value
-        
-        ci.write(vals)
-        
-        return {'type': 'ir.actions.act_window_close'}
-
-
-class RemoveCiRelationWizard(models.TransientModel):
-    """Wizard to remove (deactivate) a Configuration Item relation."""
-    _name = 'myschool.remove.ci.relation.wizard'
-    _description = 'Remove Configuration Item'
-
-    ci_relation_id = fields.Many2one('myschool.ci.relation', string='Relation', required=True)
-    ci_name = fields.Char(string='Config Item', readonly=True)
-    org_name = fields.Char(string='Organization', readonly=True)
-    
-    @api.model
-    def default_get(self, fields_list):
-        """Load info from the CI relation."""
-        res = super().default_get(fields_list)
-        
-        if 'ci_relation_id' in res and res['ci_relation_id']:
-            relation = self.env['myschool.ci.relation'].browse(res['ci_relation_id'])
-            if relation.exists():
-                res['ci_name'] = relation.id_ci.name if relation.id_ci else ''
-                if relation.id_org:
-                    res['org_name'] = relation.id_org.name_tree or relation.id_org.name
-                else:
-                    res['org_name'] = ''
-        
-        return res
-    
-    def action_remove(self):
-        """Deactivate the CI relation."""
-        self.ensure_one()
-        
-        if self.ci_relation_id:
-            self.ci_relation_id.write({'isactive': False})
-        
-        return {'type': 'ir.actions.act_window_close'}
 
 
 # =============================================================================
@@ -3355,8 +3025,7 @@ class InitSchoolyearWizard(models.TransientModel):
 
     def _default_new_schoolyear_name(self):
         """Suggest next schoolyear by parsing CurrentSchoolYear and incrementing."""
-        ConfigItem = self.env['myschool.config.item']
-        current = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
+        current = self.env['myschool.settings.item'].get('CurrentSchoolYear')
         if current and '-' in current:
             try:
                 parts = current.split('-')
@@ -3376,8 +3045,6 @@ class InitSchoolyearWizard(models.TransientModel):
         Role = self.env['myschool.role']
         Period = self.env['myschool.period']
         PeriodType = self.env['myschool.period.type']
-        ConfigItem = self.env['myschool.config.item']
-        CiRelation = self.env['myschool.ci.relation']
 
         # TODO: reactivate steps below when ready
 
@@ -3705,12 +3372,12 @@ class CreatePersongroupWizard(models.TransientModel):
         if not school_org:
             return None, None
 
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         Org = self.env['myschool.org']
 
-        ou_value = ConfigItem.get_ci_value_by_org_and_name(school_org.name_short, 'OuForGroups')
+        ou_value = SettingsItem.get('OuForGroups', org=school_org)
         if not ou_value:
             return None, None
 
@@ -4182,9 +3849,11 @@ class CleanupWizard(models.TransientModel):
     @api.model
     def default_get(self, fields_list):
         res = super().default_get(fields_list)
-        ci = self._get_retention_ci()
-        if ci and ci.integer_value:
-            res['retention_days'] = ci.integer_value
+        # CLEANUP_RETENTION_DAYS is een globale integer-SI met default 90.
+        value = self.env['myschool.settings.item'].get(
+            'CLEANUP_RETENTION_DAYS', default=90)
+        if value:
+            res['retention_days'] = value
         return res
 
     def _get_schoolboard_org(self):
@@ -4192,9 +3861,6 @@ class CleanupWizard(models.TransientModel):
         if not sb_type:
             return self.env['myschool.org']
         return self.env['myschool.org'].search([('org_type_id', '=', sb_type.id), ('is_active', '=', True)], limit=1)
-
-    def _get_retention_ci(self):
-        return self.env['myschool.config.item'].search([('name', '=', 'CLEANUP_RETENTION_DAYS')], limit=1)
 
     def _get_status_domain(self):
         if self.cleanup_target == 'betasks':
@@ -4239,23 +3905,11 @@ class CleanupWizard(models.TransientModel):
                 wizard.preview_count = 0
 
     def _save_retention_ci(self):
-        ci = self._get_retention_ci()
-        if not ci:
-            ci = self.env['myschool.config.item'].create({
-                'name': 'CLEANUP_RETENTION_DAYS',
-                'scope': 'org',
-                'type': 'setting',
-                'integer_value': self.retention_days,
-                'description': 'Number of days to retain completed/error backend tasks and closed/error system events before cleanup.',
-            })
-            sb_org = self._get_schoolboard_org()
-            if sb_org:
-                self.env['myschool.ci.relation'].create({
-                    'id_ci': ci.id,
-                    'id_org': sb_org.id,
-                })
-        else:
-            ci.write({'integer_value': self.retention_days})
+        # Bewaart de retentie als globale SI-waarde. De SI-definitie
+        # 'CLEANUP_RETENTION_DAYS' wordt door myschool_core geseed.
+        # Set() maakt of overschrijft de globale waarde (org=None).
+        self.env['myschool.settings.item'].set(
+            'CLEANUP_RETENTION_DAYS', self.retention_days)
 
     def action_cleanup(self):
         self.ensure_one()

@@ -465,25 +465,22 @@ class InformatService(models.AbstractModel):
         
         try:
             timestamp_sync_start = datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-            
-            # Get timestamp of latest sync from config
-            ConfigItem = self.env['myschool.config.item']
-            timestamp_config = ConfigItem.search([
-                ('name', '=', 'SapSyncLastTimestamp')
-            ], limit=1)
-            
-            timestamp_latest_sync = ''
-            if timestamp_config:
-                timestamp_latest_sync = timestamp_config.string_value or ''
-            
+
+            # SapSyncLastTimestamp is mutable state (de timestamp van de
+            # vorige differentiële sync), geen instelling — past niet bij
+            # Settings Items. We bewaren 'm in ir.config_parameter onder
+            # de gepreffixte key zodat hij niet botst met andere modules.
+            ICP = self.env['ir.config_parameter'].sudo()
+            CONFIG_KEY = 'myschool.informat.sap_sync_last_timestamp'
+            timestamp_latest_sync = ICP.get_param(CONFIG_KEY, default='')
+
             # Perform the sync operations
             self._get_registrations_from_informat(timestamp_latest_sync, dev_mode)
             self._get_students_from_informat(timestamp_latest_sync, '', dev_mode)
-            
+
             # Update the timestamp
-            if timestamp_config:
-                timestamp_config.string_value = timestamp_sync_start
-            
+            ICP.set_param(CONFIG_KEY, timestamp_sync_start)
+
             self._create_sys_event("SAPSYNC", "Differential sync completed")
             return True
             
@@ -540,13 +537,23 @@ class InformatService(models.AbstractModel):
         @return: Bearer token string or None if failed
         """
         try:
-            ConfigItem = self.env['myschool.config.item']
-            
-            api_id = ConfigItem.get_ci_value_by_org_and_name(org_short_name, 'SapInformatJSONApiId')
-            api_password = ConfigItem.get_ci_value_by_org_and_name(org_short_name, 'SapInformatJSONApiPassword')
-            
+            SettingsItem = self.env['myschool.settings.item']
+            Org = self.env['myschool.org']
+            org = Org.search(
+                [('name_short', '=', org_short_name)], limit=1)
+            if not org:
+                _logger.error(
+                    "Org with name_short=%r not found", org_short_name)
+                return None
+
+            api_id = SettingsItem.get('SapInformatJSONApiId', org=org)
+            api_password = SettingsItem.get(
+                'SapInformatJSONApiPassword', org=org)
+
             if not api_id or not api_password:
-                _logger.error("API credentials not found in config items")
+                _logger.error(
+                    "API credentials niet gevonden voor org=%s",
+                    org_short_name)
                 return None
             
             data = {
@@ -604,15 +611,15 @@ class InformatService(models.AbstractModel):
         self._create_sys_event("SAPSYNC-001", "Start importing Registration information")
         
         try:
-            ConfigItem = self.env['myschool.config.item']
-            current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
+            current_school_year = self.env['myschool.settings.item'].get(
+                'CurrentSchoolYear')
             _logger.info(
                 'SAPSYNC-001: CurrentSchoolYear=%r, dev_mode=%s',
                 current_school_year, dev_mode)
             if not current_school_year:
                 self._create_sys_error(
                     "BETASK-900",
-                    f"{procedure_name}: CI 'CurrentSchoolYear' on org 'olvp' "
+                    f"{procedure_name}: SI 'CurrentSchoolYear' (global) "
                     f"is empty — registrations API call cannot be built")
 
             timestamp_string = f"&changedSince={timestamp}" if timestamp else ""
@@ -763,8 +770,8 @@ class InformatService(models.AbstractModel):
             timestamp_string = f"&changedSince={timestamp}" if timestamp else ""
             student_id_string = f"/{student_id}" if student_id else ""
 
-            ConfigItem = self.env['myschool.config.item']
-            current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
+            current_school_year = self.env['myschool.settings.item'].get(
+                'CurrentSchoolYear')
 
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
@@ -858,11 +865,11 @@ class InformatService(models.AbstractModel):
         self._create_sys_event("SAPSYNC-001", "Start importing Employee information")
         
         try:
-            ConfigItem = self.env['myschool.config.item']
-            current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
-            
+            current_school_year = self.env['myschool.settings.item'].get(
+                'CurrentSchoolYear')
+
             timestamp_string = f"&changedSince={timestamp}" if timestamp else ""
-            
+
             # Get bearer token if not in dev mode
             bearer_token = None
             if not dev_mode:
@@ -951,9 +958,9 @@ class InformatService(models.AbstractModel):
         self._create_sys_event("SAPSYNC-001", "Start importing Employee Assignment information")
         
         try:
-            ConfigItem = self.env['myschool.config.item']
-            current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
-            
+            current_school_year = self.env['myschool.settings.item'].get(
+                'CurrentSchoolYear')
+
             # Get bearer token if not in dev mode
             bearer_token = None
             if not dev_mode:

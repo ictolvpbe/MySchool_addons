@@ -33,7 +33,6 @@ export function actionsForNode(node) {
             { key: 'open', label: 'Properties', iconClass: 'fa fa-cog', inMenu: true },
             { divider: true, inMenu: true },
             { key: 'manage_members', label: 'Members', iconClass: 'fa fa-users', inMenu: true, inQuick: true },
-            { key: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders', inMenu: true, inQuick: true },
             { divider: true, inMenu: true },
             { key: 'move_org', label: 'Move', iconClass: 'fa fa-arrows', inMenu: true, inQuick: true,
               quickLabel: 'Move' },
@@ -51,7 +50,6 @@ export function actionsForNode(node) {
             { key: 'create_persongroup', label: 'Create Persongroup', iconClass: 'fa fa-users', inMenu: true },
             { divider: true, inMenu: true },
             { key: 'manage_org_roles', label: 'Roles', iconClass: 'fa fa-id-badge', inMenu: true, inQuick: true },
-            { key: 'configuration', label: 'Configuration', iconClass: 'fa fa-sliders', inMenu: true, inQuick: true },
             { divider: true, inMenu: true },
             { key: 'move_org', label: 'Move', iconClass: 'fa fa-arrows', inMenu: true, inQuick: true },
             { divider: true, inMenu: true },
@@ -1233,10 +1231,14 @@ export class ObjectBrowserClient extends Component {
     }
 
     // Breadcrumb path for the currently focused thing. Returns an array of
-    // segment objects { id, name, type, model } from root org down to the
-    // active node (org or person). Empty list when nothing is selected.
+    // segment objects { id, name, type, model }. Begint altijd met een
+    // 'home' segment ("Organisations") zodat de breadcrumb-bar zichtbaar
+    // is vanaf opstart, ook wanneer er nog niets geselecteerd is. Daarna
+    // het pad van root org naar de active node (org / person / persongroup).
     get breadcrumbPath() {
-        const path = [];
+        const homeSegment = {
+            id: 0, name: 'Organisations', type: 'home', model: '',
+        };
         const buildOrgPath = (orgId) => {
             const segs = [];
             const walk = (nodes, trail) => {
@@ -1258,23 +1260,23 @@ export class ObjectBrowserClient extends Component {
             return segs;
         };
         const node = this.state.activeNode;
-        if (!node) return path;
+        if (!node) return [homeSegment];
         if (node.type === 'org') {
-            return buildOrgPath(node.id);
+            return [homeSegment, ...buildOrgPath(node.id)];
         }
         if (node.type === 'person') {
             const orgId = node.org_id || this.state.activeOrgNode?.id;
             const segs = orgId ? buildOrgPath(orgId) : [];
             segs.push({ id: node.id, name: node.name, type: 'person', model: 'myschool.person' });
-            return segs;
+            return [homeSegment, ...segs];
         }
         if (node.type === 'persongroup') {
             const orgId = node.org_id || this.state.activeOrgNode?.id;
             const segs = orgId ? buildOrgPath(orgId) : [];
             segs.push({ id: node.id, name: node.name, type: 'persongroup', model: 'myschool.org' });
-            return segs;
+            return [homeSegment, ...segs];
         }
-        return path;
+        return [homeSegment];
     }
     
     async loadData() {
@@ -2701,6 +2703,13 @@ export class ObjectBrowserClient extends Component {
     // its members; person segments select the person (members pane keeps
     // showing the persons's parent org).
     async onBreadcrumbClick(seg) {
+        if (seg.type === 'home') {
+            // Reset naar geen selectie — breadcrumb toont enkel "Home"
+            // en de members-pane keert terug naar de welkom-staat.
+            this.state.activeNode = null;
+            this.state.activeOrgNode = null;
+            return;
+        }
         if (seg.type === 'org' || seg.type === 'persongroup') {
             const orgNode = this.findOrgNodeById(seg.id);
             if (orgNode) {

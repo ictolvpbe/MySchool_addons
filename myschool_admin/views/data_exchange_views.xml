@@ -63,8 +63,8 @@
                         </group>
                         <group>
                             <group string="Configuratie">
-                                <field name="include_config_items"/>
-                                <field name="include_ci_relations"/>
+                                <field name="include_settings_items"/>
+                                <field name="include_settings_values"/>
                             </group>
                             <group string="Backend tasks">
                                 <field name="include_betask_types"/>

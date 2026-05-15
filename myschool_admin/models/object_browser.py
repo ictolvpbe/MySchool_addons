@@ -297,18 +297,19 @@ class ObjectBrowser(models.TransientModel):
         return by_org
 
     def _prefetch_ci_count_by_org(self, all_org_ids):
-        """Return ``{org_id: count}`` for active CI relations on each org
-        in scope. One search_read replaces N search_counts."""
-        if not all_org_ids or 'myschool.ci.relation' not in self.env:
+        """Return ``{org_id: count}`` for actieve directe Settings Values
+        per org. One search_read replaces N search_counts."""
+        if not all_org_ids or 'myschool.settings.value' not in self.env:
             return {}
-        CiRelation = self.env['myschool.ci.relation']
-        domain = [('id_org', 'in', list(all_org_ids))]
-        if 'isactive' in CiRelation._fields:
-            domain.append(('isactive', '=', True))
-        rows = CiRelation.search_read(domain, ['id_org'])
+        Value = self.env['myschool.settings.value']
+        domain = [
+            ('org_id', 'in', list(all_org_ids)),
+            ('is_active', '=', True),
+        ]
+        rows = Value.search_read(domain, ['org_id'])
         counts = {}
         for r in rows:
-            org_field = r.get('id_org')
+            org_field = r.get('org_id')
             if org_field:
                 org_id = org_field[0] if isinstance(org_field, (list, tuple)) else org_field
                 counts[org_id] = counts.get(org_id, 0) + 1
@@ -873,45 +874,51 @@ class ObjectBrowser(models.TransientModel):
 
     @api.model
     def get_ci_relations_for_org(self, org_id):
-        """Get all active CI relations for an organization."""
-        if 'myschool.ci.relation' not in self.env:
+        """Get all active direct Settings Values for an organization.
+
+        Returns dicts in the legacy shape (id/name/scope/value/value_type/
+        description) zodat de bestaande OWL slide-over-template ongewijzigd
+        blijft werken. Geërfde + globale waarden worden NIET getoond — die
+        zijn via SettingsItem.get(key, org=...) te bevragen.
+        """
+        if 'myschool.settings.value' not in self.env:
             return []
-        
-        CiRelation = self.env['myschool.ci.relation']
-        
-        relations = CiRelation.search([
-            ('id_org', '=', org_id),
-            ('isactive', '=', True)
+
+        Value = self.env['myschool.settings.value']
+        values = Value.search([
+            ('org_id', '=', org_id),
+            ('is_active', '=', True),
         ])
-        
+
         result = []
-        for rel in relations:
-            ci = rel.id_ci
-            if ci:
-                # Determine value type and get value
+        for v in values:
+            si = v.settings_item_id
+            if not si:
+                continue
+            # Encrypted values toon ik gemaskeerd zodat de slide-over
+            # niet per ongeluk credentials lekt.
+            if si.is_encrypted:
+                value = '••••••••'
+            elif si.value_type == 'string':
+                value = v.string_value or ''
+            elif si.value_type == 'integer':
+                value = str(v.integer_value or 0)
+            elif si.value_type == 'boolean':
+                value = 'Yes' if v.boolean_value else 'No'
+            else:
                 value = ''
-                value_type = 'string'
-                if ci.string_value:
-                    value = ci.string_value
-                    value_type = 'string'
-                elif ci.integer_value:
-                    value = str(ci.integer_value)
-                    value_type = 'integer'
-                elif ci.boolean_value is not None:
-                    value = 'Yes' if ci.boolean_value else 'No'
-                    value_type = 'boolean'
-                
-                result.append({
-                    'id': rel.id,
-                    'ci_id': ci.id,
-                    'name': ci.name,
-                    'scope': ci.scope or 'global',
-                    'type': ci.type or 'config',
-                    'value': value,
-                    'value_type': value_type,
-                    'description': ci.description or '',
-                })
-        
+
+            result.append({
+                'id': v.id,
+                'ci_id': si.id,
+                'name': si.key,
+                'scope': si.scope_kind,
+                'type': si.category,
+                'value': value,
+                'value_type': si.value_type,
+                'description': si.description or '',
+            })
+
         return result
 
     @api.model

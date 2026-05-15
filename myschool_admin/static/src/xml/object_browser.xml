@@ -118,7 +118,7 @@
     </t>
 
     <!-- ========================================================
-         Slide-over details panel (Info + Configuration tabs)
+         Slide-over details panel (Info + Settings tabs)
          Triggered by double-click on a member row, or by the
          "Details" button in the members header for the current org.
          ======================================================== -->
@@ -195,7 +195,7 @@
                     <t t-if="hasConfigTab">
                         <button t-att-class="'ob-slideover-tab' + (state.tab === 'config' ? ' ob-slideover-tab-active' : '')"
                                 t-on-click="() => this.setTab('config')">
-                            <i class="fa fa-sliders"/> Configuration
+                            <i class="fa fa-sliders"/> Settings
                             <t t-if="ciCount">
                                 <span class="ob-slideover-tab-count"><t t-esc="ciCount"/></span>
                             </t>
@@ -291,7 +291,7 @@
                         <t t-if="state.ciLoading">
                             <div class="ob-members-loading">
                                 <i class="fa fa-spinner fa-spin"/>
-                                <span>Configuration loading…</span>
+                                <span>Settings loading…</span>
                             </div>
                         </t>
                         <t t-elif="ciRelations.length">
@@ -768,10 +768,10 @@
                         </t>
                     </div>
 
-                    <!-- Configuration Items Table -->
+                    <!-- Settings Items Table -->
                     <t t-if="isOrgLike">
                         <t t-if="props.node.ciRelations and props.node.ciRelations.length">
-                            <div class="ob-section-title">Configuration Items</div>
+                            <div class="ob-section-title">Settings Items</div>
                             <table class="ob-ci-table">
                                 <thead>
                                     <tr>
@@ -802,7 +802,7 @@
                         </t>
                         <t t-elif="props.node.ci_count">
                             <div class="ob-info-card">
-                                <div class="ob-info-label">Config Items</div>
+                                <div class="ob-info-label">Settings Items</div>
                                 <div class="ob-info-value">
                                     <t t-esc="props.node.ci_count"/>
                                     <button class="ob-btn ob-btn-sm" style="margin-left: 8px;" t-on-click="onConfigurationClick">

@@ -67,10 +67,10 @@ class DataExchange(models.TransientModel):
     include_proprelations = fields.Boolean(
         string='Include proprelations (ORG-TREE, BRSO, SR-BR)',
         default=True)
-    include_config_items = fields.Boolean(
-        string='Include config items', default=True)
-    include_ci_relations = fields.Boolean(
-        string='Include CI-relations', default=True)
+    include_settings_items = fields.Boolean(
+        string='Include Settings Items (catalogus)', default=True)
+    include_settings_values = fields.Boolean(
+        string='Include Settings Values (waarden)', default=True)
     include_betask_types = fields.Boolean(
         string='Include betask types', default=True)
     include_betasks = fields.Boolean(
@@ -169,10 +169,10 @@ class DataExchange(models.TransientModel):
             out['periods'] = self._export_periods()
         if self.include_proprelations:
             out['proprelations'] = self._export_proprelations(scope_ids)
-        if self.include_config_items:
-            out['config_items'] = self._export_config_items(scope_ids)
-        if self.include_ci_relations:
-            out['ci_relations'] = self._export_ci_relations()
+        if self.include_settings_items:
+            out['settings_items'] = self._export_settings_items()
+        if self.include_settings_values:
+            out['settings_values'] = self._export_settings_values(scope_ids)
         if self.include_betask_types:
             out['betask_types'] = self._export_betask_types()
         if self.include_betasks:
@@ -440,53 +440,52 @@ class DataExchange(models.TransientModel):
             result.append(entry)
         return result
 
-    def _export_config_items(self, scope_ids=None):
-        domain = [('is_encrypted', '=', False)]
-        # Scope filter: when set, only ship CIs explicitly bound to a
-        # scope-org via the org_id field. Global / module-scoped CIs
-        # are always shipped because they're not org-bound.
+    def _export_settings_items(self):
+        """Catalog definities — geen waarden, geen scope-filter (definities
+        zijn altijd globaal). Encrypted SI's worden wel meegenomen want
+        defaults bevatten geen secrets."""
+        records = self.env['myschool.settings.item'].search([])
+        return [{
+            'key': r.key,
+            'label': r.label,
+            'description': r.description or '',
+            'category': r.category,
+            'value_type': r.value_type,
+            'scope_kind': r.scope_kind,
+            'default_string': r.default_string or '',
+            'default_integer': r.default_integer,
+            'default_boolean': r.default_boolean,
+            'is_encrypted': r.is_encrypted,
+            'is_active': r.is_active,
+        } for r in records]
+
+    def _export_settings_values(self, scope_ids=None):
+        """Waarden export. Skipt encrypted SI's (credentials) en
+        per-person waarden (person-data is uitgesloten van export)."""
+        domain = [
+            ('person_id', '=', False),
+            ('settings_item_id.is_encrypted', '=', False),
+        ]
+        # Scope filter: alleen waarden voor specifieke orgs (+ globale).
         if scope_ids is not None:
             domain.append('|')
             domain.append(('org_id', 'in', list(scope_ids)))
             domain.append(('org_id', '=', False))
-        records = self.env['myschool.config.item'].search(domain)
-        result = []
-        for r in records:
-            result.append({
-                'name': r.name,
-                'scope': r.scope or 'global',
-                'type': r.type or 'config',
-                'string_value': r.string_value or '',
-                'integer_value': r.integer_value,
-                'boolean_value': r.boolean_value,
-                'description': r.description or '',
-                'is_active': r.is_active,
-            })
-        return result
-
-    def _export_ci_relations(self):
-        # Only export CI relations that don't link to persons (person data is excluded)
-        records = self.env['myschool.ci.relation'].search([
-            ('id_person', '=', False),
-            ('id_ci.is_encrypted', '=', False),
-        ])
+        records = self.env['myschool.settings.value'].search(domain)
         result = []
         for r in records:
             entry = {
-                'config_item_name': r.id_ci.name if r.id_ci else '',
-                'config_item_scope': r.id_ci.scope or 'global' if r.id_ci else 'global',
-                'isactive': r.isactive,
-                'automatic_sync': r.automatic_sync,
+                'settings_key': r.settings_item_id.key if r.settings_item_id else '',
+                'string_value': r.string_value or '',
+                'integer_value': r.integer_value,
+                'boolean_value': r.boolean_value,
+                'inherit_to_children': r.inherit_to_children,
+                'is_active': r.is_active,
             }
             # Use inst_nr + name_short for org references (inst_nr is NOT unique)
-            if r.id_org:
-                entry['org_inst_nr'] = r.id_org.inst_nr
-                entry['org_name_short'] = r.id_org.name_short
-            if r.id_role:
-                entry['role_name'] = r.id_role.name
-            if r.id_period:
-                entry['period_name'] = r.id_period.name
-                entry['period_name_in_sap'] = r.id_period.name_in_sap
+            if r.org_id:
+                entry['org_inst_nr'] = r.org_id.inst_nr
+                entry['org_name_short'] = r.org_id.name_short
             result.append(entry)
         return result
 
@@ -559,8 +558,8 @@ class DataExchange(models.TransientModel):
                 stats['period_types'] = sudo_self._import_period_types(data['period_types'], errors)
             if 'proprelation_types' in data:
                 stats['proprelation_types'] = sudo_self._import_proprelation_types(data['proprelation_types'], errors)
-        if self.include_config_items and 'config_items' in data:
-            stats['config_items'] = sudo_self._import_config_items(data['config_items'], errors)
+        if self.include_settings_items and 'settings_items' in data:
+            stats['settings_items'] = sudo_self._import_settings_items(data['settings_items'], errors)
         if self.include_orgs and 'orgs' in data:
             stats['orgs'] = sudo_self._import_orgs(data['orgs'], errors)
         if self.include_persongroups and 'persongroups' in data:
@@ -573,8 +572,8 @@ class DataExchange(models.TransientModel):
             stats['periods'] = sudo_self._import_periods(data['periods'], errors)
         if self.include_proprelations and 'proprelations' in data:
             stats['proprelations'] = sudo_self._import_proprelations(data['proprelations'], errors)
-        if self.include_ci_relations and 'ci_relations' in data:
-            stats['ci_relations'] = sudo_self._import_ci_relations(data['ci_relations'], errors)
+        if self.include_settings_values and 'settings_values' in data:
+            stats['settings_values'] = sudo_self._import_settings_values(data['settings_values'], errors)
         if self.include_betask_types and 'betask_types' in data:
             stats['betask_types'] = sudo_self._import_betask_types(data['betask_types'], errors)
         if self.include_betasks and 'betasks' in data:
@@ -630,25 +629,28 @@ class DataExchange(models.TransientModel):
         Model = self.env['myschool.proprelation.type']
         return self._upsert_by_name(Model, items, ['usage', 'is_active'], errors)
 
-    def _import_config_items(self, items, errors):
-        Model = self.env['myschool.config.item']
+    def _import_settings_items(self, items, errors):
+        """Import van SI-catalogus (definities). Idempotent — upsert op key."""
+        Model = self.env['myschool.settings.item']
         created = updated = skipped = 0
         for item in items:
-            name = item.get('name')
-            scope = item.get('scope') or 'global'
-            if not name:
+            key = item.get('key')
+            if not key:
                 skipped += 1
                 continue
             try:
-                existing = Model.search([('name', '=', name), ('scope', '=', scope)], limit=1)
+                existing = Model.search([('key', '=', key)], limit=1)
                 vals = {
-                    'name': name,
-                    'scope': scope,
-                    'type': item.get('type') or 'config',
-                    'string_value': item.get('string_value') or False,
-                    'integer_value': item.get('integer_value', 0),
-                    'boolean_value': item.get('boolean_value', False),
+                    'key': key,
+                    'label': item.get('label') or key,
                     'description': item.get('description') or False,
+                    'category': item.get('category') or 'general',
+                    'value_type': item.get('value_type') or 'string',
+                    'scope_kind': item.get('scope_kind') or 'global',
+                    'default_string': item.get('default_string') or False,
+                    'default_integer': item.get('default_integer', 0),
+                    'default_boolean': item.get('default_boolean', False),
+                    'is_encrypted': item.get('is_encrypted', False),
                     'is_active': item.get('is_active', True),
                 }
                 if existing:
@@ -659,7 +661,7 @@ class DataExchange(models.TransientModel):
                     created += 1
             except Exception as e:
                 self.env.cr.rollback()
-                errors.append(f"config_item '{name}': {e}")
+                errors.append(f"settings_item '{key}': {e}")
                 skipped += 1
         return (created, updated, skipped)
 
@@ -890,62 +892,70 @@ class DataExchange(models.TransientModel):
 
         return (created, updated, skipped)
 
-    def _import_ci_relations(self, items, errors):
-        CiRel = self.env['myschool.ci.relation']
-        CI = self.env['myschool.config.item']
+    def _import_settings_values(self, items, errors):
+        """Import van SI-waarden. Match op (settings_item, org). Person-
+        scoped waarden zijn nooit geëxporteerd, dus die hoeven we hier
+        niet te behandelen. Idempotent."""
+        Value = self.env['myschool.settings.value']
+        SI = self.env['myschool.settings.item']
         created = updated = skipped = 0
 
         for item in items:
-            ci_name = item.get('config_item_name', '')
-            ci_scope = item.get('config_item_scope') or 'global'
-            if not ci_name:
+            key = item.get('settings_key', '')
+            if not key:
                 skipped += 1
                 continue
 
             try:
-                ci = CI.search([('name', '=', ci_name), ('scope', '=', ci_scope)], limit=1)
-                if not ci:
-                    # Fallback: search by name only if scope didn't match
-                    ci = CI.search([('name', '=', ci_name)], limit=1)
-                if not ci:
-                    _logger.warning(f"[IMPORT] ConfigItem '{ci_name}' (scope={ci_scope}) not found, skipping")
-                    errors.append(f"ci_relation: ConfigItem '{ci_name}' not found")
+                si = SI.search([('key', '=', key)], limit=1)
+                if not si:
+                    _logger.warning(
+                        "[IMPORT] Settings Item '%s' not found, "
+                        "skipping value", key)
+                    errors.append(f"settings_value: SI '{key}' not found")
                     skipped += 1
                     continue
 
                 vals = {
-                    'id_ci': ci.id,
-                    'isactive': item.get('isactive', True),
-                    'automatic_sync': item.get('automatic_sync', False),
+                    'settings_item_id': si.id,
+                    'is_active': item.get('is_active', True),
+                    'inherit_to_children': item.get(
+                        'inherit_to_children', True),
                 }
-                match_domain = [('id_ci', '=', ci.id)]
+                if si.value_type == 'string':
+                    vals['string_value'] = item.get('string_value') or False
+                elif si.value_type == 'integer':
+                    vals['integer_value'] = item.get('integer_value', 0)
+                elif si.value_type == 'boolean':
+                    vals['boolean_value'] = item.get('boolean_value', False)
 
+                match_domain = [
+                    ('settings_item_id', '=', si.id),
+                    ('person_id', '=', False),
+                ]
                 if 'org_inst_nr' in item:
-                    org = self._resolve_org(item['org_inst_nr'], item.get('org_name_short'))
+                    org = self._resolve_org(
+                        item['org_inst_nr'], item.get('org_name_short'))
                     if org:
-                        vals['id_org'] = org.id
-                        match_domain.append(('id_org', '=', org.id))
-                if 'role_name' in item:
-                    role = self._resolve_role(item['role_name'])
-                    if role:
-                        vals['id_role'] = role.id
-                        match_domain.append(('id_role', '=', role.id))
-                if 'period_name' in item:
-                    period = self._resolve_period(item['period_name'])
-                    if period:
-                        vals['id_period'] = period.id
-                        match_domain.append(('id_period', '=', period.id))
+                        vals['org_id'] = org.id
+                        match_domain.append(('org_id', '=', org.id))
+                    else:
+                        # Org niet gevonden — skip; geen valse globale waarde
+                        skipped += 1
+                        continue
+                else:
+                    match_domain.append(('org_id', '=', False))
 
-                existing = CiRel.search(match_domain, limit=1)
+                existing = Value.search(match_domain, limit=1)
                 if existing:
                     existing.write(vals)
                     updated += 1
                 else:
-                    CiRel.create(vals)
+                    Value.create(vals)
                     created += 1
             except Exception as e:
                 self.env.cr.rollback()
-                errors.append(f"ci_relation '{ci_name}': {e}")
+                errors.append(f"settings_value '{key}': {e}")
                 skipped += 1
 
         return (created, updated, skipped)

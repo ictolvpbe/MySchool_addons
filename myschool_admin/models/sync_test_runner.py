@@ -1292,7 +1292,6 @@ class SyncTestSession(models.Model):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         OrgType = self.env['myschool.org.type']
-        ConfigItem = self.env['myschool.config.item']
         processor = self.env['myschool.betask.processor']
 
         ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)

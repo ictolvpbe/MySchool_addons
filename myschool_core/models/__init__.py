@@ -12,8 +12,10 @@ from . import period
 from . import proprelation_type
 from . import proprelation
 from . import proprelation_service
-from . import config_item
-from . import ci_relation
+# Settings Items — vervangt het oude config_item + ci_relation systeem
+# (verwijderd in fase 5 van de SI-rework).
+from . import settings_item
+from . import settings_value
 from . import field_template
 from . import betask_type
 from . import betask_type_service

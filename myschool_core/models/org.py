@@ -98,6 +98,71 @@ class Org(models.Model):
         string='Odoo Groups',
         help='Odoo res.groups that members of this org get added to. '
              'Only consulted when has_odoo_group is True.')
+
+    # SI-rework — directe per-org Settings Values voor deze org.
+    # Geërfde en globale waarden zitten hier niet in; gebruik
+    # SettingsItem.get(key, org=this_org) voor de effectieve waarde.
+    settings_value_ids = fields.One2many(
+        'myschool.settings.value', 'org_id',
+        string='Settings Values',
+        help='Per-org Settings Values die direct op deze org gezet zijn '
+             '(geen geërfde waarden). Voor de effectieve waarde inclusief '
+             'fall-back, gebruik SettingsItem.get(key, org=this).')
+
+    show_inherited_settings = fields.Boolean(
+        string='Toon ook geërfde waarden',
+        store=False, default=False,
+        help='Wanneer aangevinkt toont de Settings-tab niet alleen de '
+             "eigen per-org waarden maar ook de waarden die deze org "
+             'erft van ouder-orgs in de ORG-TREE (via '
+             'inherit_to_children=True op de ancestor-waarde).')
+
+    effective_settings_value_ids = fields.Many2many(
+        'myschool.settings.value',
+        compute='_compute_effective_settings_value_ids',
+        string='Effectieve Settings Values',
+        store=False,
+        help='Eigen waarden + geërfde waarden uit ORG-TREE ancestors. '
+             'Voor org-rijen wier org_id ≠ this is dit een geërfde waarde.')
+
+    @api.depends('settings_value_ids', 'settings_value_ids.is_active',
+                 'show_inherited_settings')
+    def _compute_effective_settings_value_ids(self):
+        """Verzamel eigen waarden + geërfde waarden via ORG-TREE walk.
+
+        Een SI waarvoor de org zelf een actieve waarde heeft, neemt
+        geen geërfde waarde meer over (eigen waarde wint). Voor de
+        anderen wandelt deze methode upward en pakt de eerste
+        ``inherit_to_children=True`` waarde die hij tegenkomt.
+        """
+        SettingsItem = self.env['myschool.settings.item']
+        Value = self.env['myschool.settings.value']
+        for rec in self:
+            own_active = rec.settings_value_ids.filtered('is_active')
+            if not rec.show_inherited_settings:
+                rec.effective_settings_value_ids = own_active
+                continue
+
+            covered_si_ids = {
+                v.settings_item_id.id for v in own_active}
+            collected_ids = set(own_active.ids)
+            is_self = True
+            for ancestor in SettingsItem._walk_org_ancestors(rec):
+                if is_self:
+                    is_self = False
+                    continue
+                ancestor_values = Value.search([
+                    ('org_id', '=', ancestor.id),
+                    ('is_active', '=', True),
+                    ('inherit_to_children', '=', True),
+                ])
+                for av in ancestor_values:
+                    si_id = av.settings_item_id.id
+                    if si_id and si_id not in covered_si_ids:
+                        covered_si_ids.add(si_id)
+                        collected_ids.add(av.id)
+            rec.effective_settings_value_ids = Value.browse(
+                list(collected_ids))
     ou_fqdn_internal = fields.Char(string='OU FQDN Intern')
     ou_fqdn_external = fields.Char(string='OU FQDN Extern')
     com_group_fqdn_internal = fields.Char(string='Com Groep FQDN Intern')
@@ -843,7 +908,7 @@ class Org(models.Model):
         self.ensure_one()
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
 
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
         if not org_tree_type:
@@ -888,9 +953,12 @@ class Org(models.Model):
 
         group_name = prefix + '-'.join(name_parts)
 
-        # Resolve OuForGroups for FQDN computation
-        ou_for_groups = ConfigItem.get_ci_value_by_org_and_name(
-            school_org.name_short, 'OuForGroups') if school_org else None
+        # Resolve OuForGroups for FQDN computation. SI-lookup gebruikt
+        # ORG-TREE inheritance — een waarde op de SCHOOLBOARD-ancestor
+        # erft automatisch naar deze school als die zelf geen override
+        # heeft.
+        ou_for_groups = SettingsItem.get(
+            'OuForGroups', org=school_org) if school_org else None
         ou_for_groups_lower = (ou_for_groups or '').lower()
 
         # The OU that holds groups sits *immediately under the SCHOOL*,
@@ -1042,7 +1110,7 @@ class Org(models.Model):
         OrgType = self.env['myschool.org.type']
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
 
         # Get ORG-TREE type
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
@@ -1136,8 +1204,14 @@ class Org(models.Model):
                 elif school_type and school_org.org_type_id.id != school_type.id:
                     _logger.warning(f'[CG-UPDATE]   school_org {school_org.name_short} is not of type SCHOOL')
 
-                # Step 3: Look up OuForClasses CI
-                ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')
+                # Step 3: Look up OuForClasses SI. Walk-from-school
+                # (step 2) blijft nodig omdat step 4 ci_lookup_org als
+                # parent gebruikt om child-orgs te zoeken — dat is een
+                # echte tree-traversal, geen SI-lookup. De SI-lookup
+                # zelf heeft die handmatige walk niet meer nodig: een
+                # OuForClasses-waarde op de SCHOOLBOARD-ancestor wordt
+                # automatisch overgeërfd door SettingsItem.get().
+                ou_value = SettingsItem.get('OuForClasses', org=ci_lookup_org)
                 _logger.info(f'[CG-UPDATE]   OuForClasses on {ci_lookup_org.name_short} -> {ou_value!r}')
 
                 # Step 4: Find the org with that name_short as a direct child of ci_lookup_org
@@ -1189,7 +1263,7 @@ class Org(models.Model):
             changes = []
             processor._populate_classgroup_ad_fields(
                 cg, parent_org, ci_lookup_org,
-                org_tree_type, ConfigItem, changes)
+                org_tree_type, changes)
             ad_updated += 1
 
         _logger.info(f'[CG-UPDATE] DONE: removed={removed}, created={success}, ad_updated={ad_updated}, skipped={skipped}')

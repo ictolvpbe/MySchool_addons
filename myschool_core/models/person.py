@@ -675,9 +675,14 @@ class Person(models.Model):
     @api.depends('deactivation_pending_since', 'deactivation_date')
     def _compute_lifecycle_due_dates(self):
         from datetime import timedelta
-        ConfigItem = self.env['myschool.config.item']
-        suspend_days = ConfigItem.get_int('EmployeeSuspendPeriod', 30)
-        delete_days = ConfigItem.get_int('EmployeeDeletePeriod', 30)
+        SettingsItem = self.env['myschool.settings.item']
+        # EmployeeSuspendPeriod / EmployeeDeletePeriod hebben scope_kind
+        # 'both' — per-org override is mogelijk, maar deze compute heeft
+        # geen org-context (de persoon kan tot meerdere orgs behoren).
+        # Default-gedrag: globale waarde, terugvallen op de
+        # catalogus-default uit settings_item_data.xml (30).
+        suspend_days = SettingsItem.get('EmployeeSuspendPeriod', default=30)
+        delete_days = SettingsItem.get('EmployeeDeletePeriod', default=30)
         for rec in self:
             if rec.deactivation_pending_since:
                 rec.account_deactivation_due_date = (

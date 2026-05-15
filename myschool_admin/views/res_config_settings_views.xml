@@ -120,18 +120,34 @@
                         </setting>
                     </block>
 
-                    <block title="Configuratie items" name="ms_core_config_items">
-                        <setting string="Config items"
-                                 help="Generieke configuratie-parameters (scope: global/local/module/org/user; type: config/status/setting/parameter/credential/api). Gebruikt door diverse services voor per-school overrides.">
-                            <button name="action_open_config_items"
-                                    type="object" icon="fa-cog"
-                                    string="Beheer Config items" class="btn-link"/>
+                    <!-- ==========================================================
+                         Settings Items (SI).
+                         ========================================================== -->
+                    <block title="Settings Items" name="ms_core_settings_items">
+                        <setting string="SI-catalogus"
+                                 help="Beheer de definities (sleutel, type, default, omschrijving, scope-kind: global/org/person, encrypted). De waardes voor org/person komen in de respectieve formulieren — niet hier.">
+                            <button name="action_open_settings_catalog"
+                                    type="object" icon="fa-book"
+                                    string="Open SI-catalogus" class="btn-link"/>
                         </setting>
-                        <setting string="CI-relaties"
-                                 help="Relaties tussen config-items (parent/child, depends-on, references) — voor het opbouwen van afgeleide settings.">
-                            <button name="action_open_ci_relations"
-                                    type="object" icon="fa-link"
-                                    string="Beheer CI-relaties" class="btn-link"/>
+                        <setting string="Per-org waarden"
+                                 help="Effectieve per-org SI-waarden zijn zichtbaar en bewerkbaar op het org-formulier zelf (tab 'Settings'). Deze knop opent de platte lijst voor admin-doeleinden.">
+                            <button name="action_open_settings_values_all"
+                                    type="object" icon="fa-list"
+                                    string="Toon alle SI-waarden (admin)" class="btn-link"/>
+                        </setting>
+                        <setting string="Globale Settings Items"
+                                 help="Centraal tabelbeheer van alle globale SI's (scope global of both). Per-org overrides van 'both'-SI's gebeuren op het org-formulier zelf (tab Settings).">
+                            <button name="action_open_settings_global"
+                                    type="object" icon="fa-sliders"
+                                    string="Open SI-beheer" class="btn-link"/>
+                        </setting>
+                        <setting string="Migreer vanaf legacy"
+                                 help="Eenmalige (idempotente) overzetting van legacy myschool.config.item + myschool.ci.relation naar de nieuwe SI-modellen. Veilig om meermaals te draaien.">
+                            <button name="%(myschool_admin.action_si_migrate_from_legacy)d"
+                                    type="action" icon="fa-magic"
+                                    string="Migreer vanaf legacy" class="btn-link"
+                                    confirm="Migreer alle legacy ConfigItem/CiRelation-records naar de nieuwe Settings Item / Settings Value modellen?"/>
                         </setting>
                     </block>
                 </app>

@@ -454,12 +454,10 @@ class LdapService(models.AbstractModel):
         if not school or not getattr(school, 'ou_fqdn_internal', ''):
             return None
 
-        ConfigItem = self.env.get('myschool.config.item')
-        if ConfigItem is None or not hasattr(
-                ConfigItem, 'get_ci_value_by_org_and_name'):
+        SettingsItem = self.env.get('myschool.settings.item')
+        if SettingsItem is None:
             return None
-        ou_for_groups = ConfigItem.get_ci_value_by_org_and_name(
-            school.name_short, 'OuForGroups')
+        ou_for_groups = SettingsItem.get('OuForGroups', org=school)
         if not ou_for_groups:
             return None
 

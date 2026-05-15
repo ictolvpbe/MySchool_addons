@@ -67,3 +67,23 @@ class ResConfigSettings(models.TransientModel):
 
     def action_open_ci_relations(self):
         return self.env.ref('myschool_admin.action_ci_relation').read()[0]
+
+    def action_open_settings_global(self):
+        """Open het beheer van Globale Settings Values.
+
+        Opent de list-action ``action_settings_value_global`` met
+        domain ``org_id=False, person_id=False`` zodat enkel echte
+        globale waarden getoond worden.
+        """
+        return self.env.ref(
+            'myschool_admin.action_settings_value_global').read()[0]
+
+    def action_open_settings_catalog(self):
+        """Open de Settings Items catalogus (definities)."""
+        return self.env.ref(
+            'myschool_admin.action_settings_item').read()[0]
+
+    def action_open_settings_values_all(self):
+        """Open de platte lijst van ALLE Settings Values (admin-tool)."""
+        return self.env.ref(
+            'myschool_admin.action_settings_value').read()[0]

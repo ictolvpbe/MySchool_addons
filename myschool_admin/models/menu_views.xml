@@ -158,28 +158,10 @@
               sequence="30"
               groups="action_server_update_all_proprelation_names"/>
 
-        <!-- Configuration Menu -->
-    <menuitem id="menu_myschool_config_item"
-              name="Configuration"
-              parent="menu_myschool_root"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- Config Item Menu -->
-    <menuitem id="menu_config_item"
-              name="Configuration Items"
-              parent="menu_myschool_config_item"
-              action="action_config_item"
-              sequence="10"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <!-- CI Relations Menu -->
-    <menuitem id="menu_ci_relation"
-              name="CI Relations"
-              parent="menu_myschool_config_item"
-              action="action_ci_relation"
-              sequence="20"
-              groups="myschool_core.group_myschool_core_admin"/>
+        <!-- Configuration menu's (legacy Config Items + CI Relations) zijn
+             verwijderd in fase 5 van de SI-rework. Settings Items beheer
+             gebeurt nu via Onderhoud → Herberekenen of vanuit MySchool
+             Instellingen (zie settings_item_views.xml). -->
 
    <!-- Events Menu -->
     <menuitem id="menu_sys_event_events"

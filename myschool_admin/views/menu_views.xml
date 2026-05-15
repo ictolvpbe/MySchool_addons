@@ -401,11 +401,29 @@
               sequence="40"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_update_ci_relation_names"
-              name="CI-relatienamen bijwerken"
+    <!-- "CI-relatienamen bijwerken" menu verwijderd in fase 5 — het
+         legacy myschool.ci.relation model bestaat niet meer. -->
+
+    <!-- SI-rework: catalogus + waarden + migratie. -->
+    <menuitem id="menu_si_catalog"
+              name="Settings Items — catalogus"
               parent="menu_maint_recompute"
-              action="action_update_all_ci_relation_names"
-              sequence="50"
+              action="action_settings_item"
+              sequence="52"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_si_values"
+              name="Settings Items — alle waarden"
+              parent="menu_maint_recompute"
+              action="action_settings_value"
+              sequence="53"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_si_migrate_from_legacy"
+              name="Settings Items — migreer vanaf legacy"
+              parent="menu_maint_recompute"
+              action="action_si_migrate_from_legacy"
+              sequence="55"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <menuitem id="menu_update_person_properties"

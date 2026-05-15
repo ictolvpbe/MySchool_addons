@@ -57,7 +57,8 @@
         #demo data
         'data/sequence.xml',
         'data/sys_event_data.xml',
-        'data/config_item_data.xml',
+        # Settings Items — catalogus (vervangt het oude config_item_data).
+        'data/settings_item_data.xml',
         #'data/users_data.xml',
         # 'data/ldap_task_types.xml',
         'data/cloud_task_types.xml',

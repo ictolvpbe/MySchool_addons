@@ -176,6 +176,60 @@
                             </group>
                         </page>
 
+                        <!-- Tab: Settings Items — per-org waarden.
+                             Default: alleen directe waarden voor deze org.
+                             Met checkbox "Toon ook geërfde waarden" worden
+                             waarden van ORG-TREE ancestors meegetoond (waar
+                             inherit_to_children=True). Bewerken kan enkel
+                             op directe waarden — geërfde rijen tonen de
+                             ouder-org in de kolom 'Org'. -->
+                        <page string="Settings" name="settings">
+                            <div class="alert alert-light border d-flex align-items-center" role="alert">
+                                <i class="fa fa-info-circle fa-lg me-2 text-info"/>
+                                <div>
+                                    Toont per-org SI-waarden. Zet
+                                    <em>Toon ook geërfde waarden</em> aan om
+                                    waarden te zien die deze org overerft
+                                    via de ORG-TREE; die zijn read-only —
+                                    bewerken doe je op de bron-org.
+                                </div>
+                            </div>
+                            <group>
+                                <field name="show_inherited_settings"
+                                       widget="boolean_toggle"/>
+                            </group>
+                            <field name="settings_value_ids"
+                                   invisible="show_inherited_settings"
+                                   context="{'default_org_id': id}">
+                                <list decoration-muted="not is_active">
+                                    <field name="settings_item_id"
+                                           options="{'no_create': True}"
+                                           string="Settings Item"/>
+                                    <field name="settings_key" optional="hide"/>
+                                    <field name="value_type" widget="badge" optional="show"/>
+                                    <field name="value_display" string="Waarde"/>
+                                    <field name="inherit_to_children" widget="boolean_toggle"/>
+                                    <field name="is_active" widget="boolean_toggle"/>
+                                </list>
+                            </field>
+                            <field name="effective_settings_value_ids"
+                                   invisible="not show_inherited_settings"
+                                   readonly="1">
+                                <list create="false" delete="false" edit="false"
+                                      decoration-muted="not is_active"
+                                      decoration-info="org_id and org_id != parent.id">
+                                    <field name="settings_item_id"
+                                           string="Settings Item"/>
+                                    <field name="settings_key" optional="hide"/>
+                                    <field name="value_type" widget="badge" optional="show"/>
+                                    <field name="value_display" string="Waarde"/>
+                                    <field name="org_id" string="Bron-org"/>
+                                    <field name="inherit_to_children" widget="boolean" optional="show"/>
+                                    <field name="is_active" widget="boolean"/>
+                                </list>
+                            </field>
+                        </page>
+
                         <!-- Tab: Members (only for PERSONGROUP) -->
                         <page string="Members" name="members"
                               invisible="org_type_id.name != 'PERSONGROUP'">

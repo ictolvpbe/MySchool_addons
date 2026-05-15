@@ -28,7 +28,6 @@
         'views/role_type_views.xml',
         'views/period_type_views.xml',
         'views/proprelation_type_views.xml',
-        'views/ci_relation_views.xml',
 
         # Views - Main models
         'views/org_views.xml',
@@ -37,7 +36,6 @@
         'views/role_views.xml',
         'views/period_views.xml',
         'views/proprelation_views.xml',
-        'views/config_item_views.xml',
         'views/betask_views.xml',
         'views/sys_event_views.xml',
         'views/sys_event_type_views.xml',
@@ -75,6 +73,11 @@
 
         # Wizards (must load before menus that reference wizard actions)
         'views/wizard_views.xml',
+
+        # Settings Items — admin views (catalog + values + acties).
+        # Must load BEFORE res_config_settings_views.xml (button refs)
+        # and BEFORE menu_views.xml (menu refs).
+        'views/settings_item_views.xml',
 
         # Settings — unified res.config.settings view (loaded BEFORE
         # menus so the "Instellingen" menu can resolve cross-module
