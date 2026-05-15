@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            Automatische SAP-sync (Informat).
+
+            Default uit (active=False) zodat deploys eerst manueel
+            gevalideerd worden via de wizard. Beheerder schakelt in
+            via Settings → Technical → Scheduled Actions.
+
+            Loopt 1x per dag om 02:00 (server-tijd) — overdag is een
+            sync ongewenst (Informat-side mutaties tijdens kantooruren
+            kunnen anders deels meegepakt worden).
+        -->
+        <record id="ir_cron_sap_sync_auto" model="ir.cron">
+            <field name="name">SAP-sync automatisch (Informat)</field>
+            <field name="model_id" ref="model_myschool_informat_service"/>
+            <field name="state">code</field>
+            <field name="code">model.execute_sync(trigger='cron')</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="nextcall" eval="(DateTime.now().replace(hour=2, minute=0, second=0) + relativedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')"/>
+            <field name="active" eval="False"/>
+        </record>
+
+        <!--
+            Opruimen van oude sync.run-records.
+            Runs in eindstatus (applied/cancelled/failed) ouder dan
+            90 dagen worden gearchiveerd. De gerelateerde sync.change-
+            records blijven beschikbaar via de archive-filter voor
+            audit-doeleinden.
+        -->
+        <record id="ir_cron_sap_sync_cleanup" model="ir.cron">
+            <field name="name">SAP-sync opruim (oude runs archiveren)</field>
+            <field name="model_id" ref="model_myschool_sap_sync_run"/>
+            <field name="state">code</field>
+            <field name="code">
+cutoff = fields.Datetime.now() - relativedelta(days=90)
+old = model.search([
+    ('state', 'in', ('applied', 'cancelled', 'failed')),
+    ('finished_at', '&lt;', cutoff),
+    ('active', '=', True),
+])
+if old:
+    old.write({'active': False})
+    log('SAP-SYNC opruim: %d run(s) gearchiveerd' % len(old))
+            </field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">weeks</field>
+            <field name="nextcall" eval="(DateTime.now() + relativedelta(weeks=1)).strftime('%Y-%m-%d %H:%M:%S')"/>
+            <field name="active" eval="True"/>
+        </record>
+
+    </data>
+</odoo>

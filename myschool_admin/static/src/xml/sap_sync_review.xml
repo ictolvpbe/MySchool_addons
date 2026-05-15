@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_admin.SapSyncReview" owl="1">
+        <div class="ssr-container">
+            <div class="ssr-page" t-if="state.overview">
+
+                <!-- ============================================ -->
+                <!-- HERO HEADER                                  -->
+                <!-- ============================================ -->
+                <div class="ssr-hero">
+                    <div class="ssr-hero-top">
+                        <div class="ssr-hero-text">
+                            <div class="ssr-hero-title">
+                                <div class="ssr-hero-icon">
+                                    <i class="fa fa-database"/>
+                                </div>
+                                <div>
+                                    <h2>
+                                        SAP-sync review —
+                                        <span t-esc="state.overview.name"/>
+                                    </h2>
+                                    <div class="ssr-hero-meta">
+                                        <span class="ssr-hero-pill">
+                                            <i class="fa fa-bolt"/>
+                                            <span t-esc="state.overview.trigger"/>
+                                        </span>
+                                        <span class="ssr-hero-pill"
+                                              t-esc="runStateLabel(state.overview.state)"/>
+                                        <span class="ssr-hero-meta-item">
+                                            <i class="fa fa-clock-o"/>
+                                            <span t-esc="state.overview.started_at"/>
+                                        </span>
+                                        <span class="ssr-hero-meta-item" t-if="state.overview.user">
+                                            <i class="fa fa-user"/>
+                                            <span t-esc="state.overview.user"/>
+                                        </span>
+                                        <span class="ssr-hero-meta-item" t-if="state.overview.inst_nrs">
+                                            <i class="fa fa-building-o"/>
+                                            <span t-esc="state.overview.inst_nrs"/>
+                                        </span>
+                                        <span class="ssr-hero-meta-item">
+                                            <i class="fa fa-list"/>
+                                            <span>
+                                                <strong t-esc="state.overview.total_changes"/>
+                                                wijziging<t t-if="state.overview.total_changes !== 1">en</t>
+                                            </span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="ssr-hero-actions">
+                            <button class="ssr-hero-btn ssr-hero-btn-ghost"
+                                    t-on-click="() => this._loadOverview()">
+                                <i class="fa fa-refresh"/> Herlaad
+                            </button>
+                            <button class="ssr-hero-btn ssr-hero-btn-ghost"
+                                    t-on-click="onCancelRun"
+                                    t-att-disabled="isRunDone">
+                                <i class="fa fa-times"/> Annuleer batch
+                            </button>
+                            <button class="ssr-hero-btn"
+                                    t-on-click="onApplyRun"
+                                    t-att-disabled="!canCommit">
+                                <i class="fa fa-check"/> Pas wijzigingen toe
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- BANNERS                                      -->
+                <!-- ============================================ -->
+                <div class="ssr-banner ssr-banner-warn"
+                     t-if="state.overview.threshold_breach">
+                    <div class="ssr-banner-icon">
+                        <i class="fa fa-exclamation-triangle"/>
+                    </div>
+                    <div class="ssr-banner-body">
+                        <strong>Drempel overschreden</strong>
+                        <pre t-esc="state.overview.threshold_breach_details"/>
+                    </div>
+                </div>
+
+                <div class="ssr-banner ssr-banner-error"
+                     t-if="state.overview.error_description">
+                    <div class="ssr-banner-icon">
+                        <i class="fa fa-times-circle"/>
+                    </div>
+                    <div class="ssr-banner-body">
+                        <strong>Fout tijdens analyse</strong>
+                        <pre t-esc="state.overview.error_description"/>
+                    </div>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- TYPE TABS                                    -->
+                <!-- ============================================ -->
+                <div class="ssr-tab-row" t-if="state.overview.types.length">
+                    <t t-foreach="state.overview.types" t-as="t" t-key="t.object_type">
+                        <button class="ssr-tab"
+                                t-att-class="(state.activeType === t.object_type ? 'ssr-tab-active ' : '') + 'ssr-tab-' + t.state_color"
+                                t-on-click="() => this.onSelectType(t.object_type)">
+                            <div class="ssr-tab-label">
+                                <i t-att-class="typeIcon(t.object_type)"/>
+                                <span t-esc="t.object_type"/>
+                            </div>
+                            <div class="ssr-tab-counts">
+                                <span class="ssr-tab-total" t-esc="t.total"/>
+                                <span class="ssr-tab-breakdown">
+                                    <span class="ssr-add">+<t t-esc="t.add"/></span>
+                                    <span class="ssr-upd">~<t t-esc="t.upd"/></span>
+                                    <span class="ssr-deact">−<t t-esc="t.deact"/></span>
+                                </span>
+                            </div>
+                            <div class="ssr-tab-meter">
+                                <div class="ssr-tab-meter-fill"
+                                     t-att-style="'width: ' + Math.min(t.pct, 100) + '%'"/>
+                            </div>
+                            <div class="ssr-tab-pct">
+                                <t t-esc="t.pct"/>% van <t t-esc="t.existing"/>
+                                <span t-if="t.threshold !== null and t.threshold !== undefined">
+                                    · drempel <t t-esc="t.threshold"/>%
+                                </span>
+                            </div>
+                        </button>
+                    </t>
+                </div>
+
+                <!-- ============================================ -->
+                <!-- CONTENT CARD                                 -->
+                <!-- ============================================ -->
+                <div class="ssr-card" t-if="state.overview.types.length">
+                    <div class="ssr-card-header">
+                        <div class="ssr-card-header-title">
+                            <i t-att-class="typeIcon(state.activeType)"/>
+                            <span t-esc="state.activeType"/>
+                            <span class="ssr-meta">— <t t-esc="state.changes.length"/> rij(en)</span>
+                        </div>
+                        <div class="ssr-card-header-actions">
+                            <select t-on-change="onChangeStateFilter">
+                                <option value="open" t-att-selected="state.stateFilter === 'open'">Open (te beslissen)</option>
+                                <option value="all" t-att-selected="state.stateFilter === 'all'">Alles</option>
+                                <option value="applied" t-att-selected="state.stateFilter === 'applied'">Toegepast</option>
+                                <option value="blocked" t-att-selected="state.stateFilter === 'blocked'">Geblokkeerd</option>
+                                <option value="review_later" t-att-selected="state.stateFilter === 'review_later'">Na te kijken</option>
+                            </select>
+                            <t t-if="state.selectedIds.size > 0 and !isRunDone">
+                                <div class="ssr-bulk-bar">
+                                    <span><span class="ssr-bulk-bar-count" t-esc="state.selectedIds.size"/> geselecteerd</span>
+                                </div>
+                                <button class="ssr-btn ssr-btn-success" t-on-click="onBulkApprove">
+                                    <i class="fa fa-check"/> Approve
+                                </button>
+                                <button class="ssr-btn ssr-btn-danger" t-on-click="onBulkBlock">
+                                    <i class="fa fa-ban"/> Block
+                                </button>
+                                <button class="ssr-btn ssr-btn-warning" t-on-click="onBulkReviewLater">
+                                    <i class="fa fa-clock-o"/> Na te kijken
+                                </button>
+                                <button class="ssr-btn ssr-btn-outline"
+                                        t-on-click="onBulkApplyNow"
+                                        title="Selectie nu uitvoeren (test-commit voor je de hele batch start)">
+                                    <i class="fa fa-bolt"/> Apply now
+                                </button>
+                            </t>
+                            <t t-if="state.selectedIds.size === 0 and !isRunDone">
+                                <button class="ssr-btn ssr-btn-outline"
+                                        t-on-click="onApproveRemaining">
+                                    <i class="fa fa-check-circle-o"/> Alle resterende goedkeuren
+                                </button>
+                            </t>
+                        </div>
+                    </div>
+
+                    <table class="ssr-table" t-if="state.changes.length > 0">
+                        <thead>
+                            <tr>
+                                <th class="ssr-col-select">
+                                    <input type="checkbox"
+                                           t-att-checked="isAllSelected()"
+                                           t-on-change="onToggleAll"/>
+                                </th>
+                                <th>Source</th>
+                                <th>Naam</th>
+                                <th class="ssr-col-action">Actie</th>
+                                <th>Diff</th>
+                                <th>Status</th>
+                                <th>Door</th>
+                                <th class="ssr-col-actions">Acties</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="state.changes" t-as="ch" t-key="ch.id">
+                                <tr t-att-class="'ssr-row ssr-row-' + ch.state">
+                                    <td>
+                                        <input type="checkbox"
+                                               t-att-checked="isSelected(ch.id)"
+                                               t-on-change="() => this.onToggleRow(ch.id)"/>
+                                    </td>
+                                    <td class="ssr-source"><t t-esc="ch.source_key"/></td>
+                                    <td><t t-esc="ch.display_name"/></td>
+                                    <td>
+                                        <span class="ssr-badge"
+                                              t-att-class="'ssr-action-' + ch.action.toLowerCase()"
+                                              t-esc="ch.action"/>
+                                    </td>
+                                    <td class="ssr-diff" t-att-title="ch.diff_summary"
+                                        t-esc="ch.diff_summary"/>
+                                    <td>
+                                        <span class="ssr-badge"
+                                              t-att-class="'ssr-state-' + ch.state"
+                                              t-esc="stateLabel(ch.state)"/>
+                                        <div class="ssr-state-reason"
+                                             t-if="ch.state_reason"
+                                             t-esc="ch.state_reason"/>
+                                    </td>
+                                    <td>
+                                        <span t-if="ch.reviewer" t-esc="ch.reviewer"/>
+                                        <span t-if="ch.reviewed_at" class="ssr-meta">
+                                            @<t t-esc="ch.reviewed_at"/>
+                                        </span>
+                                    </td>
+                                    <td class="ssr-col-actions">
+                                        <button class="ssr-icon-btn ssr-icon-btn-success"
+                                                title="Goedkeuren"
+                                                t-on-click="() => this.onApproveRow(ch.id)"
+                                                t-att-disabled="isRunDone">
+                                            <i class="fa fa-check"/>
+                                        </button>
+                                        <button class="ssr-icon-btn ssr-icon-btn-danger"
+                                                title="Blokkeren"
+                                                t-on-click="() => this.onBlockRow(ch.id)"
+                                                t-att-disabled="isRunDone">
+                                            <i class="fa fa-ban"/>
+                                        </button>
+                                        <button class="ssr-icon-btn ssr-icon-btn-warning"
+                                                title="Na te kijken"
+                                                t-on-click="() => this.onReviewLaterRow(ch.id)"
+                                                t-att-disabled="isRunDone">
+                                            <i class="fa fa-clock-o"/>
+                                        </button>
+                                        <button class="ssr-icon-btn ssr-icon-btn-apply"
+                                                title="Nu uitvoeren (test-commit voor je de hele batch start)"
+                                                t-on-click="() => this.onApplyRow(ch.id)"
+                                                t-att-disabled="!isRowApplyable(ch)">
+                                            <i class="fa fa-bolt"/>
+                                        </button>
+                                        <button class="ssr-icon-btn"
+                                                title="Detail"
+                                                t-on-click="() => this.onOpenDetail(ch.id)">
+                                            <i class="fa fa-search-plus"/>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+
+                    <div class="ssr-empty" t-if="state.changes.length === 0">
+                        <i class="fa fa-inbox"/>
+                        <div>Geen wijzigingen in deze categorie.</div>
+                    </div>
+                </div>
+
+                <!-- Geen mutaties at all -->
+                <div class="ssr-card" t-if="!state.overview.types.length">
+                    <div class="ssr-empty">
+                        <i class="fa fa-check-circle"/>
+                        <div>Geen geplande wijzigingen — de DB is in sync met Informat.</div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ============================================ -->
+            <!-- LOADING OVERLAY                              -->
+            <!-- ============================================ -->
+            <div class="ssr-loading" t-if="state.loading">
+                <i class="fa fa-spinner fa-spin"/>
+                <span>Bezig...</span>
+            </div>
+
+            <!-- ============================================ -->
+            <!-- DETAIL MODAL                                 -->
+            <!-- ============================================ -->
+            <div class="ssr-modal-overlay" t-if="state.detail"
+                 t-on-click="onCloseDetail">
+                <div class="ssr-modal" t-on-click.stop="">
+                    <div class="ssr-modal-header">
+                        <div class="ssr-modal-title">
+                            <span class="ssr-badge"
+                                  t-att-class="'ssr-action-' + state.detail.action.toLowerCase()"
+                                  t-esc="state.detail.action"/>
+                            <span t-esc="state.detail.object_type"/>
+                            <span>—</span>
+                            <span t-esc="state.detail.display_name"/>
+                            <span class="ssr-meta">(<t t-esc="state.detail.source_key"/>)</span>
+                        </div>
+                        <button class="ssr-btn" t-on-click="onCloseDetail">
+                            <i class="fa fa-times"/> Sluit
+                        </button>
+                    </div>
+                    <div class="ssr-modal-body">
+                        <div class="ssr-diff-side">
+                            <h4><i class="fa fa-database"/> Oud (DB)</h4>
+                            <pre t-esc="formatJson(state.detail.payload_old)"/>
+                        </div>
+                        <div class="ssr-diff-side">
+                            <h4><i class="fa fa-cloud-download"/> Nieuw (Informat)</h4>
+                            <pre t-esc="formatJson(state.detail.payload_new)"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </t>
+
+</templates>

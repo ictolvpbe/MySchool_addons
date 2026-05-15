@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!--
+            Alarm-mail voor de SAP-sync safeguard.
+            Wordt verstuurd door ``myschool.sap.sync.service._raise_safeguard_alarm``
+            wanneer een sync-run de drempel overschrijdt en op
+            'awaiting_approval' wacht.
+
+            De service zet de admin-recipients in ``email_values['email_to']``,
+            en geeft ``sap_sync_breach_details`` mee via de context.
+
+            Opmerking: Body is een CDATA-string (geen type="qweb") om de
+            Odoo 19 RelaxNG-validator te plezieren.
+        -->
+        <record id="email_template_sap_safeguard" model="mail.template">
+            <field name="name">SAP-sync safeguard alarm</field>
+            <field name="model_id" ref="model_myschool_sap_sync_run"/>
+            <field name="subject">SAP-sync vereist goedkeuring: drempel overschreden ({{ object.name }})</field>
+            <field name="email_from">{{ (object.user_id.email_formatted or user.email_formatted or '') }}</field>
+            <field name="auto_delete" eval="False"/>
+            <field name="body_html"><![CDATA[
+<div style="font-family: 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.5;">
+    <h2 style="color: #b94a48; margin-bottom: 4px;">SAP-sync wacht op goedkeuring</h2>
+    <p style="margin-top: 0;">De automatische sync vanuit Informat heeft de veiligheidsdrempel overschreden voor één of meerdere objecttypes.</p>
+
+    <table style="border-collapse: collapse; margin: 16px 0;">
+        <tr><td style="padding: 4px 12px; color: #666;">Run</td><td style="padding: 4px 12px;"><strong>{{ object.name }}</strong></td></tr>
+        <tr><td style="padding: 4px 12px; color: #666;">Trigger</td><td style="padding: 4px 12px;">{{ object.trigger }}</td></tr>
+        <tr><td style="padding: 4px 12px; color: #666;">Gestart</td><td style="padding: 4px 12px;">{{ object.started_at }}</td></tr>
+        <tr><td style="padding: 4px 12px; color: #666;">Aangevraagd door</td><td style="padding: 4px 12px;">{{ object.user_id.display_name or '—' }}</td></tr>
+    </table>
+
+    <h3 style="color: #b94a48; margin-bottom: 4px;">Drempel-overschrijdingen</h3>
+    <pre style="background: #fdf2f2; border: 1px solid #f5c6c6; padding: 12px; border-radius: 4px; white-space: pre-wrap;">{{ ctx.get('sap_sync_breach_details') or object.threshold_breach_details or '' }}</pre>
+
+    <p>De sync is opgeschort tot een beheerder de wijzigingen heeft nagekeken en goedgekeurd. Geen enkele wijziging is doorgevoerd in de database.</p>
+
+    <p>
+        <a href="/odoo/action-myschool_admin.action_sap_sync_run_list" style="background:#007d8c; color:#fff; padding:10px 16px; text-decoration:none; border-radius:4px; display:inline-block;">Open SAP-sync overzicht</a>
+    </p>
+
+    <p style="color: #888; font-size: 12px; margin-top: 24px;">
+        Deze melding is automatisch verzonden door MySchool. Pas de drempels aan via <em>Instellingen → Informat Service Configuration → Veiligheid</em>.
+    </p>
+</div>
+            ]]></field>
+        </record>
+    </data>
+</odoo>
