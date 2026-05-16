@@ -1844,13 +1844,36 @@ class ObjectBrowser(models.TransientModel):
         try:
             api = gsvc._get_directory_service(config)
             if kind == 'ou':
-                resp = api.users().list(
-                    customer=customer,
-                    query=f"orgUnitPath='{identifier}'",
-                    maxResults=500).execute()
-                users = resp.get('users', []) or []
-                members = [self._cloud_user_to_dict(u, include_attrs=False)
-                           for u in users]
+                # Google's ``orgUnitPath='/foo'``-query is RECURSIEF —
+                # geeft ook users uit sub-OUs terug. We willen alleen
+                # de directe leden; filter client-side op exact-match
+                # van orgUnitPath. Paginate door alle results.
+                exact_path = (identifier or '').rstrip('/')
+                if not exact_path:
+                    exact_path = '/'
+                users = []
+                page_token = None
+                while True:
+                    resp = api.users().list(
+                        customer=customer,
+                        query=f"orgUnitPath='{identifier}'",
+                        maxResults=500,
+                        pageToken=page_token).execute()
+                    users.extend(resp.get('users', []) or [])
+                    page_token = resp.get('nextPageToken')
+                    if not page_token:
+                        break
+                members = []
+                for u in users:
+                    # Strikte vergelijking. ``orgUnitPath`` van de user
+                    # is altijd absolute (begint met '/') en zonder
+                    # trailing slash.
+                    user_path = (u.get('orgUnitPath') or '').rstrip('/')
+                    if not user_path:
+                        user_path = '/'
+                    if user_path == exact_path:
+                        members.append(self._cloud_user_to_dict(
+                            u, include_attrs=False))
                 members.sort(key=lambda m: (m.get('cn') or '').lower())
                 return {'error': None, 'members': members}
             if kind == 'group':
