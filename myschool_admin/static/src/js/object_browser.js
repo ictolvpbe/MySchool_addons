@@ -2242,6 +2242,15 @@ export class ObjectBrowserClient extends Component {
             (m.path || '').toLowerCase().includes(f));
     }
 
+    cloudHasChildren(node) {
+        if (!node) return false;
+        const key = (node.path || '').toLowerCase();
+        if (key in this.state.cloudChildren) {
+            return (this.state.cloudChildren[key] || []).length > 0;
+        }
+        return !!node.has_children;
+    }
+
     get flatCloudNodes() {
         const out = [];
         const visit = (paths, depth) => {

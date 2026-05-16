@@ -1798,33 +1798,27 @@ class ObjectBrowser(models.TransientModel):
                     customerId=customer,
                     orgUnitPath=target_path.lstrip('/')).execute()
                 node = self._cloud_ou_to_dict(ou, include_attrs=True)
-            # Direct child OUs onder dit pad
+            # Direct child OUs onder dit pad. Users verschijnen NIET
+            # in de tree (zelfde gedrag als AD-browser) — die zien we
+            # in de members-pane wanneer een OU geselecteerd is.
             resp = api.orgunits().list(
                 customerId=customer,
                 orgUnitPath=target_path,
                 type='children').execute()
             child_ous = resp.get('organizationUnits', []) or []
-            # Users direct in dit pad (geen recursie)
-            user_resp = api.users().list(
-                customer=customer,
-                query=f"orgUnitPath='{target_path}'",
-                maxResults=200).execute()
-            users = user_resp.get('users', []) or []
-
-            children = []
-            for ou in child_ous:
-                children.append(self._cloud_ou_to_dict(ou, include_attrs=False))
-            for u in users:
-                children.append(self._cloud_user_to_dict(u, include_attrs=False))
-            # OUs eerst, dan users; binnen elk alfabetisch
-            children.sort(key=lambda c: (
-                0 if c['kind'] == 'ou' else 1,
-                (c.get('cn') or '').lower()))
-            # has_children alleen voor OUs (één extra list-call zou
-            # expensive zijn; in plaats daarvan: altijd true voor OUs,
-            # tree expandt en toont 'no children' als ze niets hebben)
+            children = [self._cloud_ou_to_dict(ou, include_attrs=False)
+                        for ou in child_ous]
+            children.sort(key=lambda c: (c.get('cn') or '').lower())
+            # Altijd True voor OUs — een per-child orgunits.list-probe
+            # zou een aparte API-call per child kosten. Bij expand
+            # detecteren we 0 children client-side en tonen "no
+            # children".
             for c in children:
-                c['has_children'] = (c['kind'] == 'ou')
+                c['has_children'] = True
+            # De node zelf krijgt ook has_children — defensief tegen
+            # cache-overwrite na refetch (zelfde patroon als AD).
+            if node and node.get('kind') == 'ou':
+                node['has_children'] = bool(children)
             return {'error': None, 'node': node, 'children': children}
         except Exception as e:
             _logger.exception('[CLOUD-BROWSE] failed for path=%s', target_path)

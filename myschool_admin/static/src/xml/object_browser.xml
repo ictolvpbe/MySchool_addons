@@ -1810,7 +1810,7 @@
                                      t-att-class="state.cloudSelectedPath === row.node.path ? 'ob-ad-tree-row-selected' : ''"
                                      t-att-style="'padding-left: ' + (row.depth * 16) + 'px'"
                                      t-on-click="() => this.onCloudSelectNode(row.node.path)">
-                                    <t t-if="row.node.kind === 'ou' and row.node.has_children">
+                                    <t t-if="row.node.kind === 'ou' and cloudHasChildren(row.node)">
                                         <i t-att-class="'fa fa-' + (state.cloudExpanded[row.node.path.toLowerCase()] ? 'caret-down' : 'caret-right') + ' ob-ad-tree-toggle'"
                                            t-on-click.stop="() => this.onCloudToggleExpand(row.node.path)"/>
                                     </t>
