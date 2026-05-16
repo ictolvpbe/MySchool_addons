@@ -2359,3 +2359,30 @@
     font-weight: 600;
     color: var(--ob-muted, #6c757d);
 }
+
+/* ===== AD-browser Fase I4: inline-edit ===== */
+.ob-ad-attr-edit-col {
+    width: 60px;
+    text-align: right;
+    white-space: nowrap;
+}
+.ob-ad-edit-input {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--ob-primary, #0d6efd);
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: inherit;
+}
+.ob-icon-btn-success {
+    color: var(--ob-success, #198754);
+}
+.ob-icon-btn-success:hover {
+    background: var(--ob-success-bg, #d1e7dd);
+}
+.ob-icon-btn-danger {
+    color: var(--ob-danger, #dc3545);
+}
+.ob-icon-btn-danger:hover {
+    background: var(--ob-danger-bg, #f8d7da);
+}

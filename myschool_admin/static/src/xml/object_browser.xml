@@ -1552,14 +1552,49 @@
                                     <table class="ob-ad-attr-table"
                                            t-if="state.adSlideOverNode.attrs">
                                         <thead>
-                                            <tr><th>Attribuut</th><th>Waarde</th></tr>
+                                            <tr><th>Attribuut</th><th>Waarde</th><th class="ob-ad-attr-edit-col"/></tr>
                                         </thead>
                                         <tbody>
                                             <t t-foreach="Object.entries(state.adSlideOverNode.attrs).sort()"
                                                t-as="row" t-key="row[0]">
                                                 <tr t-if="row[1]">
                                                     <td><code><t t-esc="row[0]"/></code></td>
-                                                    <td><pre class="ob-ad-attr-value"><t t-esc="row[1]"/></pre></td>
+                                                    <td>
+                                                        <t t-if="state.adEditingAttr === row[0]">
+                                                            <input class="ob-ad-edit-input"
+                                                                   type="text"
+                                                                   t-att-value="state.adEditDraft"
+                                                                   t-att-disabled="state.adEditSaving"
+                                                                   t-on-input="onAdEditInput"
+                                                                   t-on-keydown="onAdEditKeydown"/>
+                                                        </t>
+                                                        <t t-else="">
+                                                            <pre class="ob-ad-attr-value"><t t-esc="row[1]"/></pre>
+                                                        </t>
+                                                    </td>
+                                                    <td class="ob-ad-attr-edit-col">
+                                                        <t t-if="state.adEditingAttr === row[0]">
+                                                            <button class="ob-icon-btn ob-icon-btn-success"
+                                                                    title="Opslaan (Enter)"
+                                                                    t-att-disabled="state.adEditSaving"
+                                                                    t-on-click="saveAdEdit">
+                                                                <i t-att-class="state.adEditSaving ? 'fa fa-spinner fa-spin' : 'fa fa-check'"/>
+                                                            </button>
+                                                            <button class="ob-icon-btn"
+                                                                    title="Annuleren (Esc)"
+                                                                    t-att-disabled="state.adEditSaving"
+                                                                    t-on-click="cancelAdEdit">
+                                                                <i class="fa fa-times"/>
+                                                            </button>
+                                                        </t>
+                                                        <t t-elif="isAdEditable(row[0])">
+                                                            <button class="ob-icon-btn"
+                                                                    title="Inline-edit dit attribuut"
+                                                                    t-on-click="() => this.startAdEdit(row[0], row[1])">
+                                                                <i class="fa fa-pencil"/>
+                                                            </button>
+                                                        </t>
+                                                    </td>
                                                 </tr>
                                             </t>
                                         </tbody>

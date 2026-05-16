@@ -1171,6 +1171,12 @@ export class ObjectBrowserClient extends Component {
             // verstuurd worden (Fase I3)
             adOpenSessions: [],
             adActiveSessionId: null,
+            // Inline-edit (Fase I4): editable-attrs whitelist + state
+            // van de actieve edit (één tegelijk).
+            adEditableAttrs: [],
+            adEditingAttr: null,
+            adEditDraft: '',
+            adEditSaving: false,
         });
         // Debounce-timer voor search-input
         this._adSearchTimer = null;
@@ -2089,9 +2095,15 @@ export class ObjectBrowserClient extends Component {
 
     async loadAdConfigs() {
         try {
-            const configs = await this.orm.call(
-                'myschool.object.browser', 'ad_get_ldap_configs', []);
+            // Fetch configs + editable-attrs-whitelist in parallel
+            const [configs, attrs] = await Promise.all([
+                this.orm.call('myschool.object.browser',
+                              'ad_get_ldap_configs', []),
+                this.orm.call('myschool.object.browser',
+                              'ad_inline_editable_attrs', []),
+            ]);
             this.state.adConfigs = configs;
+            this.state.adEditableAttrs = attrs || [];
             // Auto-select de eerste prod-config; anders gewoon de eerste.
             const prod = configs.find(c => c.environment === 'prod');
             const pick = prod || configs[0];
@@ -2354,6 +2366,79 @@ export class ObjectBrowserClient extends Component {
     closeAdSlideOver() {
         this.state.adSlideOverDn = null;
         this.state.adSlideOverNode = null;
+    }
+
+    isAdEditable(attrName) {
+        return this.state.adEditableAttrs.includes(attrName);
+    }
+
+    startAdEdit(attrName, currentValue) {
+        this.state.adEditingAttr = attrName;
+        this.state.adEditDraft = currentValue || '';
+    }
+
+    onAdEditInput(ev) {
+        this.state.adEditDraft = ev.target.value;
+    }
+
+    cancelAdEdit() {
+        this.state.adEditingAttr = null;
+        this.state.adEditDraft = '';
+    }
+
+    onAdEditKeydown(ev) {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            this.saveAdEdit();
+        } else if (ev.key === 'Escape') {
+            ev.preventDefault();
+            this.cancelAdEdit();
+        }
+    }
+
+    async saveAdEdit() {
+        if (!this.state.adEditingAttr || !this.state.adSlideOverNode) return;
+        const attr = this.state.adEditingAttr;
+        const value = this.state.adEditDraft;
+        const dn = this.state.adSlideOverNode.dn;
+        this.state.adEditSaving = true;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ad_modify_attribute',
+                [this.state.adActiveConfigId, dn, attr, value]);
+            if (result.error) {
+                this.notification.add(
+                    `Save mislukt: ${result.error}`, { type: 'danger' });
+                return;
+            }
+            // Update lokale slideover-attrs zonder herfetch
+            const node = this.state.adSlideOverNode;
+            if (node && node.attrs) {
+                // Lege waarde verwijdert het attribuut uit de tabel
+                if (value === '' || value == null) {
+                    delete node.attrs[attr];
+                } else {
+                    node.attrs[attr] = value;
+                }
+                // Update ook tree-cache als die deze node heeft
+                const treeCached = this.state.adTreeNodes[(dn || '').toLowerCase()];
+                if (treeCached && treeCached.attrs) {
+                    if (value === '' || value == null) {
+                        delete treeCached.attrs[attr];
+                    } else {
+                        treeCached.attrs[attr] = value;
+                    }
+                }
+            }
+            this.notification.add(`Attribuut "${attr}" opgeslagen.`,
+                                  { type: 'success' });
+            this.cancelAdEdit();
+        } catch (e) {
+            this.notification.add(
+                'Save mislukt: ' + (e?.message || e), { type: 'danger' });
+        } finally {
+            this.state.adEditSaving = false;
+        }
     }
 
     openMatchedDbPerson(personId) {

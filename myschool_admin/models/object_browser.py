@@ -1569,6 +1569,91 @@ class ObjectBrowser(models.TransientModel):
         members.sort(key=lambda m: (m['cn'] or '').lower())
         return {'error': None, 'members': members}
 
+    # Whitelist van attrs die via de inline-edit in de AD-browser
+    # gewijzigd mogen worden. Identity-attrs (sAMAccountName,
+    # userPrincipalName, employeeID), passwords en account-state
+    # (userAccountControl) staan EXPLICIET niet in de lijst —
+    # die gaan via de takeover-flow met snapshot/rollback.
+    _AD_INLINE_EDITABLE_ATTRS = frozenset({
+        'description',
+        'displayName',
+        'mail',
+        'telephoneNumber',
+        'title',
+        'department',
+        'company',
+        'physicalDeliveryOfficeName',
+        'streetAddress',
+        'l',           # city
+        'st',          # state/region
+        'postalCode',
+        'co',          # country (display)
+        'wWWHomePage',
+    })
+
+    @api.model
+    def ad_inline_editable_attrs(self):
+        """Whitelist exposeren naar de OWL frontend zodat de pencil-
+        icoontjes alleen op de juiste rows verschijnen."""
+        return sorted(self._AD_INLINE_EDITABLE_ATTRS)
+
+    @api.model
+    def ad_modify_attribute(self, ldap_config_id, dn, attribute, value):
+        """LDAP MODIFY_REPLACE op één attribuut. Whitelist-only.
+
+        Lege ``value`` ⇒ MODIFY_DELETE (verwijder het attribuut). Audit-
+        entry naar ir.logging zodat er een trail blijft.
+        """
+        if attribute not in self._AD_INLINE_EDITABLE_ATTRS:
+            return {'error': f'Attribuut "{attribute}" is niet inline-'
+                             f'editable. Whitelist: '
+                             f'{sorted(self._AD_INLINE_EDITABLE_ATTRS)}'}
+        LdapConfig = self.env['myschool.ldap.server.config']
+        config = LdapConfig.browse(ldap_config_id).exists()
+        if not config:
+            return {'error': 'LDAP-config niet gevonden.'}
+        ldap_service = self.env['myschool.ldap.service']
+        try:
+            ldap_service._check_ldap3_available()
+        except Exception as e:
+            return {'error': str(e)}
+        try:
+            from ldap3 import MODIFY_REPLACE, MODIFY_DELETE
+            with ldap_service._get_connection(config) as conn:
+                if value is None or str(value).strip() == '':
+                    conn.modify(dn, {attribute: [(MODIFY_DELETE, [])]})
+                else:
+                    conn.modify(dn, {attribute:
+                                     [(MODIFY_REPLACE, [str(value)])]})
+                result = conn.result or {}
+                # result=16 op DELETE = "no such attribute" → niet kritisch
+                if result.get('result') not in (0, 16):
+                    return {'error': (result.get('description') or
+                                      f'LDAP MODIFY mislukt: {result}')}
+        except Exception as e:
+            _logger.exception('[AD-EDIT] modify failed dn=%s attr=%s',
+                              dn, attribute)
+            return {'error': str(e)}
+
+        # Audit-trail
+        try:
+            self.env['ir.logging'].sudo().create({
+                'name': 'myschool_admin.ad_browser',
+                'type': 'server',
+                'level': 'INFO',
+                'message': (
+                    f'AD inline-edit by user_id={self.env.uid}: '
+                    f'dn={dn} attr={attribute} value={value!r} '
+                    f'(config={config.name}/{config.environment})'),
+                'path': 'object_browser',
+                'func': 'ad_modify_attribute',
+                'line': '0',
+            })
+        except Exception:
+            pass  # audit is best-effort
+
+        return {'success': True, 'attribute': attribute, 'value': value}
+
     @api.model
     def ad_list_open_sessions(self, ldap_config_id):
         """Sessies waar de admin findings aan kan toevoegen vanuit de

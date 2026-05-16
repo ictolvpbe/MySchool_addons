@@ -844,6 +844,49 @@ class TestAdTakeoverFaseA(TransactionCase):
         self.assertTrue(result.get('error'))
         self.assertIsNone(result.get('node'))
 
+    def test_ad_inline_editable_attrs_whitelist(self):
+        """Whitelist bevat veilige attrs; identity-attrs ontbreken."""
+        attrs = self.env['myschool.object.browser'].ad_inline_editable_attrs()
+        self.assertIn('description', attrs)
+        self.assertIn('displayName', attrs)
+        self.assertIn('telephoneNumber', attrs)
+        # Identity / security attrs mogen NIET in de whitelist staan
+        for forbidden in ('sAMAccountName', 'userPrincipalName',
+                          'employeeID', 'userAccountControl',
+                          'unicodePwd', 'member', 'memberOf'):
+            self.assertNotIn(forbidden, attrs,
+                f'{forbidden} mag niet in de inline-edit whitelist staan')
+
+    def test_ad_modify_attribute_refuses_unsafe_attr(self):
+        """Schrijven naar een niet-whitelisted attr raises error."""
+        result = self.env['myschool.object.browser'].ad_modify_attribute(
+            self.ldap_test.id,
+            'CN=jan,DC=test,DC=local',
+            'sAMAccountName', 'newlogin')
+        self.assertTrue(result.get('error'))
+        self.assertIn('niet inline-editable', result['error'])
+
+    def test_ad_modify_attribute_happy_path(self):
+        """Whitelisted attr → LDAP MODIFY met juiste args + audit."""
+        mock_conn = MagicMock()
+        mock_conn.result = {'result': 0, 'description': 'success'}
+        class _Ctx:
+            def __enter__(self_): return mock_conn
+            def __exit__(self_, *exc): return False
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with patch.object(ldap_cls, '_check_ldap3_available',
+                          return_value=True), \
+             patch.object(ldap_cls, '_get_connection',
+                          return_value=_Ctx()):
+            result = self.env['myschool.object.browser'].ad_modify_attribute(
+                self.ldap_test.id, 'CN=jan,DC=test,DC=local',
+                'description', 'Senior Teacher')
+        self.assertTrue(result.get('success'))
+        mock_conn.modify.assert_called_once()
+        call_args, _kw = mock_conn.modify.call_args
+        self.assertEqual(call_args[0], 'CN=jan,DC=test,DC=local')
+        self.assertIn('description', call_args[1])
+
     def test_ad_quick_action_creates_delete_after(self):
         """ad_create_finding_from_node maakt een DELETE_AFTER finding
         op een AD-user via gemockte LDAP."""
