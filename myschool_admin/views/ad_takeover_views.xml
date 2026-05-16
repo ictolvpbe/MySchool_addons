@@ -151,6 +151,111 @@
         </field>
     </record>
 
+    <!-- Diff-wizard form-view (slide-over) -->
+    <record id="view_ad_takeover_diff_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.diff.wizard.form</field>
+        <field name="model">myschool.ad.takeover.diff.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <h2>
+                            <field name="source" widget="badge"
+                                   decoration-info="source == 'ad'"
+                                   decoration-warning="source == 'cloud'"/>
+                            <field name="kind"/>:
+                            <field name="ad_cn" readonly="1"/>
+                        </h2>
+                        <div class="text-muted">
+                            <field name="ad_dn" readonly="1"/>
+                        </div>
+                    </div>
+
+                    <group>
+                        <group string="State + voorstel">
+                            <field name="state" widget="badge"
+                                   decoration-info="state in ('discovered', 'proposed')"
+                                   decoration-warning="state in ('approved', 'applied_pilot')"
+                                   decoration-success="state == 'done'"
+                                   decoration-danger="state == 'identity_conflict'"
+                                   decoration-muted="state == 'ignored'"/>
+                            <field name="proposal_kind" widget="badge"/>
+                            <field name="risk_level" widget="badge"
+                                   decoration-danger="risk_level == 'high'"
+                                   decoration-warning="risk_level == 'medium'"/>
+                            <field name="matched_person_id"/>
+                            <field name="sibling_ids" widget="many2many_tags"
+                                   string="Cross-source"
+                                   invisible="not sibling_ids"/>
+                        </group>
+                    </group>
+
+                    <group string="Diff — 3 kolommen">
+                        <group string="BRON (huidige staat)">
+                            <field name="bron_text" nolabel="1"
+                                   widget="text" readonly="1"/>
+                        </group>
+                        <group string="DB (myschool)">
+                            <field name="db_text" nolabel="1"
+                                   widget="text" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group string="ACTIE — wat dit voorstel gaat doen">
+                        <field name="actie_text" nolabel="1"
+                               widget="text" readonly="1"/>
+                    </group>
+
+                    <group string="⚠ Veiligheidsnotities"
+                           invisible="not risk_note">
+                        <field name="risk_note" nolabel="1"
+                               widget="text" readonly="1"/>
+                    </group>
+
+                    <group string="Snapshot (rollback)"
+                           invisible="not snapshot_preview">
+                        <field name="snapshot_preview" nolabel="1"
+                               widget="text" readonly="1"/>
+                    </group>
+                </sheet>
+
+                <footer>
+                    <button name="action_approve" type="object"
+                            string="Goedkeuren" class="btn-success"
+                            invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
+                    <button name="action_pilot" type="object"
+                            string="Pilot" class="btn-warning"
+                            invisible="state != 'approved' or proposal_kind not in ('stamp_id', 'rename', 'move', 'membership_add')"
+                            confirm="Pilot voert het voorstel uit en maakt een rollback-snapshot. Bevestig."/>
+                    <button name="action_verify" type="object"
+                            string="Verifieer pilot" class="btn-success"
+                            invisible="state != 'applied_pilot'"/>
+                    <button name="action_rollback" type="object"
+                            string="Rollback" class="btn-danger"
+                            invisible="state != 'applied_pilot'"
+                            confirm="Rollback voert de inverse bron-actie uit op basis van de snapshot."/>
+                    <button name="action_takeover" type="object"
+                            string="Voer direct uit"
+                            invisible="state in ('done', 'ignored', 'identity_conflict', 'applied_pilot')"/>
+                    <button name="action_resolve_conflict" type="object"
+                            string="Conflict negeren" class="btn-secondary"
+                            invisible="state != 'identity_conflict'"/>
+                    <button name="action_ignore" type="object"
+                            string="Negeer"
+                            invisible="state == 'ignored'"/>
+                    <button string="Sluiten" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ad_takeover_diff_wizard" model="ir.actions.act_window">
+        <field name="name">Voorstel-diff</field>
+        <field name="res_model">myschool.ad.takeover.diff.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
     <record id="action_ad_takeover_finding" model="ir.actions.act_window">
         <field name="name">AD-takeover findings</field>
         <field name="res_model">myschool.ad.takeover.finding</field>
@@ -347,6 +452,9 @@
                                            decoration-danger="risk_level == 'high'"
                                            optional="hide"/>
                                     <field name="notes" optional="show"/>
+                                    <button name="action_open_diff_wizard"
+                                            type="object" icon="fa-eye"
+                                            title="Diff-preview (BRON / DB / ACTIE)"/>
                                     <button name="action_approve"
                                             type="object" icon="fa-check"
                                             title="Goedkeuren"
@@ -406,6 +514,9 @@
                                            decoration-danger="risk_level == 'high'"
                                            optional="hide"/>
                                     <field name="notes" optional="show"/>
+                                    <button name="action_open_diff_wizard"
+                                            type="object" icon="fa-eye"
+                                            title="Diff-preview (BRON / DB / ACTIE)"/>
                                     <button name="action_approve"
                                             type="object" icon="fa-check"
                                             title="Goedkeuren"
@@ -482,6 +593,9 @@
                                            decoration-danger="risk_level == 'high'"
                                            optional="show"/>
                                     <field name="notes" optional="show"/>
+                                    <button name="action_open_diff_wizard"
+                                            type="object" icon="fa-eye"
+                                            title="Diff-preview (BRON / DB / ACTIE)"/>
                                     <button name="action_approve"
                                             type="object" icon="fa-check"
                                             title="Goedkeuren"

@@ -2038,6 +2038,24 @@ class AdTakeoverFinding(models.Model):
         })
         return True
 
+    def action_open_diff_wizard(self):
+        """Open the slide-over diff wizard for this finding. The wizard
+        shows BRON/DB/ACTIE in 3 columns plus a footer with the same
+        approve/pilot/verify/rollback/ignore actions as the row-level
+        buttons — useful when the row-buttons are cramped on mobile.
+        """
+        self.ensure_one()
+        wiz = self.env['myschool.ad.takeover.diff.wizard'].create({
+            'finding_id': self.id,
+        })
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'myschool.ad.takeover.diff.wizard',
+            'view_mode': 'form',
+            'res_id': wiz.id,
+            'target': 'new',
+        }
+
     def action_resolve_conflict(self):
         """Acknowledge an identity_conflict — admin elects to ignore it
         for the rest of the session. Genuine resolution still requires
