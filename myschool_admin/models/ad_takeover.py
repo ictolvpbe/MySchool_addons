@@ -1473,7 +1473,9 @@ class AdTakeoverSession(models.Model):
             ldap, prod_cfg, test_cfg, scope, all_dn_map)
 
         pwd_block = self._render_password_report(pwd_rows)
-        return ou_block + gr_block + usr_block + mem_block + pwd_block
+        gpo_block = self._render_gpo_audit(
+            getattr(self, '_cloned_gpo_audit', []))
+        return ou_block + gr_block + usr_block + mem_block + gpo_block + pwd_block
 
     # ---------- OUs ----------
 
@@ -1485,14 +1487,24 @@ class AdTakeoverSession(models.Model):
                             '(objectClass=organizationalUnit)',
                             search_scope='SUBTREE',
                             attributes=['distinguishedName', 'ou',
-                                        'description'])
-                prod_ous = [
-                    (self._entry_str(e, 'distinguishedName'),
-                     self._entry_str(e, 'ou'),
-                     self._entry_str(e, 'description'))
-                    for e in conn.entries
-                    if self._entry_str(e, 'distinguishedName')
-                ]
+                                        'description',
+                                        'gPLink', 'gPOptions'])
+                prod_ous = []
+                self._cloned_gpo_audit = []  # (dn, gpLink, gPOptions)
+                for e in conn.entries:
+                    dn = self._entry_str(e, 'distinguishedName')
+                    if not dn:
+                        continue
+                    prod_ous.append((
+                        dn,
+                        self._entry_str(e, 'ou'),
+                        self._entry_str(e, 'description'),
+                    ))
+                    gp_link = self._entry_str(e, 'gPLink')
+                    gp_options = self._entry_str(e, 'gPOptions')
+                    if gp_link:
+                        self._cloned_gpo_audit.append(
+                            (dn, gp_link, gp_options or '0'))
         except Exception as e:
             _logger.exception('[CLONE] prod OU read failed')
             return self._clone_warning(f'OUs prod-read mislukt: {e}'), []
@@ -1812,6 +1824,54 @@ class AdTakeoverSession(models.Model):
             return bool(conn.entries)
         except Exception:
             return False
+
+    def _render_gpo_audit(self, gpo_rows):
+        """GPO-audit rapport: read-only overzicht van OUs met
+        gPLink-attribuut. Test-omgeving krijgt GEEN GPOs (geen
+        replicatie); admin moet die manueel kopiëren via PowerShell of
+        Group Policy Management Console als nodig voor test."""
+        if not gpo_rows:
+            return (
+                '<h4>GPO-audit</h4>'
+                '<p class="text-muted">Geen GPOs gelinkt aan de '
+                'gescande OUs.</p>')
+        header = (
+            f'<h4>GPO-audit ({len(gpo_rows)} OUs met GPOs)</h4>'
+            '<div class="alert alert-info">'
+            'ℹ Test-omgeving krijgt <strong>geen GPOs gerepliceerd</strong>. '
+            'Dit overzicht laat zien welke prod-OUs GPOs hebben, zodat je '
+            'kunt beslissen of je ze manueel in test wil namaken (via '
+            'Group Policy Management Console).'
+            '</div>')
+        body_rows = []
+        for dn, gp_link, gp_options in gpo_rows:
+            # Parse gPLink: '[LDAP://CN={GUID},CN=Policies,...;flags]'
+            # extract de GUIDs en flag-getallen
+            links = []
+            for chunk in gp_link.split(']'):
+                chunk = chunk.strip().lstrip('[')
+                if not chunk:
+                    continue
+                if ';' in chunk:
+                    path, flags = chunk.rsplit(';', 1)
+                else:
+                    path, flags = chunk, ''
+                # Pak de GUID — eerste {...} substring
+                guid_start = path.find('{')
+                guid_end = path.find('}', guid_start) if guid_start >= 0 else -1
+                guid = path[guid_start:guid_end + 1] if guid_end >= 0 else '?'
+                links.append(f'{guid} (flags={flags})')
+            body_rows.append(
+                f'<tr><td><code>{dn}</code></td>'
+                f'<td><code>{gp_options}</code></td>'
+                f'<td>{"<br/>".join(links)}</td></tr>')
+        table = (
+            '<table class="table table-sm"><thead><tr>'
+            '<th>OU-DN</th><th>gPOptions</th><th>GPO-links</th>'
+            '</tr></thead><tbody>'
+            + ''.join(body_rows)
+            + '</tbody></table>')
+        return header + table
 
     def _render_password_report(self, pwd_rows):
         if not pwd_rows:
