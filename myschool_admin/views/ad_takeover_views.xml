@@ -121,6 +121,9 @@
                                    string="Voorstel klaar"/>
                             <field name="approved_count" readonly="1"
                                    string="Goedgekeurd"/>
+                            <field name="applied_pilot_count" readonly="1"
+                                   string="Pilot loopt"
+                                   invisible="applied_pilot_count == 0"/>
                             <field name="done_count" readonly="1"
                                    string="Voltooid"/>
                             <field name="conflict_count" readonly="1"
@@ -148,7 +151,7 @@
                                    context="{'default_session_id': id, 'default_kind': 'ou'}">
                                 <list editable="bottom"
                                       decoration-success="state == 'done'"
-                                      decoration-warning="state in ('proposed', 'approved')"
+                                      decoration-warning="state in ('proposed', 'approved', 'applied_pilot')"
                                       decoration-danger="state == 'identity_conflict'"
                                       decoration-muted="state == 'ignored'">
                                     <field name="source" widget="badge"
@@ -164,10 +167,10 @@
                                            optional="show"/>
                                     <field name="state" widget="badge"
                                            decoration-info="state in ('discovered', 'proposed')"
-                                           decoration-warning="state == 'approved'"
-                                           decoration-success="state == 'done'"
+                                           decoration-warning="state in ('approved', 'applied_pilot')"
+                                           decoration-success="state in ('done', 'verified')"
                                            decoration-danger="state == 'identity_conflict'"
-                                           decoration-muted="state == 'ignored'"/>
+                                           decoration-muted="state in ('ignored', 'rolled_back')"/>
                                     <field name="risk_level" widget="badge"
                                            decoration-info="risk_level == 'low'"
                                            decoration-warning="risk_level == 'medium'"
@@ -178,10 +181,23 @@
                                             type="object" icon="fa-check"
                                             title="Goedkeuren"
                                             invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
+                                    <button name="action_pilot"
+                                            type="object" icon="fa-flask"
+                                            title="Pilot — eerst snapshot, dan uitvoeren"
+                                            invisible="state != 'approved' or proposal_kind not in ('stamp_id', 'rename', 'move', 'membership_add')"/>
+                                    <button name="action_verify"
+                                            type="object" icon="fa-thumbs-up"
+                                            title="Verifieer pilot → done"
+                                            invisible="state != 'applied_pilot'"/>
+                                    <button name="action_rollback"
+                                            type="object" icon="fa-undo"
+                                            title="Rollback pilot"
+                                            invisible="state != 'applied_pilot'"
+                                            confirm="Rollback voert de inverse bron-actie uit op basis van de snapshot. Bevestig om door te gaan."/>
                                     <button name="action_takeover"
                                             type="object" icon="fa-bolt"
-                                            title="Voer voorstel NU uit"
-                                            invisible="state in ('done', 'ignored', 'identity_conflict')"/>
+                                            title="Voer voorstel direct uit (geen pilot)"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict', 'applied_pilot')"/>
                                     <button name="action_mark_ignore"
                                             type="object" icon="fa-times"
                                             title="Negeer"
@@ -195,7 +211,7 @@
                                    context="{'default_session_id': id, 'default_kind': 'group'}">
                                 <list editable="bottom"
                                       decoration-success="state == 'done'"
-                                      decoration-warning="state in ('proposed', 'approved')"
+                                      decoration-warning="state in ('proposed', 'approved', 'applied_pilot')"
                                       decoration-danger="state == 'identity_conflict' or (proposal_kind == 'delete_after' and state in ('proposed', 'approved'))"
                                       decoration-muted="state == 'ignored'">
                                     <field name="source" widget="badge"
@@ -210,10 +226,10 @@
                                            optional="show"/>
                                     <field name="state" widget="badge"
                                            decoration-info="state in ('discovered', 'proposed')"
-                                           decoration-warning="state == 'approved'"
-                                           decoration-success="state == 'done'"
+                                           decoration-warning="state in ('approved', 'applied_pilot')"
+                                           decoration-success="state in ('done', 'verified')"
                                            decoration-danger="state == 'identity_conflict'"
-                                           decoration-muted="state == 'ignored'"/>
+                                           decoration-muted="state in ('ignored', 'rolled_back')"/>
                                     <field name="risk_level" widget="badge"
                                            decoration-info="risk_level == 'low'"
                                            decoration-warning="risk_level == 'medium'"
@@ -224,10 +240,23 @@
                                             type="object" icon="fa-check"
                                             title="Goedkeuren"
                                             invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
+                                    <button name="action_pilot"
+                                            type="object" icon="fa-flask"
+                                            title="Pilot — eerst snapshot, dan uitvoeren"
+                                            invisible="state != 'approved' or proposal_kind not in ('stamp_id', 'rename', 'move', 'membership_add')"/>
+                                    <button name="action_verify"
+                                            type="object" icon="fa-thumbs-up"
+                                            title="Verifieer pilot → done"
+                                            invisible="state != 'applied_pilot'"/>
+                                    <button name="action_rollback"
+                                            type="object" icon="fa-undo"
+                                            title="Rollback pilot"
+                                            invisible="state != 'applied_pilot'"
+                                            confirm="Rollback voert de inverse bron-actie uit op basis van de snapshot. Bevestig om door te gaan."/>
                                     <button name="action_takeover"
                                             type="object" icon="fa-bolt"
-                                            title="Voer voorstel NU uit"
-                                            invisible="state in ('done', 'ignored', 'identity_conflict')"/>
+                                            title="Voer voorstel direct uit (geen pilot)"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict', 'applied_pilot')"/>
                                     <button name="action_mark_delete_after"
                                             type="object" icon="fa-trash"
                                             title="Markeer als 'verwijder na migratie'"
@@ -245,7 +274,7 @@
                                    context="{'default_session_id': id, 'default_kind': 'user'}">
                                 <list editable="bottom"
                                       decoration-success="state == 'done'"
-                                      decoration-warning="state in ('proposed', 'approved')"
+                                      decoration-warning="state in ('proposed', 'approved', 'applied_pilot')"
                                       decoration-danger="state == 'identity_conflict' or (proposal_kind == 'delete_after' and state in ('proposed', 'approved'))"
                                       decoration-muted="state == 'ignored'">
                                     <field name="source" widget="badge"
@@ -273,10 +302,10 @@
                                            optional="show"/>
                                     <field name="state" widget="badge"
                                            decoration-info="state in ('discovered', 'proposed')"
-                                           decoration-warning="state == 'approved'"
-                                           decoration-success="state == 'done'"
+                                           decoration-warning="state in ('approved', 'applied_pilot')"
+                                           decoration-success="state in ('done', 'verified')"
                                            decoration-danger="state == 'identity_conflict'"
-                                           decoration-muted="state == 'ignored'"/>
+                                           decoration-muted="state in ('ignored', 'rolled_back')"/>
                                     <field name="risk_level" widget="badge"
                                            decoration-info="risk_level == 'low'"
                                            decoration-warning="risk_level == 'medium'"
@@ -287,10 +316,23 @@
                                             type="object" icon="fa-check"
                                             title="Goedkeuren"
                                             invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
+                                    <button name="action_pilot"
+                                            type="object" icon="fa-flask"
+                                            title="Pilot — eerst snapshot, dan uitvoeren"
+                                            invisible="state != 'approved' or proposal_kind not in ('stamp_id', 'rename', 'move', 'membership_add')"/>
+                                    <button name="action_verify"
+                                            type="object" icon="fa-thumbs-up"
+                                            title="Verifieer pilot → done"
+                                            invisible="state != 'applied_pilot'"/>
+                                    <button name="action_rollback"
+                                            type="object" icon="fa-undo"
+                                            title="Rollback pilot"
+                                            invisible="state != 'applied_pilot'"
+                                            confirm="Rollback voert de inverse bron-actie uit op basis van de snapshot. Bevestig om door te gaan."/>
                                     <button name="action_takeover"
                                             type="object" icon="fa-bolt"
-                                            title="Voer voorstel NU uit"
-                                            invisible="state in ('done', 'ignored', 'identity_conflict')"/>
+                                            title="Voer voorstel direct uit (geen pilot)"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict', 'applied_pilot')"/>
                                     <button name="action_resolve_conflict"
                                             type="object" icon="fa-wrench"
                                             title="Conflict negeren"

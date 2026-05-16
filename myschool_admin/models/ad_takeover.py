@@ -239,6 +239,10 @@ class AdTakeoverSession(models.Model):
     discovered_count       = fields.Integer(compute='_compute_counts')
     proposed_count         = fields.Integer(compute='_compute_counts')
     approved_count         = fields.Integer(compute='_compute_counts')
+    applied_pilot_count    = fields.Integer(
+        compute='_compute_counts',
+        help='Voorstellen die piloot-uitgevoerd zijn maar nog niet '
+             'geverifieerd. Wachten op admin-actie (verify of rollback).')
     done_count             = fields.Integer(compute='_compute_counts')
     conflict_count         = fields.Integer(compute='_compute_counts')
     stamp_id_pending_count = fields.Integer(
@@ -320,6 +324,8 @@ class AdTakeoverSession(models.Model):
             rec.discovered_count = len(f.filtered(lambda x: x.state == 'discovered'))
             rec.proposed_count   = len(f.filtered(lambda x: x.state == 'proposed'))
             rec.approved_count   = len(f.filtered(lambda x: x.state == 'approved'))
+            rec.applied_pilot_count = len(
+                f.filtered(lambda x: x.state == 'applied_pilot'))
             rec.done_count       = len(f.filtered(lambda x: x.state == 'done'))
             rec.conflict_count   = len(f.filtered(
                 lambda x: x.state == 'identity_conflict'))
