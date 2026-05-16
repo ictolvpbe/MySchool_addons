@@ -102,49 +102,37 @@
                 <field name="sibling_ids"/>
                 <progressbar field="state" colors='{"discovered":"muted","proposed":"info","approved":"warning","applied_pilot":"warning","done":"success","identity_conflict":"danger","ignored":"muted"}'/>
                 <templates>
-                    <t t-name="kanban-box">
-                        <div t-attf-class="oe_kanban_card oe_kanban_global_click #{record.risk_level.raw_value == 'high' ? 'border-danger' : ''}">
-                            <div class="o_kanban_record_top">
-                                <div class="o_kanban_record_headings">
-                                    <strong class="o_kanban_record_title">
-                                        <i t-attf-class="fa #{record.kind.raw_value == 'ou' ? 'fa-folder' : (record.kind.raw_value == 'group' ? 'fa-users' : 'fa-user')}"/>
-                                        <field name="ad_cn"/>
-                                    </strong>
-                                </div>
-                                <span class="badge text-bg-info" t-if="record.source.raw_value == 'ad'">AD</span>
-                                <span class="badge text-bg-warning" t-if="record.source.raw_value == 'cloud'">Cloud</span>
-                                <span class="badge text-bg-success" t-if="record.source.raw_value == 'smartschool'">SS</span>
-                            </div>
-                            <div class="o_kanban_record_body">
-                                <div class="text-muted small text-truncate">
-                                    <field name="ad_dn"/>
-                                </div>
-                                <div class="mt-1" t-if="record.proposal_kind.raw_value">
-                                    <span class="badge text-bg-secondary">
-                                        <field name="proposal_kind"/>
-                                    </span>
-                                </div>
-                                <div class="mt-1" t-if="record.matched_person_id.raw_value">
-                                    <i class="fa fa-link"/>
-                                    <field name="matched_person_id"/>
-                                </div>
-                                <div class="mt-1 text-muted small" t-if="record.notes.raw_value">
-                                    <field name="notes"/>
-                                </div>
-                            </div>
-                            <div class="o_kanban_record_bottom">
-                                <div class="oe_kanban_bottom_left">
-                                    <span class="badge text-bg-danger" t-if="record.risk_level.raw_value == 'high'">
-                                        <i class="fa fa-exclamation-triangle"/> hoog
-                                    </span>
-                                    <span class="badge text-bg-warning" t-if="record.risk_level.raw_value == 'medium'">medium</span>
-                                </div>
-                                <div class="oe_kanban_bottom_right">
-                                    <span t-if="record.sap_ref.raw_value" class="text-muted small">
-                                        sap_ref=<field name="sap_ref"/>
-                                    </span>
-                                </div>
-                            </div>
+                    <t t-name="card">
+                        <div class="d-flex align-items-center mb-1">
+                            <i t-attf-class="fa #{record.kind.raw_value == 'ou' ? 'fa-folder' : (record.kind.raw_value == 'group' ? 'fa-users' : 'fa-user')} me-2"/>
+                            <field name="ad_cn" class="fw-bold"/>
+                            <span class="ms-auto badge text-bg-info" t-if="record.source.raw_value == 'ad'">AD</span>
+                            <span class="ms-auto badge text-bg-warning" t-if="record.source.raw_value == 'cloud'">Cloud</span>
+                            <span class="ms-auto badge text-bg-success" t-if="record.source.raw_value == 'smartschool'">SS</span>
+                        </div>
+                        <div class="text-muted small text-truncate" t-att-title="record.ad_dn.raw_value">
+                            <field name="ad_dn"/>
+                        </div>
+                        <div class="mt-1" t-if="record.proposal_kind.raw_value">
+                            <span class="badge text-bg-secondary">
+                                <field name="proposal_kind"/>
+                            </span>
+                        </div>
+                        <div class="mt-1" t-if="record.matched_person_id.raw_value">
+                            <i class="fa fa-link me-1"/>
+                            <field name="matched_person_id"/>
+                        </div>
+                        <div class="mt-1 text-muted small" t-if="record.notes.raw_value">
+                            <field name="notes"/>
+                        </div>
+                        <div class="d-flex justify-content-between mt-2">
+                            <span class="badge text-bg-danger" t-if="record.risk_level.raw_value == 'high'">
+                                <i class="fa fa-exclamation-triangle me-1"/>hoog
+                            </span>
+                            <span class="badge text-bg-warning" t-if="record.risk_level.raw_value == 'medium'">medium</span>
+                            <span t-if="record.sap_ref.raw_value" class="text-muted small ms-auto">
+                                sap_ref=<field name="sap_ref"/>
+                            </span>
                         </div>
                     </t>
                 </templates>
