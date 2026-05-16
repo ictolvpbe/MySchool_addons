@@ -808,6 +808,99 @@ class TestAdTakeoverFaseA(TransactionCase):
     # Fase D — diff wizard
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Fase E — bulk-after-pilot + audit-export
+    # ------------------------------------------------------------------
+
+    def test_bulk_after_pilot_refuses_without_done_precedent(self):
+        """Bulk-apply weigert als er geen state=done finding bestaat."""
+        self._make_finding(state='approved', proposal_kind='link_only')
+        with self.assertRaises(UserError):
+            self.session.action_bulk_apply_after_pilot()
+
+    def test_bulk_after_pilot_applies_matching_combos(self):
+        """Met één done(ad,link_only) als precedent worden alle
+        approved(ad,link_only) findings via action_takeover uitgevoerd."""
+        # Done-precedent
+        Finding = self.env['myschool.ad.takeover.finding']
+        Finding.create({
+            'session_id': self.session.id,
+            'kind': 'ou',
+            'ad_dn': 'OU=already-done,DC=test,DC=local',
+            'external_id': 'OU=already-done,DC=test,DC=local',
+            'source': 'ad',
+            'state': 'done',
+            'proposal_kind': 'link_only',
+        })
+        # Approved kandidaat met zelfde (source, proposal_kind)
+        approved = Finding.create({
+            'session_id': self.session.id,
+            'kind': 'ou',
+            'ad_dn': 'OU=ready,DC=test,DC=local',
+            'external_id': 'OU=ready,DC=test,DC=local',
+            'source': 'ad',
+            'state': 'approved',
+            'proposal_kind': 'link_only',
+            'proposed_parent_org_id': self.school.id,
+            'proposed_org_type_id': self.school.org_type_id.id,
+        })
+        self.session.action_bulk_apply_after_pilot()
+        # action_takeover voor OU link_only roept de manual-task-service
+        # aan via _takeover_ou. We verwachten state=done na succes.
+        self.assertEqual(approved.state, 'done')
+
+    def test_bulk_after_pilot_skips_unproven_combos(self):
+        """Approved(ad,rename) zonder rename-precedent blijft staan."""
+        Finding = self.env['myschool.ad.takeover.finding']
+        Finding.create({
+            'session_id': self.session.id,
+            'kind': 'ou',
+            'ad_dn': 'OU=lo-done,DC=test,DC=local',
+            'external_id': 'OU=lo-done,DC=test,DC=local',
+            'source': 'ad',
+            'state': 'done',
+            'proposal_kind': 'link_only',
+        })
+        approved_rename = Finding.create({
+            'session_id': self.session.id,
+            'kind': 'group',
+            'ad_dn': 'CN=Rn,OU=ts,DC=test,DC=local',
+            'external_id': 'CN=Rn,OU=ts,DC=test,DC=local',
+            'source': 'ad',
+            'state': 'approved',
+            'proposal_kind': 'rename',
+            'proposal_payload_json': json.dumps({'new_name': 'NewRn'}),
+        })
+        self.session.action_bulk_apply_after_pilot()
+        self.assertEqual(approved_rename.state, 'approved',
+            'rename moet ongewijzigd blijven want geen rename-precedent')
+
+    def test_audit_export_creates_csv_attachment(self):
+        """action_export_audit_report retourneert een ir.actions.act_url
+        wijzend naar een ir.attachment met CSV-inhoud."""
+        import base64
+        self._make_finding(
+            kind='user', proposal_kind='stamp_id', state='done',
+            sap_ref='AUDIT01', action_message='OK',
+        )
+        result = self.session.action_export_audit_report()
+        self.assertEqual(result.get('type'), 'ir.actions.act_url')
+        # URL bevat het attachment-id
+        url = result.get('url', '')
+        self.assertIn('/web/content/', url)
+        attachment_id = int(url.split('/web/content/')[1].split('?')[0])
+        att = self.env['ir.attachment'].browse(attachment_id)
+        self.assertTrue(att.exists())
+        self.assertEqual(att.mimetype, 'text/csv')
+        self.assertEqual(att.res_model, 'myschool.ad.takeover.session')
+        self.assertEqual(att.res_id, self.session.id)
+        # CSV-content moet de finding bevatten
+        csv_text = base64.b64decode(att.datas).decode('utf-8')
+        self.assertIn('AUDIT01', csv_text)
+        self.assertIn('stamp_id', csv_text)
+        self.assertIn('finding_id,source,kind', csv_text,
+                      'CSV-header moet aanwezig zijn')
+
     def test_diff_wizard_opens_with_finding(self):
         """action_open_diff_wizard creates a wizard pointing at the
         finding and returns an act_window action."""

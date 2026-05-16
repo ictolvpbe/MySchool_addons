@@ -1185,26 +1185,34 @@ class AdTakeoverSession(models.Model):
         approved_combos = set(
             (d.source, d.proposal_kind) for d in done)
 
-        candidates = f_all.filtered(
-            lambda x: x.state == 'approved'
-                      and (x.source, x.proposal_kind) in approved_combos)
-        if not candidates:
+        approved_all = f_all.filtered(lambda x: x.state == 'approved')
+        candidates = approved_all.filtered(
+            lambda x: (x.source, x.proposal_kind) in approved_combos)
+        unproven_combos = set(
+            (a.source, a.proposal_kind) for a in approved_all
+            if (a.source, a.proposal_kind) not in approved_combos)
+
+        if not approved_all:
             raise UserError(_(
-                'Geen approved findings die overeenkomen met een eerder '
-                'verified voorstel. Voeg findings toe in state=approved.'))
+                'Geen approved findings. Voeg findings toe in '
+                'state=approved (of approve voorstellen eerst).'))
+
+        if not candidates:
+            # Wel approved findings, maar geen één met een pilot-
+            # precedent. Niet hard falen — informatief melden zodat
+            # de admin weet waar nog een eerste pilot nodig is.
+            unproven_str = ', '.join(
+                f'{src}/{pk}' for src, pk in sorted(unproven_combos))
+            return self._notify(
+                _('Bulk-apply na pilot — niets uitgevoerd'),
+                _('Geen approved findings met pilot-precedent. Combinaties '
+                  'die nog een eerste pilot vergen: %s') % unproven_str,
+                kind='warning')
 
         # Sortering voor blanco-DB-vriendelijke volgorde (OUs eerst).
         kind_order = {'ou': 0, 'group': 1, 'user': 2}
         candidates = candidates.sorted(
             key=lambda r: (kind_order.get(r.kind, 99), r.ad_dn or ''))
-
-        # Welke combinaties zijn approved maar NIET door pilot bewezen?
-        # Die meldt deze actie expliciet aan de admin in de notificatie.
-        unproven_combos = set(
-            (a.source, a.proposal_kind) for a in
-            f_all.filtered(lambda x: x.state == 'approved'
-                                     and (x.source, x.proposal_kind)
-                                     not in approved_combos))
 
         ok = err = 0
         for f in candidates:
