@@ -809,6 +809,82 @@ class TestAdTakeoverFaseA(TransactionCase):
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
+    # Fase F — clone prod → test
+    # ------------------------------------------------------------------
+
+    def test_clone_target_must_be_test_env(self):
+        """clone_target_ldap_config_id moet environment=test hebben."""
+        # Bestaande ldap_test config heeft env=test → moet OK gaan
+        # via een prod-sessie. Maak eerst zo'n prod-sessie.
+        prod_cfg = self.env['myschool.ldap.server.config'].create({
+            'name': 'Prod for clone',
+            'environment': 'prod',
+            'server_url': 'ldap://prod.local',
+            'port': 389,
+            'base_dn': 'DC=prod,DC=local',
+            'bind_dn': 'CN=admin,DC=prod,DC=local',
+            'bind_password': 'dummy',
+            'active': False,
+        })
+        # Sessie met prod-target — moet falen op env-check
+        with self.assertRaises(ValidationError):
+            self.env['myschool.ad.takeover.session'].create({
+                'name': 'Reject target',
+                'environment': 'prod',
+                'ldap_config_id': prod_cfg.id,
+                'clone_target_ldap_config_id': prod_cfg.id,  # prod, niet test
+                'scope_org_id': self.school.id,
+            })
+
+    def test_clone_only_from_prod_session(self):
+        """clone_target velden alleen toegestaan op prod-sessies."""
+        with self.assertRaises(ValidationError):
+            self.env['myschool.ad.takeover.session'].create({
+                'name': 'Wrong env',
+                'environment': 'test',
+                'ldap_config_id': self.ldap_test.id,
+                'clone_target_ldap_config_id': self.ldap_test.id,
+                'scope_org_id': self.school.id,
+            })
+
+    def test_clone_action_refuses_test_session(self):
+        """action_clone_to_test op een test-sessie raises."""
+        with self.assertRaises(UserError):
+            self.session.action_clone_to_test()
+
+    def test_clone_dn_rewrite_basic(self):
+        """_clone_rewrite_ad_dn vervangt prod_base door test_base."""
+        cls = self.env['myschool.ad.takeover.session']
+        rewritten = cls._clone_rewrite_ad_dn(
+            'OU=foo,OU=bar,DC=olvp,DC=local',
+            'DC=olvp,DC=local',
+            'DC=lab,DC=olvp,DC=local')
+        self.assertEqual(rewritten,
+                         'OU=foo,OU=bar,DC=lab,DC=olvp,DC=local')
+
+    def test_clone_dn_rewrite_outside_base_returns_none(self):
+        """DN buiten prod_base wordt niet gerewriten."""
+        cls = self.env['myschool.ad.takeover.session']
+        result = cls._clone_rewrite_ad_dn(
+            'CN=stray,DC=otherdom,DC=local',
+            'DC=olvp,DC=local',
+            'DC=lab,DC=olvp,DC=local')
+        self.assertIsNone(result)
+
+    def test_clone_email_rewrite(self):
+        """_rewrite_email vervangt prod-domain door test-domain."""
+        cls = self.env['myschool.ad.takeover.session']
+        self.assertEqual(
+            cls._rewrite_email('jan@olvp.be', 'olvp.be', 'test.olvp.lab'),
+            'jan@test.olvp.lab')
+        # Wrong domain → None
+        self.assertIsNone(
+            cls._rewrite_email('jan@other.com', 'olvp.be', 'test.olvp.lab'))
+        # No @ → None
+        self.assertIsNone(
+            cls._rewrite_email('justaname', 'olvp.be', 'test.olvp.lab'))
+
+    # ------------------------------------------------------------------
     # Fase B2 — Smartschool scanner
     # ------------------------------------------------------------------
 

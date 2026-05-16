@@ -336,6 +336,11 @@
                             string="Audit-rapport (CSV)" class="btn-secondary"
                             icon="fa-download"
                             invisible="finding_count == 0"/>
+                    <button name="action_clone_to_test" type="object"
+                            string="Stage in test ⤵" class="btn-warning"
+                            icon="fa-copy"
+                            invisible="environment != 'prod' or (not clone_target_ldap_config_id and not clone_target_google_workspace_config_id)"
+                            confirm="Kopieert de prod-skeleton (OUs/groups/users/memberships) naar de test-omgeving. Bestaande test-objecten worden ongemoeid gelaten. Wachtwoorden zijn random + accounts disabled — niet voor productie-gebruik."/>
                     <field name="current_phase" widget="statusbar"
                            statusbar_visible="preflight,link,normalise,cleanup,done"/>
                     <field name="state" widget="statusbar" invisible="1"
@@ -382,6 +387,14 @@
                             <field name="role_filter_preflight" widget="radio"
                                    options="{'horizontal': true}"
                                    invisible="current_phase != 'preflight'"/>
+                            <field name="clone_target_ldap_config_id"
+                                   options="{'no_create': True}"
+                                   invisible="environment != 'prod'"
+                                   string="Clone-doel LDAP"/>
+                            <field name="clone_target_google_workspace_config_id"
+                                   options="{'no_create': True}"
+                                   invisible="environment != 'prod'"
+                                   string="Clone-doel Google"/>
                         </group>
                         <group string="Tellingen">
                             <field name="finding_count" readonly="1"/>
@@ -412,6 +425,13 @@
                            string="Pre-flight rapport">
                         <field name="preflight_report_at" readonly="1"/>
                         <field name="preflight_report_html" nolabel="1"
+                               readonly="1" widget="html"/>
+                    </group>
+
+                    <group invisible="not clone_report_html"
+                           string="Clone-rapport (Stage in test)">
+                        <field name="clone_report_at" readonly="1"/>
+                        <field name="clone_report_html" nolabel="1"
                                readonly="1" widget="html"/>
                     </group>
 
