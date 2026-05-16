@@ -1088,6 +1088,73 @@ class AdTakeoverSession(models.Model):
                             kind='success' if err == 0 else 'warning')
 
     # ------------------------------------------------------------------
+    # Fase E2 — audit-rapport export (CSV)
+    # ------------------------------------------------------------------
+
+    def action_export_audit_report(self):
+        """Genereert een CSV-rapport over deze sessie en retourneert
+        een download-action. Bewaard als ir.attachment zodat het
+        rapport later teruggevonden kan worden vanuit de attachments
+        van de session-record.
+        """
+        self.ensure_one()
+        import csv
+        import io
+        import base64
+
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+        writer.writerow([
+            'finding_id', 'source', 'kind', 'ad_dn', 'ad_cn', 'ad_mail',
+            'sap_ref', 'state', 'proposal_kind', 'risk_level',
+            'matched_person', 'matched_org',
+            'last_action_at', 'rollback_snapshot_at',
+            'action_message', 'conflict_reason', 'notes',
+        ])
+        for f in self.finding_ids.sorted(key=lambda x: (x.source, x.kind,
+                                                        x.ad_dn or '')):
+            writer.writerow([
+                f.id,
+                f.source or '',
+                f.kind or '',
+                f.ad_dn or '',
+                f.ad_cn or '',
+                f.ad_mail or '',
+                f.sap_ref or '',
+                f.state or '',
+                f.proposal_kind or '',
+                f.risk_level or '',
+                (f.matched_person_id.display_name
+                 if f.matched_person_id else ''),
+                (f.matched_org_id.display_name
+                 if f.matched_org_id else ''),
+                (f.last_action_at.isoformat() if f.last_action_at else ''),
+                (f.rollback_snapshot_at.isoformat()
+                 if f.rollback_snapshot_at else ''),
+                (f.action_message or '').replace('\n', ' | '),
+                (f.conflict_reason or '').replace('\n', ' | '),
+                (f.notes or '').replace('\n', ' | '),
+            ])
+
+        csv_bytes = buf.getvalue().encode('utf-8')
+        ts = fields.Datetime.now().strftime('%Y%m%d-%H%M%S')
+        safe_name = (self.name or 'sessie').replace('/', '_').replace(' ', '_')
+        filename = f'ad-takeover-{safe_name}-{ts}.csv'
+
+        attachment = self.env['ir.attachment'].create({
+            'name': filename,
+            'datas': base64.b64encode(csv_bytes),
+            'res_model': self._name,
+            'res_id': self.id,
+            'mimetype': 'text/csv',
+        })
+        return {
+            'type': 'ir.actions.act_url',
+            'url': f'/web/content/{attachment.id}?download=true',
+            'target': 'self',
+        }
+
+    # ------------------------------------------------------------------
     # Fase E1 — bulk-apply nadat 1 pilot OK is bevonden
     # ------------------------------------------------------------------
 

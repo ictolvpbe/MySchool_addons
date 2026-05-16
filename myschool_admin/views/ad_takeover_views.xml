@@ -343,6 +343,10 @@
                             icon="fa-rocket"
                             invisible="environment != 'test' or current_phase != 'done'"
                             confirm="Een nieuwe prod-sessie wordt aangemaakt. De prod-omgeving wordt gescand en alle test-voorstellen worden gekopieerd. Goedkeuring per voorstel blijft nodig in de nieuwe prod-sessie."/>
+                    <button name="action_export_audit_report" type="object"
+                            string="Audit-rapport (CSV)" class="btn-secondary"
+                            icon="fa-download"
+                            invisible="finding_count == 0"/>
                     <field name="current_phase" widget="statusbar"
                            statusbar_visible="preflight,link,normalise,cleanup,done"/>
                     <field name="state" widget="statusbar" invisible="1"
