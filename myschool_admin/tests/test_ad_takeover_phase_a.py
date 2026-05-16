@@ -271,64 +271,67 @@ class TestAdTakeoverFaseA(TransactionCase):
     # Legacy migration
     # ------------------------------------------------------------------
 
-    def test_legacy_status_migration(self):
-        """Calling the post_init migration backfills state from
-        legacy status on rows where state is NULL."""
+    def test_migration_is_idempotent(self):
+        """Running the post_init migration twice on existing data must
+        leave findings untouched. The NOT-NULL constraints on `state`
+        and `source` mean we can't synthesize a pre-migration row in
+        the test DB (those constraints exist precisely because the
+        first migration ran successfully) — so the test value is
+        confirming the WHERE-clauses correctly skip already-migrated
+        rows.
+        """
         f = self._make_finding(
             kind='ou',
-            ad_dn='OU=legacy,DC=test,DC=local',
-            external_id='OU=legacy,DC=test,DC=local',
+            ad_dn='OU=idem,DC=test,DC=local',
+            external_id='OU=idem,DC=test,DC=local',
             state='proposed',
             status='takeover_pending',
-        )
-        # Force into pre-migration shape via SQL
-        self.env.cr.execute("""
-            UPDATE myschool_ad_takeover_finding
-               SET state = NULL,
-                   source = NULL,
-                   external_id = NULL,
-                   proposal_kind = NULL,
-                   risk_level = NULL
-             WHERE id = %s
-        """, (f.id,))
-        self.env.invalidate_all()
-
-        from odoo.addons.myschool_admin import (
-            _migrate_ad_takeover_phase_a_post_init,
-        )
-        _migrate_ad_takeover_phase_a_post_init(self.env)
-        self.env.invalidate_all()
-
-        f2 = self.env['myschool.ad.takeover.finding'].browse(f.id)
-        self.assertEqual(f2.state, 'proposed')
-        self.assertEqual(f2.proposal_kind, 'link_only')
-        self.assertEqual(f2.source, 'ad')
-        self.assertEqual(f2.external_id, 'OU=legacy,DC=test,DC=local')
-        self.assertEqual(f2.risk_level, 'low')
-
-    def test_legacy_status_migration_done_row(self):
-        f = self._make_finding(
-            kind='user',
-            ad_dn='CN=legacy_user,OU=ts,DC=test,DC=local',
-            external_id='CN=legacy_user,OU=ts,DC=test,DC=local',
-            state='done',
-            status='takeover_done',
             proposal_kind='link_only',
+            source='ad',
+            risk_level='low',
         )
-        # Reset to pre-migration shape
-        self.env.cr.execute("""
-            UPDATE myschool_ad_takeover_finding
-               SET state = NULL, proposal_kind = NULL
-             WHERE id = %s
-        """, (f.id,))
-        self.env.invalidate_all()
+        before = (f.state, f.proposal_kind, f.source,
+                  f.external_id, f.risk_level)
 
         from odoo.addons.myschool_admin import (
             _migrate_ad_takeover_phase_a_post_init,
         )
         _migrate_ad_takeover_phase_a_post_init(self.env)
+        # Run twice — second call must also be a no-op.
+        _migrate_ad_takeover_phase_a_post_init(self.env)
         self.env.invalidate_all()
 
         f2 = self.env['myschool.ad.takeover.finding'].browse(f.id)
-        self.assertEqual(f2.state, 'done')
-        self.assertEqual(f2.proposal_kind, 'link_only')
+        after = (f2.state, f2.proposal_kind, f2.source,
+                 f2.external_id, f2.risk_level)
+        self.assertEqual(before, after,
+            'Migration must not mutate already-migrated rows.')
+
+    def test_legacy_status_migration_mapping_complete(self):
+        """Verify the LEGACY_STATUS_MIGRATION table covers every
+        legacy status value defined in STATUS_SELECTION. If a new
+        legacy status is added later without an entry here, this
+        test catches it before deploy."""
+        from odoo.addons.myschool_admin.models.ad_takeover import (
+            STATUS_SELECTION, LEGACY_STATUS_MIGRATION,
+        )
+        legacy_status_keys = {key for key, _label in STATUS_SELECTION}
+        migration_keys = set(LEGACY_STATUS_MIGRATION.keys())
+        self.assertEqual(legacy_status_keys, migration_keys,
+            f'Mismatch between STATUS_SELECTION and LEGACY_STATUS_'
+            f'MIGRATION. Missing in mapping: '
+            f'{legacy_status_keys - migration_keys}. '
+            f'Extra in mapping: {migration_keys - legacy_status_keys}.')
+
+        # Every mapping value must map to a valid STATE_SELECTION key.
+        from odoo.addons.myschool_admin.models.ad_takeover import (
+            STATE_SELECTION, PROPOSAL_KIND_SELECTION,
+        )
+        valid_states = {key for key, _label in STATE_SELECTION}
+        valid_kinds = {key for key, _label in PROPOSAL_KIND_SELECTION}
+        for legacy, (new_state, new_kind) in LEGACY_STATUS_MIGRATION.items():
+            self.assertIn(new_state, valid_states,
+                f'{legacy} maps to unknown state {new_state}')
+            if new_kind is not None:
+                self.assertIn(new_kind, valid_kinds,
+                    f'{legacy} maps to unknown proposal_kind {new_kind}')

@@ -146,7 +146,6 @@ class AdTakeoverSession(models.Model):
         required=True,
         index=True,
         string='Fase',
-        tracking=True,
         help='Een sessie doorloopt vier fasen: eerst identity fixen '
              '(STAMP_ID + identity_conflict), dan DB-records koppelen, '
              'dan normaliseren (rename/move), tenslotte cleanup van '
@@ -1451,7 +1450,6 @@ class AdTakeoverFinding(models.Model):
         default='discovered',
         required=True,
         index=True,
-        tracking=True,
         string='Staat',
         help='Nieuwe state-machine (Fase A). Vervangt het legacy '
              '"status"-veld; tijdens de overgang houdt de migratie '
