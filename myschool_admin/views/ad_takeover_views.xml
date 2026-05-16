@@ -2,6 +2,170 @@
 <odoo>
 
     <!-- ===========================================================
+         AD TAKEOVER FINDING — search + kanban (Fase D1)
+         =========================================================== -->
+
+    <record id="view_ad_takeover_finding_search" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.finding.search</field>
+        <field name="model">myschool.ad.takeover.finding</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="ad_dn"/>
+                <field name="ad_cn"/>
+                <field name="ad_mail"/>
+                <field name="sap_ref"/>
+                <field name="matched_person_id"/>
+                <field name="session_id"/>
+
+                <separator/>
+                <filter string="AD" name="src_ad"
+                        domain="[('source', '=', 'ad')]"/>
+                <filter string="Cloud" name="src_cloud"
+                        domain="[('source', '=', 'cloud')]"/>
+                <filter string="Smartschool" name="src_ss"
+                        domain="[('source', '=', 'smartschool')]"/>
+
+                <separator/>
+                <filter string="OUs" name="kind_ou"
+                        domain="[('kind', '=', 'ou')]"/>
+                <filter string="Groups" name="kind_group"
+                        domain="[('kind', '=', 'group')]"/>
+                <filter string="Users" name="kind_user"
+                        domain="[('kind', '=', 'user')]"/>
+
+                <separator/>
+                <filter string="STAMP_ID" name="pk_stamp_id"
+                        domain="[('proposal_kind', '=', 'stamp_id')]"/>
+                <filter string="LINK_ONLY" name="pk_link_only"
+                        domain="[('proposal_kind', '=', 'link_only')]"/>
+                <filter string="RENAME" name="pk_rename"
+                        domain="[('proposal_kind', '=', 'rename')]"/>
+                <filter string="MOVE" name="pk_move"
+                        domain="[('proposal_kind', '=', 'move')]"/>
+                <filter string="MEMBERSHIP_ADD" name="pk_member"
+                        domain="[('proposal_kind', '=', 'membership_add')]"/>
+                <filter string="DELETE_AFTER" name="pk_delete"
+                        domain="[('proposal_kind', '=', 'delete_after')]"/>
+
+                <separator/>
+                <filter string="Ontdekt" name="st_discovered"
+                        domain="[('state', '=', 'discovered')]"/>
+                <filter string="Voorstel klaar" name="st_proposed"
+                        domain="[('state', '=', 'proposed')]"/>
+                <filter string="Goedgekeurd" name="st_approved"
+                        domain="[('state', '=', 'approved')]"/>
+                <filter string="Pilot loopt" name="st_pilot"
+                        domain="[('state', '=', 'applied_pilot')]"/>
+                <filter string="Voltooid" name="st_done"
+                        domain="[('state', '=', 'done')]"/>
+                <filter string="Identity-conflict" name="st_conflict"
+                        domain="[('state', '=', 'identity_conflict')]"/>
+
+                <separator/>
+                <filter string="Hoog risico" name="risk_high"
+                        domain="[('risk_level', '=', 'high')]"/>
+                <filter string="Medium risico" name="risk_medium"
+                        domain="[('risk_level', '=', 'medium')]"/>
+
+                <separator/>
+                <filter string="Groeperen op state (pipeline)" name="gb_state"
+                        context="{'group_by': 'state'}"/>
+                <filter string="Groeperen op bron" name="gb_source"
+                        context="{'group_by': 'source'}"/>
+                <filter string="Groeperen op kind" name="gb_kind"
+                        context="{'group_by': 'kind'}"/>
+                <filter string="Groeperen op voorstel-type" name="gb_proposal_kind"
+                        context="{'group_by': 'proposal_kind'}"/>
+                <filter string="Groeperen op sessie" name="gb_session"
+                        context="{'group_by': 'session_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_ad_takeover_finding_kanban" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.finding.kanban</field>
+        <field name="model">myschool.ad.takeover.finding</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" class="o_kanban_small_column"
+                    records_draggable="0" sample="1">
+                <field name="ad_dn"/>
+                <field name="ad_cn"/>
+                <field name="ad_mail"/>
+                <field name="source"/>
+                <field name="kind"/>
+                <field name="state"/>
+                <field name="proposal_kind"/>
+                <field name="risk_level"/>
+                <field name="sap_ref"/>
+                <field name="matched_person_id"/>
+                <field name="notes"/>
+                <field name="sibling_ids"/>
+                <progressbar field="state" colors='{"discovered":"muted","proposed":"info","approved":"warning","applied_pilot":"warning","done":"success","identity_conflict":"danger","ignored":"muted"}'/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div t-attf-class="oe_kanban_card oe_kanban_global_click #{record.risk_level.raw_value == 'high' ? 'border-danger' : ''}">
+                            <div class="o_kanban_record_top">
+                                <div class="o_kanban_record_headings">
+                                    <strong class="o_kanban_record_title">
+                                        <i t-attf-class="fa #{record.kind.raw_value == 'ou' ? 'fa-folder' : (record.kind.raw_value == 'group' ? 'fa-users' : 'fa-user')}"/>
+                                        <field name="ad_cn"/>
+                                    </strong>
+                                </div>
+                                <span class="badge text-bg-info" t-if="record.source.raw_value == 'ad'">AD</span>
+                                <span class="badge text-bg-warning" t-if="record.source.raw_value == 'cloud'">Cloud</span>
+                            </div>
+                            <div class="o_kanban_record_body">
+                                <div class="text-muted small text-truncate">
+                                    <field name="ad_dn"/>
+                                </div>
+                                <div class="mt-1" t-if="record.proposal_kind.raw_value">
+                                    <span class="badge text-bg-secondary">
+                                        <field name="proposal_kind"/>
+                                    </span>
+                                </div>
+                                <div class="mt-1" t-if="record.matched_person_id.raw_value">
+                                    <i class="fa fa-link"/>
+                                    <field name="matched_person_id"/>
+                                </div>
+                                <div class="mt-1 text-muted small" t-if="record.notes.raw_value">
+                                    <field name="notes"/>
+                                </div>
+                            </div>
+                            <div class="o_kanban_record_bottom">
+                                <div class="oe_kanban_bottom_left">
+                                    <span class="badge text-bg-danger" t-if="record.risk_level.raw_value == 'high'">
+                                        <i class="fa fa-exclamation-triangle"/> hoog
+                                    </span>
+                                    <span class="badge text-bg-warning" t-if="record.risk_level.raw_value == 'medium'">medium</span>
+                                </div>
+                                <div class="oe_kanban_bottom_right">
+                                    <span t-if="record.sap_ref.raw_value" class="text-muted small">
+                                        sap_ref=<field name="sap_ref"/>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="action_ad_takeover_finding" model="ir.actions.act_window">
+        <field name="name">AD-takeover findings</field>
+        <field name="res_model">myschool.ad.takeover.finding</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="view_ad_takeover_finding_search"/>
+        <field name="context">{'search_default_gb_state': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Geen findings — start een AD-takeover sessie en draai
+                "Scan" om de pipeline te vullen.
+            </p>
+        </field>
+    </record>
+
+    <!-- ===========================================================
          AD TAKEOVER SESSION
          =========================================================== -->
 
@@ -146,6 +310,12 @@
                     </group>
 
                     <notebook>
+                        <page string="Pipeline" name="pipeline">
+                            <field name="finding_ids"
+                                   mode="kanban,list"
+                                   context="{'search_default_gb_state': 1}"/>
+                        </page>
+
                         <page string="OUs" name="ous">
                             <field name="finding_ou_ids"
                                    context="{'default_session_id': id, 'default_kind': 'ou'}">
