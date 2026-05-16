@@ -1379,8 +1379,13 @@ class ObjectBrowser(models.TransientModel):
                 node_entry = conn.entries[0]
                 node = self._ad_entry_to_dict(node_entry, include_attrs)
 
-                # Children (ONE-LEVEL scope)
-                conn.search(target_dn, '(objectClass=*)',
+                # Children (ONE-LEVEL scope). Users worden bewust
+                # weggelaten uit de tree — die zien we in de members-
+                # pane wanneer een OU geselecteerd is. Alleen
+                # OUs + groups dus.
+                conn.search(target_dn,
+                            '(|(objectClass=organizationalUnit)'
+                            '(objectClass=group))',
                             search_scope='LEVEL', attributes=attr_list)
                 children = []
                 for entry in conn.entries:
@@ -1390,9 +1395,8 @@ class ObjectBrowser(models.TransientModel):
                     child = self._ad_entry_to_dict(entry, include_attrs=False)
                     children.append(child)
 
-                # Sort: OUs eerst, dan groups, dan users; binnen elke
-                # groep alfabetisch op cn/ou.
-                kind_order = {'ou': 0, 'group': 1, 'user': 2, 'other': 3}
+                # Sort: OUs eerst, dan groups; alfabetisch op cn/ou.
+                kind_order = {'ou': 0, 'group': 1, 'other': 9}
                 children.sort(key=lambda c: (
                     kind_order.get(c['kind'], 9),
                     (c.get('cn') or '').lower()))
