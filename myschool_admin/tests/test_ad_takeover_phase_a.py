@@ -17,16 +17,19 @@ from odoo.tests import TransactionCase, tagged
 
 
 @contextmanager
-def _mock_ldap_connection(modify_result=None):
+def _mock_ldap_connection(modify_result=None, search_entries=None):
     """Yield a (mock_conn, ctx_manager) pair.
 
     ``ctx_manager`` is what should replace ``_get_connection``: an object
     whose ``__enter__`` returns the connection mock. modify_result drives
-    ``conn.result`` after the next ``.modify()`` call.
+    ``conn.result`` after the next ``.modify()`` / ``.modify_dn()`` call.
+    ``search_entries`` populates ``conn.entries`` for snapshot reads.
     """
     mock_conn = MagicMock()
     mock_conn.modify.return_value = True
+    mock_conn.modify_dn.return_value = True
     mock_conn.result = modify_result or {'result': 0, 'description': 'success'}
+    mock_conn.entries = search_entries or []
 
     class _Ctx:
         def __enter__(self_inner):
@@ -595,3 +598,229 @@ class TestAdTakeoverFaseA(TransactionCase):
             if new_kind is not None:
                 self.assertIn(new_kind, valid_kinds,
                     f'{legacy} maps to unknown proposal_kind {new_kind}')
+
+    # ------------------------------------------------------------------
+    # Fase C — pilot / verify / rollback
+    # ------------------------------------------------------------------
+
+    def _ldap_entry_with(self, **attrs):
+        """Build a mock ldap3-entry whose attribute access returns a
+        thing-with-a-``.value``."""
+        entry = MagicMock()
+        for key, val in attrs.items():
+            attr = MagicMock()
+            attr.value = val
+            setattr(entry, key, attr)
+            entry.__getitem__.side_effect = (
+                lambda k, _attrs=attrs: MagicMock(value=_attrs.get(k, '')))
+        return entry
+
+    def test_pilot_captures_snapshot_and_applies(self):
+        """STAMP_ID pilot: state goes approved → applied_pilot, snapshot
+        is persisted, AND the LDAP MODIFY ran."""
+        person = self._make_person(sap_ref='PILOT01')
+        f = self._make_finding(
+            state='approved',
+            proposal_kind='stamp_id',
+            matched_person_id=person.id,
+            proposal_payload_json=json.dumps({
+                'target_attribute': 'employeeID',
+                'value': 'PILOT01',
+                'matched_via': 'email_cloud',
+            }),
+        )
+        with _mock_ldap_connection() as (mock_conn, ctx_mgr):
+            # Snapshot read returns an entry with old employeeID=''
+            mock_conn.entries = [self._ldap_entry_with(employeeID='')]
+            with patch.object(self.env['myschool.ldap.service'].__class__,
+                              '_get_connection',
+                              return_value=ctx_mgr):
+                f.action_pilot()
+        self.assertEqual(f.state, 'applied_pilot')
+        self.assertTrue(f.rollback_snapshot_json)
+        self.assertTrue(f.rollback_snapshot_at)
+        snap = json.loads(f.rollback_snapshot_json)
+        self.assertEqual(snap['attribute'], 'employeeID')
+        # Both search() (for snapshot) and modify() (for apply) should
+        # have run on the same connection.
+        mock_conn.search.assert_called()
+        mock_conn.modify.assert_called()
+
+    def test_verify_promotes_pilot_to_done(self):
+        f = self._make_finding(
+            state='applied_pilot',
+            proposal_kind='stamp_id',
+            rollback_snapshot_json='{"source":"ad","attribute":"employeeID","old_value":""}',
+        )
+        f.action_verify()
+        self.assertEqual(f.state, 'done')
+        self.assertEqual(f.status, 'takeover_done')
+
+    def test_verify_refuses_non_pilot_state(self):
+        f = self._make_finding(state='approved',
+                               proposal_kind='stamp_id')
+        with self.assertRaises(UserError):
+            f.action_verify()
+
+    def test_rollback_restores_snapshot(self):
+        """STAMP_ID rollback writes the old_value back via LDAP MODIFY
+        and resets state to approved."""
+        person = self._make_person(sap_ref='RB01')
+        f = self._make_finding(
+            state='applied_pilot',
+            proposal_kind='stamp_id',
+            matched_person_id=person.id,
+            proposal_payload_json=json.dumps({
+                'target_attribute': 'employeeID',
+                'value': 'RB01',
+            }),
+            rollback_snapshot_json=json.dumps({
+                'source': 'ad',
+                'attribute': 'employeeID',
+                'old_value': 'OLD-VALUE',
+            }),
+        )
+        with _mock_ldap_connection() as (mock_conn, ctx_mgr):
+            with patch.object(self.env['myschool.ldap.service'].__class__,
+                              '_get_connection',
+                              return_value=ctx_mgr):
+                f.action_rollback()
+        self.assertEqual(f.state, 'approved')
+        self.assertFalse(f.rollback_snapshot_json)
+        # MODIFY should have been called with the OLD value
+        mock_conn.modify.assert_called()
+        # Inspect the changes dict
+        args, _kw = mock_conn.modify.call_args
+        changes = args[1]
+        self.assertIn('employeeID', changes)
+
+    def test_rollback_refuses_without_snapshot(self):
+        f = self._make_finding(
+            state='applied_pilot',
+            proposal_kind='stamp_id',
+            rollback_snapshot_json=False,
+        )
+        with self.assertRaises(UserError):
+            f.action_rollback()
+
+    def test_pilot_failure_wipes_snapshot(self):
+        """If the mutate raises, the captured snapshot is cleared so a
+        retry generates a fresh one against the unchanged bron."""
+        person = self._make_person(sap_ref='FAIL01')
+        f = self._make_finding(
+            state='approved',
+            proposal_kind='stamp_id',
+            matched_person_id=person.id,
+            proposal_payload_json=json.dumps({
+                'target_attribute': 'employeeID',
+                'value': 'FAIL01',
+            }),
+        )
+        with _mock_ldap_connection(
+                modify_result={'result': 53, 'description': 'fail'}) \
+                as (mock_conn, ctx_mgr):
+            mock_conn.entries = [self._ldap_entry_with(employeeID='')]
+            with patch.object(self.env['myschool.ldap.service'].__class__,
+                              '_get_connection',
+                              return_value=ctx_mgr):
+                with self.assertRaises(UserError):
+                    f.action_pilot()
+        self.assertEqual(f.state, 'approved')
+        self.assertFalse(f.rollback_snapshot_json)
+
+    def test_rename_ad_modifies_dn(self):
+        """RENAME via pilot calls modify_dn with the new RDN and
+        updates self.ad_dn to the post-rename value."""
+        f = self._make_finding(
+            kind='group',
+            ad_dn='CN=OldGroup,OU=ts,DC=test,DC=local',
+            external_id='CN=OldGroup,OU=ts,DC=test,DC=local',
+            state='approved',
+            proposal_kind='rename',
+            proposal_payload_json=json.dumps({'new_name': 'NewGroup'}),
+        )
+        with _mock_ldap_connection() as (mock_conn, ctx_mgr):
+            with patch.object(self.env['myschool.ldap.service'].__class__,
+                              '_get_connection',
+                              return_value=ctx_mgr):
+                f.action_pilot()
+        self.assertEqual(f.state, 'applied_pilot')
+        self.assertEqual(f.ad_dn, 'CN=NewGroup,OU=ts,DC=test,DC=local')
+        mock_conn.modify_dn.assert_called_once_with(
+            'CN=OldGroup,OU=ts,DC=test,DC=local', 'CN=NewGroup')
+
+    def test_rename_cloud_user_rejected(self):
+        """Cloud-user renaming is not supported (primaryEmail is identity)."""
+        gcfg = self.env['myschool.google.workspace.config'].create({
+            'name': 'Reject Google',
+            'environment': 'test',
+            'domain': 'test.olvp.lab',
+            'subject_email': 'admin@test.olvp.lab',
+            'customer_id': 'my_customer',
+            'active': False,
+        })
+        session = self.env['myschool.ad.takeover.session'].create({
+            'name': 'Reject session',
+            'google_workspace_config_id': gcfg.id,
+            'scope_org_id': self.school.id,
+            'environment': 'test',
+        })
+        f = self.env['myschool.ad.takeover.finding'].create({
+            'session_id': session.id,
+            'kind': 'user',
+            'source': 'cloud',
+            'external_id': 'cloud-uid-reject',
+            'ad_dn': 'reject@test.olvp.lab',
+            'state': 'approved',
+            'proposal_kind': 'rename',
+            'proposal_payload_json': json.dumps({'new_name': 'NewMail'}),
+        })
+        with self.assertRaises(UserError):
+            f.action_pilot()
+
+    def test_move_ad_modifies_dn_with_new_superior(self):
+        f = self._make_finding(
+            kind='ou',
+            ad_dn='OU=Klas-3A,OU=Klassen,DC=test,DC=local',
+            external_id='OU=Klas-3A,OU=Klassen,DC=test,DC=local',
+            state='approved',
+            proposal_kind='move',
+            proposal_payload_json=json.dumps({
+                'new_parent': 'OU=Archief,DC=test,DC=local',
+            }),
+        )
+        with _mock_ldap_connection() as (mock_conn, ctx_mgr):
+            with patch.object(self.env['myschool.ldap.service'].__class__,
+                              '_get_connection',
+                              return_value=ctx_mgr):
+                f.action_pilot()
+        self.assertEqual(f.state, 'applied_pilot')
+        self.assertEqual(f.ad_dn,
+                         'OU=Klas-3A,OU=Archief,DC=test,DC=local')
+        mock_conn.modify_dn.assert_called_once()
+        args, kwargs = mock_conn.modify_dn.call_args
+        # modify_dn(old_dn, new_rdn, new_superior=parent)
+        self.assertEqual(args[1], 'OU=Klas-3A')
+        self.assertEqual(kwargs.get('new_superior'),
+                         'OU=Archief,DC=test,DC=local')
+
+    def test_membership_add_ad_via_pilot(self):
+        """MEMBERSHIP_ADD pilot calls ldap_service.add_group_member."""
+        f = self._make_finding(
+            kind='user',
+            ad_dn='CN=jan,OU=ts,DC=test,DC=local',
+            external_id='CN=jan,OU=ts,DC=test,DC=local',
+            state='approved',
+            proposal_kind='membership_add',
+            proposal_payload_json=json.dumps({
+                'target_group_dn': 'CN=Teachers,OU=Groups,DC=test,DC=local',
+                'member_dn': 'CN=jan,OU=ts,DC=test,DC=local',
+            }),
+        )
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with patch.object(ldap_cls, 'add_group_member',
+                          return_value={'success': True, 'message': 'added'}):
+            f.action_pilot()
+        self.assertEqual(f.state, 'applied_pilot')
+        snap = json.loads(f.rollback_snapshot_json or '{}')
+        self.assertEqual(snap.get('source'), 'ad')
