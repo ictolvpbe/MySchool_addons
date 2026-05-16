@@ -984,12 +984,15 @@ class AdTakeoverSession(models.Model):
             raise UserError(_('Cloud OUs ophalen mislukt: %s') % e)
 
     def _cloud_fetch_users(self, api, customer_id, ou_path):
-        """List users under ou_path. Wildcard query catches descendants;
-        admin reviews unexpected matches."""
+        """List users under ou_path. Google's ``orgUnitPath='/x'``
+        operator matches the OU itself AND all sub-OUs (so we don't
+        need a wildcard — the earlier ``/x*`` form raises
+        INVALID_OU_ID because Google reads '*' as a literal char in
+        the OU id, not as a wildcard).
+        """
         users = []
         page_token = None
-        # The colon-form supports wildcard prefix matching.
-        query = f"orgUnitPath:'{ou_path}*'"
+        query = f"orgUnitPath='{ou_path}'"
         try:
             while True:
                 resp = api.users().list(
