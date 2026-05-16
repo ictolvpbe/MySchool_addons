@@ -385,7 +385,16 @@ class AdTakeoverSession(models.Model):
         if all_new:
             self.env['myschool.ad.takeover.finding'].create(all_new)
 
-        scan_summary = '\n\n'.join(summaries)
+        # Cross-source linker — only meaningful when >1 source ran.
+        cross_summary = ''
+        if len(summaries) > 1:
+            siblings, drift = self._link_cross_source()
+            cross_summary = (
+                f'\n\nCross-source linker:\n'
+                f'  {siblings} user-finding(s) gekoppeld als siblings\n'
+                f'  {drift} cross-source identity-conflict(en) gemarkeerd')
+
+        scan_summary = '\n\n'.join(summaries) + cross_summary
         self.write({
             'state': 'discovered' if self.state == 'draft' else 'in_progress',
             'last_scan_at': fields.Datetime.now(),
@@ -394,6 +403,63 @@ class AdTakeoverSession(models.Model):
         return self._notify(
             _('Scan voltooid'), scan_summary or _('Geen findings.'),
             kind='success')
+
+    # ------------------------------------------------------------------
+    # Cross-source linker
+    # ------------------------------------------------------------------
+
+    def _link_cross_source(self):
+        """Populate sibling_ids on user-findings that share a sap_ref
+        across sources (AD + Cloud). Escalate to identity_conflict
+        when sibling-findings disagree on which DB-person they match.
+
+        Runs after every scanner has produced findings, so this single
+        pass sees the full multi-source state at once.
+        """
+        self.ensure_one()
+        user_findings = self.finding_ids.filtered(
+            lambda f: f.kind == 'user' and f.sap_ref)
+        by_sap_ref = {}
+        for f in user_findings:
+            key = (f.sap_ref or '').strip()
+            if not key:
+                continue
+            by_sap_ref.setdefault(key, []).append(f)
+
+        siblings_set = 0
+        drift_set = 0
+        for sap_ref, fs in by_sap_ref.items():
+            if len(fs) < 2:
+                # Reset any stale sibling-link from a previous scan when
+                # the counterpart has disappeared.
+                fs[0].sibling_ids = [(5, 0, 0)]
+                continue
+            # Connect each finding to all the others
+            ids = [f.id for f in fs]
+            for f in fs:
+                others = [oid for oid in ids if oid != f.id]
+                f.sibling_ids = [(6, 0, others)]
+            siblings_set += len(fs)
+
+            # Cross-source drift: matched-person disagreement.
+            matched_ids = {f.matched_person_id.id
+                           for f in fs if f.matched_person_id}
+            if len(matched_ids) > 1:
+                for f in fs:
+                    f.state = 'identity_conflict'
+                    f.status = 'investigate'
+                    f.risk_level = 'high'
+                    existing = (f.conflict_reason or '').strip()
+                    cross_note = (
+                        f'Cross-source conflict: bronnen koppelen sap_ref='
+                        f'{sap_ref} aan verschillende DB-persons '
+                        f'(IDs: {sorted(matched_ids)}).')
+                    f.conflict_reason = (
+                        f'{existing}\n{cross_note}' if existing
+                        else cross_note)
+                drift_set += len(fs)
+
+        return siblings_set, drift_set
 
     # ------------------------------------------------------------------
     # AD scanner
