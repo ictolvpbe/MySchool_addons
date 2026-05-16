@@ -649,15 +649,293 @@ class AdTakeoverSession(models.Model):
         return new_findings, summary
 
     # ------------------------------------------------------------------
-    # Cloud scanner — Fase B2 implementation
+    # Cloud scanner
     # ------------------------------------------------------------------
 
     def _scan_cloud(self, index, existing_by_extid):
-        """Scan Google Workspace under ``cloud_ou_path``. Stub in B1 —
-        full implementation lands in B2 (next commit).
+        """Scan Google Workspace OUs / groups / users under
+        ``cloud_ou_path``. Returns (new_findings, summary).
+
+        Identity-linker per kind:
+          * OU    → match via cloud_path_to_org
+          * Group → match via cloud_group_email_to_org (com_group_email)
+          * User  → externalIds (sap_ref) primary, primaryEmail
+                    fallback; otherwise orphan
         """
         self.ensure_one()
-        return [], _('Cloud-scan: nog niet geïmplementeerd (komt in B2).')
+        if not self.cloud_ou_path:
+            return [], _(
+                'Cloud-scan: scope-org "%s" levert geen Google-pad op '
+                '(geen ou_fqdn_internal of name_tree).'
+            ) % self.scope_org_id.name
+
+        gsvc = self.env['myschool.google.directory.service']
+        gsvc._check_google_available()
+        config = self.google_workspace_config_id
+        customer_id = config.customer_id or 'my_customer'
+        api = gsvc._get_directory_service(config)
+
+        ou_rows = self._cloud_fetch_ous(api, customer_id, self.cloud_ou_path)
+        user_rows = self._cloud_fetch_users(api, customer_id, self.cloud_ou_path)
+        group_rows = self._cloud_fetch_groups(api, customer_id, config.domain)
+
+        Person = self.env['myschool.person']
+        new_findings = []
+        ou_total = ou_match = 0
+        gr_total = gr_match = 0
+        us_total = us_match = us_conflict = us_stamp = us_orphan = 0
+
+        # ---------- OUs ----------
+        for entry in ou_rows:
+            ou_total += 1
+            path = (entry.get('orgUnitPath') or '').strip()
+            ou_id = entry.get('orgUnitId') or path
+            if not path:
+                continue
+            key = ('cloud', path.lower())
+            if key in existing_by_extid:
+                continue
+            if index['cloud_path_to_org'].get(path.lower()):
+                ou_match += 1
+                continue
+            new_findings.append({
+                'session_id': self.id,
+                'source': 'cloud',
+                'external_id': ou_id,
+                'kind': 'ou',
+                'ad_dn': path,        # use ad_dn column to hold the path
+                'ad_cn': entry.get('name') or path.rsplit('/', 1)[-1],
+                'ad_attributes_json': json.dumps(entry, default=str)[:8000],
+                'match_kind': 'unmatched',
+                'status': 'investigate',
+                'state': 'proposed',
+                'proposal_kind': 'link_only',
+                'risk_level': 'low',
+            })
+
+        # ---------- Groups ----------
+        for entry in group_rows:
+            gr_total += 1
+            email = (entry.get('email') or '').strip().lower()
+            gid = entry.get('id') or email
+            if not email:
+                continue
+            key = ('cloud', gid.lower())
+            if key in existing_by_extid:
+                continue
+            if index['cloud_group_email_to_org'].get(email):
+                gr_match += 1
+                continue
+            new_findings.append({
+                'session_id': self.id,
+                'source': 'cloud',
+                'external_id': gid,
+                'kind': 'group',
+                'ad_dn': email,
+                'ad_cn': entry.get('name') or email,
+                'ad_mail': entry.get('email') or False,
+                'ad_attributes_json': json.dumps(entry, default=str)[:8000],
+                'match_kind': 'unmatched',
+                'status': 'investigate',
+                'state': 'proposed',
+                'proposal_kind': 'link_only',
+                'risk_level': 'low',
+            })
+
+        # ---------- Users — deterministic linker ----------
+        for entry in user_rows:
+            us_total += 1
+            uid = entry.get('id') or ''
+            email = (entry.get('primaryEmail') or '').strip().lower()
+            if not uid:
+                continue
+            key = ('cloud', uid.lower())
+            if key in existing_by_extid:
+                continue
+
+            # externalIds is a list of {'type': '...', 'value': '...'}.
+            # google_directory_service.create_user writes sap_ref with
+            # type='organization', so match that first; fall back to
+            # any externalId whose value parses as a sap_ref.
+            sap_ref = ''
+            for eid in entry.get('externalIds') or []:
+                if eid.get('type') == 'organization' and eid.get('value'):
+                    sap_ref = str(eid['value']).strip()
+                    break
+            if not sap_ref:
+                for eid in entry.get('externalIds') or []:
+                    val = (eid.get('value') or '').strip()
+                    if val and val.isdigit():
+                        sap_ref = val
+                        break
+
+            name_obj = entry.get('name') or {}
+            given = name_obj.get('givenName', '') if isinstance(name_obj, dict) else ''
+            family = name_obj.get('familyName', '') if isinstance(name_obj, dict) else ''
+            full = name_obj.get('fullName', '') if isinstance(name_obj, dict) else ''
+
+            vals = {
+                'session_id': self.id,
+                'source': 'cloud',
+                'external_id': uid,
+                'kind': 'user',
+                'ad_dn': email,           # store primary email in ad_dn column
+                'ad_cn': full or f'{given} {family}'.strip() or email,
+                'ad_mail': email or False,
+                'ad_givenname': given or False,
+                'ad_sn': family or False,
+                'sap_ref': sap_ref or False,
+                'ad_attributes_json': json.dumps(entry, default=str)[:8000],
+                'match_kind': 'unmatched',
+            }
+
+            # 1) externalIds → sap_ref match
+            person_id = (index['sap_ref_to_person'].get(sap_ref)
+                         if sap_ref else None)
+            if person_id:
+                person = Person.browse(person_id)
+                db_email = (person.email_cloud or '').strip().lower()
+                if db_email and email and db_email != email:
+                    vals.update({
+                        'state': 'identity_conflict',
+                        'status': 'investigate',
+                        'matched_person_id': person.id,
+                        'risk_level': 'high',
+                        'conflict_reason': (
+                            f'Cloud-user met externalIds={sap_ref} heeft '
+                            f'primaryEmail={email}, maar DB.person.'
+                            f'email_cloud={person.email_cloud}.'),
+                    })
+                    us_conflict += 1
+                else:
+                    vals.update({
+                        'state': 'done',
+                        'status': 'matched',
+                        'matched_person_id': person.id,
+                        'match_kind': 'matched_in_db',
+                        'risk_level': 'low',
+                    })
+                    us_match += 1
+                new_findings.append(vals)
+                continue
+
+            # 2) primaryEmail fallback → STAMP_ID voorstel
+            if email and email in index['user_mail_to_person']:
+                person = Person.browse(index['user_mail_to_person'][email])
+                vals.update({
+                    'state': 'proposed',
+                    'status': 'investigate',
+                    'matched_person_id': person.id,
+                    'proposal_kind': 'stamp_id',
+                    'proposal_payload_json': json.dumps({
+                        'target_attribute': 'externalIds',
+                        'value': str(person.sap_ref or ''),
+                        'matched_via': 'email_cloud',
+                    }),
+                    'risk_level': 'low',
+                    'notes': (
+                        f'Cloud-user mist externalIds; gematcht via '
+                        f'primaryEmail. Voorstel schrijft sap_ref='
+                        f'{person.sap_ref} naar Cloud externalIds. '
+                        f'Geen wijziging in primaryEmail, naam of OU.'),
+                })
+                us_stamp += 1
+                new_findings.append(vals)
+                continue
+
+            # 3) Orphan
+            vals.update({
+                'state': 'proposed',
+                'status': 'investigate',
+                'proposal_kind': 'link_only',
+                'risk_level': 'medium',
+                'notes': (
+                    'Geen DB-match op externalIds of email_cloud. '
+                    'Mogelijk een extern account of een persoon die '
+                    'nog niet in Informat zit.'),
+            })
+            us_orphan += 1
+            new_findings.append(vals)
+
+        summary = (
+            f'Cloud-scan:\n'
+            f'  OUs: {ou_total} gevonden — {ou_match} al gelinkt, '
+            f'{ou_total - ou_match} nieuw.\n'
+            f'  Groups: {gr_total} gevonden — {gr_match} al gelinkt, '
+            f'{gr_total - gr_match} nieuw.\n'
+            f'  Users: {us_total} gevonden — {us_match} al gelinkt, '
+            f'{us_stamp} STAMP_ID, {us_orphan} orphan, '
+            f'{us_conflict} identity-conflict.'
+        )
+        return new_findings, summary
+
+    # ---------- Cloud paginated fetch helpers ----------
+
+    def _cloud_fetch_ous(self, api, customer_id, root_path):
+        """List OUs under root_path. type='all' returns the whole subtree
+        including descendants, root excluded."""
+        try:
+            resp = api.orgunits().list(
+                customerId=customer_id,
+                orgUnitPath=root_path,
+                type='all',
+            ).execute()
+            return resp.get('organizationUnits', []) or []
+        except Exception as e:
+            _logger.exception('[AD-TAKEOVER] Cloud orgunits.list failed')
+            raise UserError(_('Cloud OUs ophalen mislukt: %s') % e)
+
+    def _cloud_fetch_users(self, api, customer_id, ou_path):
+        """List users under ou_path. Wildcard query catches descendants;
+        admin reviews unexpected matches."""
+        users = []
+        page_token = None
+        # The colon-form supports wildcard prefix matching.
+        query = f"orgUnitPath:'{ou_path}*'"
+        try:
+            while True:
+                resp = api.users().list(
+                    customer=customer_id,
+                    query=query,
+                    maxResults=500,
+                    pageToken=page_token,
+                ).execute()
+                users.extend(resp.get('users', []) or [])
+                page_token = resp.get('nextPageToken')
+                if not page_token:
+                    break
+        except Exception as e:
+            _logger.exception('[AD-TAKEOVER] Cloud users.list failed')
+            raise UserError(_('Cloud users ophalen mislukt: %s') % e)
+        return users
+
+    def _cloud_fetch_groups(self, api, customer_id, domain_filter=None):
+        """List all groups in the tenant, optionally filtered by
+        primaryEmail domain. Google Workspace groups are tenant-flat
+        (no OU concept), so the domain filter is the only way to
+        narrow before download.
+        """
+        groups = []
+        page_token = None
+        suffix = f'@{domain_filter}' if domain_filter else None
+        try:
+            while True:
+                resp = api.groups().list(
+                    customer=customer_id,
+                    maxResults=200,
+                    pageToken=page_token,
+                ).execute()
+                for g in resp.get('groups', []) or []:
+                    email = (g.get('email') or '').lower()
+                    if suffix is None or email.endswith(suffix):
+                        groups.append(g)
+                page_token = resp.get('nextPageToken')
+                if not page_token:
+                    break
+        except Exception as e:
+            _logger.exception('[AD-TAKEOVER] Cloud groups.list failed')
+            raise UserError(_('Cloud groups ophalen mislukt: %s') % e)
+        return groups
 
     # ------------------------------------------------------------------
     # Bulk apply
@@ -1271,6 +1549,13 @@ class AdTakeoverSession(models.Model):
 
         ou_dn_to_org = {}
         group_dn_to_org = {}
+        cloud_path_to_org = {}
+        cloud_group_email_to_org = {}
+
+        gsvc = (self.env['myschool.google.directory.service']
+                if self.google_workspace_config_id else None)
+        gcfg = self.google_workspace_config_id
+
         for org in Org.search([]):
             if org.ou_fqdn_internal:
                 ou_dn_to_org[self._norm_dn(org.ou_fqdn_internal)] = org.id
@@ -1278,6 +1563,13 @@ class AdTakeoverSession(models.Model):
                 v = self._norm_dn(getattr(org, f, '') or '')
                 if v:
                     group_dn_to_org[v] = org.id
+            if gsvc and gcfg:
+                path = gsvc.org_to_google_path(org, gcfg)
+                if path and path != '/':
+                    cloud_path_to_org[path.lower()] = org.id
+            cge = getattr(org, 'com_group_email', '') or ''
+            if cge:
+                cloud_group_email_to_org[cge.strip().lower()] = org.id
 
         user_dn_to_person   = {}
         user_mail_to_person = {}
@@ -1307,13 +1599,16 @@ class AdTakeoverSession(models.Model):
                 user_sam_to_login[u.login.strip().lower()] = u.id
 
         return {
-            'ou_dn_to_org':         ou_dn_to_org,
-            'group_dn_to_org':      group_dn_to_org,
-            'user_dn_to_person':    user_dn_to_person,
-            'user_mail_to_person':  user_mail_to_person,
-            'user_sam_to_login':    user_sam_to_login,
-            'sap_ref_to_person':    sap_ref_to_person,
-            'login_to_person':      login_to_person,
+            'ou_dn_to_org':              ou_dn_to_org,
+            'group_dn_to_org':           group_dn_to_org,
+            'user_dn_to_person':         user_dn_to_person,
+            'user_mail_to_person':       user_mail_to_person,
+            'user_sam_to_login':         user_sam_to_login,
+            'sap_ref_to_person':         sap_ref_to_person,
+            'login_to_person':           login_to_person,
+            # Cloud-side keys (Fase B). Empty when no google config set.
+            'cloud_path_to_org':         cloud_path_to_org,
+            'cloud_group_email_to_org':  cloud_group_email_to_org,
         }
 
     # ------------------------------------------------------------------
