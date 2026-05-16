@@ -804,6 +804,86 @@ class TestAdTakeoverFaseA(TransactionCase):
         self.assertEqual(kwargs.get('new_superior'),
                          'OU=Archief,DC=test,DC=local')
 
+    # ------------------------------------------------------------------
+    # Fase D — diff wizard
+    # ------------------------------------------------------------------
+
+    def test_diff_wizard_opens_with_finding(self):
+        """action_open_diff_wizard creates a wizard pointing at the
+        finding and returns an act_window action."""
+        f = self._make_finding(
+            proposal_kind='link_only',
+            state='proposed',
+        )
+        result = f.action_open_diff_wizard()
+        self.assertEqual(result.get('type'), 'ir.actions.act_window')
+        self.assertEqual(result.get('res_model'),
+                         'myschool.ad.takeover.diff.wizard')
+        self.assertEqual(result.get('target'), 'new')
+        wiz_id = result.get('res_id')
+        wiz = self.env['myschool.ad.takeover.diff.wizard'].browse(wiz_id)
+        self.assertEqual(wiz.finding_id, f)
+
+    def test_diff_wizard_actie_text_per_proposal_kind(self):
+        """Each proposal_kind should produce a recognisable ACTIE
+        description so the admin knows what's about to happen."""
+        cases = [
+            ('link_only', 'DB-record aanmaken'),
+            ('stamp_id', 'STAMP_ID'),
+            ('rename', 'RENAME'),
+            ('move', 'MOVE'),
+            ('membership_add', 'MEMBERSHIP_ADD'),
+            ('delete_after', 'DELETE_AFTER'),
+            ('ignore', 'IGNORE'),
+        ]
+        for kind, marker in cases:
+            f = self._make_finding(
+                ad_dn=f'CN=case-{kind},DC=test,DC=local',
+                external_id=f'CN=case-{kind},DC=test,DC=local',
+                proposal_kind=kind,
+                proposal_payload_json=json.dumps({
+                    'new_name': 'X',
+                    'value': '123',
+                    'new_parent': 'OU=foo',
+                    'target_group_dn': 'CN=grp',
+                }),
+            )
+            wiz = self.env['myschool.ad.takeover.diff.wizard'].create({
+                'finding_id': f.id,
+            })
+            self.assertIn(marker, wiz.actie_text,
+                f'ACTIE-text voor {kind} mist "{marker}": {wiz.actie_text}')
+
+    def test_diff_wizard_passes_through_approve(self):
+        """Wizard's action_approve must promote the underlying finding
+        to state=approved."""
+        f = self._make_finding(
+            proposal_kind='link_only',
+            state='proposed',
+        )
+        wiz = self.env['myschool.ad.takeover.diff.wizard'].create({
+            'finding_id': f.id,
+        })
+        wiz.action_approve()
+        self.assertEqual(f.state, 'approved')
+
+    def test_diff_wizard_snapshot_preview_when_present(self):
+        """A finding with a snapshot shows it in the wizard preview."""
+        f = self._make_finding(
+            proposal_kind='stamp_id',
+            state='applied_pilot',
+            rollback_snapshot_json=json.dumps({
+                'source': 'ad',
+                'attribute': 'employeeID',
+                'old_value': 'OLD123',
+            }),
+        )
+        wiz = self.env['myschool.ad.takeover.diff.wizard'].create({
+            'finding_id': f.id,
+        })
+        self.assertIn('OLD123', wiz.snapshot_preview)
+        self.assertIn('employeeID', wiz.snapshot_preview)
+
     def test_membership_add_ad_via_pilot(self):
         """MEMBERSHIP_ADD pilot calls ldap_service.add_group_member."""
         f = self._make_finding(
