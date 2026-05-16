@@ -1764,9 +1764,13 @@ class ObjectBrowser(models.TransientModel):
                               'description': 'Tenant root'},
                 }
             else:
+                # Google's orgunits.get() concatenates ``customer/{id}/orgunits``
+                # with the orgUnitPath; een leading slash produceert dan
+                # ``orgunits//baple`` → 404 "Org unit not found". List/insert
+                # accepteren wel leading-slash, alleen get/patch niet.
                 ou = api.orgunits().get(
                     customerId=customer,
-                    orgUnitPath=target_path).execute()
+                    orgUnitPath=target_path.lstrip('/')).execute()
                 node = self._cloud_ou_to_dict(ou, include_attrs=True)
             # Direct child OUs onder dit pad
             resp = api.orgunits().list(

@@ -2018,7 +2018,7 @@ class AdTakeoverSession(models.Model):
             try:
                 test_api.orgunits().get(
                     customerId=test_customer,
-                    orgUnitPath=path).execute()
+                    orgUnitPath=path.lstrip('/')).execute()
                 skipped += 1
                 rows.append((path, 'skipped', 'bestaat al in test'))
                 continue
@@ -3838,7 +3838,7 @@ class AdTakeoverFinding(models.Model):
             if self.kind == 'ou':
                 ou = api.orgunits().get(
                     customerId=config.customer_id or 'my_customer',
-                    orgUnitPath=self.ad_dn  # we store cloud-path here
+                    orgUnitPath=(self.ad_dn or '').lstrip('/'),
                 ).execute()
                 return {
                     'source': 'cloud',
@@ -3912,7 +3912,7 @@ class AdTakeoverFinding(models.Model):
             customer = config.customer_id or 'my_customer'
             api.orgunits().patch(
                 customerId=customer,
-                orgUnitPath=self.ad_dn,
+                orgUnitPath=(self.ad_dn or '').lstrip('/'),
                 body={'name': new_name}).execute()
             self.write({'ad_cn': new_name})
         else:
@@ -3957,7 +3957,7 @@ class AdTakeoverFinding(models.Model):
                 customer = config.customer_id or 'my_customer'
                 api.orgunits().patch(
                     customerId=customer,
-                    orgUnitPath=self.ad_dn,
+                    orgUnitPath=(self.ad_dn or '').lstrip('/'),
                     body={'name': old_name}).execute()
             self.write({'ad_cn': old_name})
             return
@@ -4022,7 +4022,7 @@ class AdTakeoverFinding(models.Model):
                 customer = config.customer_id or 'my_customer'
                 ou = api.orgunits().get(
                     customerId=customer,
-                    orgUnitPath=self.ad_dn).execute()
+                    orgUnitPath=(self.ad_dn or '').lstrip('/')).execute()
                 return {
                     'source': 'cloud',
                     'kind': 'ou',
@@ -4085,7 +4085,7 @@ class AdTakeoverFinding(models.Model):
             customer = config.customer_id or 'my_customer'
             api.orgunits().patch(
                 customerId=customer,
-                orgUnitPath=self.ad_dn,
+                orgUnitPath=(self.ad_dn or '').lstrip('/'),
                 body={'parentOrgUnitPath': new_parent_path}).execute()
             # New full path = parent + '/' + own_name
             own_name = self.ad_cn or self.ad_dn.rsplit('/', 1)[-1]
@@ -4129,7 +4129,7 @@ class AdTakeoverFinding(models.Model):
                 customer = config.customer_id or 'my_customer'
                 api.orgunits().patch(
                     customerId=customer,
-                    orgUnitPath=self.ad_dn,
+                    orgUnitPath=(self.ad_dn or '').lstrip('/'),
                     body={'parentOrgUnitPath': snapshot.get('old_parent_path')}
                 ).execute()
                 if snapshot.get('old_path'):
