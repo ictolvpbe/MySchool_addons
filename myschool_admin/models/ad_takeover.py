@@ -300,6 +300,16 @@ class AdTakeoverSession(models.Model):
                     'Google Workspace tenant (of beide). Een sessie '
                     'zonder bron kan niets scannen.'))
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        # @api.constrains only fires on changed fields; when both
+        # source-fields are absent from vals (admin clicked "Create"
+        # without picking either), the constraint silently passes.
+        # Explicit post-create invocation closes that gap.
+        records = super().create(vals_list)
+        records._check_at_least_one_source()
+        return records
+
     @api.depends('finding_ids', 'finding_ids.state', 'finding_ids.proposal_kind')
     def _compute_counts(self):
         for rec in self:

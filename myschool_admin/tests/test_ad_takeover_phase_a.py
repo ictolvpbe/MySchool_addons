@@ -9,7 +9,7 @@ Covers:
   * post_init migration of legacy status → new state
 """
 import json
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import UserError, ValidationError
@@ -306,6 +306,266 @@ class TestAdTakeoverFaseA(TransactionCase):
                  f2.external_id, f2.risk_level)
         self.assertEqual(before, after,
             'Migration must not mutate already-migrated rows.')
+
+    # ------------------------------------------------------------------
+    # Fase B — Cloud scanner (mocked fetch helpers)
+    # ------------------------------------------------------------------
+
+    def _make_cloud_session(self):
+        """Create a session with a Google config but no LDAP, so the
+        Cloud scanner runs in isolation. Mocks the fetch-helpers
+        in-place on the session record.
+        """
+        gcfg = self.env['myschool.google.workspace.config'].create({
+            'name': 'Test Google',
+            'environment': 'test',
+            'domain': 'test.olvp.lab',
+            'subject_email': 'admin@test.olvp.lab',
+            'customer_id': 'my_customer',
+            'active': False,
+        })
+        session = self.env['myschool.ad.takeover.session'].create({
+            'name': 'Cloud-only session',
+            'google_workspace_config_id': gcfg.id,
+            'scope_org_id': self.school.id,
+            'environment': 'test',
+        })
+        return session
+
+    def _patch_cloud_fetchers(self, session, ous=None, users=None,
+                              groups=None):
+        """Return a list of patches the test wraps in an ExitStack /
+        nested with-blocks. Patches the fetch-helpers and the Google
+        availability/connection probes."""
+        session_cls = type(session)
+        gsvc = self.env['myschool.google.directory.service']
+        return [
+            patch.object(session_cls, '_cloud_fetch_ous',
+                         return_value=list(ous or [])),
+            patch.object(session_cls, '_cloud_fetch_users',
+                         return_value=list(users or [])),
+            patch.object(session_cls, '_cloud_fetch_groups',
+                         return_value=list(groups or [])),
+            patch.object(type(gsvc), '_check_google_available',
+                         return_value=True),
+            patch.object(type(gsvc), '_get_directory_service',
+                         return_value=object()),
+        ]
+
+    def test_at_least_one_source_required(self):
+        with self.assertRaises(ValidationError):
+            self.env['myschool.ad.takeover.session'].create({
+                'name': 'No-source session',
+                'scope_org_id': self.school.id,
+                'environment': 'test',
+            })
+
+    def test_cloud_scan_orphan_user(self):
+        session = self._make_cloud_session()
+        patches = self._patch_cloud_fetchers(session, users=[{
+            'id': 'cloud-uid-orphan-1',
+            'primaryEmail': 'unknown@test.olvp.lab',
+            'name': {'givenName': 'Test', 'familyName': 'Orphan',
+                     'fullName': 'Test Orphan'},
+        }])
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            session.action_scan()
+        finding = session.finding_ids.filtered(lambda f: f.kind == 'user')
+        self.assertEqual(len(finding), 1)
+        self.assertEqual(finding.source, 'cloud')
+        self.assertEqual(finding.state, 'proposed')
+        self.assertEqual(finding.proposal_kind, 'link_only')
+        self.assertEqual(finding.risk_level, 'medium')
+
+    def test_cloud_scan_sap_ref_match_done(self):
+        person = self._make_person(
+            sap_ref='CLOUD01', email_cloud='match@test.olvp.lab')
+        session = self._make_cloud_session()
+        patches = self._patch_cloud_fetchers(session, users=[{
+            'id': 'cloud-uid-match-1',
+            'primaryEmail': 'match@test.olvp.lab',
+            'name': {'givenName': 'Test', 'familyName': 'Match'},
+            'externalIds': [{'type': 'organization', 'value': 'CLOUD01'}],
+        }])
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            session.action_scan()
+        finding = session.finding_ids.filtered(lambda f: f.kind == 'user')
+        self.assertEqual(finding.state, 'done')
+        self.assertEqual(finding.matched_person_id, person)
+
+    def test_cloud_scan_stamp_id_via_email(self):
+        person = self._make_person(
+            sap_ref='CLOUD02', email_cloud='via@test.olvp.lab')
+        session = self._make_cloud_session()
+        patches = self._patch_cloud_fetchers(session, users=[{
+            'id': 'cloud-uid-stamp-1',
+            'primaryEmail': 'via@test.olvp.lab',
+            'name': {'givenName': 'Test', 'familyName': 'Stamp'},
+        }])
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            session.action_scan()
+        finding = session.finding_ids.filtered(lambda f: f.kind == 'user')
+        self.assertEqual(finding.state, 'proposed')
+        self.assertEqual(finding.proposal_kind, 'stamp_id')
+        self.assertEqual(finding.matched_person_id, person)
+        payload = json.loads(finding.proposal_payload_json or '{}')
+        self.assertEqual(payload.get('target_attribute'), 'externalIds')
+        self.assertEqual(payload.get('value'), 'CLOUD02')
+
+    def test_cloud_scan_identity_conflict_email_mismatch(self):
+        """Same sap_ref in Cloud as a DB-person, but the Cloud user's
+        primaryEmail disagrees with DB.person.email_cloud → conflict."""
+        person = self._make_person(
+            sap_ref='CLOUD03', email_cloud='canonical@test.olvp.lab')
+        session = self._make_cloud_session()
+        patches = self._patch_cloud_fetchers(session, users=[{
+            'id': 'cloud-uid-conflict-1',
+            'primaryEmail': 'drifted@test.olvp.lab',
+            'name': {'givenName': 'Test', 'familyName': 'Conflict'},
+            'externalIds': [{'type': 'organization', 'value': 'CLOUD03'}],
+        }])
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            session.action_scan()
+        finding = session.finding_ids.filtered(lambda f: f.kind == 'user')
+        self.assertEqual(finding.state, 'identity_conflict')
+        self.assertEqual(finding.matched_person_id, person)
+        self.assertIn('drifted', finding.conflict_reason or '')
+
+    # ------------------------------------------------------------------
+    # Fase B — Cross-source linker
+    # ------------------------------------------------------------------
+
+    def test_cross_source_siblings_populated(self):
+        """Same sap_ref appears in AD and Cloud → both findings list
+        each other in sibling_ids after the scan completes."""
+        person = self._make_person(
+            sap_ref='XR01', email_cloud='xr01@test.olvp.lab')
+        # Use a session with BOTH ldap and google configured.
+        gcfg = self.env['myschool.google.workspace.config'].create({
+            'name': 'XR Google',
+            'environment': 'test',
+            'domain': 'test.olvp.lab',
+            'subject_email': 'admin@test.olvp.lab',
+            'customer_id': 'my_customer',
+            'active': False,
+        })
+        session = self.env['myschool.ad.takeover.session'].create({
+            'name': 'Cross-source session',
+            'ldap_config_id': self.ldap_test.id,
+            'google_workspace_config_id': gcfg.id,
+            'scope_org_id': self.school.id,
+            'environment': 'test',
+        })
+
+        ad_stub_payload = ([{
+            'session_id': session.id,
+            'source': 'ad',
+            'external_id': 'CN=jan,OU=ts,DC=test,DC=local',
+            'kind': 'user',
+            'ad_dn': 'CN=jan,OU=ts,DC=test,DC=local',
+            'ad_cn': 'jan',
+            'ad_mail': 'xr01@test.olvp.lab',
+            'sap_ref': 'XR01',
+            'state': 'done',
+            'status': 'matched',
+            'matched_person_id': person.id,
+            'risk_level': 'low',
+            'match_kind': 'matched_in_db',
+        }], 'AD-stub')
+        patches = self._patch_cloud_fetchers(session, users=[{
+            'id': 'cloud-jan',
+            'primaryEmail': 'xr01@test.olvp.lab',
+            'name': {'givenName': 'Jan', 'familyName': 'Test'},
+            'externalIds': [{'type': 'organization', 'value': 'XR01'}],
+        }])
+        patches.append(patch.object(
+            type(session), '_scan_ad', return_value=ad_stub_payload))
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            session.action_scan()
+
+        users = session.finding_ids.filtered(lambda f: f.kind == 'user')
+        self.assertEqual(len(users), 2)
+        ad_finding = users.filtered(lambda f: f.source == 'ad')
+        cloud_finding = users.filtered(lambda f: f.source == 'cloud')
+        self.assertEqual(ad_finding.sibling_ids, cloud_finding)
+        self.assertEqual(cloud_finding.sibling_ids, ad_finding)
+
+    def test_cross_source_drift_marks_conflict(self):
+        """AD-finding and Cloud-finding both claim sap_ref=XR99 but each
+        points at a different DB-person → cross-source linker promotes
+        both to state=identity_conflict.
+
+        sap_ref carries a UNIQUE constraint on person, so we can't have
+        two DB-persons with the same sap_ref. Instead we test the
+        drift-detection logic directly by inserting two finding-stubs
+        with different matched_person_id but identical sap_ref —
+        which simulates the real-world "AD says X belongs to person A,
+        Cloud says X belongs to person B" data corruption.
+        """
+        person_a = self._make_person(
+            sap_ref='XR99', email_cloud='a@test.olvp.lab')
+        person_b = self._make_person(
+            name='Other', email_cloud='b@test.olvp.lab')
+        gcfg = self.env['myschool.google.workspace.config'].create({
+            'name': 'Drift Google',
+            'environment': 'test',
+            'domain': 'test.olvp.lab',
+            'subject_email': 'admin@test.olvp.lab',
+            'customer_id': 'my_customer',
+            'active': False,
+        })
+        session = self.env['myschool.ad.takeover.session'].create({
+            'name': 'Drift session',
+            'ldap_config_id': self.ldap_test.id,
+            'google_workspace_config_id': gcfg.id,
+            'scope_org_id': self.school.id,
+            'environment': 'test',
+        })
+        # Create two stub findings directly — simulating the post-scan
+        # state where both bronnen agreed on sap_ref but disagreed
+        # on matched_person_id.
+        Finding = self.env['myschool.ad.takeover.finding']
+        Finding.create([{
+            'session_id': session.id,
+            'source': 'ad',
+            'external_id': 'CN=a,OU=ts,DC=test,DC=local',
+            'kind': 'user',
+            'ad_dn': 'CN=a,OU=ts,DC=test,DC=local',
+            'ad_cn': 'a',
+            'sap_ref': 'XR99',
+            'state': 'done',
+            'matched_person_id': person_a.id,
+        }, {
+            'session_id': session.id,
+            'source': 'cloud',
+            'external_id': 'cloud-drift',
+            'kind': 'user',
+            'ad_dn': 'b@test.olvp.lab',
+            'ad_cn': 'b',
+            'sap_ref': 'XR99',
+            'state': 'done',
+            'matched_person_id': person_b.id,
+        }])
+        # Run the linker directly — it's the unit under test
+        siblings, drift = session._link_cross_source()
+        self.assertEqual(siblings, 2)
+        self.assertEqual(drift, 2)
+
+        users = session.finding_ids.filtered(lambda f: f.kind == 'user')
+        self.assertEqual(len(users), 2)
+        for f in users:
+            self.assertEqual(f.state, 'identity_conflict')
+            self.assertIn('Cross-source', f.conflict_reason or '')
 
     def test_legacy_status_migration_mapping_complete(self):
         """Verify the LEGACY_STATUS_MIGRATION table covers every
