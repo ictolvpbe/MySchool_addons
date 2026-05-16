@@ -2099,16 +2099,17 @@ class AdTakeoverFinding(models.Model):
                     rec._apply_stamp_id()
                 elif pk == 'rename':
                     rec._apply_rename()
+                elif pk == 'move':
+                    rec._apply_move()
                 elif pk == 'delete_after':
                     rec._apply_delete_after()
                 elif pk == 'ignore':
                     raise UserError(_(
                         'Voorstel-type "negeer" — niets te doen op "%s".'
                     ) % rec.ad_dn)
-                elif pk in ('move', 'membership_add'):
+                elif pk == 'membership_add':
                     raise UserError(_(
-                        'Voorstel-type "%s" is gepland voor Fase C en nog '
-                        'niet uitvoerbaar (volgt in C3/C4).') % pk)
+                        'Voorstel-type "%s" volgt in stap C4.') % pk)
                 else:
                     raise UserError(_(
                         'Onbekend voorstel-type: %s') % pk)
@@ -2364,7 +2365,9 @@ class AdTakeoverFinding(models.Model):
             return self._snapshot_stamp_id()
         if self.proposal_kind == 'rename':
             return self._snapshot_rename()
-        # move/membership_add land in Fase C3/C4
+        if self.proposal_kind == 'move':
+            return self._snapshot_move()
+        # membership_add lands in Fase C4
         raise UserError(_(
             'Snapshot voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2376,6 +2379,8 @@ class AdTakeoverFinding(models.Model):
             return self._restore_stamp_id(snapshot)
         if self.proposal_kind == 'rename':
             return self._restore_rename(snapshot)
+        if self.proposal_kind == 'move':
+            return self._restore_move(snapshot)
         raise UserError(_(
             'Rollback voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2389,6 +2394,8 @@ class AdTakeoverFinding(models.Model):
             return self._mutate_stamp_id()
         if self.proposal_kind == 'rename':
             return self._mutate_rename()
+        if self.proposal_kind == 'move':
+            return self._mutate_move()
         raise UserError(_(
             'Mutatie voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2693,6 +2700,181 @@ class AdTakeoverFinding(models.Model):
         })
         self._mutate_rename()
         self._mark_done(action_message=_('Hernoemd in %s.') % self.source)
+
+    # ------------------------------------------------------------------
+    # MOVE — snapshot / mutate / restore (Fase C3)
+    # ------------------------------------------------------------------
+    #
+    # Payload schema:
+    #   AD:    {"new_parent": "OU=foo,OU=bar,DC=..."}
+    #   Cloud: {"new_parent": "/path/to/new/parent"}  (orgUnitPath)
+    #
+    # AD: MODIFY DN with new_superior=parent moves the object beneath
+    #     a different parent. RDN stays put (rename is separate).
+    #     Memberships, SID, GUID all preserved.
+    # Cloud user: patch orgUnitPath
+    # Cloud OU:   patch parentOrgUnitPath
+    # Cloud group: N/A — groups are tenant-flat, no OU concept.
+
+    def _snapshot_move(self):
+        self.ensure_one()
+        if self.source == 'ad':
+            parent_dn = (self.ad_dn.split(',', 1)[1]
+                         if ',' in self.ad_dn else '')
+            return {
+                'source': 'ad',
+                'kind': self.kind,
+                'old_dn': self.ad_dn,
+                'old_parent': parent_dn,
+            }
+        if self.source == 'cloud':
+            if self.kind == 'group':
+                raise UserError(_(
+                    'Cloud-groups hebben geen OU — MOVE is N/A.'))
+            gsvc = self.env['myschool.google.directory.service']
+            config = self.session_id.google_workspace_config_id
+            api = gsvc._get_directory_service(config)
+            if self.kind == 'user':
+                user = api.users().get(userKey=self.external_id).execute()
+                return {
+                    'source': 'cloud',
+                    'kind': 'user',
+                    'old_org_unit_path': user.get('orgUnitPath', '/'),
+                }
+            if self.kind == 'ou':
+                customer = config.customer_id or 'my_customer'
+                ou = api.orgunits().get(
+                    customerId=customer,
+                    orgUnitPath=self.ad_dn).execute()
+                return {
+                    'source': 'cloud',
+                    'kind': 'ou',
+                    'old_parent_path': ou.get('parentOrgUnitPath', '/'),
+                    'old_path': ou.get('orgUnitPath'),
+                }
+        raise UserError(_(
+            'MOVE snapshot: source=%s, kind=%s niet ondersteund.'
+        ) % (self.source, self.kind))
+
+    def _mutate_move(self):
+        self.ensure_one()
+        try:
+            payload = json.loads(self.proposal_payload_json or '{}')
+        except (ValueError, TypeError):
+            payload = {}
+        new_parent = (payload.get('new_parent') or '').strip()
+        if not new_parent:
+            raise UserError(_('MOVE-payload mist new_parent.'))
+
+        if self.source == 'ad':
+            self._mutate_ad_move(new_parent)
+            return
+        if self.source == 'cloud':
+            self._mutate_cloud_move(new_parent)
+            return
+        raise UserError(_('MOVE mutatie: source=%s niet ondersteund.')
+                        % self.source)
+
+    def _mutate_ad_move(self, new_parent_dn):
+        """MODIFY DN with new_superior. Keeps RDN unchanged."""
+        ldap = self.env['myschool.ldap.service']
+        config = self.session_id.ldap_config_id
+        old_rdn = self.ad_dn.split(',', 1)[0]
+        with ldap._get_connection(config) as conn:
+            ok = conn.modify_dn(self.ad_dn, old_rdn,
+                                new_superior=new_parent_dn)
+            result = conn.result or {}
+            if not ok or result.get('result') != 0:
+                raise UserError(_(
+                    'LDAP MOVE mislukt voor %(dn)s → %(parent)s: %(err)s'
+                ) % {'dn': self.ad_dn,
+                     'parent': new_parent_dn,
+                     'err': result.get('description') or result})
+        new_dn = f'{old_rdn},{new_parent_dn}'
+        self.write({
+            'ad_dn': new_dn,
+            'external_id': new_dn,
+        })
+
+    def _mutate_cloud_move(self, new_parent_path):
+        gsvc = self.env['myschool.google.directory.service']
+        config = self.session_id.google_workspace_config_id
+        api = gsvc._get_directory_service(config)
+        if self.kind == 'user':
+            api.users().patch(
+                userKey=self.external_id,
+                body={'orgUnitPath': new_parent_path}).execute()
+        elif self.kind == 'ou':
+            customer = config.customer_id or 'my_customer'
+            api.orgunits().patch(
+                customerId=customer,
+                orgUnitPath=self.ad_dn,
+                body={'parentOrgUnitPath': new_parent_path}).execute()
+            # New full path = parent + '/' + own_name
+            own_name = self.ad_cn or self.ad_dn.rsplit('/', 1)[-1]
+            new_path = (f'{new_parent_path.rstrip("/")}/{own_name}'
+                        if new_parent_path != '/' else f'/{own_name}')
+            self.write({'ad_dn': new_path, 'external_id': new_path})
+        else:
+            raise UserError(_(
+                'Cloud-MOVE niet ondersteund voor kind=%s') % self.kind)
+
+    def _restore_move(self, snapshot):
+        self.ensure_one()
+        if snapshot.get('source') == 'ad':
+            old_parent = snapshot.get('old_parent')
+            old_dn = snapshot.get('old_dn')
+            if not old_parent or not old_dn:
+                raise UserError(_('MOVE-snapshot incompleet.'))
+            ldap = self.env['myschool.ldap.service']
+            config = self.session_id.ldap_config_id
+            current_rdn = self.ad_dn.split(',', 1)[0]
+            with ldap._get_connection(config) as conn:
+                ok = conn.modify_dn(self.ad_dn, current_rdn,
+                                    new_superior=old_parent)
+                result = conn.result or {}
+                if not ok or result.get('result') != 0:
+                    raise UserError(_(
+                        'LDAP MOVE rollback mislukt: %s'
+                    ) % (result.get('description') or result))
+            self.write({'ad_dn': old_dn, 'external_id': old_dn})
+            return
+        if snapshot.get('source') == 'cloud':
+            gsvc = self.env['myschool.google.directory.service']
+            config = self.session_id.google_workspace_config_id
+            api = gsvc._get_directory_service(config)
+            if snapshot.get('kind') == 'user':
+                api.users().patch(
+                    userKey=self.external_id,
+                    body={'orgUnitPath': snapshot.get('old_org_unit_path')}
+                ).execute()
+            elif snapshot.get('kind') == 'ou':
+                customer = config.customer_id or 'my_customer'
+                api.orgunits().patch(
+                    customerId=customer,
+                    orgUnitPath=self.ad_dn,
+                    body={'parentOrgUnitPath': snapshot.get('old_parent_path')}
+                ).execute()
+                if snapshot.get('old_path'):
+                    self.write({
+                        'ad_dn': snapshot['old_path'],
+                        'external_id': snapshot['old_path'],
+                    })
+            return
+        raise UserError(_(
+            'MOVE restore: source=%s niet ondersteund.'
+        ) % snapshot.get('source'))
+
+    def _apply_move(self):
+        """Direct-apply: snapshot + mutate + mark_done."""
+        self.ensure_one()
+        snapshot = self._capture_snapshot()
+        self.write({
+            'rollback_snapshot_json': json.dumps(snapshot, default=str),
+            'rollback_snapshot_at': fields.Datetime.now(),
+        })
+        self._mutate_move()
+        self._mark_done(action_message=_('Verplaatst in %s.') % self.source)
 
     def _apply_stamp_id(self):
         """Direct-apply path (no pilot): mutate + mark_done.
