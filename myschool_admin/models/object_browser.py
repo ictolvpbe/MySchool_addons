@@ -1570,6 +1570,150 @@ class ObjectBrowser(models.TransientModel):
         return {'error': None, 'members': members}
 
     # =========================================================================
+    # SS-BROWSER (Fase I6) — Smartschool is flat (geen hiërarchie van OUs).
+    # Bestaat uit één lange user-lijst die client-side gefilterd wordt;
+    # detail-fetch per username via getUserDetailsByUsername.
+    # =========================================================================
+
+    @api.model
+    def ss_get_configs(self):
+        """Actieve Smartschool-configs voor de SS-browser tenant-dropdown."""
+        configs = self.env['myschool.smartschool.config'].search(
+            [('active', '=', True)], order='sequence, name')
+        return [{
+            'id': c.id,
+            'name': c.name,
+            'platform_url': c.platform_url,
+        } for c in configs]
+
+    @api.model
+    def ss_list_users(self, config_id):
+        """Eén-shot dump van alle users in de SS-tenant via
+        getAllAccountsExtended(code='', recursive='1'). Defensieve XML-
+        parser (zelfde patroon als ad_takeover._ss_parse_users).
+        """
+        Config = self.env['myschool.smartschool.config']
+        config = Config.browse(config_id).exists()
+        if not config:
+            return {'error': 'SS-config niet gevonden.', 'users': []}
+        svc = self.env['myschool.smartschool.service']
+        try:
+            client = svc._get_client(config)
+            raw = client.service.getAllAccountsExtended(
+                accesscode=config.sudo().api_key,
+                code='', recursive='1')
+        except Exception as e:
+            _logger.exception('[SS-BROWSE] list failed')
+            return {'error': str(e), 'users': []}
+
+        if isinstance(raw, (int, str)) and str(raw).strip().lstrip('-').isdigit():
+            return {'error': f'Smartschool returncode {raw}', 'users': []}
+
+        users = self._ss_parse_users_xml(str(raw))
+        # Sort op naam (achternaam, voornaam, username)
+        users.sort(key=lambda u: (
+            (u.get('name') or u.get('surname') or '').lower(),
+            (u.get('firstname') or '').lower(),
+            (u.get('username') or '').lower()))
+        # DB-match per user
+        for u in users:
+            match = self._ss_match_db_person(u)
+            if match:
+                u['matched_person'] = match
+        return {'error': None, 'users': users, 'count': len(users)}
+
+    @api.model
+    def ss_browse_user(self, config_id, username):
+        """Detail-fetch van één SS-user via getUserDetailsByUsername.
+        Resultaat parseert dezelfde XML-vorm + DB-match."""
+        Config = self.env['myschool.smartschool.config']
+        config = Config.browse(config_id).exists()
+        if not config:
+            return {'error': 'SS-config niet gevonden.', 'user': None}
+        svc = self.env['myschool.smartschool.service']
+        try:
+            client = svc._get_client(config)
+            raw = client.service.getUserDetailsByUsername(
+                accesscode=config.sudo().api_key, username=username)
+        except Exception as e:
+            return {'error': str(e), 'user': None}
+
+        if isinstance(raw, (int, str)) and str(raw).strip().lstrip('-').isdigit():
+            return {'error': f'Smartschool returncode {raw}', 'user': None}
+
+        # Wrap as a list with single row + parse via shared helper
+        parsed = self._ss_parse_users_xml(
+            f'<root>{raw}</root>' if not str(raw).strip().startswith('<root')
+            else str(raw))
+        if not parsed:
+            # Soms wordt de detail-XML niet in <row> verpakt; probeer
+            # de hele tekst als één user-record te interpreteren.
+            parsed = self._ss_parse_users_xml(
+                f'<root><row>{raw}</row></root>')
+        if not parsed:
+            return {'error': 'Kon SS-detail niet parsen.',
+                    'user': None, 'raw': str(raw)[:2000]}
+        user = parsed[0]
+        match = self._ss_match_db_person(user)
+        if match:
+            user['matched_person'] = match
+        return {'error': None, 'user': user}
+
+    @staticmethod
+    def _ss_parse_users_xml(xml_text):
+        """Identiek defensieve parser als in ad_takeover._ss_parse_users:
+        zoekt elke node met <username> en/of <internnumber> als child."""
+        if not xml_text or not xml_text.strip():
+            return []
+        try:
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(xml_text)
+        except Exception:
+            return []
+        users = []
+        for node in root.iter():
+            child_tags = {c.tag.lower() for c in node}
+            if 'username' not in child_tags and 'internnumber' not in child_tags:
+                continue
+            user = {}
+            for c in node:
+                if list(c):
+                    continue
+                user[c.tag.lower()] = (c.text or '').strip()
+            if user.get('username') or user.get('internnumber'):
+                users.append(user)
+        return users
+
+    def _ss_match_db_person(self, ss_user):
+        """SS-user → myschool.person via internnumber (= sap_ref)
+        met fallback op email → email_cloud."""
+        Person = self.env['myschool.person'].with_context(active_test=False)
+        intern = (ss_user.get('internnumber') or '').strip()
+        if intern:
+            person = Person.search([('sap_ref', '=', intern)], limit=1)
+            if person:
+                return {
+                    'id': person.id,
+                    'display_name': person.display_name,
+                    'sap_ref': person.sap_ref or '',
+                    'email_cloud': person.email_cloud or '',
+                    'matched_via': 'internnumber/sap_ref',
+                }
+        mail = (ss_user.get('email') or '').strip()
+        if mail:
+            person = Person.search(
+                [('email_cloud', '=ilike', mail)], limit=1)
+            if person:
+                return {
+                    'id': person.id,
+                    'display_name': person.display_name,
+                    'sap_ref': person.sap_ref or '',
+                    'email_cloud': person.email_cloud or '',
+                    'matched_via': 'email/email_cloud',
+                }
+        return None
+
+    # =========================================================================
     # CLOUD-BROWSER (Fase I5) — leest Google Workspace via google_directory_
     # service. orgUnitPath is de "DN-equivalent"; groups zijn tenant-flat
     # (geen OU-hiërarchie); users hebben orgUnitPath. Slideover toont

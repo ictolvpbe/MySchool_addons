@@ -1193,6 +1193,16 @@ export class ObjectBrowserClient extends Component {
             cloudSlideOverPath: null,
             cloudSlideOverNode: null,
             cloudSlideOverLoading: false,
+            // ----- SS-browser tab (Fase I6) -----
+            ssConfigs: [],
+            ssActiveConfigId: null,
+            ssUsers: [],
+            ssUsersLoading: false,
+            ssUsersError: null,
+            ssFilter: '',
+            ssSlideOverUsername: null,
+            ssSlideOverUser: null,
+            ssSlideOverLoading: false,
         });
         // Debounce-timer voor search-input
         this._adSearchTimer = null;
@@ -2278,6 +2288,99 @@ export class ObjectBrowserClient extends Component {
     closeCloudSlideOver() {
         this.state.cloudSlideOverPath = null;
         this.state.cloudSlideOverNode = null;
+    }
+
+    async onSwitchToSSTab() {
+        this.switchTab('smartschool');
+        if (!this.state.ssConfigs.length) {
+            await this.loadSsConfigs();
+        }
+    }
+
+    async loadSsConfigs() {
+        try {
+            const configs = await this.orm.call(
+                'myschool.object.browser', 'ss_get_configs', []);
+            this.state.ssConfigs = configs;
+            if (configs.length) await this.onSsConfigChange(configs[0].id);
+        } catch (e) {
+            this.state.ssUsersError =
+                'SS-configs ophalen mislukt: ' + (e?.message || e);
+        }
+    }
+
+    async onSsConfigChange(configId) {
+        const cfgId = typeof configId === 'object'
+            ? parseInt(configId.target?.value, 10)
+            : parseInt(configId, 10);
+        if (!cfgId) return;
+        this.state.ssActiveConfigId = cfgId;
+        this.state.ssUsers = [];
+        this.state.ssUsersError = null;
+        this.state.ssFilter = '';
+        await this.loadSsUsers();
+    }
+
+    async loadSsUsers() {
+        if (!this.state.ssActiveConfigId) return;
+        this.state.ssUsersLoading = true;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ss_list_users',
+                [this.state.ssActiveConfigId]);
+            if (result.error) {
+                this.state.ssUsersError = result.error;
+                this.state.ssUsers = [];
+            } else {
+                this.state.ssUsersError = null;
+                this.state.ssUsers = result.users || [];
+            }
+        } catch (e) {
+            this.state.ssUsersError =
+                'SS-users ophalen mislukt: ' + (e?.message || e);
+        } finally {
+            this.state.ssUsersLoading = false;
+        }
+    }
+
+    onSsFilterInput(ev) {
+        this.state.ssFilter = ev.target.value;
+    }
+
+    get filteredSsUsers() {
+        const f = (this.state.ssFilter || '').trim().toLowerCase();
+        if (!f) return this.state.ssUsers;
+        return this.state.ssUsers.filter(u =>
+            (u.username || '').toLowerCase().includes(f) ||
+            (u.name || '').toLowerCase().includes(f) ||
+            (u.surname || '').toLowerCase().includes(f) ||
+            (u.firstname || '').toLowerCase().includes(f) ||
+            (u.email || '').toLowerCase().includes(f) ||
+            (u.internnumber || '').toLowerCase().includes(f));
+    }
+
+    async openSsSlideOver(username) {
+        this.state.ssSlideOverUsername = username;
+        this.state.ssSlideOverUser = null;
+        this.state.ssSlideOverLoading = true;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ss_browse_user',
+                [this.state.ssActiveConfigId, username]);
+            if (result.error) {
+                this.state.ssUsersError = result.error;
+                this.state.ssSlideOverUsername = null;
+                return;
+            }
+            this.state.ssSlideOverUser = result.user;
+        } finally {
+            this.state.ssSlideOverLoading = false;
+        }
+    }
+
+    closeSsSlideOver() {
+        this.state.ssSlideOverUsername = null;
+        this.state.ssSlideOverUser = null;
     }
 
     async onSwitchToADTab() {

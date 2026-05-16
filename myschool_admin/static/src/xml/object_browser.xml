@@ -974,6 +974,10 @@
                         t-on-click="onSwitchToCloudTab">
                     <i class="fa fa-cloud"/> Cloud-browser
                 </button>
+                <button t-att-class="'ob-tab' + (state.activeTab === 'smartschool' ? ' ob-tab-active' : '')"
+                        t-on-click="onSwitchToSSTab">
+                    <i class="fa fa-graduation-cap"/> SS-browser
+                </button>
             </div>
             
             <!-- Bulk Actions Bar (shown whenever ≥1 item is selected in tree OR members) -->
@@ -1599,6 +1603,162 @@
                                                             </button>
                                                         </t>
                                                     </td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+            </t>
+
+            <!-- SS-browser Tab Content (Fase I6) -->
+            <t t-if="state.activeTab === 'smartschool'">
+                <div class="ob-ad-browser">
+                    <div class="ob-ad-toolbar">
+                        <label class="ob-ad-toolbar-label">Smartschool:</label>
+                        <select class="ob-ad-select"
+                                t-on-change="(ev) => this.onSsConfigChange(ev)">
+                            <option value="">— kies platform —</option>
+                            <t t-foreach="state.ssConfigs" t-as="cfg" t-key="cfg.id">
+                                <option t-att-value="cfg.id"
+                                        t-att-selected="state.ssActiveConfigId === cfg.id">
+                                    <t t-esc="cfg.name"/> · <t t-esc="cfg.platform_url"/>
+                                </option>
+                            </t>
+                        </select>
+                        <span class="ob-ad-base-dn" t-if="state.ssUsers.length">
+                            <t t-esc="state.ssUsers.length"/> users geladen
+                        </span>
+                        <button class="ob-btn ob-btn-sm" t-on-click="loadSsUsers"
+                                title="Users herladen"
+                                t-att-disabled="!state.ssActiveConfigId">
+                            <i class="fa fa-refresh"/>
+                        </button>
+                    </div>
+
+                    <div class="ob-ad-error" t-if="state.ssUsersError">
+                        <i class="fa fa-exclamation-triangle"/>
+                        <t t-esc="state.ssUsersError"/>
+                    </div>
+
+                    <div class="ob-ad-split" t-if="state.ssActiveConfigId">
+                        <!-- LEFT/MIDDLE: SS users-list (groot, geen tree-pane) -->
+                        <div class="ob-ad-members" style="flex: 3;">
+                            <div class="ob-ad-members-header">
+                                <i class="fa fa-graduation-cap ob-ad-members-icon"/>
+                                <span class="ob-ad-members-title">Smartschool users</span>
+                                <span class="badge text-bg-secondary ob-ad-members-count">
+                                    <t t-esc="filteredSsUsers.length"/>
+                                </span>
+                            </div>
+                            <div class="ob-ad-members-filter">
+                                <input type="text"
+                                       placeholder="Filter op username, naam, mail, internnumber…"
+                                       t-att-value="state.ssFilter"
+                                       t-on-input="onSsFilterInput"/>
+                            </div>
+                            <div class="ob-ad-members-list">
+                                <t t-if="state.ssUsersLoading">
+                                    <div class="ob-ad-empty">
+                                        <i class="fa fa-spinner fa-spin"/>
+                                        Tenant-dump aan het laden…
+                                    </div>
+                                </t>
+                                <t t-elif="filteredSsUsers.length === 0">
+                                    <div class="ob-ad-empty">Geen users.</div>
+                                </t>
+                                <t t-else="">
+                                    <t t-foreach="filteredSsUsers" t-as="u" t-key="u.username">
+                                        <div class="ob-ad-member-row">
+                                            <i class="fa fa-user ob-ad-member-icon"/>
+                                            <div class="ob-ad-member-text">
+                                                <div class="ob-ad-member-name">
+                                                    <t t-esc="(u.firstname or '') + ' ' + (u.name or u.surname or u.username)"/>
+                                                    <t t-if="u.matched_person">
+                                                        <i class="fa fa-link" style="margin-left: 6px; color: #198754;" title="Gematcht met DB-persoon"/>
+                                                    </t>
+                                                </div>
+                                                <div class="ob-ad-member-meta">
+                                                    <code><t t-esc="u.username"/></code>
+                                                    <t t-if="u.email"> · <t t-esc="u.email"/></t>
+                                                    <t t-if="u.internnumber"> · intern:<t t-esc="u.internnumber"/></t>
+                                                </div>
+                                            </div>
+                                            <div class="ob-ad-member-actions">
+                                                <button class="ob-icon-btn"
+                                                        title="Open detail-slideover"
+                                                        t-on-click="() => this.openSsSlideOver(u.username)">
+                                                    <i class="fa fa-eye"/>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SS SLIDEOVER -->
+                    <t t-if="state.ssSlideOverUsername">
+                        <div class="ob-ad-slideover-backdrop"
+                             t-on-click="closeSsSlideOver"/>
+                        <div class="ob-ad-slideover">
+                            <div class="ob-ad-slideover-header">
+                                <h3>
+                                    <t t-if="state.ssSlideOverUser">
+                                        <i class="fa fa-user"/>
+                                        <t t-esc="(state.ssSlideOverUser.firstname or '') + ' ' + (state.ssSlideOverUser.name or state.ssSlideOverUser.surname or state.ssSlideOverUser.username)"/>
+                                    </t>
+                                    <t t-else="">
+                                        <i class="fa fa-spinner fa-spin"/> Loading…
+                                    </t>
+                                </h3>
+                                <button class="ob-icon-btn ob-ad-slideover-close"
+                                        title="Sluiten"
+                                        t-on-click="closeSsSlideOver">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <div class="ob-ad-slideover-body">
+                                <t t-if="state.ssSlideOverUser">
+                                    <div class="text-muted small" style="margin-bottom: 12px;">
+                                        <code><t t-esc="state.ssSlideOverUser.username"/></code>
+                                    </div>
+                                    <div class="ob-ad-db-match"
+                                         t-if="state.ssSlideOverUser.matched_person">
+                                        <div class="ob-ad-db-match-header">
+                                            <i class="fa fa-link"/>
+                                            Gematchte DB-persoon
+                                        </div>
+                                        <table class="ob-ad-attr-table">
+                                            <tbody>
+                                                <tr><td><code>Naam</code></td><td><strong><t t-esc="state.ssSlideOverUser.matched_person.display_name"/></strong></td></tr>
+                                                <tr><td><code>sap_ref</code></td><td><t t-esc="state.ssSlideOverUser.matched_person.sap_ref or '—'"/></td></tr>
+                                                <tr><td><code>email_cloud</code></td><td><t t-esc="state.ssSlideOverUser.matched_person.email_cloud or '—'"/></td></tr>
+                                                <tr><td><code>matched_via</code></td><td><span class="badge text-bg-info"><t t-esc="state.ssSlideOverUser.matched_person.matched_via"/></span></td></tr>
+                                            </tbody>
+                                        </table>
+                                        <button class="ob-btn ob-btn-primary ob-btn-sm"
+                                                style="margin-top: 8px;"
+                                                t-on-click="() => this.openMatchedDbPerson(state.ssSlideOverUser.matched_person.id)">
+                                            <i class="fa fa-external-link"/>
+                                            Open DB-record
+                                        </button>
+                                    </div>
+                                    <h4 class="ob-ad-attrs-header">SS-attributen</h4>
+                                    <table class="ob-ad-attr-table">
+                                        <thead>
+                                            <tr><th>Attribuut</th><th>Waarde</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <t t-foreach="Object.entries(state.ssSlideOverUser).filter(([k,v]) => k !== 'matched_person' and v).sort()"
+                                               t-as="row" t-key="row[0]">
+                                                <tr>
+                                                    <td><code><t t-esc="row[0]"/></code></td>
+                                                    <td><pre class="ob-ad-attr-value"><t t-esc="row[1]"/></pre></td>
                                                 </tr>
                                             </t>
                                         </tbody>
