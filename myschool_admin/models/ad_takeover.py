@@ -2242,19 +2242,273 @@ class AdTakeoverFinding(models.Model):
                 })
         self._mark_done()
 
-    def _apply_stamp_id(self):
-        """Write the matched person's sap_ref into the AD user's
-        ``employeeID`` attribute.
+    # ==================================================================
+    # Pilot / verify / rollback — Fase C1
+    # ==================================================================
 
-        Pure attribute write — no DN change, no group-membership
-        change, no password touch. The safest mutation in the system:
-        AD-users that miss employeeID get their identity-key filled in
-        so subsequent scans match them deterministically.
+    MUTATING_PROPOSALS = ('stamp_id', 'rename', 'move', 'membership_add')
+
+    def action_pilot(self):
+        """Capture a rollback snapshot, then perform the bron-mutation.
+        Result: state=applied_pilot. Admin then clicks Verifieer (→ done)
+        or Rollback (→ approved, snapshot replayed).
+
+        Only available for muterende voorstellen — LINK_ONLY and
+        DELETE_AFTER use action_takeover directly.
         """
         self.ensure_one()
-        if self.source != 'ad':
+        if self.state != 'approved':
             raise UserError(_(
-                'STAMP_ID is in Fase A alleen geïmplementeerd voor AD.'))
+                'Pilot vereist state=approved (huidige state: %s).'
+            ) % self.state)
+        if self.proposal_kind not in self.MUTATING_PROPOSALS:
+            raise UserError(_(
+                'Pilot is alleen zinvol voor muterende voorstellen. '
+                'LINK_ONLY/DELETE_AFTER gaan direct via "Voer voorstel uit".'))
+
+        try:
+            snapshot = self._capture_snapshot()
+        except Exception as e:
+            _logger.exception(
+                '[AD-TAKEOVER] snapshot capture failed for %s', self.ad_dn)
+            raise UserError(_(
+                'Snapshot maken mislukt — pilot afgebroken: %s') % e)
+
+        self.write({
+            'rollback_snapshot_json': json.dumps(snapshot, default=str),
+            'rollback_snapshot_at': fields.Datetime.now(),
+        })
+
+        try:
+            self._apply_mutation()
+        except Exception as e:
+            # Mutation failed — wipe the snapshot so a retry generates
+            # a fresh one against the unchanged bron-state.
+            self.write({
+                'rollback_snapshot_json': False,
+                'rollback_snapshot_at': False,
+            })
+            _logger.exception(
+                '[AD-TAKEOVER] pilot mutation failed for %s', self.ad_dn)
+            raise UserError(_('Pilot mislukt: %s') % e)
+
+        self.write({
+            'state': 'applied_pilot',
+            'last_action_at': fields.Datetime.now(),
+            'action_message': _(
+                'Pilot uitgevoerd. Controleer in %(source)s; klik daarna '
+                '"Verifieer" of "Rollback".'
+            ) % {'source': self.source.upper()},
+        })
+        return True
+
+    def action_verify(self):
+        """Accept the pilot result and promote state → done."""
+        self.ensure_one()
+        if self.state != 'applied_pilot':
+            raise UserError(_(
+                'Verifieer vereist state=applied_pilot (huidige state: %s).'
+            ) % self.state)
+        self.write({
+            'state': 'done',
+            'status': 'takeover_done',
+            'last_action_at': fields.Datetime.now(),
+            'action_message': _('Pilot geverifieerd en geaccepteerd.'),
+        })
+        return True
+
+    def action_rollback(self):
+        """Reverse the piloted mutation using the snapshot. State
+        returns to ``approved`` so admin can retry, skip, or rework."""
+        self.ensure_one()
+        if self.state != 'applied_pilot':
+            raise UserError(_(
+                'Rollback vereist state=applied_pilot (huidige state: %s).'
+            ) % self.state)
+        if not self.rollback_snapshot_json:
+            raise UserError(_(
+                'Geen snapshot beschikbaar — handmatige restore vereist.'))
+        try:
+            snapshot = json.loads(self.rollback_snapshot_json)
+        except (ValueError, TypeError):
+            raise UserError(_('Snapshot is corrupt — handmatige restore.'))
+
+        try:
+            self._restore_snapshot(snapshot)
+        except Exception as e:
+            _logger.exception(
+                '[AD-TAKEOVER] rollback failed for %s', self.ad_dn)
+            raise UserError(_('Rollback mislukt: %s') % e)
+
+        self.write({
+            'state': 'approved',
+            'rollback_snapshot_json': False,
+            'rollback_snapshot_at': False,
+            'last_action_at': fields.Datetime.now(),
+            'action_message': _(
+                'Rollback uitgevoerd. Bron-staat hersteld; voorstel staat '
+                'opnieuw op "goedgekeurd".'),
+        })
+        return True
+
+    # ------------------------------------------------------------------
+    # Snapshot / mutate / restore — dispatchers
+    # ------------------------------------------------------------------
+
+    def _capture_snapshot(self):
+        """Read current bron-state into a dict. Per proposal_kind."""
+        self.ensure_one()
+        if self.proposal_kind == 'stamp_id':
+            return self._snapshot_stamp_id()
+        # rename/move/membership_add land in Fase C2/3/4
+        raise UserError(_(
+            'Snapshot voor proposal_kind=%s nog niet geïmplementeerd.'
+        ) % self.proposal_kind)
+
+    def _restore_snapshot(self, snapshot):
+        """Invert the bron-mutation using the snapshot."""
+        self.ensure_one()
+        if self.proposal_kind == 'stamp_id':
+            return self._restore_stamp_id(snapshot)
+        raise UserError(_(
+            'Rollback voor proposal_kind=%s nog niet geïmplementeerd.'
+        ) % self.proposal_kind)
+
+    def _apply_mutation(self):
+        """Pure bron-write — no state-change, no DB-cascade. Used by
+        action_pilot. For direct-apply (no pilot), see the _apply_*
+        wrappers which call _mutate_* and then _mark_done."""
+        self.ensure_one()
+        if self.proposal_kind == 'stamp_id':
+            return self._mutate_stamp_id()
+        raise UserError(_(
+            'Mutatie voor proposal_kind=%s nog niet geïmplementeerd.'
+        ) % self.proposal_kind)
+
+    # ------------------------------------------------------------------
+    # STAMP_ID — snapshot / mutate / restore (AD + Cloud)
+    # ------------------------------------------------------------------
+
+    def _snapshot_stamp_id(self):
+        """Read the bron's current identity attribute so rollback can
+        restore it. AD → employeeID; Cloud → externalIds list."""
+        self.ensure_one()
+        if self.source == 'ad':
+            ldap = self.env['myschool.ldap.service']
+            config = self.session_id.ldap_config_id
+            old_value = ''
+            with ldap._get_connection(config) as conn:
+                conn.search(self.ad_dn, '(objectClass=*)',
+                            search_scope='BASE',
+                            attributes=['employeeID'])
+                entries = list(conn.entries)
+                if entries:
+                    try:
+                        old_value = str(entries[0]['employeeID'].value or '')
+                    except Exception:
+                        pass
+            return {
+                'source': 'ad',
+                'attribute': 'employeeID',
+                'old_value': old_value,
+            }
+        if self.source == 'cloud':
+            gsvc = self.env['myschool.google.directory.service']
+            config = self.session_id.google_workspace_config_id
+            api = gsvc._get_directory_service(config)
+            user = api.users().get(userKey=self.external_id).execute()
+            return {
+                'source': 'cloud',
+                'attribute': 'externalIds',
+                'old_value': user.get('externalIds') or [],
+            }
+        raise UserError(_(
+            'STAMP_ID snapshot: source=%s wordt niet ondersteund.') % self.source)
+
+    def _mutate_stamp_id(self):
+        """Apply the STAMP_ID change. Pure bron-write."""
+        self.ensure_one()
+        try:
+            payload = json.loads(self.proposal_payload_json or '{}')
+        except (ValueError, TypeError):
+            payload = {}
+        value = payload.get('value')
+        if not value:
+            raise UserError(_('Ongeldige STAMP_ID-payload.'))
+        if self.source == 'ad':
+            self._mutate_ad_employee_id(value)
+        elif self.source == 'cloud':
+            self._mutate_cloud_external_ids(value)
+        else:
+            raise UserError(_(
+                'STAMP_ID mutatie: source=%s wordt niet ondersteund.'
+            ) % self.source)
+
+    def _restore_stamp_id(self, snapshot):
+        """Write the snapshotted value back. Empty old_value on AD
+        removes the attribute entirely; Cloud restore overwrites the
+        whole externalIds list."""
+        self.ensure_one()
+        old = snapshot.get('old_value', '' if self.source == 'ad' else [])
+        if self.source == 'ad':
+            self._mutate_ad_employee_id(old)
+        elif self.source == 'cloud':
+            gsvc = self.env['myschool.google.directory.service']
+            config = self.session_id.google_workspace_config_id
+            api = gsvc._get_directory_service(config)
+            api.users().patch(
+                userKey=self.external_id,
+                body={'externalIds': old}).execute()
+        else:
+            raise UserError(_(
+                'STAMP_ID restore: source=%s niet ondersteund.') % self.source)
+
+    def _mutate_ad_employee_id(self, value):
+        """LDAP MODIFY employeeID. Empty value removes the attribute."""
+        from ldap3 import MODIFY_REPLACE, MODIFY_DELETE
+        ldap = self.env['myschool.ldap.service']
+        config = self.session_id.ldap_config_id
+        with ldap._get_connection(config) as conn:
+            if value:
+                conn.modify(self.ad_dn,
+                            {'employeeID': [(MODIFY_REPLACE, [str(value)])]})
+            else:
+                conn.modify(self.ad_dn,
+                            {'employeeID': [(MODIFY_DELETE, [])]})
+            result = conn.result or {}
+            # result=0 success; result=16 "no such attribute" on DELETE
+            # is acceptable (already empty).
+            if result.get('result') not in (0, 16):
+                raise UserError(_(
+                    'LDAP MODIFY mislukt voor %(dn)s: %(err)s'
+                ) % {'dn': self.ad_dn,
+                     'err': result.get('description') or result})
+
+    def _mutate_cloud_external_ids(self, value):
+        """Patch Cloud user.externalIds. Preserves non-'organization'
+        entries (custom IDs the school may use for other systems)."""
+        gsvc = self.env['myschool.google.directory.service']
+        config = self.session_id.google_workspace_config_id
+        api = gsvc._get_directory_service(config)
+        user = api.users().get(userKey=self.external_id).execute()
+        ext_ids = [e for e in (user.get('externalIds') or [])
+                   if e.get('type') != 'organization']
+        if value:
+            ext_ids.append({'type': 'organization', 'value': str(value)})
+        api.users().patch(
+            userKey=self.external_id,
+            body={'externalIds': ext_ids}).execute()
+
+    def _apply_stamp_id(self):
+        """Direct-apply path (no pilot): mutate + mark_done.
+
+        Used by action_takeover when the admin chooses to skip the
+        pilot step. For pilot/rollback path, see ``action_pilot`` which
+        captures a snapshot before calling ``_mutate_stamp_id``.
+
+        Works on AD (employeeID) and Cloud (externalIds.organization).
+        """
+        self.ensure_one()
         if self.kind != 'user':
             raise UserError(_(
                 'STAMP_ID werkt alleen op user-findings (kind=%s).'
@@ -2263,41 +2517,28 @@ class AdTakeoverFinding(models.Model):
             payload = json.loads(self.proposal_payload_json or '{}')
         except (ValueError, TypeError):
             payload = {}
-        attr  = payload.get('target_attribute', 'employeeID')
         value = payload.get('value')
-        if attr != 'employeeID' or not value:
+        if not value:
             raise UserError(_(
                 'Ongeldige STAMP_ID-payload op "%s".') % self.ad_dn)
 
-        # Import lazily so the module loads even when ldap3 is missing
-        # (the scan itself would have already failed earlier).
-        from ldap3 import MODIFY_REPLACE
-        ldap = self.env['myschool.ldap.service']
-        config = self.session_id.ldap_config_id
-        with ldap._get_connection(config) as conn:
-            conn.modify(self.ad_dn,
-                        {'employeeID': [(MODIFY_REPLACE, [str(value)])]})
-            result = conn.result or {}
-            if result.get('result') != 0:
-                raise UserError(_(
-                    'LDAP MODIFY mislukt voor %(dn)s: %(err)s') % {
-                        'dn': self.ad_dn,
-                        'err': result.get('description') or result,
-                    })
+        # The pure bron-mutation.
+        self._mutate_stamp_id()
 
-        # Mirror into DB: link person.person_fqdn_internal when empty, so
-        # the next rescan matches on the strongest key.
+        # DB-cascade (AD only): link person.person_fqdn_internal when
+        # empty so the next rescan matches on the strongest key.
         person = self.matched_person_id
-        if person and not person.person_fqdn_internal:
+        if self.source == 'ad' and person and not person.person_fqdn_internal:
             service = self.env['myschool.manual.task.service']
             service.create_manual_task('PERSON', 'UPD', {
                 'person_id': person.id,
                 'vals': {'person_fqdn_internal': self.ad_dn},
             })
 
+        attr = 'employeeID' if self.source == 'ad' else 'externalIds'
         self._mark_done(action_message=_(
-            'employeeID=%s naar AD geschreven (geen andere wijzigingen).'
-        ) % value)
+            '%(attr)s=%(value)s naar bron geschreven (geen andere wijzigingen).'
+        ) % {'attr': attr, 'value': value})
 
     def _apply_delete_after(self):
         """Cleanup-phase LDAP delete for a single finding. Mirrors the
