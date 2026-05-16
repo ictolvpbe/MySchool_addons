@@ -584,6 +584,13 @@ class AdTakeoverSession(models.Model):
         approved = self.finding_ids.filtered(lambda r: r.state == 'approved')
         if not approved:
             raise UserError(_('Geen goedgekeurde voorstellen in deze sessie.'))
+        # Order matters on a blanco DB: OUs must exist before groups/users
+        # claim them as proposed_parent_org_id. Sort by kind so OUs run
+        # first, then groups, then users — and stable-by-DN within each
+        # kind so parent-OUs land before their children.
+        kind_order = {'ou': 0, 'group': 1, 'user': 2}
+        approved = approved.sorted(
+            key=lambda r: (kind_order.get(r.kind, 99), r.ad_dn or ''))
         ok = err = 0
         for f in approved:
             try:
@@ -609,6 +616,10 @@ class AdTakeoverSession(models.Model):
             raise UserError(_(
                 'Geen openstaande voorstellen. Markeer eerst items als '
                 '"goedgekeurd" of gebruik de directe takeover-knop per rij.'))
+        # Same dependency-order as action_apply_approved.
+        kind_order = {'ou': 0, 'group': 1, 'user': 2}
+        legacy_pending = legacy_pending.sorted(
+            key=lambda r: (kind_order.get(r.kind, 99), r.ad_dn or ''))
         ok = err = 0
         for f in legacy_pending:
             try:
@@ -931,9 +942,17 @@ class AdTakeoverSession(models.Model):
                       and (f.ad_sam or '').lower() !=
                            (f.matched_person_id.odoo_user_id.login or '').lower())
 
+        # Orphan AD-users that carry an employeeID can in principle be
+        # auto-imported as a fresh DB-person with sap_ref=employeeID.
+        # Surfacing this count separately makes the blanco-DB takeover
+        # path explicit: it tells the admin "you'll get N new persons".
+        cat_orphans_with_emp = cat_orphans.filtered(lambda f: f.sap_ref)
+
         return {
             'scope_name': scope.name_tree or scope.name,
             'only_employees': only_employees,
+            'persons_in_scope_count': len(persons_in_scope),
+            'orphans_with_employee_id': cat_orphans_with_emp,
             'critical': {
                 'identity_conflicts': cat_conflicts,
                 'stamp_id_pending':   cat_stamp_pending,
@@ -976,7 +995,35 @@ class AdTakeoverSession(models.Model):
         rows.append(
             f'<p class="text-muted">Scope: <strong>{data["scope_name"]}</strong>'
             f' · filter: <strong>{"alleen werknemers" if data["only_employees"] else "iedereen"}</strong>'
+            f' · DB-personen in scope: <strong>{data["persons_in_scope_count"]}</strong>'
             f'</p>')
+
+        # Blanco-DB advisory: 0 personen in scope én één of meer AD-users
+        # met employeeID gevonden → de admin staat voor een eerste
+        # import. STAMP_ID kan dan niet werken (geen DB-target), maar
+        # LINK_ONLY-takeover creëert nieuwe persons met sap_ref
+        # rechtstreeks uit het AD employeeID.
+        if data['persons_in_scope_count'] == 0 and data['orphans_with_employee_id']:
+            n = len(data['orphans_with_employee_id'])
+            rows.append(
+                f'<div class="alert alert-info" role="alert">'
+                f'<strong>Blanco-DB takeover</strong> — geen personen in scope, '
+                f'{n} AD-user(s) met employeeID gevonden. De takeover maakt '
+                f'voor elk een nieuwe DB-persoon aan met '
+                f'<code>sap_ref=employeeID</code>; Informat-sync kan ze '
+                f'daarna verder verrijken (naam, geboortedatum, klas). '
+                f'Volgorde tijdens "Pas voorstellen toe": OUs → groups → '
+                f'users (automatisch).'
+                f'</div>')
+        elif data['persons_in_scope_count'] == 0:
+            rows.append(
+                f'<div class="alert alert-warning" role="alert">'
+                f'<strong>Geen personen in scope</strong> — controleer of '
+                f'PERSON-TREE proprelations correct gezet zijn, of dat de '
+                f'scope-org juist gekozen is. Een echte blanco-DB heeft '
+                f'normaal AD-users met employeeID; als die hier ook 0 zijn '
+                f'is je AD waarschijnlijk pre-Informat (oude accounts).'
+                f'</div>')
 
         # Critical first
         c = data['critical']
@@ -1698,7 +1745,18 @@ class AdTakeoverFinding(models.Model):
             'first_name': first,
             'email_cloud': self.ad_mail or False,
             'person_fqdn_internal': self.ad_dn,
-            'automatic_sync': False,  # manueel beheerd, geen Informat-overrules
+            # Carry employeeID → sap_ref so the new DB-person is
+            # identifiable by all downstream syncs (Informat / Cloud / SS).
+            # Without this, Informat would create a duplicate person on
+            # the next sync because the sap_ref-match fails.
+            'sap_ref': self.sap_ref or False,
+            # automatic_sync=True so Informat takes over as the
+            # authoritative source for personal data (name, birthdate,
+            # registration) once it runs. AD-takeover only filled a
+            # skeleton from LDAP attributes; Informat refines it. AD-
+            # binding (person_fqdn_internal) is owned by this tool and
+            # not touched by Informat.
+            'automatic_sync': True,
             'is_active': True,
         }
         service = self.env['myschool.manual.task.service']
