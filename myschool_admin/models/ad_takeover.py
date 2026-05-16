@@ -2101,15 +2101,14 @@ class AdTakeoverFinding(models.Model):
                     rec._apply_rename()
                 elif pk == 'move':
                     rec._apply_move()
+                elif pk == 'membership_add':
+                    rec._apply_membership_add()
                 elif pk == 'delete_after':
                     rec._apply_delete_after()
                 elif pk == 'ignore':
                     raise UserError(_(
                         'Voorstel-type "negeer" — niets te doen op "%s".'
                     ) % rec.ad_dn)
-                elif pk == 'membership_add':
-                    raise UserError(_(
-                        'Voorstel-type "%s" volgt in stap C4.') % pk)
                 else:
                     raise UserError(_(
                         'Onbekend voorstel-type: %s') % pk)
@@ -2367,7 +2366,8 @@ class AdTakeoverFinding(models.Model):
             return self._snapshot_rename()
         if self.proposal_kind == 'move':
             return self._snapshot_move()
-        # membership_add lands in Fase C4
+        if self.proposal_kind == 'membership_add':
+            return self._snapshot_membership_add()
         raise UserError(_(
             'Snapshot voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2381,6 +2381,8 @@ class AdTakeoverFinding(models.Model):
             return self._restore_rename(snapshot)
         if self.proposal_kind == 'move':
             return self._restore_move(snapshot)
+        if self.proposal_kind == 'membership_add':
+            return self._restore_membership_add(snapshot)
         raise UserError(_(
             'Rollback voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2396,6 +2398,8 @@ class AdTakeoverFinding(models.Model):
             return self._mutate_rename()
         if self.proposal_kind == 'move':
             return self._mutate_move()
+        if self.proposal_kind == 'membership_add':
+            return self._mutate_membership_add()
         raise UserError(_(
             'Mutatie voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2875,6 +2879,117 @@ class AdTakeoverFinding(models.Model):
         })
         self._mutate_move()
         self._mark_done(action_message=_('Verplaatst in %s.') % self.source)
+
+    # ------------------------------------------------------------------
+    # MEMBERSHIP_ADD — snapshot / mutate / restore (Fase C4)
+    # ------------------------------------------------------------------
+    #
+    # Payload schema:
+    #   AD:    {"target_group_dn": "...", "member_dn": "..."}
+    #   Cloud: {"target_group_email": "...", "member_email": "..."}
+    #
+    # The finding represents the USER being added; the group is the
+    # target. Snapshot is trivial: we know the membership did NOT
+    # exist before (otherwise the proposal would not have been made),
+    # so rollback simply removes it.
+
+    def _snapshot_membership_add(self):
+        self.ensure_one()
+        try:
+            payload = json.loads(self.proposal_payload_json or '{}')
+        except (ValueError, TypeError):
+            payload = {}
+        return {
+            'source': self.source,
+            'payload_at_pilot': payload,
+        }
+
+    def _mutate_membership_add(self):
+        self.ensure_one()
+        try:
+            payload = json.loads(self.proposal_payload_json or '{}')
+        except (ValueError, TypeError):
+            payload = {}
+        if self.source == 'ad':
+            group_dn = (payload.get('target_group_dn') or '').strip()
+            member_dn = (payload.get('member_dn') or self.ad_dn or '').strip()
+            if not group_dn or not member_dn:
+                raise UserError(_(
+                    'MEMBERSHIP_ADD-payload mist target_group_dn of member_dn.'))
+            ldap = self.env['myschool.ldap.service']
+            res = ldap.add_group_member(
+                self.session_id.ldap_config_id, group_dn, member_dn)
+            if not res.get('success'):
+                raise UserError(_(
+                    'LDAP add_group_member mislukt: %s'
+                ) % res.get('message', 'onbekend'))
+            return
+        if self.source == 'cloud':
+            group_email = (payload.get('target_group_email') or '').strip()
+            member_email = (payload.get('member_email')
+                            or self.ad_mail or '').strip()
+            if not group_email or not member_email:
+                raise UserError(_(
+                    'MEMBERSHIP_ADD-payload mist target_group_email of '
+                    'member_email.'))
+            gsvc = self.env['myschool.google.directory.service']
+            res = gsvc.add_group_member(
+                self.session_id.google_workspace_config_id,
+                group_email, member_email)
+            if not res.get('success'):
+                raise UserError(_(
+                    'Cloud add_group_member mislukt: %s'
+                ) % res.get('message', 'onbekend'))
+            return
+        raise UserError(_(
+            'MEMBERSHIP_ADD mutatie: source=%s niet ondersteund.'
+        ) % self.source)
+
+    def _restore_membership_add(self, snapshot):
+        self.ensure_one()
+        payload = snapshot.get('payload_at_pilot') or {}
+        if snapshot.get('source') == 'ad':
+            group_dn = (payload.get('target_group_dn') or '').strip()
+            member_dn = (payload.get('member_dn') or self.ad_dn or '').strip()
+            if not group_dn or not member_dn:
+                raise UserError(_(
+                    'MEMBERSHIP_ADD-rollback mist DN-velden in snapshot.'))
+            ldap = self.env['myschool.ldap.service']
+            res = ldap.remove_group_member(
+                self.session_id.ldap_config_id, group_dn, member_dn)
+            if not res.get('success'):
+                raise UserError(_(
+                    'LDAP remove_group_member rollback mislukt: %s'
+                ) % res.get('message', 'onbekend'))
+            return
+        if snapshot.get('source') == 'cloud':
+            group_email = (payload.get('target_group_email') or '').strip()
+            member_email = (payload.get('member_email')
+                            or self.ad_mail or '').strip()
+            gsvc = self.env['myschool.google.directory.service']
+            res = gsvc.remove_group_member(
+                self.session_id.google_workspace_config_id,
+                group_email, member_email)
+            if not res.get('success'):
+                raise UserError(_(
+                    'Cloud remove_group_member rollback mislukt: %s'
+                ) % res.get('message', 'onbekend'))
+            return
+        raise UserError(_(
+            'MEMBERSHIP_ADD restore: source=%s niet ondersteund.'
+        ) % snapshot.get('source'))
+
+    def _apply_membership_add(self):
+        """Direct-apply: snapshot + mutate + mark_done."""
+        self.ensure_one()
+        snapshot = self._capture_snapshot()
+        self.write({
+            'rollback_snapshot_json': json.dumps(snapshot, default=str),
+            'rollback_snapshot_at': fields.Datetime.now(),
+        })
+        self._mutate_membership_add()
+        self._mark_done(action_message=_(
+            'Toegevoegd aan groep in %s.') % self.source)
 
     def _apply_stamp_id(self):
         """Direct-apply path (no pilot): mutate + mark_done.
