@@ -51,6 +51,8 @@
                             <field name="customer_id"/>
                             <field name="subject_email"
                                    groups="base.group_system"/>
+                            <field name="environment" widget="radio"
+                                   options="{'horizontal': true}"/>
                             <field name="sequence"/>
                             <field name="active"/>
                         </group>
@@ -115,6 +117,9 @@
             <list string="Google Workspace Configurations">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
+                <field name="environment" widget="badge"
+                       decoration-success="environment == 'prod'"
+                       decoration-info="environment == 'test'"/>
                 <field name="domain"/>
                 <field name="customer_id"/>
                 <field name="org_count"/>

@@ -13,6 +13,9 @@
             <list string="LDAP Servers" decoration-muted="not active">
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
+                <field name="environment" widget="badge"
+                       decoration-success="environment == 'prod'"
+                       decoration-info="environment == 'test'"/>
                 <field name="server_url"/>
                 <field name="port"/>
                 <field name="use_ssl" widget="boolean"/>
@@ -56,6 +59,12 @@
                             <field name="name" placeholder="e.g., Main AD Server"/>
                         </h1>
                     </div>
+
+                    <group>
+                        <group string="Omgeving" name="environment">
+                            <field name="environment" widget="radio" options="{'horizontal': true}"/>
+                        </group>
+                    </group>
 
                     <group>
                         <group string="Connection Settings" name="connection">

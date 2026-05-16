@@ -1,8 +1,9 @@
 {
     'name': 'MySchool Admin Module',
-    'version': '0.1',
+    'version': '0.2',
     'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, periods ans services',
+    'post_init_hook': '_migrate_ad_takeover_phase_a_post_init',
     'description': """
         School Management System
         ========================

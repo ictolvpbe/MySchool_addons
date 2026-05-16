@@ -45,6 +45,64 @@ STATUS_SELECTION = [
     ('delete_done', 'Verwijderd in AD'),
 ]
 
+# Phase A: new identity/state model. The old STATUS_SELECTION above
+# still drives the existing action_scan / action_apply_pending_*
+# code paths; phase B switches those to STATE_SELECTION and removes
+# the legacy fields.
+SOURCE_SELECTION = [
+    ('ad',          'Active Directory'),
+    ('cloud',       'Google Workspace'),
+    ('smartschool', 'Smartschool'),
+]
+PROPOSAL_KIND_SELECTION = [
+    ('link_only',      'Koppel — DB-record maken, bron ongewijzigd'),
+    ('stamp_id',       'Schrijf sap_ref naar bron'),
+    ('rename',         'Hernoem in bron'),
+    ('move',           'Verplaats in bron'),
+    ('membership_add', 'Voeg toe aan groep'),
+    ('delete_after',   'Verwijder na migratie'),
+    ('ignore',         'Negeer'),
+]
+STATE_SELECTION = [
+    ('discovered',        'Ontdekt'),
+    ('proposed',          'Voorstel klaar'),
+    ('approved',          'Goedgekeurd'),
+    ('applied_pilot',     'Pilot uitgevoerd'),
+    ('verified',          'Geverifieerd'),
+    ('done',              'Voltooid'),
+    ('rolled_back',       'Teruggedraaid'),
+    ('identity_conflict', 'Identity-conflict'),
+    ('ignored',           'Genegeerd'),
+]
+RISK_SELECTION = [
+    ('low',    'Laag'),
+    ('medium', 'Medium'),
+    ('high',   'Hoog'),
+]
+ENVIRONMENT_SELECTION = [
+    ('prod', 'Productie'),
+    ('test', 'Test'),
+]
+PHASE_SELECTION = [
+    ('preflight', '1. Pre-flight — identity fixen'),
+    ('link',      '2. Koppelen — DB-records aanmaken'),
+    ('normalise', '3. Normaliseren — rename / move'),
+    ('cleanup',   '4. Cleanup — verwijderen'),
+    ('done',      '5. Voltooid'),
+]
+
+# Mapping for the post-init migration of existing rows. Maps the
+# legacy ``status`` to (new ``state``, new ``proposal_kind``).
+LEGACY_STATUS_MIGRATION = {
+    'investigate':            ('discovered', None),
+    'takeover_pending':       ('proposed',   'link_only'),
+    'takeover_done':          ('done',       'link_only'),
+    'delete_after_migration': ('proposed',   'delete_after'),
+    'delete_done':            ('done',       'delete_after'),
+    'matched':                ('done',       None),
+    'ignored':                ('ignored',    'ignore'),
+}
+
 
 class AdTakeoverSession(models.Model):
     _name = 'myschool.ad.takeover.session'
@@ -70,6 +128,42 @@ class AdTakeoverSession(models.Model):
         ('in_progress', 'Bezig'),
         ('completed', 'Voltooid'),
     ], default='draft', required=True)
+
+    # ---- Phase A: environment binding + wizard phase ----
+    environment = fields.Selection(
+        ENVIRONMENT_SELECTION,
+        required=True,
+        default='test',
+        index=True,
+        string='Omgeving',
+        help='Sessies starten safe-by-default op test. Pas na verify op de '
+             'test-omgeving wordt de sessie via "Promoot naar prod" naar '
+             'productie overgezet.'
+    )
+    current_phase = fields.Selection(
+        PHASE_SELECTION,
+        default='preflight',
+        required=True,
+        index=True,
+        string='Fase',
+        tracking=True,
+        help='Een sessie doorloopt vier fasen: eerst identity fixen '
+             '(STAMP_ID + identity_conflict), dan DB-records koppelen, '
+             'dan normaliseren (rename/move), tenslotte cleanup van '
+             'leftover AD-objecten.'
+    )
+    role_filter_preflight = fields.Selection(
+        selection=[
+            ('employees_only', 'Alleen werknemers'),
+            ('all',            'Iedereen'),
+        ],
+        default='employees_only',
+        string='Pre-flight scope',
+        help='Tijdens de pre-flight-fase: filter findings op rol. Standaard '
+             '"alleen werknemers" — kleinere set, hoger-risico, beste '
+             'pilot-kandidaten. Schakel naar "iedereen" zodra het patroon '
+             'op werknemers bevestigd is.'
+    )
 
     last_scan_at = fields.Datetime(readonly=True)
     scan_summary = fields.Text(readonly=True)
@@ -97,6 +191,24 @@ class AdTakeoverSession(models.Model):
     def _compute_base_dn(self):
         for rec in self:
             rec.base_dn = (rec.scope_org_id.ou_fqdn_internal or '').strip()
+
+    @api.constrains('ldap_config_id', 'environment')
+    def _check_environment_consistency(self):
+        for s in self:
+            if not s.ldap_config_id:
+                continue
+            cfg_env = getattr(s.ldap_config_id, 'environment', 'prod')
+            if cfg_env != s.environment:
+                raise ValidationError(_(
+                    'LDAP-config "%(cfg)s" is gemarkeerd als omgeving '
+                    '"%(cfg_env)s"; deze sessie staat op "%(sess_env)s". '
+                    'Kies een LDAP-config met dezelfde omgeving, of pas '
+                    'de sessie-omgeving aan.'
+                ) % {
+                    'cfg': s.ldap_config_id.name,
+                    'cfg_env': cfg_env,
+                    'sess_env': s.environment,
+                })
 
     @api.depends('finding_ids', 'finding_ids.status')
     def _compute_counts(self):
@@ -596,10 +708,105 @@ class AdTakeoverFinding(models.Model):
     last_action_at = fields.Datetime(readonly=True)
     action_message = fields.Text(readonly=True)
 
+    # ------------------------------------------------------------------
+    # Phase A: source-agnostic / state-machine fields
+    # ------------------------------------------------------------------
+    # These coexist with the legacy ``status`` / ``match_kind`` columns
+    # until phase B switches the scan/apply logic over. The post-init
+    # migration backfills these from existing rows so the old fields
+    # and new fields stay consistent on upgrade.
+
+    source = fields.Selection(
+        SOURCE_SELECTION,
+        required=True,
+        default='ad',
+        index=True,
+        string='Bron',
+        help='Externe systeem waar dit object vandaan komt. In Fase A '
+             'altijd "ad"; cloud/smartschool-scanners volgen in Fase B.'
+    )
+    external_id = fields.Char(
+        index=True,
+        string='Bron-ID',
+        help='Natural key in de bron. AD: distinguishedName. '
+             'Cloud: orgUnitId/groupId/userId. SS: internnumber/groupId.'
+    )
+    sap_ref = fields.Char(
+        index=True,
+        string='SAP-ref',
+        help='Cross-source identity-key. AD employeeID, Cloud externalIds, '
+             'SS internnumber — moet matchen met myschool.person.sap_ref.'
+    )
+
+    # Cross-source counterparts. Leeg in Fase A; populeert vanaf Fase B
+    # wanneer Cloud- en SS-scanners actief worden.
+    sibling_ids = fields.Many2many(
+        'myschool.ad.takeover.finding',
+        'myschool_ad_takeover_finding_sibling_rel',
+        'finding_id', 'sibling_finding_id',
+        string='Tegenhangers in andere bronnen')
+
+    matched_person_id = fields.Many2one(
+        'myschool.person', ondelete='set null', index=True,
+        string='Gematcht persoon')
+    matched_org_id = fields.Many2one(
+        'myschool.org', ondelete='set null', index=True,
+        string='Gematchte organisatie')
+
+    proposal_kind = fields.Selection(
+        PROPOSAL_KIND_SELECTION,
+        index=True,
+        string='Voorstel-type',
+        help='Welk soort actie de takeover voor dit object voorstelt.')
+    proposal_payload_json = fields.Text(
+        string='Voorstel-payload (JSON)',
+        help='Per-voorstel parameters. Schema verschilt per proposal_kind.')
+
+    state = fields.Selection(
+        STATE_SELECTION,
+        default='discovered',
+        required=True,
+        index=True,
+        tracking=True,
+        string='Staat',
+        help='Nieuwe state-machine (Fase A). Vervangt het legacy '
+             '"status"-veld; tijdens de overgang houdt de migratie '
+             'beide synchroon.')
+
+    rollback_snapshot_json = fields.Text(
+        readonly=True,
+        string='Rollback-snapshot (JSON)',
+        help='Volledige attribuut-set vóór de pilot-actie. Gebruikt om '
+             'één pilot terug te draaien. Wordt geschreven door Fase C.')
+    rollback_snapshot_at = fields.Datetime(readonly=True)
+
+    conflict_partner_id = fields.Many2one(
+        'myschool.ad.takeover.finding',
+        ondelete='set null',
+        string='Conflicteert met',
+        help='Als state=identity_conflict: de andere finding (in deze of '
+             'een andere bron) die dezelfde sap_ref claimt.')
+    conflict_reason = fields.Text(readonly=True, string='Conflict-reden')
+
+    risk_level = fields.Selection(
+        RISK_SELECTION,
+        default='low',
+        index=True,
+        string='Risico',
+        help='Heuristische inschatting; gebruikt voor UI-sortering en '
+             'als guard tegen onbedoelde bulk-acties op high-risk items.')
+
     _sql_constraints = [
         ('uniq_dn_per_session',
          'UNIQUE(session_id, ad_dn)',
          'Eén entry per DN per sessie.'),
+        # New uniqueness key — works alongside the legacy one. AD-only
+        # rows have external_id=ad_dn (set by the migration), so this
+        # adds no new rejections for existing data. Cloud/SS rows in
+        # Fase B will use this constraint instead of the DN-based one.
+        ('uniq_source_extid_per_session',
+         'UNIQUE(session_id, source, external_id, kind)',
+         'Eén entry per (bron, bron-ID, kind) per sessie.'),
     ]
 
     # ------------------------------------------------------------------

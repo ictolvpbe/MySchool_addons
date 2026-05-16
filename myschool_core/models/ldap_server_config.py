@@ -49,6 +49,20 @@ class LdapServerConfig(models.Model):
         help='If unchecked, this server configuration will be hidden'
     )
 
+    environment = fields.Selection(
+        selection=[
+            ('prod', 'Productie'),
+            ('test', 'Test'),
+        ],
+        required=True,
+        default='prod',
+        index=True,
+        string='Omgeving',
+        help='Markeer deze config als productie- of test-omgeving. AD-takeover '
+             'sessies binden zich aan één omgeving en kunnen voorstellen '
+             'eerst op test draaien voordat ze naar prod gepromoot worden.'
+    )
+
     # =========================================================================
     # Connection Settings
     # =========================================================================
@@ -252,37 +266,53 @@ class LdapServerConfig(models.Model):
             if record.use_ssl and record.use_tls:
                 raise ValidationError(_('Cannot use both SSL and StartTLS simultaneously'))
 
-    @api.constrains('active')
-    def _check_single_active_server(self):
-        # Allow zero or one active server. Two or more is invalid.
-        if self.search_count([('active', '=', True)]) > 1:
-            raise ValidationError(_(
-                'Only one LDAP server can be active at a time. '
-                'Archive the others first.'
-            ))
+    @api.constrains('active', 'environment')
+    def _check_single_active_per_env(self):
+        # Allow zero or one active server PER environment. Two active
+        # configs in the same environment is invalid; prod+test active
+        # simultaneously is valid by design.
+        for env_val in ('prod', 'test'):
+            if self.search_count([('active', '=', True),
+                                  ('environment', '=', env_val)]) > 1:
+                raise ValidationError(_(
+                    'Only one LDAP server can be active per environment. '
+                    'Environment "%s" already has an active config.'
+                ) % env_val)
 
     # =========================================================================
-    # Overrides — enforce single active server
+    # Overrides — enforce single active server per environment
     # =========================================================================
 
     @api.model_create_multi
     def create(self, vals_list):
-        # If any incoming record sets active=True, archive the existing ones
-        # first so the constraint passes after creation.
-        if any(vals.get('active', True) for vals in vals_list):
-            self.search([('active', '=', True)]).write({'active': False})
+        # If any incoming record sets active=True, archive existing
+        # actives IN THE SAME ENVIRONMENT first so the constraint passes
+        # after creation. Cross-environment actives are allowed.
+        for vals in vals_list:
+            if not vals.get('active', True):
+                continue
+            env_val = vals.get('environment', 'prod')
+            self.search([('active', '=', True),
+                         ('environment', '=', env_val)]).write({'active': False})
         return super().create(vals_list)
 
     def write(self, vals):
-        # When activating: archive any other currently-active records first
-        # so we end up with exactly one active server.
-        if vals.get('active') is True:
-            others = self.search([
-                ('active', '=', True),
-                ('id', 'not in', self.ids or [0]),
-            ])
-            if others:
-                super(type(self), others).write({'active': False})
+        # When activating or moving environment: archive any other
+        # currently-active record IN THE TARGET ENVIRONMENT so we end
+        # up with exactly one active server per env.
+        if vals.get('active') is True or 'environment' in vals:
+            for rec in self:
+                target_env = vals.get('environment', rec.environment)
+                will_be_active = vals.get('active', rec.active)
+                if not will_be_active:
+                    continue
+                others = self.search([
+                    ('active', '=', True),
+                    ('environment', '=', target_env),
+                    ('id', 'not in', rec.ids or [0]),
+                ])
+                if others:
+                    super(type(self), others).write({'active': False})
         return super().write(vals)
 
     # =========================================================================

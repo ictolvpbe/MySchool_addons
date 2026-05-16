@@ -42,6 +42,20 @@ class GoogleWorkspaceConfig(models.Model):
 
     active = fields.Boolean(string='Active', default=True)
 
+    environment = fields.Selection(
+        selection=[
+            ('prod', 'Productie'),
+            ('test', 'Test'),
+        ],
+        required=True,
+        default='prod',
+        index=True,
+        string='Omgeving',
+        help='Markeer deze tenant-config als productie- of test-omgeving. '
+             'Test-tenants moeten een eigen Google Workspace domein hebben '
+             '(separate billing) — ze worden niet automatisch aangemaakt.'
+    )
+
     # =========================================================================
     # Tenant Settings
     # =========================================================================
@@ -184,13 +198,18 @@ class GoogleWorkspaceConfig(models.Model):
     # Constraints
     # =========================================================================
 
-    @api.constrains('active')
-    def _check_single_active(self):
-        if self.search_count([('active', '=', True)]) > 1:
-            raise ValidationError(_(
-                'Only one Google Workspace configuration can be active at '
-                'a time. Archive the others first.'
-            ))
+    @api.constrains('active', 'environment')
+    def _check_single_active_per_env(self):
+        # Allow one active config PER environment so test + prod tenants
+        # can coexist active simultaneously.
+        for env_val in ('prod', 'test'):
+            if self.search_count([('active', '=', True),
+                                  ('environment', '=', env_val)]) > 1:
+                raise ValidationError(_(
+                    'Only one Google Workspace configuration can be active '
+                    'per environment. Environment "%s" already has an '
+                    'active config.'
+                ) % env_val)
 
     @api.constrains('key_file_path', 'key_json')
     def _check_credentials(self):
@@ -206,23 +225,33 @@ class GoogleWorkspaceConfig(models.Model):
                 ) % rec.key_file_path)
 
     # =========================================================================
-    # Overrides — single active record
+    # Overrides — single active record per environment
     # =========================================================================
 
     @api.model_create_multi
     def create(self, vals_list):
-        if any(vals.get('active', True) for vals in vals_list):
-            self.search([('active', '=', True)]).write({'active': False})
+        for vals in vals_list:
+            if not vals.get('active', True):
+                continue
+            env_val = vals.get('environment', 'prod')
+            self.search([('active', '=', True),
+                         ('environment', '=', env_val)]).write({'active': False})
         return super().create(vals_list)
 
     def write(self, vals):
-        if vals.get('active') is True:
-            others = self.search([
-                ('active', '=', True),
-                ('id', 'not in', self.ids or [0]),
-            ])
-            if others:
-                super(type(self), others).write({'active': False})
+        if vals.get('active') is True or 'environment' in vals:
+            for rec in self:
+                target_env = vals.get('environment', rec.environment)
+                will_be_active = vals.get('active', rec.active)
+                if not will_be_active:
+                    continue
+                others = self.search([
+                    ('active', '=', True),
+                    ('environment', '=', target_env),
+                    ('id', 'not in', rec.ids or [0]),
+                ])
+                if others:
+                    super(type(self), others).write({'active': False})
         return super().write(vals)
 
     # =========================================================================
