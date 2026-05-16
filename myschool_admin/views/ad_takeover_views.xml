@@ -113,6 +113,7 @@
                                 </div>
                                 <span class="badge text-bg-info" t-if="record.source.raw_value == 'ad'">AD</span>
                                 <span class="badge text-bg-warning" t-if="record.source.raw_value == 'cloud'">Cloud</span>
+                                <span class="badge text-bg-success" t-if="record.source.raw_value == 'smartschool'">SS</span>
                             </div>
                             <div class="o_kanban_record_body">
                                 <div class="text-muted small text-truncate">
@@ -381,6 +382,9 @@
                             <field name="google_workspace_config_id"
                                    options="{'no_create': True}"
                                    domain="[('environment', '=', environment)]"/>
+                            <field name="smartschool_config_id"
+                                   options="{'no_create': True}"
+                                   help="Smartschool kent geen test-omgeving; environment-validatie wordt overgeslagen."/>
                             <field name="scope_org_id" options="{'no_create': True}"/>
                             <field name="base_dn" readonly="1"
                                    invisible="not ldap_config_id"/>
@@ -440,7 +444,8 @@
                                       decoration-muted="state == 'ignored'">
                                     <field name="source" widget="badge"
                                            decoration-info="source == 'ad'"
-                                           decoration-warning="source == 'cloud'"/>
+                                           decoration-warning="source == 'cloud'"
+                                           decoration-success="source == 'smartschool'"/>
                                     <field name="ad_dn" readonly="1"/>
                                     <field name="ad_cn" readonly="1"/>
                                     <field name="proposed_parent_org_id"
@@ -503,7 +508,8 @@
                                       decoration-muted="state == 'ignored'">
                                     <field name="source" widget="badge"
                                            decoration-info="source == 'ad'"
-                                           decoration-warning="source == 'cloud'"/>
+                                           decoration-warning="source == 'cloud'"
+                                           decoration-success="source == 'smartschool'"/>
                                     <field name="ad_dn" readonly="1"/>
                                     <field name="ad_cn" readonly="1"/>
                                     <field name="ad_mail" readonly="1" optional="show"/>
@@ -569,7 +575,8 @@
                                       decoration-muted="state == 'ignored'">
                                     <field name="source" widget="badge"
                                            decoration-info="source == 'ad'"
-                                           decoration-warning="source == 'cloud'"/>
+                                           decoration-warning="source == 'cloud'"
+                                           decoration-success="source == 'smartschool'"/>
                                     <field name="ad_dn" readonly="1"/>
                                     <field name="ad_cn" readonly="1"/>
                                     <field name="ad_givenname" readonly="1" optional="show"/>

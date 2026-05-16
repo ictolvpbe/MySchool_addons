@@ -809,6 +809,136 @@ class TestAdTakeoverFaseA(TransactionCase):
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
+    # Fase B2 — Smartschool scanner
+    # ------------------------------------------------------------------
+
+    def _make_ss_session(self):
+        """Create a session with only a SS config so the SS scanner runs
+        in isolation."""
+        scfg = self.env['myschool.smartschool.config'].create({
+            'name': 'Test SS',
+            'platform_url': 'https://test.smartschool.be',
+            'api_key': 'dummy-key',
+            'active': False,
+        })
+        session = self.env['myschool.ad.takeover.session'].create({
+            'name': 'SS-only session',
+            'smartschool_config_id': scfg.id,
+            'scope_org_id': self.school.id,
+            'environment': 'test',
+        })
+        return session
+
+    @staticmethod
+    def _ss_xml_users(users):
+        """Build a synthetic getAllAccountsExtended XML with the given
+        user-dicts. Defensive parser doesn't care about wrapper tag."""
+        rows = []
+        for u in users:
+            fields_xml = ''.join(
+                f'<{k}>{v}</{k}>' for k, v in u.items())
+            rows.append(f'<row>{fields_xml}</row>')
+        return f'<?xml version="1.0"?><response>{"".join(rows)}</response>'
+
+    def _patch_ss_response(self, session, xml_text):
+        """Build patches that stub the SS client + the SOAP call."""
+        ss_cls = self.env['myschool.smartschool.service'].__class__
+        service_obj = MagicMock()
+        service_obj.getAllAccountsExtended = MagicMock(return_value=xml_text)
+        client = MagicMock()
+        client.service = service_obj
+        return [
+            patch.object(ss_cls, '_get_client', return_value=client),
+        ]
+
+    def test_ss_scan_sap_ref_match_done(self):
+        """SS user with internnumber matching person.sap_ref → state=done."""
+        person = self._make_person(
+            sap_ref='SS01', email_cloud='ss01@test.olvp.lab')
+        session = self._make_ss_session()
+        xml = self._ss_xml_users([{
+            'username': 'jan',
+            'internnumber': 'SS01',
+            'firstname': 'Jan',
+            'name': 'Peeters',
+            'email': 'ss01@test.olvp.lab',
+        }])
+        patches = self._patch_ss_response(session, xml)
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            session.action_scan()
+        f = session.finding_ids.filtered(lambda x: x.kind == 'user')
+        self.assertEqual(len(f), 1)
+        self.assertEqual(f.source, 'smartschool')
+        self.assertEqual(f.state, 'done')
+        self.assertEqual(f.matched_person_id, person)
+        self.assertEqual(f.sap_ref, 'SS01')
+
+    def test_ss_scan_no_internnumber_marks_orphan(self):
+        """SS user without internnumber → state=proposed, link_only,
+        medium-risk (cannot use STAMP_ID for SS in B2)."""
+        session = self._make_ss_session()
+        xml = self._ss_xml_users([{
+            'username': 'noid_user',
+            'internnumber': '',
+            'firstname': 'No',
+            'name': 'Id',
+        }])
+        patches = self._patch_ss_response(session, xml)
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            session.action_scan()
+        f = session.finding_ids.filtered(lambda x: x.kind == 'user')
+        self.assertEqual(f.state, 'proposed')
+        self.assertEqual(f.proposal_kind, 'link_only')
+        self.assertEqual(f.risk_level, 'medium')
+        self.assertIn('zonder internnumber', f.notes)
+
+    def test_ss_scan_orphan_with_internnumber(self):
+        """SS user with internnumber but no matching DB-person → orphan."""
+        session = self._make_ss_session()
+        xml = self._ss_xml_users([{
+            'username': 'external_user',
+            'internnumber': 'UNKNOWN_REF',
+        }])
+        patches = self._patch_ss_response(session, xml)
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            session.action_scan()
+        f = session.finding_ids.filtered(lambda x: x.kind == 'user')
+        self.assertEqual(f.state, 'proposed')
+        self.assertEqual(f.proposal_kind, 'link_only')
+        self.assertIn('UNKNOWN_REF', f.notes)
+
+    def test_ss_scan_handles_error_code(self):
+        """Numeric error code from SS raises UserError with the code."""
+        session = self._make_ss_session()
+        patches = self._patch_ss_response(session, '1')
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            with self.assertRaises(UserError):
+                session.action_scan()
+
+    def test_ss_xml_parser_defensive(self):
+        """The parser must skip nodes without username/internnumber and
+        still find users wrapped in arbitrary container tags."""
+        session = self._make_ss_session()
+        users = session._ss_parse_users(
+            '<r>'
+            '<row><username>a</username><internnumber>X1</internnumber></row>'
+            '<other><foo>bar</foo></other>'
+            '<row><username>b</username><internnumber>X2</internnumber>'
+            '<email>b@x</email></row>'
+            '</r>')
+        self.assertEqual(len(users), 2)
+        usernames = sorted(u['username'] for u in users)
+        self.assertEqual(usernames, ['a', 'b'])
+
+    # ------------------------------------------------------------------
     # Fase E — bulk-after-pilot + audit-export
     # ------------------------------------------------------------------
 
