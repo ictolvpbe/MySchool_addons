@@ -852,20 +852,31 @@ class AdTakeoverSession(models.Model):
         only_employees = self.role_filter_preflight == 'employees_only'
 
         # All persons whose primary school is (or sits under) this
-        # session's scope-org. SCHOOL scope: direct match on
-        # current_school_id. SCHOOLBOARD scope: every SCHOOL whose
-        # name_tree starts with the schoolboard's name_tree counts.
-        scope_school_ids = [scope.id]
-        if (scope.org_type_id and scope.org_type_id.name == 'SCHOOLBOARD'
-                and scope.name_tree):
-            children = self.env['myschool.org'].search([
-                ('name_tree', '=ilike', f'{scope.name_tree}.%'),
-                ('org_type_id.name', '=', 'SCHOOL'),
+        # session's scope-org. current_school_id is computed-not-stored
+        # so we can't search on it; resolve via the underlying
+        # PERSON-TREE proprelation instead, scoped by the org's
+        # name_tree prefix.
+        Org = self.env['myschool.org'].with_context(active_test=False)
+        scope_prefix = (scope.name_tree or '').strip()
+        if scope_prefix:
+            in_scope_orgs = Org.search([
+                '|', ('name_tree', '=', scope_prefix),
+                     ('name_tree', '=ilike', f'{scope_prefix}.%'),
             ])
-            scope_school_ids = children.ids or scope_school_ids
-        persons_in_scope = Person.search([
-            ('current_school_id', 'in', scope_school_ids),
-        ])
+        else:
+            in_scope_orgs = scope
+        ProprelationType = self.env['myschool.proprelation.type']
+        pt_type = ProprelationType.search(
+            [('name', '=', 'PERSON-TREE')], limit=1)
+        if pt_type and in_scope_orgs:
+            person_tree_rels = self.env['myschool.proprelation'].search([
+                ('proprelation_type_id', '=', pt_type.id),
+                ('id_org', 'in', in_scope_orgs.ids),
+                ('is_active', '=', True),
+            ])
+            persons_in_scope = person_tree_rels.mapped('id_person')
+        else:
+            persons_in_scope = Person.browse()
         if only_employees and persons_in_scope:
             EMPLOYEE = self.env['myschool.person.type'].search(
                 [('name', '=', 'EMPLOYEE')], limit=1)
