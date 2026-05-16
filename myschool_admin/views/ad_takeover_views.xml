@@ -9,8 +9,16 @@
         <field name="name">myschool.ad.takeover.session.list</field>
         <field name="model">myschool.ad.takeover.session</field>
         <field name="arch" type="xml">
-            <list>
+            <list decoration-info="environment == 'test'"
+                  decoration-danger="environment == 'prod'">
                 <field name="name"/>
+                <field name="environment" widget="badge"
+                       decoration-success="environment == 'prod'"
+                       decoration-info="environment == 'test'"/>
+                <field name="current_phase" widget="badge"
+                       decoration-info="current_phase == 'preflight'"
+                       decoration-warning="current_phase in ('link', 'normalise')"
+                       decoration-success="current_phase == 'done'"/>
                 <field name="ldap_config_id"/>
                 <field name="scope_org_id"/>
                 <field name="state" widget="badge"
@@ -18,8 +26,10 @@
                        decoration-warning="state == 'in_progress'"
                        decoration-success="state == 'completed'"/>
                 <field name="finding_count"/>
-                <field name="investigate_count"/>
-                <field name="takeover_pending_count"/>
+                <field name="proposed_count"/>
+                <field name="approved_count"/>
+                <field name="done_count"/>
+                <field name="conflict_count" optional="show"/>
                 <field name="last_scan_at"/>
             </list>
         </field>
@@ -53,12 +63,30 @@
                             icon="fa-arrow-right"
                             invisible="current_phase == 'done'"
                             confirm="Vooruit naar volgende fase. Test-sessies blokkeren bij openstaande items; prod-sessies tonen alleen een waarschuwing."/>
+                    <button name="action_promote_to_prod" type="object"
+                            string="Promoot naar prod →" class="btn-danger"
+                            icon="fa-rocket"
+                            invisible="environment != 'test' or current_phase != 'done'"
+                            confirm="Een nieuwe prod-sessie wordt aangemaakt. De prod-omgeving wordt gescand en alle test-voorstellen worden gekopieerd. Goedkeuring per voorstel blijft nodig in de nieuwe prod-sessie."/>
                     <field name="current_phase" widget="statusbar"
                            statusbar_visible="preflight,link,normalise,cleanup,done"/>
                     <field name="state" widget="statusbar" invisible="1"
                            statusbar_visible="draft,discovered,in_progress,completed"/>
                 </header>
                 <sheet>
+                    <div class="alert alert-info" role="alert"
+                         invisible="environment != 'test'">
+                        <i class="fa fa-flask"/>
+                        <strong>TEST-omgeving</strong> — wijzigingen blijven binnen de test-LDAP.
+                        Geen impact op productie. Doorloop alle fasen, daarna "Promoot naar prod".
+                    </div>
+                    <div class="alert alert-danger" role="alert"
+                         invisible="environment != 'prod'">
+                        <i class="fa fa-exclamation-triangle"/>
+                        <strong>PRODUCTIE-omgeving</strong> — wijzigingen raken live AD-accounts en groepen.
+                        Goedkeur elk voorstel zorgvuldig; pilot waar mogelijk.
+                    </div>
+
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Sessienaam, bv. Migratie BAWA — maart 2026"/></h1>
                     </div>
@@ -78,11 +106,19 @@
                         </group>
                         <group string="Tellingen">
                             <field name="finding_count" readonly="1"/>
-                            <field name="investigate_count" readonly="1"/>
-                            <field name="takeover_pending_count" readonly="1"/>
-                            <field name="takeover_done_count" readonly="1"/>
-                            <field name="delete_after_count" readonly="1"/>
-                            <field name="matched_count" readonly="1"/>
+                            <field name="discovered_count" readonly="1"
+                                   string="Ontdekt"/>
+                            <field name="proposed_count" readonly="1"
+                                   string="Voorstel klaar"/>
+                            <field name="approved_count" readonly="1"
+                                   string="Goedgekeurd"/>
+                            <field name="done_count" readonly="1"
+                                   string="Voltooid"/>
+                            <field name="conflict_count" readonly="1"
+                                   string="Identity-conflict"/>
+                            <field name="stamp_id_pending_count" readonly="1"
+                                   string="STAMP_ID openstaand"
+                                   invisible="stamp_id_pending_count == 0"/>
                         </group>
                     </group>
 
@@ -101,33 +137,43 @@
                         <page string="OUs" name="ous">
                             <field name="finding_ou_ids"
                                    context="{'default_session_id': id, 'default_kind': 'ou'}">
-                                <list editable="bottom" decoration-success="status == 'takeover_done'"
-                                      decoration-warning="status == 'takeover_pending'"
-                                      decoration-muted="status == 'ignored'">
+                                <list editable="bottom"
+                                      decoration-success="state == 'done'"
+                                      decoration-warning="state in ('proposed', 'approved')"
+                                      decoration-danger="state == 'identity_conflict'"
+                                      decoration-muted="state == 'ignored'">
                                     <field name="ad_dn" readonly="1"/>
                                     <field name="ad_cn" readonly="1"/>
                                     <field name="proposed_parent_org_id"
                                            options="{'no_create': True}"/>
                                     <field name="proposed_org_type_id"
                                            options="{'no_create': True}"/>
-                                    <field name="status" widget="badge"
-                                           decoration-info="status == 'investigate'"
-                                           decoration-success="status == 'takeover_done'"
-                                           decoration-warning="status == 'takeover_pending'"
-                                           decoration-muted="status == 'ignored'"/>
+                                    <field name="proposal_kind" widget="badge"
+                                           optional="show"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state in ('discovered', 'proposed')"
+                                           decoration-warning="state == 'approved'"
+                                           decoration-success="state == 'done'"
+                                           decoration-danger="state == 'identity_conflict'"
+                                           decoration-muted="state == 'ignored'"/>
+                                    <field name="risk_level" widget="badge"
+                                           decoration-info="risk_level == 'low'"
+                                           decoration-warning="risk_level == 'medium'"
+                                           decoration-danger="risk_level == 'high'"
+                                           optional="hide"/>
                                     <field name="notes" optional="show"/>
-                                    <button name="action_mark_takeover_pending"
+                                    <button name="action_approve"
                                             type="object" icon="fa-check"
-                                            title="Plan takeover"
-                                            invisible="status == 'takeover_pending' or status == 'takeover_done'"/>
+                                            title="Goedkeuren"
+                                            invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
                                     <button name="action_takeover"
                                             type="object" icon="fa-bolt"
-                                            title="Voer takeover NU uit"
-                                            invisible="status == 'takeover_done' or status == 'matched'"/>
+                                            title="Voer voorstel NU uit"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict')"/>
                                     <button name="action_mark_ignore"
                                             type="object" icon="fa-times"
                                             title="Negeer"
-                                            invisible="status == 'ignored'"/>
+                                            invisible="state == 'ignored'"/>
                                 </list>
                             </field>
                         </page>
@@ -135,38 +181,46 @@
                         <page string="Groups" name="groups">
                             <field name="finding_group_ids"
                                    context="{'default_session_id': id, 'default_kind': 'group'}">
-                                <list editable="bottom" decoration-success="status == 'takeover_done'"
-                                      decoration-warning="status == 'takeover_pending'"
-                                      decoration-danger="status == 'delete_after_migration'"
-                                      decoration-muted="status == 'ignored'">
+                                <list editable="bottom"
+                                      decoration-success="state == 'done'"
+                                      decoration-warning="state in ('proposed', 'approved')"
+                                      decoration-danger="state == 'identity_conflict' or (proposal_kind == 'delete_after' and state in ('proposed', 'approved'))"
+                                      decoration-muted="state == 'ignored'">
                                     <field name="ad_dn" readonly="1"/>
                                     <field name="ad_cn" readonly="1"/>
                                     <field name="ad_mail" readonly="1" optional="show"/>
                                     <field name="proposed_parent_org_id"
                                            options="{'no_create': True}"/>
-                                    <field name="status" widget="badge"
-                                           decoration-info="status == 'investigate'"
-                                           decoration-success="status == 'takeover_done'"
-                                           decoration-warning="status == 'takeover_pending'"
-                                           decoration-danger="status == 'delete_after_migration' or status == 'delete_done'"
-                                           decoration-muted="status == 'ignored'"/>
+                                    <field name="proposal_kind" widget="badge"
+                                           optional="show"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state in ('discovered', 'proposed')"
+                                           decoration-warning="state == 'approved'"
+                                           decoration-success="state == 'done'"
+                                           decoration-danger="state == 'identity_conflict'"
+                                           decoration-muted="state == 'ignored'"/>
+                                    <field name="risk_level" widget="badge"
+                                           decoration-info="risk_level == 'low'"
+                                           decoration-warning="risk_level == 'medium'"
+                                           decoration-danger="risk_level == 'high'"
+                                           optional="hide"/>
                                     <field name="notes" optional="show"/>
-                                    <button name="action_mark_takeover_pending"
+                                    <button name="action_approve"
                                             type="object" icon="fa-check"
-                                            title="Plan takeover"
-                                            invisible="status == 'takeover_pending' or status == 'takeover_done'"/>
+                                            title="Goedkeuren"
+                                            invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
                                     <button name="action_takeover"
                                             type="object" icon="fa-bolt"
-                                            title="Voer takeover NU uit"
-                                            invisible="status == 'takeover_done' or status == 'matched'"/>
+                                            title="Voer voorstel NU uit"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict')"/>
                                     <button name="action_mark_delete_after"
                                             type="object" icon="fa-trash"
                                             title="Markeer als 'verwijder na migratie'"
-                                            invisible="status == 'delete_after_migration'"/>
+                                            invisible="proposal_kind == 'delete_after' or state in ('done', 'ignored')"/>
                                     <button name="action_mark_ignore"
                                             type="object" icon="fa-times"
                                             title="Negeer"
-                                            invisible="status == 'ignored'"/>
+                                            invisible="state == 'ignored'"/>
                                 </list>
                             </field>
                         </page>
@@ -174,42 +228,60 @@
                         <page string="Users" name="users">
                             <field name="finding_user_ids"
                                    context="{'default_session_id': id, 'default_kind': 'user'}">
-                                <list editable="bottom" decoration-success="status == 'takeover_done'"
-                                      decoration-warning="status == 'takeover_pending'"
-                                      decoration-danger="status == 'delete_after_migration'"
-                                      decoration-muted="status == 'ignored'">
+                                <list editable="bottom"
+                                      decoration-success="state == 'done'"
+                                      decoration-warning="state in ('proposed', 'approved')"
+                                      decoration-danger="state == 'identity_conflict' or (proposal_kind == 'delete_after' and state in ('proposed', 'approved'))"
+                                      decoration-muted="state == 'ignored'">
                                     <field name="ad_dn" readonly="1"/>
                                     <field name="ad_cn" readonly="1"/>
                                     <field name="ad_givenname" readonly="1" optional="show"/>
                                     <field name="ad_sn" readonly="1" optional="show"/>
                                     <field name="ad_mail" readonly="1" optional="show"/>
+                                    <field name="ad_sam" readonly="1" optional="hide"/>
+                                    <field name="sap_ref" readonly="1" optional="hide"/>
+                                    <field name="matched_person_id" readonly="1"
+                                           optional="show"/>
                                     <field name="proposed_parent_org_id"
-                                           options="{'no_create': True}"/>
+                                           options="{'no_create': True}"
+                                           optional="hide"/>
                                     <field name="proposed_person_role_id"
-                                           options="{'no_create': True}"/>
-                                    <field name="status" widget="badge"
-                                           decoration-info="status == 'investigate'"
-                                           decoration-success="status == 'takeover_done'"
-                                           decoration-warning="status == 'takeover_pending'"
-                                           decoration-danger="status == 'delete_after_migration' or status == 'delete_done'"
-                                           decoration-muted="status == 'ignored'"/>
+                                           options="{'no_create': True}"
+                                           optional="hide"/>
+                                    <field name="proposal_kind" widget="badge"
+                                           optional="show"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state in ('discovered', 'proposed')"
+                                           decoration-warning="state == 'approved'"
+                                           decoration-success="state == 'done'"
+                                           decoration-danger="state == 'identity_conflict'"
+                                           decoration-muted="state == 'ignored'"/>
+                                    <field name="risk_level" widget="badge"
+                                           decoration-info="risk_level == 'low'"
+                                           decoration-warning="risk_level == 'medium'"
+                                           decoration-danger="risk_level == 'high'"
+                                           optional="show"/>
                                     <field name="notes" optional="show"/>
-                                    <button name="action_mark_takeover_pending"
+                                    <button name="action_approve"
                                             type="object" icon="fa-check"
-                                            title="Plan takeover"
-                                            invisible="status == 'takeover_pending' or status == 'takeover_done'"/>
+                                            title="Goedkeuren"
+                                            invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
                                     <button name="action_takeover"
                                             type="object" icon="fa-bolt"
-                                            title="Voer takeover NU uit"
-                                            invisible="status == 'takeover_done' or status == 'matched'"/>
+                                            title="Voer voorstel NU uit"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict')"/>
+                                    <button name="action_resolve_conflict"
+                                            type="object" icon="fa-wrench"
+                                            title="Conflict negeren"
+                                            invisible="state != 'identity_conflict'"/>
                                     <button name="action_mark_delete_after"
                                             type="object" icon="fa-trash"
                                             title="Markeer als 'verwijder na migratie'"
-                                            invisible="status == 'delete_after_migration'"/>
+                                            invisible="proposal_kind == 'delete_after' or state in ('done', 'ignored')"/>
                                     <button name="action_mark_ignore"
                                             type="object" icon="fa-times"
                                             title="Negeer"
-                                            invisible="status == 'ignored'"/>
+                                            invisible="state == 'ignored'"/>
                                 </list>
                             </field>
                         </page>

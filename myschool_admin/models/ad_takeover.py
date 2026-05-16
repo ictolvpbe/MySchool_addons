@@ -692,6 +692,124 @@ class AdTakeoverSession(models.Model):
             return {'success': False, 'message': str(e)}
 
     # ------------------------------------------------------------------
+    # Promote test → prod
+    # ------------------------------------------------------------------
+
+    def action_promote_to_prod(self):
+        """Clone this verified test-session into a fresh prod-session
+        with all proposals copied over.
+
+        Strategy (chosen for reproducibility, see design doc):
+          1. Find the active prod LDAP-config.
+          2. Create a new session pointing at it, run a fresh scan.
+          3. For each test-finding with a proposal, rewrite its DN
+             from the test base_dn to the prod base_dn and match to
+             a prod-finding. Copy proposal_kind + payload + risk.
+          4. Prod-findings without a test-counterpart stay on
+             ``state=discovered`` with a "drift" note — admin can
+             still act on them, but they didn't go through test.
+          5. The new session ALWAYS lands on ``proposed`` per row, not
+             ``approved`` — admin re-confirms in prod even when test
+             was unambiguous.
+        """
+        self.ensure_one()
+        if self.environment != 'test':
+            raise UserError(_(
+                'Alleen test-sessies kunnen worden gepromoot. Deze '
+                'sessie staat al op "%s".') % self.environment)
+        if self.current_phase != 'done':
+            raise UserError(_(
+                'Promote vereist dat de test-sessie op fase '
+                '"voltooid" staat. Huidige fase: %s.') % self.current_phase)
+
+        LdapCfg = self.env['myschool.ldap.server.config']
+        prod_cfg = LdapCfg.search([
+            ('environment', '=', 'prod'),
+            ('active', '=', True),
+        ], limit=1)
+        if not prod_cfg:
+            raise UserError(_(
+                'Geen actieve LDAP-config met environment=prod gevonden. '
+                'Markeer eerst een prod-config als actief.'))
+
+        prod_session = self.copy({
+            'name': f'{self.name} — prod-promote '
+                    f'({fields.Date.today().isoformat()})',
+            'environment': 'prod',
+            'ldap_config_id': prod_cfg.id,
+            'current_phase': 'preflight',
+            'state': 'draft',
+            'last_scan_at': False,
+            'scan_summary': False,
+            'preflight_report_html': False,
+            'preflight_report_at': False,
+        })
+        # ``copy`` triggered by Odoo also copies finding_ids by default
+        # because of the One2many; wipe them so the prod-scan creates
+        # them fresh against the prod LDAP.
+        prod_session.finding_ids.unlink()
+
+        prod_session.action_scan()
+
+        # Copy proposals from test → prod with DN rewriting.
+        test_base = (self.base_dn or '').strip()
+        prod_base = (prod_session.base_dn or '').strip()
+        if not test_base or not prod_base:
+            return self._open_session(prod_session)
+
+        matched = drift_test = 0
+        prod_by_dn = {
+            self._norm_dn(f.ad_dn): f for f in prod_session.finding_ids
+        }
+        for tf in self.finding_ids:
+            if tf.source != 'ad' or not tf.proposal_kind:
+                continue
+            test_dn = tf.ad_dn or ''
+            if not test_dn.lower().endswith(test_base.lower()):
+                continue
+            # rewrite suffix: cut off test_base, append prod_base
+            prod_dn = test_dn[: -len(test_base)] + prod_base
+            pf = prod_by_dn.get(self._norm_dn(prod_dn))
+            if not pf:
+                drift_test += 1
+                continue
+            pf.write({
+                'proposal_kind': tf.proposal_kind,
+                'proposal_payload_json': tf.proposal_payload_json,
+                'risk_level': tf.risk_level,
+                # State always proposed — admin re-approves in prod.
+                'state': 'proposed',
+                'status': 'investigate',         # legacy mirror
+                'notes': (
+                    f'Voorstel gekopieerd uit test-sessie "{self.name}". '
+                    f'Origineel DN: {test_dn}.'),
+            })
+            matched += 1
+
+        # Findings on prod that have NO test counterpart: drift.
+        drift_prod = len(prod_session.finding_ids) - matched
+        prod_session.scan_summary = (
+            (prod_session.scan_summary or '')
+            + f'\n\nPromote-overzicht:\n'
+              f'  • {matched} voorstel(len) gekopieerd uit test\n'
+              f'  • {drift_test} test-voorstel(len) zonder prod-match '
+              f'(prod-data is gewijzigd?)\n'
+              f'  • {drift_prod} prod-rij(en) zonder test-tegenhanger '
+              f'(nieuw of niet getest)\n'
+        )
+        return self._open_session(prod_session)
+
+    def _open_session(self, session):
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('AD-takeover sessie'),
+            'res_model': 'myschool.ad.takeover.session',
+            'res_id': session.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    # ------------------------------------------------------------------
     # Pre-flight rapport
     # ------------------------------------------------------------------
 
