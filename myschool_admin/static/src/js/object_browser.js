@@ -2854,6 +2854,19 @@ export class ObjectBrowserClient extends Component {
                        .filter(Boolean);
     }
 
+    adHasChildren(node) {
+        // Defensief: gebruik de gecachte child-count zodra die bekend is
+        // (na een eerste expand of na een fresh fetch). Backend's
+        // has_children flag is een fallback voor nodes waarvan we nog
+        // niets weten.
+        if (!node) return false;
+        const key = (node.dn || '').toLowerCase();
+        if (key in this.state.adChildren) {
+            return (this.state.adChildren[key] || []).length > 0;
+        }
+        return !!node.has_children;
+    }
+
     get flatAdNodes() {
         // Plat depth-first traversal van de zichtbare AD-tree. Resultaat:
         // [{node, depth}]. Niet-uitgeklapte OUs hun children worden

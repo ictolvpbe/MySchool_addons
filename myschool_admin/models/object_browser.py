@@ -1402,21 +1402,43 @@ class ObjectBrowser(models.TransientModel):
                     (c.get('cn') or '').lower()))
 
                 # Voor elke child: heeft hij subnodes? Quick-check
-                # via een aparte LEVEL-search met sizeLimit=1, alleen
-                # voor OUs (groups/users hebben geen subnodes onder
-                # zich in praktijk).
+                # via een aparte LEVEL-search alleen voor OUs.
+                # Belangrijk:
+                #  - LEVEL excludes de base entry zelf; ELK gereturnde
+                #    entry IS een child. Dus check op > 0 (was foutief > 1).
+                #  - Filter op (OU OR group) want users zijn niet
+                #    zichtbaar in de tree en mogen geen has_children
+                #    triggeren.
                 for c in children:
                     if c['kind'] != 'ou':
                         c['has_children'] = False
                         continue
                     try:
-                        conn.search(c['dn'], '(objectClass=*)',
+                        conn.search(c['dn'],
+                                    '(|(objectClass=organizationalUnit)'
+                                    '(objectClass=group))',
                                     search_scope='LEVEL',
                                     attributes=['distinguishedName'],
-                                    size_limit=2)
-                        c['has_children'] = len(conn.entries) > 1
+                                    size_limit=1)
+                        c['has_children'] = bool(conn.entries)
                     except Exception:
                         c['has_children'] = False
+
+                # De node zelf krijgt ook ``has_children`` — handig wanneer
+                # de OWL-frontend de node opnieuw fetcht (bv. na selectie)
+                # en deze overschrijft in zijn cache; zonder dit veld zou
+                # de caret verdwijnen.
+                if node and node.get('kind') == 'ou':
+                    try:
+                        conn.search(target_dn,
+                                    '(|(objectClass=organizationalUnit)'
+                                    '(objectClass=group))',
+                                    search_scope='LEVEL',
+                                    attributes=['distinguishedName'],
+                                    size_limit=1)
+                        node['has_children'] = bool(conn.entries)
+                    except Exception:
+                        pass
 
                 return {'error': None, 'node': node, 'children': children}
         except Exception as e:
