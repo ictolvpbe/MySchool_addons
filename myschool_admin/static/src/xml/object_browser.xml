@@ -1250,6 +1250,64 @@
                     <div class="ob-ad-split" t-if="state.adActiveConfigId">
                         <!-- LEFT: tree pane -->
                         <div class="ob-ad-tree">
+                            <!-- Search-box -->
+                            <div class="ob-ad-search">
+                                <i class="fa fa-search ob-ad-search-icon"/>
+                                <input type="text"
+                                       placeholder="Zoek op cn, mail, sAMAccountName, employeeID…"
+                                       t-att-value="state.adSearchQuery"
+                                       t-on-input="onAdSearchInput"/>
+                                <button t-if="state.adSearchQuery"
+                                        class="ob-icon-btn"
+                                        title="Wis zoekopdracht"
+                                        t-on-click="clearAdSearch">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+
+                            <!-- Search-results: vervangen tree visueel
+                                 zolang er resultaten zijn -->
+                            <t t-if="state.adSearchQuery and state.adSearchQuery.length >= 2">
+                                <div class="ob-ad-search-results">
+                                    <t t-if="state.adSearchLoading">
+                                        <div class="ob-ad-empty">
+                                            <i class="fa fa-spinner fa-spin"/> Zoeken…
+                                        </div>
+                                    </t>
+                                    <t t-elif="state.adSearchError">
+                                        <div class="ob-ad-error">
+                                            <i class="fa fa-exclamation-triangle"/>
+                                            <t t-esc="state.adSearchError"/>
+                                        </div>
+                                    </t>
+                                    <t t-elif="state.adSearchResults.length === 0">
+                                        <div class="ob-ad-empty">Geen resultaten.</div>
+                                    </t>
+                                    <t t-else="">
+                                        <div class="ob-ad-search-meta" t-if="state.adSearchTruncated">
+                                            <i class="fa fa-info-circle"/>
+                                            Eerste 200 resultaten — verfijn de zoekterm.
+                                        </div>
+                                        <t t-foreach="state.adSearchResults" t-as="r" t-key="r.dn">
+                                            <div class="ob-ad-search-row"
+                                                 t-on-click="() => this.onAdSearchResultClick(r.dn)">
+                                                <i t-attf-class="fa #{r.kind === 'ou' ? 'fa-folder' : (r.kind === 'group' ? 'fa-users' : (r.kind === 'user' ? 'fa-user' : 'fa-cube'))} ob-ad-member-icon"/>
+                                                <div class="ob-ad-member-text">
+                                                    <div class="ob-ad-member-name"><t t-esc="r.cn"/></div>
+                                                    <div class="ob-ad-member-meta">
+                                                        <t t-if="r.sam"><code><t t-esc="r.sam"/></code></t>
+                                                        <t t-if="r.mail"> · <t t-esc="r.mail"/></t>
+                                                        <t t-if="r.employeeID"> · emp:<t t-esc="r.employeeID"/></t>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </t>
+                                    </t>
+                                </div>
+                            </t>
+
+                            <!-- Tree (verborgen tijdens search) -->
+                            <t t-if="!state.adSearchQuery or state.adSearchQuery.length &lt; 2">
                             <t t-if="state.adRootDn">
                                 <!-- root-node label -->
                                 <div class="ob-ad-tree-row"
@@ -1288,6 +1346,7 @@
                             <div class="ob-ad-empty" t-if="!state.adRootDn">
                                 Kies een LDAP-config om te beginnen.
                             </div>
+                            </t>
                         </div>
 
                         <!-- MIDDLE: members-pane -->

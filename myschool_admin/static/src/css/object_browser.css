@@ -2273,3 +2273,49 @@
 /* AD-browser tab needs position:relative for the slideover overlay
    to anchor against its container. */
 .ob-ad-browser { position: relative; }
+
+/* ===== AD-browser Fase I1: search ===== */
+.ob-ad-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--ob-border-light, #ecedf0);
+    background: var(--ob-pane-bg, #fff);
+}
+.ob-ad-search-icon { color: var(--ob-muted, #6c757d); }
+.ob-ad-search input {
+    flex: 1;
+    border: 1px solid var(--ob-border, #ced4da);
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 13px;
+}
+.ob-ad-search input:focus {
+    outline: none;
+    border-color: var(--ob-primary, #0d6efd);
+}
+.ob-ad-search-results {
+    max-height: 100%;
+    overflow: auto;
+    padding: 4px;
+}
+.ob-ad-search-meta {
+    padding: 6px 10px;
+    background: var(--ob-info-bg, #cfe2ff);
+    color: var(--ob-info, #084298);
+    font-size: 12px;
+    border-radius: 3px;
+    margin-bottom: 4px;
+}
+.ob-ad-search-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+.ob-ad-search-row:hover {
+    background: var(--ob-hover-bg, #f1f3f5);
+}

@@ -1161,7 +1161,15 @@ export class ObjectBrowserClient extends Component {
             adSlideOverDn: null,
             adSlideOverNode: null,
             adSlideOverLoading: false,
+            // Search-binnen-AD (Fase I1)
+            adSearchQuery: '',
+            adSearchResults: [],
+            adSearchLoading: false,
+            adSearchTruncated: false,
+            adSearchError: null,
         });
+        // Debounce-timer voor search-input
+        this._adSearchTimer = null;
         
         // Bind methods that are passed as props
         this.onSelectNode = this.onSelectNode.bind(this);
@@ -2251,6 +2259,56 @@ export class ObjectBrowserClient extends Component {
         }
         this.state.adSelectedDn = dn;
         await this.loadAdMembers(dn);
+    }
+
+    onAdSearchInput(ev) {
+        // Debounced search — 250ms na laatste keystroke
+        const q = ev.target.value;
+        this.state.adSearchQuery = q;
+        if (this._adSearchTimer) clearTimeout(this._adSearchTimer);
+        if (!q || q.length < 2) {
+            this.state.adSearchResults = [];
+            this.state.adSearchError = null;
+            this.state.adSearchTruncated = false;
+            return;
+        }
+        this._adSearchTimer = setTimeout(() => this._runAdSearch(q), 250);
+    }
+
+    async _runAdSearch(q) {
+        if (!this.state.adActiveConfigId) return;
+        this.state.adSearchLoading = true;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ad_search',
+                [this.state.adActiveConfigId, q]);
+            if (result.error) {
+                this.state.adSearchError = result.error;
+                this.state.adSearchResults = [];
+                this.state.adSearchTruncated = false;
+            } else {
+                this.state.adSearchError = null;
+                this.state.adSearchResults = result.matches || [];
+                this.state.adSearchTruncated = !!result.truncated;
+            }
+        } catch (e) {
+            this.state.adSearchError = 'Search mislukt: ' + (e?.message || e);
+        } finally {
+            this.state.adSearchLoading = false;
+        }
+    }
+
+    clearAdSearch() {
+        if (this._adSearchTimer) clearTimeout(this._adSearchTimer);
+        this.state.adSearchQuery = '';
+        this.state.adSearchResults = [];
+        this.state.adSearchError = null;
+        this.state.adSearchTruncated = false;
+    }
+
+    async onAdSearchResultClick(dn) {
+        await this.navigateAdToNode(dn);
+        this.clearAdSearch();
     }
 
     _adAncestorDns(dn) {

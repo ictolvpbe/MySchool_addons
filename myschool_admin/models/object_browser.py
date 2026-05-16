@@ -1569,6 +1569,96 @@ class ObjectBrowser(models.TransientModel):
         members.sort(key=lambda m: (m['cn'] or '').lower())
         return {'error': None, 'members': members}
 
+    @api.model
+    def ad_search(self, ldap_config_id, query, limit=200):
+        """Vrije substring-search over cn/sAMAccountName/mail/employeeID
+        binnen de scope van een config (subtree onder base_dn).
+
+        Returns: ``{matches: [{dn, kind, cn, mail, sam}], truncated: bool,
+                    error: str|None}``
+        """
+        LdapConfig = self.env['myschool.ldap.server.config']
+        config = LdapConfig.browse(ldap_config_id).exists()
+        if not config:
+            return {'error': 'LDAP-config niet gevonden.',
+                    'matches': [], 'truncated': False}
+        ldap_service = self.env['myschool.ldap.service']
+        try:
+            ldap_service._check_ldap3_available()
+        except Exception as e:
+            return {'error': str(e), 'matches': [], 'truncated': False}
+
+        q = (query or '').strip()
+        if len(q) < 2:
+            return {'error': 'Zoekterm moet minstens 2 tekens lang zijn.',
+                    'matches': [], 'truncated': False}
+        # LDAP filter-escape: enkele '*' is wildcard, dus we beschermen
+        # andere karakters.
+        def _esc(s):
+            return s.replace('\\', r'\5c').replace('*', r'\2a') \
+                    .replace('(', r'\28').replace(')', r'\29') \
+                    .replace('\x00', r'\00')
+        qf = _esc(q)
+        # Search: substring op cn/sAMAccountName/mail/employeeID;
+        # filter alleen group/user (geen computers, geen kale OUs —
+        # OUs zoek je niet typisch hierdoor).
+        ldap_filter = (
+            '(&'
+            '(|'
+            f'(cn=*{qf}*)'
+            f'(sAMAccountName=*{qf}*)'
+            f'(mail=*{qf}*)'
+            f'(employeeID={qf})'
+            f'(displayName=*{qf}*)'
+            f'(sn=*{qf}*)'
+            f'(givenName=*{qf}*)'
+            ')'
+            '(|(objectClass=group)(&(objectClass=user)(!(objectClass=computer))))'
+            ')'
+        )
+        attr_list = ['distinguishedName', 'objectClass', 'cn',
+                     'sAMAccountName', 'mail', 'employeeID']
+        try:
+            with ldap_service._get_connection(config) as conn:
+                conn.search(config.base_dn, ldap_filter,
+                            search_scope='SUBTREE',
+                            attributes=attr_list,
+                            size_limit=max(int(limit) + 1, 10))
+                entries = list(conn.entries)
+        except Exception as e:
+            _logger.exception('[AD-SEARCH] failed: %s', q)
+            return {'error': str(e), 'matches': [], 'truncated': False}
+
+        truncated = len(entries) > limit
+        if truncated:
+            entries = entries[:limit]
+        matches = []
+        for e in entries:
+            dn = self._ad_entry_str(e, 'distinguishedName')
+            if not dn:
+                continue
+            matches.append({
+                'dn': dn,
+                'kind': self._ad_kind_of(e),
+                'cn': self._ad_entry_str(e, 'cn') or dn.split(',', 1)[0],
+                'mail': self._ad_entry_str(e, 'mail'),
+                'sam': self._ad_entry_str(e, 'sAMAccountName'),
+                'employeeID': self._ad_entry_str(e, 'employeeID'),
+            })
+        # Sorteer: users met sAMAccountName-match eerst (waarschijnlijk
+        # exacter), dan alfabetisch op cn
+        ql = q.lower()
+        def _rank(m):
+            if (m['sam'] or '').lower() == ql:
+                return (0, '')
+            if (m['employeeID'] or '') == q:
+                return (1, '')
+            if ql in (m['sam'] or '').lower():
+                return (2, m['cn'])
+            return (3, (m['cn'] or '').lower())
+        matches.sort(key=_rank)
+        return {'error': None, 'matches': matches, 'truncated': truncated}
+
     def _ad_kind_of(self, entry):
         try:
             raw = entry['objectClass'].value if 'objectClass' in entry else None
