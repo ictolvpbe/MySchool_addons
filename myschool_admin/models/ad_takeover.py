@@ -2097,16 +2097,18 @@ class AdTakeoverFinding(models.Model):
                         rec._takeover_user()
                 elif pk == 'stamp_id':
                     rec._apply_stamp_id()
+                elif pk == 'rename':
+                    rec._apply_rename()
                 elif pk == 'delete_after':
                     rec._apply_delete_after()
                 elif pk == 'ignore':
                     raise UserError(_(
                         'Voorstel-type "negeer" — niets te doen op "%s".'
                     ) % rec.ad_dn)
-                elif pk in ('rename', 'move', 'membership_add'):
+                elif pk in ('move', 'membership_add'):
                     raise UserError(_(
                         'Voorstel-type "%s" is gepland voor Fase C en nog '
-                        'niet uitvoerbaar.') % pk)
+                        'niet uitvoerbaar (volgt in C3/C4).') % pk)
                 else:
                     raise UserError(_(
                         'Onbekend voorstel-type: %s') % pk)
@@ -2360,7 +2362,9 @@ class AdTakeoverFinding(models.Model):
         self.ensure_one()
         if self.proposal_kind == 'stamp_id':
             return self._snapshot_stamp_id()
-        # rename/move/membership_add land in Fase C2/3/4
+        if self.proposal_kind == 'rename':
+            return self._snapshot_rename()
+        # move/membership_add land in Fase C3/C4
         raise UserError(_(
             'Snapshot voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2370,6 +2374,8 @@ class AdTakeoverFinding(models.Model):
         self.ensure_one()
         if self.proposal_kind == 'stamp_id':
             return self._restore_stamp_id(snapshot)
+        if self.proposal_kind == 'rename':
+            return self._restore_rename(snapshot)
         raise UserError(_(
             'Rollback voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2381,6 +2387,8 @@ class AdTakeoverFinding(models.Model):
         self.ensure_one()
         if self.proposal_kind == 'stamp_id':
             return self._mutate_stamp_id()
+        if self.proposal_kind == 'rename':
+            return self._mutate_rename()
         raise UserError(_(
             'Mutatie voor proposal_kind=%s nog niet geïmplementeerd.'
         ) % self.proposal_kind)
@@ -2498,6 +2506,193 @@ class AdTakeoverFinding(models.Model):
         api.users().patch(
             userKey=self.external_id,
             body={'externalIds': ext_ids}).execute()
+
+    # ------------------------------------------------------------------
+    # RENAME — snapshot / mutate / restore (Fase C2)
+    # ------------------------------------------------------------------
+    #
+    # Payload schema:
+    #   {"new_name": "<new RDN value or display name>"}
+    #
+    # AD: LDAP MODIFY DN preserves objectSID, objectGUID, group
+    # memberships, GPO links — exactly the guarantee we need for safe
+    # renames. The new RDN replaces the leaf CN/OU value; the parent
+    # DN stays put (move is a separate proposal kind).
+    #
+    # Cloud groups: PATCH name (email = identity, never touched).
+    # Cloud OUs:    update_orgunit name (parent path preserved).
+    # Cloud users:  REJECTED — primaryEmail is identity, renaming
+    #               implies a primaryEmail change which we never do.
+
+    def _snapshot_rename(self):
+        """Snapshot of the bron-object's current name. Reads from the
+        live bron rather than trusting our finding-cache so we restore
+        to the actual state, not the cached one."""
+        self.ensure_one()
+        if self.source == 'ad':
+            return {
+                'source': 'ad',
+                'kind': self.kind,
+                'old_dn': self.ad_dn,
+            }
+        if self.source == 'cloud':
+            if self.kind == 'user':
+                raise UserError(_(
+                    'Cloud-users hernoemen wordt niet ondersteund — '
+                    'primaryEmail is de identity-sleutel.'))
+            gsvc = self.env['myschool.google.directory.service']
+            config = self.session_id.google_workspace_config_id
+            api = gsvc._get_directory_service(config)
+            if self.kind == 'group':
+                grp = api.groups().get(groupKey=self.external_id).execute()
+                return {
+                    'source': 'cloud',
+                    'kind': 'group',
+                    'group_email': grp.get('email'),
+                    'old_name': grp.get('name', ''),
+                }
+            if self.kind == 'ou':
+                ou = api.orgunits().get(
+                    customerId=config.customer_id or 'my_customer',
+                    orgUnitPath=self.ad_dn  # we store cloud-path here
+                ).execute()
+                return {
+                    'source': 'cloud',
+                    'kind': 'ou',
+                    'org_unit_path': ou.get('orgUnitPath'),
+                    'old_name': ou.get('name', ''),
+                }
+        raise UserError(_(
+            'RENAME snapshot: source=%s, kind=%s niet ondersteund.'
+        ) % (self.source, self.kind))
+
+    def _mutate_rename(self):
+        """Rename the bron-object. Pure write — no state-change."""
+        self.ensure_one()
+        try:
+            payload = json.loads(self.proposal_payload_json or '{}')
+        except (ValueError, TypeError):
+            payload = {}
+        new_name = (payload.get('new_name') or '').strip()
+        if not new_name:
+            raise UserError(_('RENAME-payload mist new_name.'))
+
+        if self.source == 'ad':
+            self._mutate_ad_rename(new_name)
+            return
+        if self.source == 'cloud':
+            self._mutate_cloud_rename(new_name)
+            return
+        raise UserError(_(
+            'RENAME mutatie: source=%s niet ondersteund.') % self.source)
+
+    def _mutate_ad_rename(self, new_name):
+        """LDAP MODIFY DN. Preserves SID, GUID, group memberships.
+        Updates self.ad_dn after success so the finding reflects the
+        post-rename state."""
+        ldap = self.env['myschool.ldap.service']
+        config = self.session_id.ldap_config_id
+        # New RDN: use CN= for users/groups, OU= for OUs (matches AD
+        # convention; the existing leaf prefix determines which).
+        if self.kind == 'ou':
+            new_rdn = f'OU={new_name}'
+        else:
+            new_rdn = f'CN={new_name}'
+        with ldap._get_connection(config) as conn:
+            ok = conn.modify_dn(self.ad_dn, new_rdn)
+            result = conn.result or {}
+            if not ok or result.get('result') != 0:
+                raise UserError(_(
+                    'LDAP MODIFY DN mislukt voor %(dn)s: %(err)s'
+                ) % {'dn': self.ad_dn,
+                     'err': result.get('description') or result})
+        # Reconstruct the new full DN: replace the leftmost RDN.
+        parent_dn = self.ad_dn.split(',', 1)[1] if ',' in self.ad_dn else ''
+        new_dn = f'{new_rdn},{parent_dn}' if parent_dn else new_rdn
+        self.write({
+            'ad_dn': new_dn,
+            'ad_cn': new_name,
+            'external_id': new_dn,
+        })
+
+    def _mutate_cloud_rename(self, new_name):
+        gsvc = self.env['myschool.google.directory.service']
+        config = self.session_id.google_workspace_config_id
+        api = gsvc._get_directory_service(config)
+        if self.kind == 'group':
+            api.groups().patch(
+                groupKey=self.external_id,
+                body={'name': new_name}).execute()
+            self.write({'ad_cn': new_name})
+        elif self.kind == 'ou':
+            customer = config.customer_id or 'my_customer'
+            api.orgunits().patch(
+                customerId=customer,
+                orgUnitPath=self.ad_dn,
+                body={'name': new_name}).execute()
+            self.write({'ad_cn': new_name})
+        else:
+            raise UserError(_(
+                'Cloud-RENAME niet ondersteund voor kind=%s') % self.kind)
+
+    def _restore_rename(self, snapshot):
+        """Undo a rename using the snapshotted old name/DN."""
+        self.ensure_one()
+        if snapshot.get('source') == 'ad':
+            old_dn = snapshot.get('old_dn')
+            if not old_dn:
+                raise UserError(_('Snapshot mist old_dn.'))
+            ldap = self.env['myschool.ldap.service']
+            config = self.session_id.ldap_config_id
+            old_rdn = old_dn.split(',', 1)[0]
+            with ldap._get_connection(config) as conn:
+                ok = conn.modify_dn(self.ad_dn, old_rdn)
+                result = conn.result or {}
+                if not ok or result.get('result') != 0:
+                    raise UserError(_(
+                        'LDAP MODIFY DN rollback mislukt: %s'
+                    ) % (result.get('description') or result))
+            self.write({
+                'ad_dn': old_dn,
+                'ad_cn': old_rdn.split('=', 1)[1] if '=' in old_rdn else '',
+                'external_id': old_dn,
+            })
+            return
+        if snapshot.get('source') == 'cloud':
+            old_name = snapshot.get('old_name') or ''
+            if not old_name:
+                raise UserError(_('Snapshot mist old_name.'))
+            gsvc = self.env['myschool.google.directory.service']
+            config = self.session_id.google_workspace_config_id
+            api = gsvc._get_directory_service(config)
+            if snapshot.get('kind') == 'group':
+                api.groups().patch(
+                    groupKey=self.external_id,
+                    body={'name': old_name}).execute()
+            elif snapshot.get('kind') == 'ou':
+                customer = config.customer_id or 'my_customer'
+                api.orgunits().patch(
+                    customerId=customer,
+                    orgUnitPath=self.ad_dn,
+                    body={'name': old_name}).execute()
+            self.write({'ad_cn': old_name})
+            return
+        raise UserError(_(
+            'RENAME restore: source=%s niet ondersteund.'
+        ) % snapshot.get('source'))
+
+    def _apply_rename(self):
+        """Direct-apply path. Snapshot + mutate + mark_done. Snapshot
+        is preserved as audit-log even after done so a manual restore
+        is still possible later."""
+        self.ensure_one()
+        snapshot = self._capture_snapshot()
+        self.write({
+            'rollback_snapshot_json': json.dumps(snapshot, default=str),
+            'rollback_snapshot_at': fields.Datetime.now(),
+        })
+        self._mutate_rename()
+        self._mark_done(action_message=_('Hernoemd in %s.') % self.source)
 
     def _apply_stamp_id(self):
         """Direct-apply path (no pilot): mutate + mark_done.
