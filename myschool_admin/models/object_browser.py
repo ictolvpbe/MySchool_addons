@@ -1569,6 +1569,238 @@ class ObjectBrowser(models.TransientModel):
         members.sort(key=lambda m: (m['cn'] or '').lower())
         return {'error': None, 'members': members}
 
+    # =========================================================================
+    # CLOUD-BROWSER (Fase I5) — leest Google Workspace via google_directory_
+    # service. orgUnitPath is de "DN-equivalent"; groups zijn tenant-flat
+    # (geen OU-hiërarchie); users hebben orgUnitPath. Slideover toont
+    # full attribute dict; DB-koppeling via externalIds → person.sap_ref.
+    # =========================================================================
+
+    @api.model
+    def cloud_get_workspace_configs(self):
+        """Actieve Google-configs voor de Cloud-browser config-dropdown."""
+        configs = self.env['myschool.google.workspace.config'].search(
+            [('active', '=', True)], order='sequence, name')
+        return [{
+            'id': c.id,
+            'name': c.name,
+            'environment': c.environment,
+            'domain': c.domain,
+            'customer_id': c.customer_id,
+        } for c in configs]
+
+    @api.model
+    def cloud_browse_path(self, config_id, org_unit_path=None):
+        """Browse één Cloud-node: OU + direct child OUs + users direct
+        in deze OU. Groups zijn tenant-flat dus die zitten niet in de
+        tree — wel beschikbaar via cloud_browse_members op user/group.
+        """
+        Config = self.env['myschool.google.workspace.config']
+        config = Config.browse(config_id).exists()
+        if not config:
+            return {'error': 'Google-config niet gevonden.',
+                    'node': None, 'children': []}
+        gsvc = self.env['myschool.google.directory.service']
+        try:
+            gsvc._check_google_available()
+        except Exception as e:
+            return {'error': str(e), 'node': None, 'children': []}
+
+        target_path = (org_unit_path or '/').strip() or '/'
+        customer = config.customer_id or 'my_customer'
+        try:
+            api = gsvc._get_directory_service(config)
+            # Node zelf
+            if target_path == '/':
+                node = {
+                    'path': '/',
+                    'kind': 'ou',
+                    'cn': '/ (root)',
+                    'attrs': {'orgUnitPath': '/',
+                              'description': 'Tenant root'},
+                }
+            else:
+                ou = api.orgunits().get(
+                    customerId=customer,
+                    orgUnitPath=target_path).execute()
+                node = self._cloud_ou_to_dict(ou, include_attrs=True)
+            # Direct child OUs onder dit pad
+            resp = api.orgunits().list(
+                customerId=customer,
+                orgUnitPath=target_path,
+                type='children').execute()
+            child_ous = resp.get('organizationUnits', []) or []
+            # Users direct in dit pad (geen recursie)
+            user_resp = api.users().list(
+                customer=customer,
+                query=f"orgUnitPath='{target_path}'",
+                maxResults=200).execute()
+            users = user_resp.get('users', []) or []
+
+            children = []
+            for ou in child_ous:
+                children.append(self._cloud_ou_to_dict(ou, include_attrs=False))
+            for u in users:
+                children.append(self._cloud_user_to_dict(u, include_attrs=False))
+            # OUs eerst, dan users; binnen elk alfabetisch
+            children.sort(key=lambda c: (
+                0 if c['kind'] == 'ou' else 1,
+                (c.get('cn') or '').lower()))
+            # has_children alleen voor OUs (één extra list-call zou
+            # expensive zijn; in plaats daarvan: altijd true voor OUs,
+            # tree expandt en toont 'no children' als ze niets hebben)
+            for c in children:
+                c['has_children'] = (c['kind'] == 'ou')
+            return {'error': None, 'node': node, 'children': children}
+        except Exception as e:
+            _logger.exception('[CLOUD-BROWSE] failed for path=%s', target_path)
+            return {'error': str(e), 'node': None, 'children': []}
+
+    @api.model
+    def cloud_browse_members(self, config_id, identifier, kind):
+        """Members per kind:
+          * ou    → direct users in dit pad
+          * group → leden via members.list (api group_email)
+          * user  → groep-memberships via groups.list?userKey=
+        """
+        Config = self.env['myschool.google.workspace.config']
+        config = Config.browse(config_id).exists()
+        if not config:
+            return {'error': 'Google-config niet gevonden.', 'members': []}
+        gsvc = self.env['myschool.google.directory.service']
+        try:
+            gsvc._check_google_available()
+        except Exception as e:
+            return {'error': str(e), 'members': []}
+        customer = config.customer_id or 'my_customer'
+        try:
+            api = gsvc._get_directory_service(config)
+            if kind == 'ou':
+                resp = api.users().list(
+                    customer=customer,
+                    query=f"orgUnitPath='{identifier}'",
+                    maxResults=500).execute()
+                users = resp.get('users', []) or []
+                members = [self._cloud_user_to_dict(u, include_attrs=False)
+                           for u in users]
+                members.sort(key=lambda m: (m.get('cn') or '').lower())
+                return {'error': None, 'members': members}
+            if kind == 'group':
+                resp = api.members().list(groupKey=identifier,
+                                          maxResults=500).execute()
+                members_raw = resp.get('members', []) or []
+                members = []
+                for m in members_raw:
+                    members.append({
+                        'path': m.get('email') or m.get('id') or '',
+                        'kind': ('group' if m.get('type') == 'GROUP'
+                                 else 'user'),
+                        'cn': m.get('email') or m.get('id') or '',
+                        'mail': m.get('email') or '',
+                        'role': m.get('role', 'MEMBER'),
+                    })
+                return {'error': None, 'members': members}
+            if kind == 'user':
+                # Group-memberships van deze user
+                resp = api.groups().list(userKey=identifier,
+                                         maxResults=500).execute()
+                groups = resp.get('groups', []) or []
+                members = []
+                for g in groups:
+                    members.append({
+                        'path': g.get('email') or g.get('id') or '',
+                        'kind': 'group',
+                        'cn': g.get('name') or g.get('email') or '',
+                        'mail': g.get('email') or '',
+                    })
+                members.sort(key=lambda m: (m.get('cn') or '').lower())
+                return {'error': None, 'members': members}
+            return {'error': None, 'members': []}
+        except Exception as e:
+            _logger.exception('[CLOUD-BROWSE] members failed for %s/%s',
+                              kind, identifier)
+            return {'error': str(e), 'members': []}
+
+    def _cloud_ou_to_dict(self, ou, include_attrs=True):
+        result = {
+            'path': ou.get('orgUnitPath', ''),
+            'kind': 'ou',
+            'cn': ou.get('name') or
+                  (ou.get('orgUnitPath', '').rsplit('/', 1)[-1] or '/'),
+        }
+        if include_attrs:
+            result['attrs'] = {
+                k: str(v) for k, v in ou.items() if v not in (None, '')
+            }
+        return result
+
+    def _cloud_user_to_dict(self, u, include_attrs=True):
+        name = u.get('name') or {}
+        cn = (name.get('fullName') if isinstance(name, dict) else '') \
+             or u.get('primaryEmail') or u.get('id') or ''
+        result = {
+            'path': u.get('primaryEmail') or u.get('id') or '',
+            'kind': 'user',
+            'cn': cn,
+            'mail': u.get('primaryEmail') or '',
+            'suspended': bool(u.get('suspended')),
+        }
+        if include_attrs:
+            # Flatten alle attrs naar string voor display
+            flat = {}
+            for k, v in u.items():
+                if isinstance(v, (dict, list)):
+                    import json as _json
+                    try:
+                        flat[k] = _json.dumps(v, ensure_ascii=False,
+                                              default=str)
+                    except Exception:
+                        flat[k] = str(v)
+                elif v in (None, ''):
+                    continue
+                else:
+                    flat[k] = str(v)
+            result['attrs'] = flat
+            # DB-match (idem aan AD)
+            match = self._cloud_match_db_person(u)
+            if match:
+                result['matched_person'] = match
+        return result
+
+    def _cloud_match_db_person(self, user_dict):
+        """Cloud-user → myschool.person via externalIds (sap_ref) of
+        primaryEmail."""
+        Person = self.env['myschool.person'].with_context(active_test=False)
+        # externalIds 'organization' = sap_ref
+        sap = ''
+        for eid in user_dict.get('externalIds') or []:
+            if isinstance(eid, dict) and eid.get('type') == 'organization':
+                sap = (eid.get('value') or '').strip()
+                break
+        if sap:
+            person = Person.search([('sap_ref', '=', sap)], limit=1)
+            if person:
+                return {
+                    'id': person.id,
+                    'display_name': person.display_name,
+                    'sap_ref': person.sap_ref or '',
+                    'email_cloud': person.email_cloud or '',
+                    'matched_via': 'externalIds/sap_ref',
+                }
+        mail = (user_dict.get('primaryEmail') or '').strip()
+        if mail:
+            person = Person.search(
+                [('email_cloud', '=ilike', mail)], limit=1)
+            if person:
+                return {
+                    'id': person.id,
+                    'display_name': person.display_name,
+                    'sap_ref': person.sap_ref or '',
+                    'email_cloud': person.email_cloud or '',
+                    'matched_via': 'primaryEmail/email_cloud',
+                }
+        return None
+
     # Whitelist van attrs die via de inline-edit in de AD-browser
     # gewijzigd mogen worden. Identity-attrs (sAMAccountName,
     # userPrincipalName, employeeID), passwords en account-state

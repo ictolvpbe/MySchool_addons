@@ -1177,6 +1177,22 @@ export class ObjectBrowserClient extends Component {
             adEditingAttr: null,
             adEditDraft: '',
             adEditSaving: false,
+            // ----- Cloud-browser tab (Fase I5) -----
+            cloudConfigs: [],
+            cloudActiveConfigId: null,
+            cloudRootPath: '/',
+            cloudTreeNodes: {},     // path-lower → node
+            cloudChildren: {},      // path-lower → list of child paths
+            cloudExpanded: {},
+            cloudLoading: {},
+            cloudSelectedPath: null,
+            cloudError: null,
+            cloudMembers: [],
+            cloudMembersLoading: false,
+            cloudMembersFilter: '',
+            cloudSlideOverPath: null,
+            cloudSlideOverNode: null,
+            cloudSlideOverLoading: false,
         });
         // Debounce-timer voor search-input
         this._adSearchTimer = null;
@@ -2083,6 +2099,185 @@ export class ObjectBrowserClient extends Component {
     
     onSwitchToRolesTab() {
         this.switchTab('roles');
+    }
+
+    async onSwitchToCloudTab() {
+        this.switchTab('cloud');
+        if (!this.state.cloudConfigs.length) {
+            await this.loadCloudConfigs();
+        }
+    }
+
+    async loadCloudConfigs() {
+        try {
+            const configs = await this.orm.call(
+                'myschool.object.browser', 'cloud_get_workspace_configs', []);
+            this.state.cloudConfigs = configs;
+            const prod = configs.find(c => c.environment === 'prod');
+            const pick = prod || configs[0];
+            if (pick) await this.onCloudConfigChange(pick.id);
+        } catch (e) {
+            this.state.cloudError =
+                'Cloud-configs ophalen mislukt: ' + (e?.message || e);
+        }
+    }
+
+    async onCloudConfigChange(configId) {
+        const cfgId = typeof configId === 'object'
+            ? parseInt(configId.target?.value, 10)
+            : parseInt(configId, 10);
+        if (!cfgId) return;
+        this.state.cloudActiveConfigId = cfgId;
+        this.state.cloudTreeNodes = {};
+        this.state.cloudChildren = {};
+        this.state.cloudExpanded = {};
+        this.state.cloudLoading = {};
+        this.state.cloudSelectedPath = null;
+        this.state.cloudError = null;
+        this.state.cloudRootPath = '/';
+        await this.loadCloudChildren('/', /*expand=*/true);
+    }
+
+    async loadCloudChildren(path, expand) {
+        const key = (path || '/').toLowerCase();
+        this.state.cloudLoading[key] = true;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'cloud_browse_path',
+                [this.state.cloudActiveConfigId, path]);
+            if (result.error) {
+                this.state.cloudError = result.error;
+                return;
+            }
+            this.state.cloudError = null;
+            if (result.node) {
+                this.state.cloudTreeNodes[key] = result.node;
+            }
+            const childPaths = [];
+            for (const c of result.children || []) {
+                const ckey = (c.path || '').toLowerCase();
+                if (!ckey) continue;
+                this.state.cloudTreeNodes[ckey] = c;
+                childPaths.push(c.path);
+            }
+            this.state.cloudChildren[key] = childPaths;
+            if (expand) this.state.cloudExpanded[key] = true;
+        } catch (e) {
+            this.state.cloudError =
+                'Cloud-browse mislukt: ' + (e?.message || e);
+        } finally {
+            this.state.cloudLoading[key] = false;
+        }
+    }
+
+    async onCloudToggleExpand(path) {
+        const key = (path || '').toLowerCase();
+        if (this.state.cloudExpanded[key]) {
+            this.state.cloudExpanded[key] = false;
+            return;
+        }
+        if (!(key in this.state.cloudChildren)) {
+            await this.loadCloudChildren(path, /*expand=*/true);
+        } else {
+            this.state.cloudExpanded[key] = true;
+        }
+    }
+
+    async onCloudSelectNode(path) {
+        this.state.cloudSelectedPath = path;
+        const key = (path || '').toLowerCase();
+        const cached = this.state.cloudTreeNodes[key];
+        const promises = [];
+        if (!cached || !cached.attrs) {
+            promises.push(this.loadCloudChildren(path, /*expand=*/false));
+        }
+        if (cached) {
+            promises.push(this.loadCloudMembers(
+                path, cached.path || path, cached.kind));
+        }
+        await Promise.all(promises);
+    }
+
+    async loadCloudMembers(_path, identifier, kind) {
+        this.state.cloudMembersLoading = true;
+        this.state.cloudMembers = [];
+        this.state.cloudMembersFilter = '';
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'cloud_browse_members',
+                [this.state.cloudActiveConfigId, identifier, kind]);
+            if (result.error) {
+                this.state.cloudError = result.error;
+                return;
+            }
+            this.state.cloudMembers = result.members || [];
+        } catch (e) {
+            this.state.cloudError =
+                'Cloud-members ophalen mislukt: ' + (e?.message || e);
+        } finally {
+            this.state.cloudMembersLoading = false;
+        }
+    }
+
+    onCloudMembersFilterInput(ev) {
+        this.state.cloudMembersFilter = ev.target.value;
+    }
+
+    get filteredCloudMembers() {
+        const f = (this.state.cloudMembersFilter || '').trim().toLowerCase();
+        if (!f) return this.state.cloudMembers;
+        return this.state.cloudMembers.filter(m =>
+            (m.cn || '').toLowerCase().includes(f) ||
+            (m.mail || '').toLowerCase().includes(f) ||
+            (m.path || '').toLowerCase().includes(f));
+    }
+
+    get flatCloudNodes() {
+        const out = [];
+        const visit = (paths, depth) => {
+            for (const p of paths) {
+                const key = (p || '').toLowerCase();
+                const node = this.state.cloudTreeNodes[key];
+                if (!node) continue;
+                out.push({ node, depth });
+                if (node.kind === 'ou' && this.state.cloudExpanded[key]) {
+                    visit(this.state.cloudChildren[key] || [], depth + 1);
+                }
+            }
+        };
+        const rootKey = (this.state.cloudRootPath || '/').toLowerCase();
+        visit(this.state.cloudChildren[rootKey] || [], 1);
+        return out;
+    }
+
+    get cloudSelectedNode() {
+        if (!this.state.cloudSelectedPath) return null;
+        return this.state.cloudTreeNodes[
+            this.state.cloudSelectedPath.toLowerCase()] || null;
+    }
+
+    async openCloudSlideOver(path) {
+        this.state.cloudSlideOverPath = path;
+        this.state.cloudSlideOverLoading = true;
+        this.state.cloudSlideOverNode = null;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'cloud_browse_path',
+                [this.state.cloudActiveConfigId, path]);
+            if (result.error) {
+                this.state.cloudError = result.error;
+                this.state.cloudSlideOverPath = null;
+                return;
+            }
+            this.state.cloudSlideOverNode = result.node;
+        } finally {
+            this.state.cloudSlideOverLoading = false;
+        }
+    }
+
+    closeCloudSlideOver() {
+        this.state.cloudSlideOverPath = null;
+        this.state.cloudSlideOverNode = null;
     }
 
     async onSwitchToADTab() {

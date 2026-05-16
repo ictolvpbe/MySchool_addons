@@ -970,6 +970,10 @@
                         t-on-click="onSwitchToADTab">
                     <i class="fa fa-server"/> AD-browser
                 </button>
+                <button t-att-class="'ob-tab' + (state.activeTab === 'cloud' ? ' ob-tab-active' : '')"
+                        t-on-click="onSwitchToCloudTab">
+                    <i class="fa fa-cloud"/> Cloud-browser
+                </button>
             </div>
             
             <!-- Bulk Actions Bar (shown whenever ≥1 item is selected in tree OR members) -->
@@ -1595,6 +1599,209 @@
                                                             </button>
                                                         </t>
                                                     </td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+            </t>
+
+            <!-- Cloud-browser Tab Content (Fase I5) -->
+            <t t-if="state.activeTab === 'cloud'">
+                <div class="ob-ad-browser">
+                    <div class="ob-ad-toolbar">
+                        <label class="ob-ad-toolbar-label">Google Workspace:</label>
+                        <select class="ob-ad-select"
+                                t-on-change="(ev) => this.onCloudConfigChange(ev)">
+                            <option value="">— kies tenant —</option>
+                            <t t-foreach="state.cloudConfigs" t-as="cfg" t-key="cfg.id">
+                                <option t-att-value="cfg.id"
+                                        t-att-selected="state.cloudActiveConfigId === cfg.id">
+                                    <t t-esc="cfg.name"/> [<t t-esc="cfg.environment"/>] @<t t-esc="cfg.domain"/>
+                                </option>
+                            </t>
+                        </select>
+                        <button class="ob-btn ob-btn-sm" t-on-click="loadCloudConfigs"
+                                title="Configs herladen">
+                            <i class="fa fa-refresh"/>
+                        </button>
+                    </div>
+
+                    <div class="ob-ad-error" t-if="state.cloudError">
+                        <i class="fa fa-exclamation-triangle"/>
+                        <t t-esc="state.cloudError"/>
+                    </div>
+
+                    <div class="ob-ad-split" t-if="state.cloudActiveConfigId">
+                        <!-- LEFT: cloud tree -->
+                        <div class="ob-ad-tree">
+                            <div class="ob-ad-tree-row"
+                                 t-att-class="state.cloudSelectedPath === '/' ? 'ob-ad-tree-row-selected' : ''"
+                                 t-on-click="() => this.onCloudSelectNode('/')">
+                                <i class="fa fa-globe"/>
+                                <code class="ob-ad-tree-label">/ (root)</code>
+                            </div>
+                            <t t-foreach="flatCloudNodes" t-as="row" t-key="row.node.path">
+                                <div class="ob-ad-tree-row"
+                                     t-att-class="state.cloudSelectedPath === row.node.path ? 'ob-ad-tree-row-selected' : ''"
+                                     t-att-style="'padding-left: ' + (row.depth * 16) + 'px'"
+                                     t-on-click="() => this.onCloudSelectNode(row.node.path)">
+                                    <t t-if="row.node.kind === 'ou' and row.node.has_children">
+                                        <i t-att-class="'fa fa-' + (state.cloudExpanded[row.node.path.toLowerCase()] ? 'caret-down' : 'caret-right') + ' ob-ad-tree-toggle'"
+                                           t-on-click.stop="() => this.onCloudToggleExpand(row.node.path)"/>
+                                    </t>
+                                    <t t-else="">
+                                        <span class="ob-ad-tree-toggle"/>
+                                    </t>
+                                    <i t-attf-class="fa #{row.node.kind === 'ou' ? 'fa-folder' : 'fa-user'}"/>
+                                    <span class="ob-ad-tree-label"><t t-esc="row.node.cn"/></span>
+                                    <span class="ob-ad-tree-spinner" t-if="state.cloudLoading[row.node.path.toLowerCase()]">
+                                        <i class="fa fa-spinner fa-spin"/>
+                                    </span>
+                                </div>
+                            </t>
+                        </div>
+
+                        <!-- MIDDLE: members-pane -->
+                        <div class="ob-ad-members">
+                            <div class="ob-ad-members-header">
+                                <t t-if="cloudSelectedNode">
+                                    <i t-attf-class="fa #{cloudSelectedNode.kind === 'ou' ? 'fa-folder' : 'fa-user'} ob-ad-members-icon"/>
+                                    <span class="ob-ad-members-title">
+                                        <t t-if="cloudSelectedNode.kind === 'user'">
+                                            Groepslidmaatschappen
+                                        </t>
+                                        <t t-else="">
+                                            Inhoud van <t t-esc="cloudSelectedNode.cn"/>
+                                        </t>
+                                    </span>
+                                    <span class="badge text-bg-secondary ob-ad-members-count">
+                                        <t t-esc="filteredCloudMembers.length"/>
+                                    </span>
+                                    <button class="ob-icon-btn ob-ad-members-info"
+                                            title="Toon attributen"
+                                            t-on-click="() => this.openCloudSlideOver(cloudSelectedNode.path)">
+                                        <i class="fa fa-info-circle"/>
+                                    </button>
+                                </t>
+                                <t t-else="">
+                                    <span class="text-muted">Selecteer een node</span>
+                                </t>
+                            </div>
+
+                            <div class="ob-ad-members-filter" t-if="cloudSelectedNode">
+                                <input type="text"
+                                       placeholder="Filter members…"
+                                       t-att-value="state.cloudMembersFilter"
+                                       t-on-input="onCloudMembersFilterInput"/>
+                            </div>
+
+                            <div class="ob-ad-members-list">
+                                <t t-if="state.cloudMembersLoading">
+                                    <div class="ob-ad-empty">
+                                        <i class="fa fa-spinner fa-spin"/> Loading…
+                                    </div>
+                                </t>
+                                <t t-elif="!cloudSelectedNode">
+                                    <div class="ob-ad-empty">Geen node geselecteerd.</div>
+                                </t>
+                                <t t-elif="filteredCloudMembers.length === 0">
+                                    <div class="ob-ad-empty">Geen members.</div>
+                                </t>
+                                <t t-else="">
+                                    <t t-foreach="filteredCloudMembers" t-as="m" t-key="m.path">
+                                        <div class="ob-ad-member-row">
+                                            <i t-attf-class="fa #{m.kind === 'group' ? 'fa-users' : (m.kind === 'user' ? 'fa-user' : 'fa-cube')} ob-ad-member-icon"/>
+                                            <div class="ob-ad-member-text">
+                                                <div class="ob-ad-member-name">
+                                                    <t t-esc="m.cn"/>
+                                                </div>
+                                                <div class="ob-ad-member-meta" t-if="m.mail">
+                                                    <t t-esc="m.mail"/>
+                                                    <t t-if="m.role"> · <span class="badge text-bg-secondary"><t t-esc="m.role"/></span></t>
+                                                </div>
+                                            </div>
+                                            <div class="ob-ad-member-actions">
+                                                <button class="ob-icon-btn"
+                                                        title="Open detail-slideover"
+                                                        t-on-click="() => this.openCloudSlideOver(m.path)">
+                                                    <i class="fa fa-eye"/>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cloud SLIDEOVER -->
+                    <t t-if="state.cloudSlideOverPath">
+                        <div class="ob-ad-slideover-backdrop"
+                             t-on-click="closeCloudSlideOver"/>
+                        <div class="ob-ad-slideover">
+                            <div class="ob-ad-slideover-header">
+                                <h3>
+                                    <t t-if="state.cloudSlideOverNode">
+                                        <i t-attf-class="fa #{state.cloudSlideOverNode.kind === 'ou' ? 'fa-folder' : 'fa-user'}"/>
+                                        <t t-esc="state.cloudSlideOverNode.cn"/>
+                                        <span class="badge text-bg-secondary"
+                                              style="margin-left: 8px;">
+                                            <t t-esc="state.cloudSlideOverNode.kind"/>
+                                        </span>
+                                    </t>
+                                    <t t-else="">
+                                        <i class="fa fa-spinner fa-spin"/> Loading…
+                                    </t>
+                                </h3>
+                                <button class="ob-icon-btn ob-ad-slideover-close"
+                                        title="Sluiten"
+                                        t-on-click="closeCloudSlideOver">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <div class="ob-ad-slideover-body">
+                                <t t-if="state.cloudSlideOverNode">
+                                    <div class="text-muted small" style="margin-bottom: 12px;">
+                                        <code><t t-esc="state.cloudSlideOverNode.path"/></code>
+                                    </div>
+                                    <div class="ob-ad-db-match"
+                                         t-if="state.cloudSlideOverNode.matched_person">
+                                        <div class="ob-ad-db-match-header">
+                                            <i class="fa fa-link"/>
+                                            Gematchte DB-persoon
+                                        </div>
+                                        <table class="ob-ad-attr-table">
+                                            <tbody>
+                                                <tr><td><code>Naam</code></td><td><strong><t t-esc="state.cloudSlideOverNode.matched_person.display_name"/></strong></td></tr>
+                                                <tr><td><code>sap_ref</code></td><td><t t-esc="state.cloudSlideOverNode.matched_person.sap_ref or '—'"/></td></tr>
+                                                <tr><td><code>email_cloud</code></td><td><t t-esc="state.cloudSlideOverNode.matched_person.email_cloud or '—'"/></td></tr>
+                                                <tr><td><code>matched_via</code></td><td><span class="badge text-bg-info"><t t-esc="state.cloudSlideOverNode.matched_person.matched_via"/></span></td></tr>
+                                            </tbody>
+                                        </table>
+                                        <button class="ob-btn ob-btn-primary ob-btn-sm"
+                                                style="margin-top: 8px;"
+                                                t-on-click="() => this.openMatchedDbPerson(state.cloudSlideOverNode.matched_person.id)">
+                                            <i class="fa fa-external-link"/>
+                                            Open DB-record
+                                        </button>
+                                    </div>
+                                    <h4 class="ob-ad-attrs-header">Cloud-attributen</h4>
+                                    <table class="ob-ad-attr-table"
+                                           t-if="state.cloudSlideOverNode.attrs">
+                                        <thead>
+                                            <tr><th>Attribuut</th><th>Waarde</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <t t-foreach="Object.entries(state.cloudSlideOverNode.attrs).sort()"
+                                               t-as="row" t-key="row[0]">
+                                                <tr t-if="row[1]">
+                                                    <td><code><t t-esc="row[0]"/></code></td>
+                                                    <td><pre class="ob-ad-attr-value"><t t-esc="row[1]"/></pre></td>
                                                 </tr>
                                             </t>
                                         </tbody>
