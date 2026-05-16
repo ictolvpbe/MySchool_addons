@@ -133,6 +133,25 @@ class AdTakeoverSession(models.Model):
         help='Bron voor de Smartschool-scan. Smartschool kent geen '
              'test-tenants in deze setup; environment-validatie wordt '
              'overgeslagen voor SS-config.')
+
+    # ---- Fase F: clone prod → test ----
+    clone_target_ldap_config_id = fields.Many2one(
+        'myschool.ldap.server.config',
+        string='Clone-doel LDAP (test)',
+        domain="[('environment', '=', 'test')]",
+        help='Wanneer een prod-sessie staat: het test-AD waarin we de '
+             'prod-skeleton (OUs/groups/users) willen stagen. De clone '
+             'overschrijft niets — bestaande test-objecten worden '
+             'skipped en gelogd.')
+    clone_target_google_workspace_config_id = fields.Many2one(
+        'myschool.google.workspace.config',
+        string='Clone-doel Cloud (test)',
+        domain="[('environment', '=', 'test')]",
+        help='Idem voor Google Workspace: clone-doel-tenant.')
+    clone_report_html = fields.Html(
+        readonly=True, sanitize=False,
+        string='Laatste clone-rapport')
+    clone_report_at = fields.Datetime(readonly=True)
     scope_org_id = fields.Many2one(
         'myschool.org', required=True, string='Scope (SCHOOL/SCHOOLBOARD)',
         domain="[('org_type_id.name', 'in', ['SCHOOL', 'SCHOOLBOARD'])]",
@@ -301,6 +320,28 @@ class AdTakeoverSession(models.Model):
                         'cfg_env': cfg_env,
                         'sess_env': s.environment,
                     })
+
+    @api.constrains('clone_target_ldap_config_id',
+                    'clone_target_google_workspace_config_id',
+                    'environment')
+    def _check_clone_targets(self):
+        for s in self:
+            for cfg, label in (
+                (s.clone_target_ldap_config_id, 'LDAP'),
+                (s.clone_target_google_workspace_config_id, 'Google'),
+            ):
+                if cfg and cfg.environment != 'test':
+                    raise ValidationError(_(
+                        'Clone-doel %(lbl)s moet environment=test hebben '
+                        '(staat nu op %(env)s).'
+                    ) % {'lbl': label, 'env': cfg.environment})
+            if (s.clone_target_ldap_config_id
+                    or s.clone_target_google_workspace_config_id):
+                if s.environment != 'prod':
+                    raise ValidationError(_(
+                        'Clone-doel is alleen zinvol op een prod-sessie '
+                        '(bron = prod, doel = test). Deze sessie staat '
+                        'op environment=%s.') % s.environment)
 
     @api.constrains('ldap_config_id', 'google_workspace_config_id',
                     'smartschool_config_id')
@@ -1331,6 +1372,210 @@ class AdTakeoverSession(models.Model):
             'url': f'/web/content/{attachment.id}?download=true',
             'target': 'self',
         }
+
+    # ------------------------------------------------------------------
+    # Fase F — clone prod → test
+    # ------------------------------------------------------------------
+    #
+    # Doel: een test-AD/Cloud vullen met de skeleton (OUs + groups +
+    # users + memberships) van de prod-omgeving, zodat de takeover-
+    # flow eerst op realistische data getest kan worden.
+    #
+    # Veiligheid:
+    #   * Geen passwords gekopieerd; users krijgen random pwd + worden
+    #     disabled aangemaakt zodat ze niet kunnen inloggen.
+    #   * Skip+log bij bestaande test-objecten — nooit overschrijven.
+    #   * Clone-target moet environment=test zijn (validator).
+    #   * Bron-sessie moet environment=prod zijn (validator).
+
+    def action_clone_to_test(self):
+        """Vul de gekoppelde test-omgeving met de prod-skeleton."""
+        self.ensure_one()
+        if self.environment != 'prod':
+            raise UserError(_(
+                'Clone-actie loopt alleen vanaf een prod-sessie. Deze '
+                'sessie staat op %s.') % self.environment)
+        if not (self.clone_target_ldap_config_id
+                or self.clone_target_google_workspace_config_id):
+            raise UserError(_(
+                'Geen clone-doel ingesteld. Kies een test-LDAP en/of '
+                'test-Google config in de scope-groep.'))
+
+        report_blocks = []
+        if self.clone_target_ldap_config_id:
+            if not self.ldap_config_id:
+                report_blocks.append(self._clone_warning(
+                    'AD-clone overgeslagen: geen bron LDAP-config op deze '
+                    'sessie. Stel ldap_config_id in en hertik scan.'))
+            else:
+                report_blocks.append(self._clone_ad())
+        if self.clone_target_google_workspace_config_id:
+            if not self.google_workspace_config_id:
+                report_blocks.append(self._clone_warning(
+                    'Cloud-clone overgeslagen: geen bron Google-config.'))
+            else:
+                report_blocks.append(self._clone_cloud())
+
+        self.write({
+            'clone_report_html': (
+                '<div class="o_ad_takeover_clone">'
+                + ''.join(report_blocks)
+                + '</div>'),
+            'clone_report_at': fields.Datetime.now(),
+        })
+        return self._notify(
+            _('Stage in test voltooid'),
+            _('Zie het clone-rapport in de form-view voor details + '
+              'random passwords.'),
+            kind='success')
+
+    def _clone_warning(self, msg):
+        return f'<div class="alert alert-warning">{msg}</div>'
+
+    def _clone_ad(self):
+        """Clone AD-OUs (Fase F1). Groups/users/memberships volgen in F2.
+
+        Strategie:
+          1. Read prod scope-subtree (subtree onder base_dn van prod-
+             config + ou_fqdn_internal van scope_org).
+          2. Voor elk OU: rewrite DN (prod_base → test_base) en bepaal
+             parent-DN.
+          3. Sorteer op DN-lengte (kortste eerst) zodat parents vóór
+             kinderen geschreven worden.
+          4. Voor elke target-DN: check of die al bestaat in test
+             (SEARCH base) — skip + log indien zo; anders LDAP ADD met
+             objectClass=organizationalUnit.
+        """
+        ldap = self.env['myschool.ldap.service']
+        ldap._check_ldap3_available()
+        prod_cfg = self.ldap_config_id
+        test_cfg = self.clone_target_ldap_config_id
+
+        # 1. Read prod-OUs in scope
+        scope = (self.scope_org_id.ou_fqdn_internal or '').strip()
+        if not scope:
+            return self._clone_warning(
+                'Scope-org heeft geen ou_fqdn_internal — kan geen AD '
+                'subtree afleiden.')
+        try:
+            with ldap._get_connection(prod_cfg) as conn:
+                conn.search(
+                    search_base=scope,
+                    search_filter='(objectClass=organizationalUnit)',
+                    search_scope='SUBTREE',
+                    attributes=['distinguishedName', 'ou', 'description'])
+                prod_ous = [
+                    (self._entry_str(e, 'distinguishedName'),
+                     self._entry_str(e, 'ou'),
+                     self._entry_str(e, 'description'))
+                    for e in conn.entries
+                    if self._entry_str(e, 'distinguishedName')
+                ]
+        except Exception as e:
+            _logger.exception('[CLONE] prod read failed')
+            return self._clone_warning(
+                f'AD prod-read mislukt: {e}')
+
+        # 2. DN-rewrite + sort
+        prod_base = prod_cfg.base_dn.strip()
+        test_base = test_cfg.base_dn.strip()
+        rewrites = []
+        for prod_dn, ou_name, descr in prod_ous:
+            test_dn = self._clone_rewrite_ad_dn(
+                prod_dn, prod_base, test_base)
+            if not test_dn:
+                continue
+            rewrites.append((prod_dn, test_dn, ou_name, descr))
+        # Shortest DN first = parents before children
+        rewrites.sort(key=lambda r: r[1].count(','))
+
+        # 3. Write test
+        created = skipped = failed = 0
+        rows = []
+        try:
+            with ldap._get_connection(test_cfg) as conn:
+                for prod_dn, test_dn, ou_name, descr in rewrites:
+                    # Skip if exists
+                    try:
+                        conn.search(test_dn, '(objectClass=*)',
+                                    search_scope='BASE',
+                                    attributes=['distinguishedName'])
+                        if conn.entries:
+                            skipped += 1
+                            rows.append((test_dn, 'skipped',
+                                         'bestaat al in test'))
+                            continue
+                    except Exception:
+                        pass  # search failure → treat as not-exists, add
+                    try:
+                        attrs = {'ou': ou_name or test_dn.split(',', 1)[0][3:]}
+                        if descr:
+                            attrs['description'] = descr
+                        ok = conn.add(test_dn, 'organizationalUnit', attrs)
+                        if ok and conn.result.get('result') == 0:
+                            created += 1
+                            rows.append((test_dn, 'created', ''))
+                        else:
+                            failed += 1
+                            rows.append((
+                                test_dn, 'failed',
+                                conn.result.get('description') or 'unknown'))
+                    except Exception as e:
+                        failed += 1
+                        rows.append((test_dn, 'failed', str(e)))
+        except Exception as e:
+            _logger.exception('[CLONE] test write failed')
+            return self._clone_warning(
+                f'AD test-write mislukt: {e}')
+
+        # 4. Render report block
+        return self._render_ad_clone_report(
+            len(rewrites), created, skipped, failed, rows)
+
+    @staticmethod
+    def _clone_rewrite_ad_dn(prod_dn, prod_base, test_base):
+        """Replace the prod base_dn suffix with the test base_dn.
+        Returns None if prod_dn does not sit under prod_base."""
+        if not prod_dn:
+            return None
+        if not prod_dn.lower().endswith(',' + prod_base.lower()) \
+                and prod_dn.lower() != prod_base.lower():
+            return None
+        if prod_dn.lower() == prod_base.lower():
+            return test_base
+        # Strip prod_base suffix (with leading comma), append test_base
+        return prod_dn[: -len(prod_base)] + test_base
+
+    def _render_ad_clone_report(self, total, created, skipped, failed, rows):
+        header = (
+            f'<h4>AD-clone: OUs</h4>'
+            f'<p class="text-muted">Total: {total} · '
+            f'<span class="badge text-bg-success">created {created}</span> '
+            f'<span class="badge text-bg-warning">skipped {skipped}</span> '
+            f'<span class="badge text-bg-danger">failed {failed}</span></p>'
+        )
+        if not rows:
+            return header + '<p>Geen OUs in scope.</p>'
+        body_rows = []
+        for dn, status, msg in rows:
+            badge = {'created': 'bg-success', 'skipped': 'bg-warning',
+                     'failed': 'bg-danger'}.get(status, 'bg-secondary')
+            body_rows.append(
+                f'<tr><td><code>{dn}</code></td>'
+                f'<td><span class="badge {badge}">{status}</span></td>'
+                f'<td class="text-muted small">{msg}</td></tr>')
+        table = (
+            '<table class="table table-sm"><thead><tr>'
+            '<th>Test-DN</th><th>Status</th><th>Bericht</th>'
+            '</tr></thead><tbody>'
+            + ''.join(body_rows)
+            + '</tbody></table>')
+        return header + table
+
+    def _clone_cloud(self):
+        """Cloud-clone placeholder — volgt in F3."""
+        return self._clone_warning(
+            'Cloud-clone is in stap F3 nog niet geïmplementeerd.')
 
     # ------------------------------------------------------------------
     # Fase E1 — bulk-apply nadat 1 pilot OK is bevonden
