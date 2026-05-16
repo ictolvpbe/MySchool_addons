@@ -1419,6 +1419,175 @@ class ObjectBrowser(models.TransientModel):
             _logger.exception('[AD-BROWSE] failed for dn=%s', target_dn)
             return {'error': str(e), 'node': None, 'children': []}
 
+    @api.model
+    def ad_browse_members(self, ldap_config_id, dn):
+        """Return de 'members' van een AD-node:
+          * OU    → direct child users + groups (LEVEL-scope search)
+          * group → members in het ``member``-attribuut, geresolveerd
+                    naar dicts {dn, kind, cn}
+          * user  → groepen via ``memberOf``, geresolveerd
+
+        Returns: ``{members: [...], error: str|None}``
+        """
+        LdapConfig = self.env['myschool.ldap.server.config']
+        config = LdapConfig.browse(ldap_config_id).exists()
+        if not config:
+            return {'error': 'LDAP-config niet gevonden.', 'members': []}
+        ldap_service = self.env['myschool.ldap.service']
+        try:
+            ldap_service._check_ldap3_available()
+        except Exception as e:
+            return {'error': str(e), 'members': []}
+
+        target_dn = (dn or '').strip()
+        if not target_dn:
+            return {'error': 'Geen DN opgegeven.', 'members': []}
+
+        try:
+            with ldap_service._get_connection(config) as conn:
+                # Eerst het kind van de node achterhalen (BASE-search)
+                conn.search(target_dn, '(objectClass=*)',
+                            search_scope='BASE',
+                            attributes=['objectClass', 'member',
+                                        'memberOf'])
+                if not conn.entries:
+                    return {'error': f'DN niet gevonden: {target_dn}',
+                            'members': []}
+                entry = conn.entries[0]
+                kind = self._ad_kind_of(entry)
+
+                if kind == 'ou':
+                    return self._ad_members_for_ou(conn, target_dn)
+                if kind == 'group':
+                    return self._ad_members_for_group(conn, entry)
+                if kind == 'user':
+                    return self._ad_groups_for_user(conn, entry)
+                return {'error': None, 'members': []}
+        except Exception as e:
+            _logger.exception('[AD-BROWSE] members failed for dn=%s', target_dn)
+            return {'error': str(e), 'members': []}
+
+    def _ad_members_for_ou(self, conn, ou_dn):
+        """LEVEL-search onder de OU; alleen users + groups."""
+        conn.search(ou_dn,
+                    '(|(objectClass=group)(&(objectClass=user)'
+                    '(!(objectClass=computer))))',
+                    search_scope='LEVEL',
+                    attributes=['distinguishedName', 'objectClass',
+                                'cn', 'mail', 'sAMAccountName'])
+        members = []
+        for e in conn.entries:
+            child_dn = self._ad_entry_str(e, 'distinguishedName')
+            if not child_dn or child_dn.lower() == ou_dn.lower():
+                continue
+            members.append({
+                'dn': child_dn,
+                'kind': self._ad_kind_of(e),
+                'cn': (self._ad_entry_str(e, 'cn')
+                       or child_dn.split(',', 1)[0]),
+                'mail': self._ad_entry_str(e, 'mail'),
+                'sam': self._ad_entry_str(e, 'sAMAccountName'),
+            })
+        members.sort(key=lambda m: (
+            {'group': 0, 'user': 1}.get(m['kind'], 9),
+            (m['cn'] or '').lower()))
+        return {'error': None, 'members': members}
+
+    def _ad_members_for_group(self, conn, group_entry):
+        """Read group.member, resolve elk member-DN naar zijn kind+cn."""
+        raw = group_entry['member'].value if 'member' in group_entry else None
+        if raw is None:
+            return {'error': None, 'members': []}
+        dns = raw if isinstance(raw, (list, tuple)) else [raw]
+        members = []
+        for member_dn in dns:
+            if not member_dn:
+                continue
+            try:
+                conn.search(member_dn, '(objectClass=*)',
+                            search_scope='BASE',
+                            attributes=['objectClass', 'cn', 'mail',
+                                        'sAMAccountName'])
+                if not conn.entries:
+                    continue
+                e = conn.entries[0]
+                members.append({
+                    'dn': member_dn,
+                    'kind': self._ad_kind_of(e),
+                    'cn': (self._ad_entry_str(e, 'cn')
+                           or member_dn.split(',', 1)[0]),
+                    'mail': self._ad_entry_str(e, 'mail'),
+                    'sam': self._ad_entry_str(e, 'sAMAccountName'),
+                })
+            except Exception:
+                # Member-DN niet meer leesbaar (bv. cross-domain)
+                members.append({
+                    'dn': member_dn,
+                    'kind': 'other',
+                    'cn': member_dn.split(',', 1)[0],
+                    'mail': '',
+                    'sam': '',
+                })
+        members.sort(key=lambda m: (
+            {'group': 0, 'user': 1}.get(m['kind'], 9),
+            (m['cn'] or '').lower()))
+        return {'error': None, 'members': members}
+
+    def _ad_groups_for_user(self, conn, user_entry):
+        """Read user.memberOf en resolve naar groep-info."""
+        raw = (user_entry['memberOf'].value
+               if 'memberOf' in user_entry else None)
+        if raw is None:
+            return {'error': None, 'members': []}
+        dns = raw if isinstance(raw, (list, tuple)) else [raw]
+        members = []
+        for group_dn in dns:
+            if not group_dn:
+                continue
+            try:
+                conn.search(group_dn, '(objectClass=*)',
+                            search_scope='BASE',
+                            attributes=['objectClass', 'cn',
+                                        'sAMAccountName', 'mail'])
+                if not conn.entries:
+                    continue
+                e = conn.entries[0]
+                members.append({
+                    'dn': group_dn,
+                    'kind': self._ad_kind_of(e),
+                    'cn': (self._ad_entry_str(e, 'cn')
+                           or group_dn.split(',', 1)[0]),
+                    'mail': self._ad_entry_str(e, 'mail'),
+                    'sam': self._ad_entry_str(e, 'sAMAccountName'),
+                })
+            except Exception:
+                members.append({
+                    'dn': group_dn, 'kind': 'group',
+                    'cn': group_dn.split(',', 1)[0],
+                    'mail': '', 'sam': '',
+                })
+        members.sort(key=lambda m: (m['cn'] or '').lower())
+        return {'error': None, 'members': members}
+
+    def _ad_kind_of(self, entry):
+        try:
+            raw = entry['objectClass'].value if 'objectClass' in entry else None
+            if raw is None:
+                classes = []
+            elif isinstance(raw, (list, tuple)):
+                classes = [str(c).lower() for c in raw]
+            else:
+                classes = [str(raw).lower()]
+            if 'organizationalunit' in classes:
+                return 'ou'
+            if 'group' in classes:
+                return 'group'
+            if 'user' in classes and 'computer' not in classes:
+                return 'user'
+        except Exception:
+            pass
+        return 'other'
+
     @staticmethod
     def _ad_entry_str(entry, attr):
         try:
@@ -1434,25 +1603,7 @@ class ObjectBrowser(models.TransientModel):
     def _ad_entry_to_dict(self, entry, include_attrs=True):
         """Convert ldap3 entry → JSON-safe dict voor de OWL-frontend."""
         dn = self._ad_entry_str(entry, 'distinguishedName')
-        # Bepaal kind via objectClass — accepteer zowel ldap3's .value
-        # (list of scalar) als gemockte test-entries.
-        kind = 'other'
-        try:
-            raw = entry['objectClass'].value if 'objectClass' in entry else None
-            if raw is None:
-                classes = []
-            elif isinstance(raw, (list, tuple)):
-                classes = [str(c).lower() for c in raw]
-            else:
-                classes = [str(raw).lower()]
-            if 'organizationalunit' in classes:
-                kind = 'ou'
-            elif 'group' in classes:
-                kind = 'group'
-            elif 'user' in classes and 'computer' not in classes:
-                kind = 'user'
-        except Exception:
-            pass
+        kind = self._ad_kind_of(entry)
         cn = (self._ad_entry_str(entry, 'cn')
               or self._ad_entry_str(entry, 'ou')
               or self._ad_entry_str(entry, 'name')

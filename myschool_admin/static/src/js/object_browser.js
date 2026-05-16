@@ -1153,6 +1153,14 @@ export class ObjectBrowserClient extends Component {
             adLoading: {},          // dn-lowercase → bool (children-fetch in flight)
             adSelectedDn: null,
             adError: null,
+            // Members-pane (middle column)
+            adMembers: [],          // list of {dn, kind, cn, mail, sam}
+            adMembersLoading: false,
+            adMembersFilter: '',    // free-text filter on members-pane
+            // Slideover overlay (right side, conditional)
+            adSlideOverDn: null,
+            adSlideOverNode: null,
+            adSlideOverLoading: false,
         });
         
         // Bind methods that are passed as props
@@ -2153,14 +2161,113 @@ export class ObjectBrowserClient extends Component {
 
     async onAdSelectNode(dn) {
         this.state.adSelectedDn = dn;
-        // Zorg dat de full-attrs van deze node geladen zijn (incl. attrs
-        // — kindeer-lookups droppen de attrs voor performance).
+        // Tegelijk: full-attrs voor het tree-context + members voor de
+        // middle pane. Parallel om latency te beperken.
         const key = (dn || '').toLowerCase();
         const cached = this.state.adTreeNodes[key];
+        const promises = [];
         if (!cached || !cached.attrs) {
-            // Trigger volledige load (deze RPC retourneert ook attrs)
+            promises.push(this.loadAdChildren(dn, /*expand=*/false));
+        }
+        promises.push(this.loadAdMembers(dn));
+        await Promise.all(promises);
+    }
+
+    async loadAdMembers(dn) {
+        this.state.adMembersLoading = true;
+        this.state.adMembers = [];
+        this.state.adMembersFilter = '';
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ad_browse_members',
+                [this.state.adActiveConfigId, dn]);
+            if (result.error) {
+                this.state.adError = result.error;
+                return;
+            }
+            this.state.adMembers = result.members || [];
+        } catch (e) {
+            this.state.adError = 'Members ophalen mislukt: ' + (e?.message || e);
+        } finally {
+            this.state.adMembersLoading = false;
+        }
+    }
+
+    get filteredAdMembers() {
+        const f = (this.state.adMembersFilter || '').trim().toLowerCase();
+        if (!f) return this.state.adMembers;
+        return this.state.adMembers.filter(m =>
+            (m.cn || '').toLowerCase().includes(f) ||
+            (m.mail || '').toLowerCase().includes(f) ||
+            (m.sam || '').toLowerCase().includes(f) ||
+            (m.dn || '').toLowerCase().includes(f));
+    }
+
+    onAdMembersFilterInput(ev) {
+        this.state.adMembersFilter = ev.target.value;
+    }
+
+    async openAdSlideOver(dn) {
+        this.state.adSlideOverDn = dn;
+        this.state.adSlideOverLoading = true;
+        this.state.adSlideOverNode = null;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ad_browse_dn',
+                [this.state.adActiveConfigId, dn, true]);
+            if (result.error) {
+                this.state.adError = result.error;
+                this.state.adSlideOverDn = null;
+                return;
+            }
+            this.state.adSlideOverNode = result.node;
+        } finally {
+            this.state.adSlideOverLoading = false;
+        }
+    }
+
+    closeAdSlideOver() {
+        this.state.adSlideOverDn = null;
+        this.state.adSlideOverNode = null;
+    }
+
+    async navigateAdToNode(dn) {
+        // Klik op fa-arrow-right op een member: selecteer in tree.
+        // Als de node nog niet in adTreeNodes zit, browse hem eerst
+        // zodat hij verschijnt; daarna select+expand de parent-chain.
+        const key = (dn || '').toLowerCase();
+        if (!this.state.adTreeNodes[key]) {
             await this.loadAdChildren(dn, /*expand=*/false);
         }
+        // Expand alle parents zodat de node zichtbaar is in de tree
+        const parents = this._adAncestorDns(dn);
+        for (const p of parents) {
+            const pKey = p.toLowerCase();
+            if (!(pKey in this.state.adChildren)) {
+                await this.loadAdChildren(p, /*expand=*/true);
+            } else {
+                this.state.adExpanded[pKey] = true;
+            }
+        }
+        this.state.adSelectedDn = dn;
+        await this.loadAdMembers(dn);
+    }
+
+    _adAncestorDns(dn) {
+        // Geef alle parent-DNs tussen `dn` en de adRootDn (exclusief dn,
+        // inclusief root).
+        const out = [];
+        if (!dn || !this.state.adRootDn) return out;
+        const root = this.state.adRootDn.toLowerCase();
+        let cur = dn;
+        while (cur.includes(',')) {
+            const next = cur.slice(cur.indexOf(',') + 1).trim();
+            if (!next) break;
+            out.push(next);
+            if (next.toLowerCase() === root) break;
+            cur = next;
+        }
+        return out.reverse();
     }
 
     get adRootChildren() {

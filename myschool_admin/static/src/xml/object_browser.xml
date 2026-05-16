@@ -1290,44 +1290,140 @@
                             </div>
                         </div>
 
-                        <!-- RIGHT: attribute side-panel -->
-                        <div class="ob-ad-detail">
-                            <t t-if="adSelectedNode">
-                                <h3>
-                                    <i t-attf-class="fa #{adSelectedNode.kind === 'ou' ? 'fa-folder' : (adSelectedNode.kind === 'group' ? 'fa-users' : (adSelectedNode.kind === 'user' ? 'fa-user' : 'fa-cube'))}"/>
-                                    <t t-esc="adSelectedNode.cn"/>
-                                    <span class="badge text-bg-secondary"
-                                          style="margin-left: 8px;">
-                                        <t t-esc="adSelectedNode.kind"/>
-                                    </span>
-                                </h3>
-                                <div class="text-muted small" style="margin-bottom: 12px;">
-                                    <code><t t-esc="adSelectedNode.dn"/></code>
-                                </div>
-                                <table class="ob-ad-attr-table" t-if="adSelectedNode.attrs">
-                                    <thead>
-                                        <tr><th>Attribuut</th><th>Waarde</th></tr>
-                                    </thead>
-                                    <tbody>
-                                        <t t-foreach="Object.entries(adSelectedNode.attrs).sort()"
-                                           t-as="row" t-key="row[0]">
-                                            <tr t-if="row[1]">
-                                                <td><code><t t-esc="row[0]"/></code></td>
-                                                <td><pre class="ob-ad-attr-value"><t t-esc="row[1]"/></pre></td>
-                                            </tr>
+                        <!-- MIDDLE: members-pane -->
+                        <div class="ob-ad-members">
+                            <div class="ob-ad-members-header">
+                                <t t-if="adSelectedNode">
+                                    <i t-attf-class="fa #{adSelectedNode.kind === 'ou' ? 'fa-folder' : (adSelectedNode.kind === 'group' ? 'fa-users' : (adSelectedNode.kind === 'user' ? 'fa-user' : 'fa-cube'))} ob-ad-members-icon"/>
+                                    <span class="ob-ad-members-title">
+                                        <t t-if="adSelectedNode.kind === 'user'">
+                                            Groepslidmaatschappen van <t t-esc="adSelectedNode.cn"/>
                                         </t>
-                                    </tbody>
-                                </table>
-                                <div t-if="!adSelectedNode.attrs"
-                                     class="text-muted">
-                                    Attrs laden…
-                                </div>
-                            </t>
-                            <div class="ob-ad-empty" t-if="!adSelectedNode">
-                                Selecteer een node in de tree om attrs te zien.
+                                        <t t-elif="adSelectedNode.kind === 'group'">
+                                            Leden van <t t-esc="adSelectedNode.cn"/>
+                                        </t>
+                                        <t t-else="">
+                                            Inhoud van <t t-esc="adSelectedNode.cn"/>
+                                        </t>
+                                    </span>
+                                    <span class="badge text-bg-secondary ob-ad-members-count">
+                                        <t t-esc="filteredAdMembers.length"/>
+                                    </span>
+                                    <button class="ob-icon-btn ob-ad-members-info"
+                                            title="Toon attributen van de geselecteerde node"
+                                            t-on-click="() => this.openAdSlideOver(adSelectedNode.dn)">
+                                        <i class="fa fa-info-circle"/>
+                                    </button>
+                                </t>
+                                <t t-else="">
+                                    <span class="text-muted">Selecteer een node in de tree</span>
+                                </t>
+                            </div>
+
+                            <div class="ob-ad-members-filter" t-if="adSelectedNode">
+                                <input type="text"
+                                       placeholder="Filter members op cn, mail, sam, DN…"
+                                       t-att-value="state.adMembersFilter"
+                                       t-on-input="onAdMembersFilterInput"/>
+                            </div>
+
+                            <div class="ob-ad-members-list">
+                                <t t-if="state.adMembersLoading">
+                                    <div class="ob-ad-empty">
+                                        <i class="fa fa-spinner fa-spin"/> Loading…
+                                    </div>
+                                </t>
+                                <t t-elif="!adSelectedNode">
+                                    <div class="ob-ad-empty">
+                                        Geen node geselecteerd.
+                                    </div>
+                                </t>
+                                <t t-elif="filteredAdMembers.length === 0">
+                                    <div class="ob-ad-empty">
+                                        Geen members.
+                                    </div>
+                                </t>
+                                <t t-else="">
+                                    <t t-foreach="filteredAdMembers" t-as="m" t-key="m.dn">
+                                        <div class="ob-ad-member-row">
+                                            <i t-attf-class="fa #{m.kind === 'ou' ? 'fa-folder' : (m.kind === 'group' ? 'fa-users' : (m.kind === 'user' ? 'fa-user' : 'fa-cube'))} ob-ad-member-icon"/>
+                                            <div class="ob-ad-member-text">
+                                                <div class="ob-ad-member-name">
+                                                    <t t-esc="m.cn"/>
+                                                </div>
+                                                <div class="ob-ad-member-meta" t-if="m.mail or m.sam">
+                                                    <t t-if="m.sam"><code><t t-esc="m.sam"/></code></t>
+                                                    <t t-if="m.mail"> · <t t-esc="m.mail"/></t>
+                                                </div>
+                                            </div>
+                                            <div class="ob-ad-member-actions">
+                                                <button class="ob-icon-btn"
+                                                        title="Open detail-slideover"
+                                                        t-on-click="() => this.openAdSlideOver(m.dn)">
+                                                    <i class="fa fa-eye"/>
+                                                </button>
+                                                <button class="ob-icon-btn"
+                                                        title="Navigeer naar deze node in de tree"
+                                                        t-on-click="() => this.navigateAdToNode(m.dn)">
+                                                    <i class="fa fa-arrow-right"/>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </t>
                             </div>
                         </div>
                     </div>
+
+                    <!-- SLIDEOVER overlay (right) -->
+                    <t t-if="state.adSlideOverDn">
+                        <div class="ob-ad-slideover-backdrop"
+                             t-on-click="closeAdSlideOver"/>
+                        <div class="ob-ad-slideover">
+                            <div class="ob-ad-slideover-header">
+                                <h3>
+                                    <t t-if="state.adSlideOverNode">
+                                        <i t-attf-class="fa #{state.adSlideOverNode.kind === 'ou' ? 'fa-folder' : (state.adSlideOverNode.kind === 'group' ? 'fa-users' : (state.adSlideOverNode.kind === 'user' ? 'fa-user' : 'fa-cube'))}"/>
+                                        <t t-esc="state.adSlideOverNode.cn"/>
+                                        <span class="badge text-bg-secondary"
+                                              style="margin-left: 8px;">
+                                            <t t-esc="state.adSlideOverNode.kind"/>
+                                        </span>
+                                    </t>
+                                    <t t-else="">
+                                        <i class="fa fa-spinner fa-spin"/> Loading…
+                                    </t>
+                                </h3>
+                                <button class="ob-icon-btn ob-ad-slideover-close"
+                                        title="Sluiten"
+                                        t-on-click="closeAdSlideOver">
+                                    <i class="fa fa-times"/>
+                                </button>
+                            </div>
+                            <div class="ob-ad-slideover-body">
+                                <t t-if="state.adSlideOverNode">
+                                    <div class="text-muted small" style="margin-bottom: 12px;">
+                                        <code><t t-esc="state.adSlideOverNode.dn"/></code>
+                                    </div>
+                                    <table class="ob-ad-attr-table"
+                                           t-if="state.adSlideOverNode.attrs">
+                                        <thead>
+                                            <tr><th>Attribuut</th><th>Waarde</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <t t-foreach="Object.entries(state.adSlideOverNode.attrs).sort()"
+                                               t-as="row" t-key="row[0]">
+                                                <tr t-if="row[1]">
+                                                    <td><code><t t-esc="row[0]"/></code></td>
+                                                    <td><pre class="ob-ad-attr-value"><t t-esc="row[1]"/></pre></td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
                 </div>
             </t>
 

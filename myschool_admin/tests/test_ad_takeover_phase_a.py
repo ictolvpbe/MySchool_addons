@@ -844,6 +844,123 @@ class TestAdTakeoverFaseA(TransactionCase):
         self.assertTrue(result.get('error'))
         self.assertIsNone(result.get('node'))
 
+    def test_ad_browse_members_for_ou(self):
+        """OU → LEVEL-search returneert group/user kinderen."""
+        ou_entry = MagicMock()
+        ou_entry.__contains__.side_effect = lambda k: k in (
+            'distinguishedName', 'objectClass', 'member', 'memberOf')
+        ou_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'distinguishedName': 'OU=foo,DC=test,DC=local',
+            'objectClass': ['top', 'organizationalUnit'],
+        }.get(k, None))
+
+        group_entry = MagicMock()
+        group_entry.__contains__.side_effect = lambda k: k in (
+            'distinguishedName', 'objectClass', 'cn', 'mail',
+            'sAMAccountName')
+        group_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'distinguishedName': 'CN=teachers,OU=foo,DC=test,DC=local',
+            'objectClass': ['top', 'group'],
+            'cn': 'teachers', 'mail': 'teachers@x', 'sAMAccountName': 'teachers',
+        }.get(k, ''))
+
+        user_entry = MagicMock()
+        user_entry.__contains__.side_effect = lambda k: k in (
+            'distinguishedName', 'objectClass', 'cn', 'mail',
+            'sAMAccountName')
+        user_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'distinguishedName': 'CN=jan,OU=foo,DC=test,DC=local',
+            'objectClass': ['top', 'person', 'organizationalPerson',
+                            'user'],
+            'cn': 'jan', 'mail': 'jan@x', 'sAMAccountName': 'jan',
+        }.get(k, ''))
+
+        mock_conn = MagicMock()
+        def fake_search(*args, **kwargs):
+            scope = kwargs.get('search_scope') or (
+                args[2] if len(args) >= 3 else None)
+            if scope == 'BASE':
+                mock_conn.entries = [ou_entry]
+            elif scope == 'LEVEL':
+                mock_conn.entries = [group_entry, user_entry]
+            else:
+                mock_conn.entries = []
+        mock_conn.search.side_effect = fake_search
+        class _Ctx:
+            def __enter__(self_): return mock_conn
+            def __exit__(self_, *exc): return False
+
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with patch.object(ldap_cls, '_check_ldap3_available',
+                          return_value=True), \
+             patch.object(ldap_cls, '_get_connection',
+                          return_value=_Ctx()):
+            result = self.env['myschool.object.browser'].ad_browse_members(
+                self.ldap_test.id, 'OU=foo,DC=test,DC=local')
+        self.assertIsNone(result.get('error'))
+        members = result['members']
+        self.assertEqual(len(members), 2)
+        # Groups sorteren vóór users in onze ordering
+        self.assertEqual(members[0]['kind'], 'group')
+        self.assertEqual(members[1]['kind'], 'user')
+        self.assertEqual(members[1]['mail'], 'jan@x')
+
+    def test_ad_browse_members_for_group_resolves_member_dns(self):
+        """group → member attribuut, elke DN BASE-geresolved."""
+        group_entry = MagicMock()
+        group_entry.__contains__.side_effect = lambda k: k in (
+            'objectClass', 'member')
+        group_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'objectClass': ['top', 'group'],
+            'member': ['CN=jan,OU=ts,DC=test,DC=local',
+                       'CN=an,OU=ts,DC=test,DC=local'],
+        }.get(k, None))
+
+        def member_entry(cn):
+            e = MagicMock()
+            e.__contains__.side_effect = lambda k: k in (
+                'objectClass', 'cn', 'mail', 'sAMAccountName')
+            e.__getitem__.side_effect = lambda k: MagicMock(value={
+                'objectClass': ['top', 'person', 'organizationalPerson',
+                                'user'],
+                'cn': cn, 'mail': f'{cn}@x', 'sAMAccountName': cn,
+            }.get(k, ''))
+            return e
+
+        mock_conn = MagicMock()
+        call_n = {'n': 0}
+        def fake_search(*args, **kwargs):
+            call_n['n'] += 1
+            scope = kwargs.get('search_scope') or (
+                args[2] if len(args) >= 3 else None)
+            if scope == 'BASE' and call_n['n'] == 1:
+                # First BASE: the group itself
+                mock_conn.entries = [group_entry]
+            elif scope == 'BASE':
+                # Subsequent BASEs: one member per call (alternate cn)
+                cn = 'jan' if call_n['n'] == 2 else 'an'
+                mock_conn.entries = [member_entry(cn)]
+            else:
+                mock_conn.entries = []
+        mock_conn.search.side_effect = fake_search
+        class _Ctx:
+            def __enter__(self_): return mock_conn
+            def __exit__(self_, *exc): return False
+
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with patch.object(ldap_cls, '_check_ldap3_available',
+                          return_value=True), \
+             patch.object(ldap_cls, '_get_connection',
+                          return_value=_Ctx()):
+            result = self.env['myschool.object.browser'].ad_browse_members(
+                self.ldap_test.id,
+                'CN=teachers,OU=ts,DC=test,DC=local')
+        self.assertIsNone(result.get('error'))
+        self.assertEqual(len(result['members']), 2)
+        # Alfabetisch op cn
+        cns = [m['cn'] for m in result['members']]
+        self.assertEqual(cns, ['an', 'jan'])
+
     def test_ad_browser_browse_dn_with_mocked_ldap(self):
         """Happy path met gemockte LDAP-search."""
         # Build mock entries — een OU 'foo' met één child-group.

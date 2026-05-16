@@ -2130,3 +2130,146 @@
     background: transparent;
     font-size: 12px;
 }
+
+/* ===== AD-browser Fase H: members-pane + slideover ===== */
+.ob-ad-members {
+    flex: 1.5;
+    overflow: hidden;
+    background: var(--ob-pane-bg, #fff);
+    border: 1px solid var(--ob-border, #dee2e6);
+    border-radius: 4px;
+    min-width: 320px;
+    display: flex;
+    flex-direction: column;
+}
+.ob-ad-members-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--ob-border-light, #ecedf0);
+    background: var(--ob-header-bg, #f8f9fa);
+}
+.ob-ad-members-icon {
+    color: var(--ob-muted, #6c757d);
+    font-size: 16px;
+}
+.ob-ad-members-title { font-weight: 600; flex: 1; }
+.ob-ad-members-count { font-size: 12px; }
+.ob-ad-members-info { margin-left: auto; }
+.ob-ad-members-filter { padding: 8px 12px; }
+.ob-ad-members-filter input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--ob-border, #ced4da);
+    border-radius: 3px;
+    font-size: 13px;
+}
+.ob-ad-members-list {
+    flex: 1;
+    overflow: auto;
+}
+.ob-ad-member-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ob-border-light, #ecedf0);
+    cursor: default;
+}
+.ob-ad-member-row:hover { background: var(--ob-hover-bg, #f1f3f5); }
+.ob-ad-member-icon {
+    color: var(--ob-muted, #6c757d);
+    flex-shrink: 0;
+    width: 18px;
+    text-align: center;
+}
+.ob-ad-member-text { flex: 1; min-width: 0; overflow: hidden; }
+.ob-ad-member-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ob-ad-member-meta {
+    font-size: 12px;
+    color: var(--ob-muted, #6c757d);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ob-ad-member-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.ob-ad-member-actions .ob-icon-btn {
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--ob-muted, #6c757d);
+    border-radius: 3px;
+}
+.ob-ad-member-actions .ob-icon-btn:hover {
+    background: var(--ob-hover-bg, #e9ecef);
+    color: var(--ob-text, #333);
+}
+
+/* Slideover overlay */
+.ob-ad-slideover-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.25);
+    z-index: 50;
+}
+.ob-ad-slideover {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 480px;
+    max-width: 90vw;
+    background: var(--ob-pane-bg, #fff);
+    border-left: 1px solid var(--ob-border, #dee2e6);
+    box-shadow: -4px 0 18px rgba(0, 0, 0, 0.12);
+    z-index: 51;
+    display: flex;
+    flex-direction: column;
+}
+.ob-ad-slideover-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--ob-border-light, #ecedf0);
+    background: var(--ob-header-bg, #f8f9fa);
+}
+.ob-ad-slideover-header h3 {
+    margin: 0;
+    font-size: 16px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ob-ad-slideover-close {
+    padding: 6px 10px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--ob-muted, #6c757d);
+    border-radius: 3px;
+}
+.ob-ad-slideover-close:hover {
+    background: var(--ob-hover-bg, #e9ecef);
+    color: var(--ob-danger, #dc3545);
+}
+.ob-ad-slideover-body {
+    flex: 1;
+    overflow: auto;
+    padding: 16px;
+}
+
+/* AD-browser tab needs position:relative for the slideover overlay
+   to anchor against its container. */
+.ob-ad-browser { position: relative; }
