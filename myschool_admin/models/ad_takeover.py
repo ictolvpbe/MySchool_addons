@@ -1880,10 +1880,319 @@ class AdTakeoverSession(models.Model):
             + '</tbody></table>')
         return header + table
 
+    # ==================================================================
+    # Cloud clone (Fase F3)
+    # ==================================================================
+    #
+    # Domain-rewrite: <local>@<prod_domain> → <local>@<test_domain>.
+    # OrgUnitPath blijft hetzelfde (geen domein in het pad).
+    # Users worden aangemaakt met random password EN suspended=True
+    # zodat ze niet kunnen inloggen tot admin ze enable't.
+
     def _clone_cloud(self):
-        """Cloud-clone placeholder — volgt in F3."""
-        return self._clone_warning(
-            'Cloud-clone is in stap F3 nog niet geïmplementeerd.')
+        gsvc = self.env['myschool.google.directory.service']
+        gsvc._check_google_available()
+        prod_cfg = self.google_workspace_config_id
+        test_cfg = self.clone_target_google_workspace_config_id
+        if not test_cfg:
+            return self._clone_warning(
+                'Geen Google clone-doel ingesteld.')
+
+        scope_path = self.cloud_ou_path
+        if not scope_path or scope_path == '/':
+            return self._clone_warning(
+                'Scope-org levert geen Google orgUnitPath op.')
+
+        prod_domain = (prod_cfg.domain or '').strip().lower()
+        test_domain = (test_cfg.domain or '').strip().lower()
+        if not prod_domain or not test_domain:
+            return self._clone_warning(
+                'Prod- of test-domain ontbreekt op de Google config(s).')
+
+        prod_customer = prod_cfg.customer_id or 'my_customer'
+        test_customer = test_cfg.customer_id or 'my_customer'
+        prod_api = gsvc._get_directory_service(prod_cfg)
+        test_api = gsvc._get_directory_service(test_cfg)
+
+        # OUs eerst
+        ou_block, _ou_paths = self._clone_cloud_ous(
+            prod_api, prod_customer, test_api, test_customer, scope_path)
+        # Groups (need domain-rewrite voor email)
+        gr_block, gr_email_map = self._clone_cloud_groups(
+            prod_api, prod_customer, test_api,
+            prod_domain, test_domain)
+        # Users
+        usr_block, usr_email_map, pwd_rows = self._clone_cloud_users(
+            prod_api, prod_customer, test_api,
+            scope_path, prod_domain, test_domain)
+        # Memberships
+        mem_block = self._clone_cloud_memberships(
+            prod_api, test_api, gr_email_map, usr_email_map)
+
+        pwd_block = self._render_cloud_password_report(pwd_rows)
+        return ou_block + gr_block + usr_block + mem_block + pwd_block
+
+    def _clone_cloud_ous(self, prod_api, prod_customer,
+                         test_api, test_customer, scope_path):
+        try:
+            resp = prod_api.orgunits().list(
+                customerId=prod_customer,
+                orgUnitPath=scope_path,
+                type='all').execute()
+            prod_ous = resp.get('organizationUnits', []) or []
+        except Exception as e:
+            _logger.exception('[CLONE] prod OUs read failed')
+            return self._clone_warning(
+                f'Cloud OUs prod-read mislukt: {e}'), []
+
+        # Sort by path depth so parents land first
+        prod_ous.sort(key=lambda o: (o.get('orgUnitPath') or '').count('/'))
+
+        created = skipped = failed = 0
+        rows = []
+        for ou in prod_ous:
+            path = (ou.get('orgUnitPath') or '').strip()
+            name = ou.get('name') or path.rsplit('/', 1)[-1]
+            parent_path = ou.get('parentOrgUnitPath') or '/'
+            # Skip if exists in test
+            try:
+                test_api.orgunits().get(
+                    customerId=test_customer,
+                    orgUnitPath=path).execute()
+                skipped += 1
+                rows.append((path, 'skipped', 'bestaat al in test'))
+                continue
+            except Exception:
+                pass  # not-found is expected
+            body = {
+                'name': name,
+                'parentOrgUnitPath': parent_path,
+            }
+            if ou.get('description'):
+                body['description'] = ou['description']
+            try:
+                test_api.orgunits().insert(
+                    customerId=test_customer, body=body).execute()
+                created += 1
+                rows.append((path, 'created', ''))
+            except Exception as e:
+                failed += 1
+                rows.append((path, 'failed', str(e)[:200]))
+        paths = [o.get('orgUnitPath') for o in prod_ous]
+        block = self._render_ad_clone_report(
+            'Cloud-clone: OrgUnits', len(prod_ous), created,
+            skipped, failed, rows)
+        return block, paths
+
+    def _clone_cloud_groups(self, prod_api, prod_customer,
+                            test_api, prod_domain, test_domain):
+        try:
+            prod_groups = []
+            page_token = None
+            suffix = f'@{prod_domain}'
+            while True:
+                resp = prod_api.groups().list(
+                    customer=prod_customer, maxResults=200,
+                    pageToken=page_token).execute()
+                for g in resp.get('groups', []) or []:
+                    email = (g.get('email') or '').lower()
+                    if email.endswith(suffix):
+                        prod_groups.append(g)
+                page_token = resp.get('nextPageToken')
+                if not page_token:
+                    break
+        except Exception as e:
+            _logger.exception('[CLONE] prod groups read failed')
+            return self._clone_warning(
+                f'Cloud groups prod-read mislukt: {e}'), {}
+
+        email_map = {}  # prod_email → test_email
+        created = skipped = failed = 0
+        rows = []
+        for g in prod_groups:
+            prod_email = (g.get('email') or '').lower()
+            test_email = self._rewrite_email(
+                prod_email, prod_domain, test_domain)
+            if not test_email:
+                continue
+            email_map[prod_email] = test_email
+            # Skip if exists
+            try:
+                test_api.groups().get(groupKey=test_email).execute()
+                skipped += 1
+                rows.append((test_email, 'skipped', 'bestaat al'))
+                continue
+            except Exception:
+                pass
+            body = {
+                'email': test_email,
+                'name': g.get('name') or test_email,
+            }
+            if g.get('description'):
+                body['description'] = g['description']
+            try:
+                test_api.groups().insert(body=body).execute()
+                created += 1
+                rows.append((test_email, 'created', ''))
+            except Exception as e:
+                failed += 1
+                rows.append((test_email, 'failed', str(e)[:200]))
+        block = self._render_ad_clone_report(
+            'Cloud-clone: Groups', len(prod_groups), created,
+            skipped, failed, rows)
+        return block, email_map
+
+    def _clone_cloud_users(self, prod_api, prod_customer, test_api,
+                           scope_path, prod_domain, test_domain):
+        try:
+            prod_users = []
+            page_token = None
+            query = f"orgUnitPath='{scope_path}'"
+            while True:
+                resp = prod_api.users().list(
+                    customer=prod_customer, query=query,
+                    maxResults=500, pageToken=page_token).execute()
+                prod_users.extend(resp.get('users', []) or [])
+                page_token = resp.get('nextPageToken')
+                if not page_token:
+                    break
+        except Exception as e:
+            _logger.exception('[CLONE] prod users read failed')
+            return self._clone_warning(
+                f'Cloud users prod-read mislukt: {e}'), {}, []
+
+        email_map = {}
+        pwd_rows = []
+        created = skipped = failed = 0
+        rows = []
+        ldap = self.env['myschool.ldap.service']
+        for u in prod_users:
+            prod_email = (u.get('primaryEmail') or '').lower()
+            test_email = self._rewrite_email(
+                prod_email, prod_domain, test_domain)
+            if not test_email:
+                continue
+            email_map[prod_email] = test_email
+            try:
+                test_api.users().get(userKey=test_email).execute()
+                skipped += 1
+                rows.append((test_email, 'skipped', 'bestaat al'))
+                continue
+            except Exception:
+                pass
+            pwd = ldap._generate_ad_complex_password()
+            name = u.get('name') or {}
+            body = {
+                'primaryEmail': test_email,
+                'password': pwd,
+                'suspended': True,   # niet bruikbaar tot admin enable't
+                'orgUnitPath': u.get('orgUnitPath', '/'),
+                'name': {
+                    'givenName': (name.get('givenName')
+                                  if isinstance(name, dict) else '') or 'Test',
+                    'familyName': (name.get('familyName')
+                                   if isinstance(name, dict) else '') or 'User',
+                },
+            }
+            # Preserve externalIds — kritiek voor takeover-match
+            if u.get('externalIds'):
+                body['externalIds'] = u['externalIds']
+            try:
+                test_api.users().insert(body=body).execute()
+                pwd_rows.append((test_email, pwd))
+                created += 1
+                rows.append((test_email, 'created',
+                             'password gegenereerd (zie rapport)'))
+            except Exception as e:
+                failed += 1
+                rows.append((test_email, 'failed', str(e)[:200]))
+        block = self._render_ad_clone_report(
+            'Cloud-clone: Users', len(prod_users), created,
+            skipped, failed, rows)
+        return block, email_map, pwd_rows
+
+    def _clone_cloud_memberships(self, prod_api, test_api,
+                                  gr_email_map, usr_email_map):
+        ok = skip = err = 0
+        rows = []
+        for prod_group_email, test_group_email in gr_email_map.items():
+            try:
+                page_token = None
+                prod_members = []
+                while True:
+                    resp = prod_api.members().list(
+                        groupKey=prod_group_email,
+                        maxResults=200,
+                        pageToken=page_token).execute()
+                    prod_members.extend(resp.get('members', []) or [])
+                    page_token = resp.get('nextPageToken')
+                    if not page_token:
+                        break
+            except Exception as e:
+                err += 1
+                rows.append((test_group_email, 'failed',
+                             f'members-read: {str(e)[:120]}'))
+                continue
+            # Resolve members
+            added = 0
+            for m in prod_members:
+                prod_member_email = (m.get('email') or '').lower()
+                # Member kan een user OR een andere group zijn
+                test_member_email = (
+                    usr_email_map.get(prod_member_email)
+                    or gr_email_map.get(prod_member_email))
+                if not test_member_email:
+                    continue
+                try:
+                    test_api.members().insert(
+                        groupKey=test_group_email,
+                        body={'email': test_member_email,
+                              'role': m.get('role', 'MEMBER')}).execute()
+                    added += 1
+                except Exception as e:
+                    # Likely 409 already-member — telt als OK
+                    msg = str(e)
+                    if '409' in msg or 'duplicate' in msg.lower():
+                        added += 1
+            if added:
+                ok += 1
+                rows.append((test_group_email, 'ok',
+                             f'{added} member(s) toegevoegd'))
+            else:
+                skip += 1
+                rows.append((test_group_email, 'skipped',
+                             'geen members in scope'))
+        return self._render_ad_clone_report(
+            'Cloud-clone: Memberships', len(gr_email_map), ok,
+            skip, err, rows)
+
+    @staticmethod
+    def _rewrite_email(prod_email, prod_domain, test_domain):
+        if not prod_email or '@' not in prod_email:
+            return None
+        local, _, domain = prod_email.partition('@')
+        if domain.lower() != prod_domain.lower():
+            return None
+        return f'{local}@{test_domain}'
+
+    def _render_cloud_password_report(self, pwd_rows):
+        if not pwd_rows:
+            return ''
+        rows = ''.join(
+            f'<tr><td><code>{email}</code></td>'
+            f'<td><code>{pwd}</code></td></tr>'
+            for email, pwd in pwd_rows
+        )
+        return (
+            '<h4>Gegenereerde Cloud-passwords (eenmalig zichtbaar)</h4>'
+            '<div class="alert alert-warning">'
+            '⚠ Alle test-Cloud-users zijn aangemaakt als '
+            '<strong>suspended=True</strong>. Enable er één in de Google '
+            'admin console om mee te testen. Passwords zijn alleen nu '
+            'zichtbaar.</div>'
+            '<table class="table table-sm"><thead><tr>'
+            '<th>primaryEmail</th><th>Password</th></tr></thead>'
+            '<tbody>' + rows + '</tbody></table>')
 
     # ------------------------------------------------------------------
     # Fase E1 — bulk-apply nadat 1 pilot OK is bevonden
