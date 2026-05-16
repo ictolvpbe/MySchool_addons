@@ -2239,6 +2239,18 @@ export class ObjectBrowserClient extends Component {
         this.state.adSlideOverNode = null;
     }
 
+    openMatchedDbPerson(personId) {
+        // Open de DB-persoon van de huidige slideover in een form-view.
+        if (!personId) return;
+        this.action.doAction({
+            type: 'ir.actions.act_window',
+            res_model: 'myschool.person',
+            res_id: personId,
+            views: [[false, 'form']],
+            target: 'current',
+        });
+    }
+
     async navigateAdToNode(dn) {
         // Klik op fa-arrow-right op een member: selecteer in tree.
         // Als de node nog niet in adTreeNodes zit, browse hem eerst

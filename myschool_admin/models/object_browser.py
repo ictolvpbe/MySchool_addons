@@ -1690,6 +1690,52 @@ class ObjectBrowser(models.TransientModel):
             return v[0] if v else ''
         return str(v)
 
+    def _ad_match_db_person(self, entry):
+        """Vind de myschool.person die overeenkomt met deze AD-user-entry.
+
+        Probeert in deze volgorde:
+          1. employeeID → person.sap_ref (unique, deterministisch)
+          2. mail → person.email_cloud
+          3. sAMAccountName → res.users.login → person.odoo_user_id
+
+        Returns: dict {id, display_name, sap_ref, email_cloud,
+                       person_fqdn_internal, matched_via} of None.
+        """
+        emp = self._ad_entry_str(entry, 'employeeID')
+        mail = self._ad_entry_str(entry, 'mail')
+        sam = self._ad_entry_str(entry, 'sAMAccountName')
+        Person = self.env['myschool.person'].with_context(active_test=False)
+        person = None
+        matched_via = None
+        if emp:
+            person = Person.search([('sap_ref', '=', emp)], limit=1)
+            if person:
+                matched_via = 'employeeID/sap_ref'
+        if not person and mail:
+            person = Person.search(
+                [('email_cloud', '=ilike', mail)], limit=1)
+            if person:
+                matched_via = 'mail/email_cloud'
+        if not person and sam:
+            user = self.env['res.users'].sudo().with_context(
+                active_test=False).search(
+                [('login', '=ilike', sam)], limit=1)
+            if user:
+                person = Person.search(
+                    [('odoo_user_id', '=', user.id)], limit=1)
+                if person:
+                    matched_via = 'sAMAccountName/odoo_user.login'
+        if not person:
+            return None
+        return {
+            'id': person.id,
+            'display_name': person.display_name,
+            'sap_ref': person.sap_ref or '',
+            'email_cloud': person.email_cloud or '',
+            'person_fqdn_internal': person.person_fqdn_internal or '',
+            'matched_via': matched_via,
+        }
+
     def _ad_entry_to_dict(self, entry, include_attrs=True):
         """Convert ldap3 entry → JSON-safe dict voor de OWL-frontend."""
         dn = self._ad_entry_str(entry, 'distinguishedName')
@@ -1700,6 +1746,13 @@ class ObjectBrowser(models.TransientModel):
               or dn.split(',', 1)[0])
 
         result = {'dn': dn, 'kind': kind, 'cn': cn}
+        # DB-koppeling alleen bij volledige load (slideover/select-node)
+        # en alleen voor users — OUs/groups hebben hier geen 1-op-1
+        # equivalent.
+        if include_attrs and kind == 'user':
+            match = self._ad_match_db_person(entry)
+            if match:
+                result['matched_person'] = match
         if include_attrs:
             attrs = {}
             try:

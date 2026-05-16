@@ -1464,6 +1464,54 @@
                                     <div class="text-muted small" style="margin-bottom: 12px;">
                                         <code><t t-esc="state.adSlideOverNode.dn"/></code>
                                     </div>
+
+                                    <!-- DB-koppeling sectie (alleen voor users met match) -->
+                                    <div class="ob-ad-db-match"
+                                         t-if="state.adSlideOverNode.matched_person">
+                                        <div class="ob-ad-db-match-header">
+                                            <i class="fa fa-link"/>
+                                            Gematchte DB-persoon
+                                        </div>
+                                        <table class="ob-ad-attr-table">
+                                            <tbody>
+                                                <tr>
+                                                    <td><code>Naam</code></td>
+                                                    <td><strong><t t-esc="state.adSlideOverNode.matched_person.display_name"/></strong></td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>sap_ref</code></td>
+                                                    <td><t t-esc="state.adSlideOverNode.matched_person.sap_ref or '—'"/></td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>email_cloud</code></td>
+                                                    <td><t t-esc="state.adSlideOverNode.matched_person.email_cloud or '—'"/></td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>person_fqdn_internal</code></td>
+                                                    <td><code><t t-esc="state.adSlideOverNode.matched_person.person_fqdn_internal or '—'"/></code></td>
+                                                </tr>
+                                                <tr>
+                                                    <td><code>matched_via</code></td>
+                                                    <td><span class="badge text-bg-info"><t t-esc="state.adSlideOverNode.matched_person.matched_via"/></span></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                        <button class="ob-btn ob-btn-primary ob-btn-sm"
+                                                style="margin-top: 8px;"
+                                                t-on-click="() => this.openMatchedDbPerson(state.adSlideOverNode.matched_person.id)">
+                                            <i class="fa fa-external-link"/>
+                                            Open DB-record
+                                        </button>
+                                    </div>
+
+                                    <div class="ob-ad-db-nomatch"
+                                         t-if="!state.adSlideOverNode.matched_person and state.adSlideOverNode.kind === 'user'">
+                                        <i class="fa fa-unlink"/>
+                                        Geen DB-persoon gematcht via employeeID,
+                                        mail of sAMAccountName.
+                                    </div>
+
+                                    <h4 class="ob-ad-attrs-header">AD-attributen</h4>
                                     <table class="ob-ad-attr-table"
                                            t-if="state.adSlideOverNode.attrs">
                                         <thead>

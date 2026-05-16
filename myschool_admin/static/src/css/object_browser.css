@@ -2319,3 +2319,43 @@
 .ob-ad-search-row:hover {
     background: var(--ob-hover-bg, #f1f3f5);
 }
+
+/* ===== AD-browser Fase I2: DB-match sectie in slideover ===== */
+.ob-ad-db-match {
+    background: var(--ob-info-bg, #cfe2ff);
+    border: 1px solid var(--ob-info-border, #9ec5fe);
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+}
+.ob-ad-db-match-header {
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--ob-info, #084298);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ob-ad-db-match .ob-ad-attr-table {
+    background: var(--ob-pane-bg, #fff);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.ob-ad-db-nomatch {
+    background: var(--ob-warning-bg, #fff3cd);
+    border: 1px solid var(--ob-warning-border, #ffe69c);
+    color: var(--ob-warning, #664d03);
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.ob-ad-attrs-header {
+    margin: 16px 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ob-muted, #6c757d);
+}
