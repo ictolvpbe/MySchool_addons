@@ -1570,6 +1570,130 @@ class ObjectBrowser(models.TransientModel):
         return {'error': None, 'members': members}
 
     @api.model
+    def ad_list_open_sessions(self, ldap_config_id):
+        """Sessies waar de admin findings aan kan toevoegen vanuit de
+        AD-browser. Filter: zelfde LDAP-config, niet state=completed.
+        """
+        Sessions = self.env['myschool.ad.takeover.session']
+        sessions = Sessions.search([
+            ('ldap_config_id', '=', ldap_config_id),
+            ('state', '!=', 'completed'),
+        ], order='create_date desc')
+        return [{
+            'id': s.id,
+            'name': s.name,
+            'environment': s.environment,
+            'current_phase': s.current_phase,
+            'finding_count': s.finding_count,
+        } for s in sessions]
+
+    @api.model
+    def ad_create_finding_from_node(self, session_id, dn,
+                                    proposal_kind, payload=None):
+        """Maak een takeover-finding voor een AD-node, geïnitieerd
+        vanuit de browser. Bedoeld voor quick-actions: DELETE_AFTER,
+        RENAME, MOVE.
+
+        Idempotent: als er al een finding bestaat voor (session, source,
+        external_id, kind) wordt die UPDATED met het nieuwe voorstel
+        ipv een tweede aan te maken (zou de UNIQUE-constraint breken).
+        """
+        Sessions = self.env['myschool.ad.takeover.session']
+        session = Sessions.browse(session_id).exists()
+        if not session:
+            return {'error': 'Sessie niet gevonden.'}
+        if not session.ldap_config_id:
+            return {'error': 'Sessie heeft geen LDAP-config.'}
+
+        allowed = ('delete_after', 'rename', 'move', 'membership_add')
+        if proposal_kind not in allowed:
+            return {'error': f'Voorstel-type "{proposal_kind}" niet toegestaan '
+                             f'vanuit browser. Gebruik: {allowed}'}
+
+        # Lees node-attrs voor cn + kind + ad_mail
+        ldap_service = self.env['myschool.ldap.service']
+        try:
+            with ldap_service._get_connection(session.ldap_config_id) as conn:
+                conn.search(dn, '(objectClass=*)', search_scope='BASE',
+                            attributes=['distinguishedName', 'objectClass',
+                                        'cn', 'mail', 'sAMAccountName',
+                                        'employeeID'])
+                if not conn.entries:
+                    return {'error': f'DN niet gevonden: {dn}'}
+                entry = conn.entries[0]
+        except Exception as e:
+            _logger.exception('[QUICK-ACTION] LDAP read failed')
+            return {'error': f'LDAP read mislukt: {e}'}
+
+        kind = self._ad_kind_of(entry)
+        if kind == 'other':
+            return {'error': 'Onbekend object-type — geen voorstel mogelijk.'}
+        if proposal_kind == 'delete_after' and kind == 'ou':
+            return {'error': 'OUs kunnen niet via DELETE_AFTER worden '
+                             'verwijderd (architectural rule).'}
+
+        cn = (self._ad_entry_str(entry, 'cn')
+              or self._ad_entry_str(entry, 'sAMAccountName')
+              or dn.split(',', 1)[0])
+        mail = self._ad_entry_str(entry, 'mail')
+        emp = self._ad_entry_str(entry, 'employeeID')
+
+        import json
+        Finding = self.env['myschool.ad.takeover.finding']
+        existing = Finding.search([
+            ('session_id', '=', session.id),
+            ('source', '=', 'ad'),
+            ('external_id', '=', dn),
+            ('kind', '=', kind),
+        ], limit=1)
+
+        vals = {
+            'proposal_kind': proposal_kind,
+            'state': 'proposed',
+            'status': ('delete_after_migration'
+                       if proposal_kind == 'delete_after'
+                       else 'investigate'),
+            'risk_level': ('high' if proposal_kind in (
+                'delete_after', 'rename', 'move') else 'medium'),
+            'last_action_at': fields.Datetime.now(),
+            'action_message': (
+                f'Voorstel-type "{proposal_kind}" toegevoegd vanuit '
+                f'AD-browser.'),
+        }
+        if payload:
+            vals['proposal_payload_json'] = json.dumps(payload)
+        vals['notes'] = (existing.notes if existing else '') or ''
+        if existing.notes is None or proposal_kind not in (existing.notes or ''):
+            vals['notes'] = (
+                (vals['notes'] + '\n' if vals['notes'] else '')
+                + f'Quick-action vanuit AD-browser: {proposal_kind}.'
+            ).strip()
+
+        if existing:
+            existing.write(vals)
+            finding = existing
+        else:
+            create_vals = dict(vals, **{
+                'session_id': session.id,
+                'source': 'ad',
+                'external_id': dn,
+                'ad_dn': dn,
+                'kind': kind,
+                'ad_cn': cn,
+                'ad_mail': mail or False,
+                'sap_ref': emp or False,
+                'match_kind': 'unmatched',
+            })
+            finding = Finding.create(create_vals)
+        return {
+            'finding_id': finding.id,
+            'session_id': session.id,
+            'session_name': session.name,
+            'state': finding.state,
+            'updated': bool(existing),
+        }
+
+    @api.model
     def ad_search(self, ldap_config_id, query, limit=200):
         """Vrije substring-search over cn/sAMAccountName/mail/employeeID
         binnen de scope van een config (subtree onder base_dn).

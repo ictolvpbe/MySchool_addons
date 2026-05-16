@@ -1167,6 +1167,10 @@ export class ObjectBrowserClient extends Component {
             adSearchLoading: false,
             adSearchTruncated: false,
             adSearchError: null,
+            // Quick-actions: gekoppelde sessie waar findings naar
+            // verstuurd worden (Fase I3)
+            adOpenSessions: [],
+            adActiveSessionId: null,
         });
         // Debounce-timer voor search-input
         this._adSearchTimer = null;
@@ -2116,8 +2120,121 @@ export class ObjectBrowserClient extends Component {
         const cfg = this.state.adConfigs.find(c => c.id === cfgId);
         const rootDn = cfg?.base_dn || null;
         this.state.adRootDn = rootDn;
+        // Reset quick-actions session-binding wanneer config wijzigt
+        this.state.adOpenSessions = [];
+        this.state.adActiveSessionId = null;
         if (rootDn) {
-            await this.loadAdChildren(rootDn, /*expand=*/true);
+            await Promise.all([
+                this.loadAdChildren(rootDn, /*expand=*/true),
+                this.loadAdOpenSessions(cfgId),
+            ]);
+        }
+    }
+
+    async loadAdOpenSessions(configId) {
+        try {
+            const sessions = await this.orm.call(
+                'myschool.object.browser', 'ad_list_open_sessions',
+                [configId]);
+            this.state.adOpenSessions = sessions || [];
+        } catch (e) {
+            // Niet-fataal — quick-actions blijven gewoon uit als
+            // dit faalt.
+            this.state.adOpenSessions = [];
+        }
+    }
+
+    onAdSessionChange(ev) {
+        const id = parseInt(ev.target?.value, 10);
+        this.state.adActiveSessionId = id || null;
+    }
+
+    async quickActionDelete(dn, cn) {
+        if (!this.state.adActiveSessionId) return;
+        const ok = window.confirm(
+            `Markeer "${cn}" als 'verwijder na migratie' in de huidige sessie?\n\n`
+            + `DN: ${dn}\n\n`
+            + `Het wordt niet meteen uit AD verwijderd — alleen voor de `
+            + `cleanup-fase ingepland. Je kan dit later nog approven/`
+            + `pilotten in de sessie.`);
+        if (!ok) return;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ad_create_finding_from_node',
+                [this.state.adActiveSessionId, dn, 'delete_after']);
+            if (result.error) {
+                this.notification.add(result.error, { type: 'danger' });
+                return;
+            }
+            this.notification.add(
+                result.updated
+                    ? `Bestaand voorstel voor "${cn}" geüpdatet naar `
+                      + `DELETE_AFTER in "${result.session_name}".`
+                    : `DELETE_AFTER-voorstel voor "${cn}" toegevoegd `
+                      + `aan "${result.session_name}".`,
+                { type: 'success' });
+        } catch (e) {
+            this.notification.add(
+                'Quick-action mislukt: ' + (e?.message || e),
+                { type: 'danger' });
+        }
+    }
+
+    async quickActionRename(dn, cn) {
+        if (!this.state.adActiveSessionId) return;
+        const newName = window.prompt(
+            `Hernoem "${cn}" naar:\n\n(Alleen de leaf-naam, niet het volledige DN.)`,
+            cn);
+        if (!newName || newName === cn) return;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ad_create_finding_from_node',
+                [this.state.adActiveSessionId, dn, 'rename',
+                 { new_name: newName }]);
+            if (result.error) {
+                this.notification.add(result.error, { type: 'danger' });
+                return;
+            }
+            this.notification.add(
+                `RENAME-voorstel "${cn}" → "${newName}" `
+                + (result.updated ? 'geüpdatet' : 'toegevoegd')
+                + ` in "${result.session_name}".`,
+                { type: 'success' });
+        } catch (e) {
+            this.notification.add(
+                'Quick-action mislukt: ' + (e?.message || e),
+                { type: 'danger' });
+        }
+    }
+
+    async quickActionMove(dn, cn) {
+        if (!this.state.adActiveSessionId) return;
+        // Eenvoudig prompt: admin typt het target parent-DN.
+        // Een autocomplete-OU-picker is mooier maar groter scope.
+        const newParent = window.prompt(
+            `Verplaats "${cn}" naar nieuwe parent-DN:\n\n`
+            + `(bv. "OU=Personeel,DC=test,DC=local"). De RDN blijft `
+            + `ongewijzigd.`,
+            dn.split(',', 1).length > 1 ? dn.slice(dn.indexOf(',') + 1) : '');
+        if (!newParent) return;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ad_create_finding_from_node',
+                [this.state.adActiveSessionId, dn, 'move',
+                 { new_parent: newParent }]);
+            if (result.error) {
+                this.notification.add(result.error, { type: 'danger' });
+                return;
+            }
+            this.notification.add(
+                `MOVE-voorstel voor "${cn}" → ${newParent} `
+                + (result.updated ? 'geüpdatet' : 'toegevoegd')
+                + ` in "${result.session_name}".`,
+                { type: 'success' });
+        } catch (e) {
+            this.notification.add(
+                'Quick-action mislukt: ' + (e?.message || e),
+                { type: 'danger' });
         }
     }
 

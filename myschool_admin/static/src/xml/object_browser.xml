@@ -1240,6 +1240,23 @@
                                 title="Configs herladen">
                             <i class="fa fa-refresh"/>
                         </button>
+                        <span style="flex: 1;"/>
+                        <!-- Session-picker voor quick-actions (Fase I3) -->
+                        <t t-if="state.adOpenSessions.length > 0">
+                            <label class="ob-ad-toolbar-label">Quick-actions naar sessie:</label>
+                            <select class="ob-ad-select"
+                                    t-on-change="(ev) => this.onAdSessionChange(ev)">
+                                <option value="">— geen actieve sessie —</option>
+                                <t t-foreach="state.adOpenSessions" t-as="s" t-key="s.id">
+                                    <option t-att-value="s.id"
+                                            t-att-selected="state.adActiveSessionId === s.id">
+                                        <t t-esc="s.name"/>
+                                        [<t t-esc="s.environment"/>/<t t-esc="s.current_phase"/>] —
+                                        <t t-esc="s.finding_count"/> findings
+                                    </option>
+                                </t>
+                            </select>
+                        </t>
                     </div>
 
                     <div class="ob-ad-error" t-if="state.adError">
@@ -1426,6 +1443,26 @@
                                                         t-on-click="() => this.navigateAdToNode(m.dn)">
                                                     <i class="fa fa-arrow-right"/>
                                                 </button>
+                                                <!-- Quick-actions: alleen wanneer een sessie gekozen is -->
+                                                <t t-if="state.adActiveSessionId">
+                                                    <button class="ob-icon-btn"
+                                                            title="Quick: RENAME-voorstel toevoegen aan sessie"
+                                                            t-on-click="() => this.quickActionRename(m.dn, m.cn)">
+                                                        <i class="fa fa-pencil"/>
+                                                    </button>
+                                                    <button class="ob-icon-btn"
+                                                            title="Quick: MOVE-voorstel toevoegen aan sessie"
+                                                            t-on-click="() => this.quickActionMove(m.dn, m.cn)">
+                                                        <i class="fa fa-arrows"/>
+                                                    </button>
+                                                    <t t-if="m.kind !== 'ou'">
+                                                        <button class="ob-icon-btn ob-icon-btn-danger"
+                                                                title="Quick: DELETE_AFTER-voorstel toevoegen aan sessie"
+                                                                t-on-click="() => this.quickActionDelete(m.dn, m.cn)">
+                                                            <i class="fa fa-trash"/>
+                                                        </button>
+                                                    </t>
+                                                </t>
                                             </div>
                                         </div>
                                     </t>

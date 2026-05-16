@@ -844,6 +844,111 @@ class TestAdTakeoverFaseA(TransactionCase):
         self.assertTrue(result.get('error'))
         self.assertIsNone(result.get('node'))
 
+    def test_ad_quick_action_creates_delete_after(self):
+        """ad_create_finding_from_node maakt een DELETE_AFTER finding
+        op een AD-user via gemockte LDAP."""
+        user_entry = MagicMock()
+        user_entry.__contains__.side_effect = lambda k: k in (
+            'distinguishedName', 'objectClass', 'cn', 'mail',
+            'sAMAccountName', 'employeeID')
+        user_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'distinguishedName': 'CN=jan,OU=ts,DC=test,DC=local',
+            'objectClass': ['top', 'person', 'organizationalPerson', 'user'],
+            'cn': 'jan',
+            'mail': 'jan@test',
+            'sAMAccountName': 'jan',
+            'employeeID': 'EMP123',
+        }.get(k, ''))
+
+        mock_conn = MagicMock()
+        mock_conn.search.side_effect = lambda *a, **kw: setattr(
+            mock_conn, 'entries', [user_entry])
+        class _Ctx:
+            def __enter__(self_): return mock_conn
+            def __exit__(self_, *exc): return False
+
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with patch.object(ldap_cls, '_get_connection', return_value=_Ctx()):
+            result = self.env['myschool.object.browser'].ad_create_finding_from_node(
+                self.session.id, 'CN=jan,OU=ts,DC=test,DC=local',
+                'delete_after')
+        self.assertIsNone(result.get('error'))
+        self.assertEqual(result.get('state'), 'proposed')
+        self.assertFalse(result.get('updated'))
+        # Finding daadwerkelijk in DB
+        f = self.env['myschool.ad.takeover.finding'].browse(
+            result['finding_id'])
+        self.assertEqual(f.proposal_kind, 'delete_after')
+        self.assertEqual(f.kind, 'user')
+        self.assertEqual(f.ad_dn, 'CN=jan,OU=ts,DC=test,DC=local')
+        self.assertEqual(f.sap_ref, 'EMP123')
+
+    def test_ad_quick_action_idempotent_on_existing(self):
+        """Tweede call op zelfde DN updated bestaande finding ipv te crashen
+        op de UNIQUE-constraint."""
+        # Maak een bestaande finding
+        self._make_finding(
+            kind='user',
+            ad_dn='CN=jan,OU=ts,DC=test,DC=local',
+            external_id='CN=jan,OU=ts,DC=test,DC=local',
+            state='proposed',
+            proposal_kind='link_only',
+        )
+
+        user_entry = MagicMock()
+        user_entry.__contains__.side_effect = lambda k: k in (
+            'distinguishedName', 'objectClass', 'cn')
+        user_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'distinguishedName': 'CN=jan,OU=ts,DC=test,DC=local',
+            'objectClass': ['user'],
+            'cn': 'jan',
+        }.get(k, ''))
+
+        mock_conn = MagicMock()
+        mock_conn.search.side_effect = lambda *a, **kw: setattr(
+            mock_conn, 'entries', [user_entry])
+        class _Ctx:
+            def __enter__(self_): return mock_conn
+            def __exit__(self_, *exc): return False
+
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with patch.object(ldap_cls, '_get_connection', return_value=_Ctx()):
+            result = self.env['myschool.object.browser'].ad_create_finding_from_node(
+                self.session.id, 'CN=jan,OU=ts,DC=test,DC=local',
+                'rename', {'new_name': 'NewJan'})
+        self.assertIsNone(result.get('error'))
+        self.assertTrue(result.get('updated'))
+        f = self.env['myschool.ad.takeover.finding'].browse(
+            result['finding_id'])
+        self.assertEqual(f.proposal_kind, 'rename')
+        # Payload moet bewaard zijn
+        import json as _json
+        self.assertEqual(
+            _json.loads(f.proposal_payload_json or '{}').get('new_name'),
+            'NewJan')
+
+    def test_ad_quick_action_refuses_delete_after_on_ou(self):
+        """OUs mogen niet via DELETE_AFTER worden geflagged."""
+        ou_entry = MagicMock()
+        ou_entry.__contains__.side_effect = lambda k: k in (
+            'distinguishedName', 'objectClass', 'ou')
+        ou_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'distinguishedName': 'OU=foo,DC=test,DC=local',
+            'objectClass': ['organizationalUnit'],
+        }.get(k, ''))
+        mock_conn = MagicMock()
+        mock_conn.search.side_effect = lambda *a, **kw: setattr(
+            mock_conn, 'entries', [ou_entry])
+        class _Ctx:
+            def __enter__(self_): return mock_conn
+            def __exit__(self_, *exc): return False
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with patch.object(ldap_cls, '_get_connection', return_value=_Ctx()):
+            result = self.env['myschool.object.browser'].ad_create_finding_from_node(
+                self.session.id, 'OU=foo,DC=test,DC=local', 'delete_after')
+        self.assertTrue(result.get('error'))
+        self.assertIn('OUs', result['error'])
+
     def test_ad_browse_members_for_ou(self):
         """OU → LEVEL-search returneert group/user kinderen."""
         ou_entry = MagicMock()
