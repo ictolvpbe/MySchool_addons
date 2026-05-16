@@ -809,6 +809,111 @@ class TestAdTakeoverFaseA(TransactionCase):
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
+    # Fase G — AD-browser tab (object_browser RPC's)
+    # ------------------------------------------------------------------
+
+    def test_ad_browser_lists_active_configs(self):
+        """ad_get_ldap_configs retourneert alleen actieve configs met
+        de juiste velden voor de OWL dropdown."""
+        # Maak een tweede config (inactive) — moet niet in result zitten
+        self.env['myschool.ldap.server.config'].create({
+            'name': 'Archived Cfg',
+            'environment': 'test',
+            'server_url': 'ldap://archived.local',
+            'port': 389,
+            'base_dn': 'DC=arch,DC=local',
+            'bind_dn': 'CN=admin,DC=arch,DC=local',
+            'bind_password': 'dummy',
+            'active': False,
+        })
+        configs = self.env['myschool.object.browser'].ad_get_ldap_configs()
+        names = [c['name'] for c in configs]
+        self.assertIn('Test LDAP', names)
+        self.assertNotIn('Archived Cfg', names)
+        # Verifieer velden
+        for c in configs:
+            self.assertIn('id', c)
+            self.assertIn('environment', c)
+            self.assertIn('base_dn', c)
+            self.assertIn('is_active_directory', c)
+
+    def test_ad_browser_browse_dn_missing_config(self):
+        """Onbestaande config → error in result."""
+        result = self.env['myschool.object.browser'].ad_browse_dn(
+            999999, 'DC=anywhere')
+        self.assertTrue(result.get('error'))
+        self.assertIsNone(result.get('node'))
+
+    def test_ad_browser_browse_dn_with_mocked_ldap(self):
+        """Happy path met gemockte LDAP-search."""
+        # Build mock entries — een OU 'foo' met één child-group.
+        ou_entry = MagicMock()
+        ou_entry.entry_attributes = ['distinguishedName', 'objectClass',
+                                      'ou', 'description']
+        ou_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'distinguishedName': 'OU=foo,DC=test,DC=local',
+            'objectClass': ['top', 'organizationalUnit'],
+            'ou': 'foo', 'description': 'Test OU',
+        }.get(k, ''))
+        ou_entry.__contains__.side_effect = lambda k: k in (
+            'distinguishedName', 'objectClass', 'ou', 'description')
+
+        child_entry = MagicMock()
+        child_entry.entry_attributes = ['distinguishedName',
+                                         'objectClass', 'cn']
+        child_entry.__getitem__.side_effect = lambda k: MagicMock(value={
+            'distinguishedName': 'CN=grp,OU=foo,DC=test,DC=local',
+            'objectClass': ['top', 'group'],
+            'cn': 'grp',
+        }.get(k, ''))
+        child_entry.__contains__.side_effect = lambda k: k in (
+            'distinguishedName', 'objectClass', 'cn')
+
+        mock_conn = MagicMock()
+        # First search (BASE) returns the OU itself; second (LEVEL)
+        # returns parent + child; third (size_limit child-check) returns
+        # 1 result. mock_conn.entries gets set each search call.
+        call_count = {'n': 0}
+        def fake_search(*args, **kwargs):
+            call_count['n'] += 1
+            scope = kwargs.get('search_scope') or (
+                args[2] if len(args) >= 3 else None)
+            if scope == 'BASE':
+                mock_conn.entries = [ou_entry]
+            elif scope == 'LEVEL':
+                # First LEVEL: children of the OU itself
+                # Subsequent LEVEL with size_limit: child-existence check
+                if kwargs.get('size_limit'):
+                    mock_conn.entries = []  # group has no children
+                else:
+                    mock_conn.entries = [ou_entry, child_entry]
+            else:
+                mock_conn.entries = []
+        mock_conn.search.side_effect = fake_search
+
+        class _Ctx:
+            def __enter__(self_):
+                return mock_conn
+            def __exit__(self_, *exc):
+                return False
+
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with patch.object(ldap_cls, '_check_ldap3_available',
+                          return_value=True), \
+             patch.object(ldap_cls, '_get_connection',
+                          return_value=_Ctx()):
+            result = self.env['myschool.object.browser'].ad_browse_dn(
+                self.ldap_test.id, 'OU=foo,DC=test,DC=local')
+        self.assertIsNone(result.get('error'))
+        self.assertIsNotNone(result.get('node'))
+        self.assertEqual(result['node']['kind'], 'ou')
+        self.assertEqual(result['node']['cn'], 'foo')
+        self.assertTrue(result['node'].get('attrs'))
+        # children list should contain the group (parent gets filtered out)
+        kinds = [c['kind'] for c in result['children']]
+        self.assertIn('group', kinds)
+
+    # ------------------------------------------------------------------
     # Fase F — clone prod → test
     # ------------------------------------------------------------------
 

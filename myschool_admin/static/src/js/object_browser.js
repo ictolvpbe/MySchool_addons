@@ -1140,6 +1140,19 @@ export class ObjectBrowserClient extends Component {
             slideOverNode: null,
             slideOverCiRelations: [],
             slideOverCiLoading: false,
+
+            // ----- AD-browser tab (Fase G) -----
+            // Lazy-loaded tree van de live AD-inhoud. Map: dn(lowercase)
+            // → { node, children: [...] }. Tree-render leest hieruit.
+            adConfigs: [],
+            adActiveConfigId: null,
+            adRootDn: null,
+            adTreeNodes: {},        // dn-lowercase → cached node
+            adChildren: {},         // dn-lowercase → list of child-DNs
+            adExpanded: {},         // dn-lowercase → bool
+            adLoading: {},          // dn-lowercase → bool (children-fetch in flight)
+            adSelectedDn: null,
+            adError: null,
         });
         
         // Bind methods that are passed as props
@@ -2044,6 +2057,132 @@ export class ObjectBrowserClient extends Component {
     
     onSwitchToRolesTab() {
         this.switchTab('roles');
+    }
+
+    async onSwitchToADTab() {
+        this.switchTab('ad');
+        // Eerste-keer: laad de config-lijst zodat de dropdown gevuld is.
+        if (!this.state.adConfigs.length) {
+            await this.loadAdConfigs();
+        }
+    }
+
+    async loadAdConfigs() {
+        try {
+            const configs = await this.orm.call(
+                'myschool.object.browser', 'ad_get_ldap_configs', []);
+            this.state.adConfigs = configs;
+            // Auto-select de eerste prod-config; anders gewoon de eerste.
+            const prod = configs.find(c => c.environment === 'prod');
+            const pick = prod || configs[0];
+            if (pick) {
+                await this.onAdConfigChange(pick.id);
+            }
+        } catch (e) {
+            this.state.adError = 'Configs ophalen mislukt: ' + (e?.message || e);
+        }
+    }
+
+    async onAdConfigChange(configId) {
+        const cfgId = typeof configId === 'object'
+            ? parseInt(configId.target?.value, 10)
+            : parseInt(configId, 10);
+        if (!cfgId) return;
+        this.state.adActiveConfigId = cfgId;
+        // Reset tree-state
+        this.state.adTreeNodes = {};
+        this.state.adChildren = {};
+        this.state.adExpanded = {};
+        this.state.adLoading = {};
+        this.state.adSelectedDn = null;
+        this.state.adError = null;
+        // Root-DN = base_dn van de gekozen config
+        const cfg = this.state.adConfigs.find(c => c.id === cfgId);
+        const rootDn = cfg?.base_dn || null;
+        this.state.adRootDn = rootDn;
+        if (rootDn) {
+            await this.loadAdChildren(rootDn, /*expand=*/true);
+        }
+    }
+
+    async loadAdChildren(dn, expand) {
+        const key = (dn || '').toLowerCase();
+        if (!key) return;
+        this.state.adLoading[key] = true;
+        try {
+            const result = await this.orm.call(
+                'myschool.object.browser', 'ad_browse_dn',
+                [this.state.adActiveConfigId, dn]);
+            if (result.error) {
+                this.state.adError = result.error;
+                return;
+            }
+            this.state.adError = null;
+            if (result.node) {
+                this.state.adTreeNodes[key] = result.node;
+            }
+            this.state.adChildren[key] = (result.children || [])
+                .map(c => c.dn);
+            // Cache de child-nodes
+            for (const c of result.children || []) {
+                this.state.adTreeNodes[c.dn.toLowerCase()] = c;
+            }
+            if (expand) {
+                this.state.adExpanded[key] = true;
+            }
+        } catch (e) {
+            this.state.adError = 'AD-browse mislukt: ' + (e?.message || e);
+        } finally {
+            this.state.adLoading[key] = false;
+        }
+    }
+
+    async onAdToggleExpand(dn) {
+        const key = (dn || '').toLowerCase();
+        if (this.state.adExpanded[key]) {
+            this.state.adExpanded[key] = false;
+            return;
+        }
+        // Niet gecached? laad eerst de children
+        if (!(key in this.state.adChildren)) {
+            await this.loadAdChildren(dn, /*expand=*/true);
+        } else {
+            this.state.adExpanded[key] = true;
+        }
+    }
+
+    async onAdSelectNode(dn) {
+        this.state.adSelectedDn = dn;
+        // Zorg dat de full-attrs van deze node geladen zijn (incl. attrs
+        // — kindeer-lookups droppen de attrs voor performance).
+        const key = (dn || '').toLowerCase();
+        const cached = this.state.adTreeNodes[key];
+        if (!cached || !cached.attrs) {
+            // Trigger volledige load (deze RPC retourneert ook attrs)
+            await this.loadAdChildren(dn, /*expand=*/false);
+        }
+    }
+
+    get adRootChildren() {
+        // Property voor de XML-template: lijst van child-objects onder
+        // de root, in DN-volgorde zoals teruggekomen van het backend.
+        const rootKey = (this.state.adRootDn || '').toLowerCase();
+        const childDns = this.state.adChildren[rootKey] || [];
+        return childDns.map(dn => this.state.adTreeNodes[dn.toLowerCase()])
+                       .filter(Boolean);
+    }
+
+    adChildrenOf(dn) {
+        const key = (dn || '').toLowerCase();
+        const childDns = this.state.adChildren[key] || [];
+        return childDns.map(d => this.state.adTreeNodes[d.toLowerCase()])
+                       .filter(Boolean);
+    }
+
+    get adSelectedNode() {
+        if (!this.state.adSelectedDn) return null;
+        const key = this.state.adSelectedDn.toLowerCase();
+        return this.state.adTreeNodes[key] || null;
     }
     
     // Selection mode

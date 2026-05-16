@@ -1293,5 +1293,189 @@ class ObjectBrowser(models.TransientModel):
                     'type': 'role',
                     'model': 'myschool.role',
                 })
-        
+
         return results
+
+    # =========================================================================
+    # AD-BROWSER (Fase G) — read-only LDAP browse voor de Organisation
+    # Manager. De OWL-component roept ``ad_get_ldap_configs`` aan om
+    # de config-dropdown te vullen, en ``ad_browse_dn`` om children
+    # lazy te laden bij het uitklappen van een tree-node.
+    # =========================================================================
+
+    @api.model
+    def ad_get_ldap_configs(self):
+        """Lijst van actieve LDAP-configs voor de tab-dropdown.
+
+        Returns:
+            list of dicts: ``{id, name, environment, base_dn, is_active_directory}``
+        """
+        configs = self.env['myschool.ldap.server.config'].search(
+            [('active', '=', True)], order='sequence, name')
+        return [{
+            'id': c.id,
+            'name': c.name,
+            'environment': c.environment,
+            'base_dn': c.base_dn,
+            'is_active_directory': c.is_active_directory,
+        } for c in configs]
+
+    @api.model
+    def ad_browse_dn(self, ldap_config_id, dn=None, include_attrs=True):
+        """Browse één LDAP-node en return zijn directe children + attrs.
+
+        Bedoeld voor lazy-load: de OWL-component vraagt root op
+        (dn=None of dn=base_dn van de config), klikt op een OU-node om
+        één extra niveau op te halen, enz.
+
+        Args:
+            ldap_config_id: id van myschool.ldap.server.config
+            dn: DN om te browsen; None → base_dn van de config
+            include_attrs: ook full attribuut-set van de node zelf
+                ophalen voor het side-panel
+
+        Returns:
+            dict ``{node, children, error}``
+                node     = dict {dn, kind, cn, attrs|None}
+                children = lijst van dicts {dn, kind, cn, has_children}
+                error    = str|None bij failure
+        """
+        LdapConfig = self.env['myschool.ldap.server.config']
+        config = LdapConfig.browse(ldap_config_id).exists()
+        if not config:
+            return {'error': 'LDAP-config niet gevonden.',
+                    'node': None, 'children': []}
+
+        ldap_service = self.env['myschool.ldap.service']
+        try:
+            ldap_service._check_ldap3_available()
+        except Exception as e:
+            return {'error': str(e), 'node': None, 'children': []}
+
+        target_dn = (dn or config.base_dn or '').strip()
+        if not target_dn:
+            return {'error': 'Geen DN opgegeven en config heeft geen base_dn.',
+                    'node': None, 'children': []}
+
+        # Attribuut-lijst die we per soort node willen tonen. We
+        # vragen alle ad-takeover-relevante attrs op zodat het side-
+        # panel meteen useful is.
+        attr_list = [
+            'distinguishedName', 'objectClass', 'cn', 'ou', 'name',
+            'description', 'mail', 'sAMAccountName', 'employeeID',
+            'givenName', 'sn', 'displayName', 'userAccountControl',
+            'memberOf', 'member', 'groupType',
+            'gPLink', 'gPOptions',
+        ]
+
+        try:
+            with ldap_service._get_connection(config) as conn:
+                # Eerst de node zelf (BASE-scope)
+                conn.search(target_dn, '(objectClass=*)',
+                            search_scope='BASE', attributes=attr_list)
+                if not conn.entries:
+                    return {'error': f'DN niet gevonden: {target_dn}',
+                            'node': None, 'children': []}
+                node_entry = conn.entries[0]
+                node = self._ad_entry_to_dict(node_entry, include_attrs)
+
+                # Children (ONE-LEVEL scope)
+                conn.search(target_dn, '(objectClass=*)',
+                            search_scope='LEVEL', attributes=attr_list)
+                children = []
+                for entry in conn.entries:
+                    child_dn = self._ad_entry_str(entry, 'distinguishedName')
+                    if child_dn and child_dn.lower() == target_dn.lower():
+                        continue  # skip de node zelf
+                    child = self._ad_entry_to_dict(entry, include_attrs=False)
+                    children.append(child)
+
+                # Sort: OUs eerst, dan groups, dan users; binnen elke
+                # groep alfabetisch op cn/ou.
+                kind_order = {'ou': 0, 'group': 1, 'user': 2, 'other': 3}
+                children.sort(key=lambda c: (
+                    kind_order.get(c['kind'], 9),
+                    (c.get('cn') or '').lower()))
+
+                # Voor elke child: heeft hij subnodes? Quick-check
+                # via een aparte LEVEL-search met sizeLimit=1, alleen
+                # voor OUs (groups/users hebben geen subnodes onder
+                # zich in praktijk).
+                for c in children:
+                    if c['kind'] != 'ou':
+                        c['has_children'] = False
+                        continue
+                    try:
+                        conn.search(c['dn'], '(objectClass=*)',
+                                    search_scope='LEVEL',
+                                    attributes=['distinguishedName'],
+                                    size_limit=2)
+                        c['has_children'] = len(conn.entries) > 1
+                    except Exception:
+                        c['has_children'] = False
+
+                return {'error': None, 'node': node, 'children': children}
+        except Exception as e:
+            _logger.exception('[AD-BROWSE] failed for dn=%s', target_dn)
+            return {'error': str(e), 'node': None, 'children': []}
+
+    @staticmethod
+    def _ad_entry_str(entry, attr):
+        try:
+            v = entry[attr].value if attr in entry else None
+        except Exception:
+            return ''
+        if v is None:
+            return ''
+        if isinstance(v, list):
+            return v[0] if v else ''
+        return str(v)
+
+    def _ad_entry_to_dict(self, entry, include_attrs=True):
+        """Convert ldap3 entry → JSON-safe dict voor de OWL-frontend."""
+        dn = self._ad_entry_str(entry, 'distinguishedName')
+        # Bepaal kind via objectClass — accepteer zowel ldap3's .value
+        # (list of scalar) als gemockte test-entries.
+        kind = 'other'
+        try:
+            raw = entry['objectClass'].value if 'objectClass' in entry else None
+            if raw is None:
+                classes = []
+            elif isinstance(raw, (list, tuple)):
+                classes = [str(c).lower() for c in raw]
+            else:
+                classes = [str(raw).lower()]
+            if 'organizationalunit' in classes:
+                kind = 'ou'
+            elif 'group' in classes:
+                kind = 'group'
+            elif 'user' in classes and 'computer' not in classes:
+                kind = 'user'
+        except Exception:
+            pass
+        cn = (self._ad_entry_str(entry, 'cn')
+              or self._ad_entry_str(entry, 'ou')
+              or self._ad_entry_str(entry, 'name')
+              or dn.split(',', 1)[0])
+
+        result = {'dn': dn, 'kind': kind, 'cn': cn}
+        if include_attrs:
+            attrs = {}
+            try:
+                for name in entry.entry_attributes:
+                    val = entry[name].value
+                    if isinstance(val, (list, tuple)):
+                        # Lijsten naar comma-string voor display; veel-
+                        # waarde attrs zoals memberOf blijven leesbaar.
+                        try:
+                            attrs[name] = '\n'.join(str(v) for v in val)
+                        except Exception:
+                            attrs[name] = str(val)
+                    elif val is None:
+                        attrs[name] = ''
+                    else:
+                        attrs[name] = str(val)
+            except Exception:
+                pass
+            result['attrs'] = attrs
+        return result

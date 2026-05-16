@@ -966,6 +966,10 @@
                         t-on-click="onSwitchToRolesTab">
                     <i class="fa fa-id-badge"/> Rolrelaties
                 </button>
+                <button t-att-class="'ob-tab' + (state.activeTab === 'ad' ? ' ob-tab-active' : '')"
+                        t-on-click="onSwitchToADTab">
+                    <i class="fa fa-server"/> AD-browser
+                </button>
             </div>
             
             <!-- Bulk Actions Bar (shown whenever ≥1 item is selected in tree OR members) -->
@@ -1212,7 +1216,137 @@
                 </div>
             </div>
             </t>
-        
+
+            <!-- AD-browser Tab Content (Fase G) -->
+            <t t-if="state.activeTab === 'ad'">
+                <div class="ob-ad-browser">
+                    <div class="ob-ad-toolbar">
+                        <label class="ob-ad-toolbar-label">LDAP-server:</label>
+                        <select class="ob-ad-select"
+                                t-on-change="(ev) => this.onAdConfigChange(ev)">
+                            <option value="">— kies config —</option>
+                            <t t-foreach="state.adConfigs" t-as="cfg" t-key="cfg.id">
+                                <option t-att-value="cfg.id"
+                                        t-att-selected="state.adActiveConfigId === cfg.id">
+                                    <t t-esc="cfg.name"/>
+                                    [<t t-esc="cfg.environment"/>]
+                                </option>
+                            </t>
+                        </select>
+                        <span class="ob-ad-base-dn" t-if="state.adRootDn">
+                            root: <code><t t-esc="state.adRootDn"/></code>
+                        </span>
+                        <button class="ob-btn ob-btn-sm" t-on-click="loadAdConfigs"
+                                title="Configs herladen">
+                            <i class="fa fa-refresh"/>
+                        </button>
+                    </div>
+
+                    <div class="ob-ad-error" t-if="state.adError">
+                        <i class="fa fa-exclamation-triangle"/>
+                        <t t-esc="state.adError"/>
+                    </div>
+
+                    <div class="ob-ad-split" t-if="state.adActiveConfigId">
+                        <!-- LEFT: tree pane -->
+                        <div class="ob-ad-tree">
+                            <t t-if="state.adRootDn">
+                                <!-- root-node label -->
+                                <div class="ob-ad-tree-row"
+                                     t-att-class="state.adSelectedDn === state.adRootDn ? 'ob-ad-tree-row-selected' : ''"
+                                     t-on-click="() => this.onAdSelectNode(state.adRootDn)">
+                                    <i class="fa fa-globe"/>
+                                    <code class="ob-ad-tree-label">
+                                        <t t-esc="state.adRootDn"/>
+                                    </code>
+                                </div>
+                                <!-- children of root -->
+                                <t t-foreach="adRootChildren" t-as="child" t-key="child.dn">
+                                    <t t-call="myschool_admin.AdTreeNode">
+                                        <t t-set="node" t-value="child"/>
+                                        <t t-set="depth" t-value="1"/>
+                                    </t>
+                                </t>
+                            </t>
+                            <div class="ob-ad-empty" t-if="!state.adRootDn">
+                                Kies een LDAP-config om te beginnen.
+                            </div>
+                        </div>
+
+                        <!-- RIGHT: attribute side-panel -->
+                        <div class="ob-ad-detail">
+                            <t t-if="adSelectedNode">
+                                <h3>
+                                    <i t-attf-class="fa #{adSelectedNode.kind === 'ou' ? 'fa-folder' : (adSelectedNode.kind === 'group' ? 'fa-users' : (adSelectedNode.kind === 'user' ? 'fa-user' : 'fa-cube'))}"/>
+                                    <t t-esc="adSelectedNode.cn"/>
+                                    <span class="badge text-bg-secondary"
+                                          style="margin-left: 8px;">
+                                        <t t-esc="adSelectedNode.kind"/>
+                                    </span>
+                                </h3>
+                                <div class="text-muted small" style="margin-bottom: 12px;">
+                                    <code><t t-esc="adSelectedNode.dn"/></code>
+                                </div>
+                                <table class="ob-ad-attr-table" t-if="adSelectedNode.attrs">
+                                    <thead>
+                                        <tr><th>Attribuut</th><th>Waarde</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-foreach="Object.entries(adSelectedNode.attrs).sort()"
+                                           t-as="row" t-key="row[0]">
+                                            <tr t-if="row[1]">
+                                                <td><code><t t-esc="row[0]"/></code></td>
+                                                <td><pre class="ob-ad-attr-value"><t t-esc="row[1]"/></pre></td>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                                <div t-if="!adSelectedNode.attrs"
+                                     class="text-muted">
+                                    Attrs laden…
+                                </div>
+                            </t>
+                            <div class="ob-ad-empty" t-if="!adSelectedNode">
+                                Selecteer een node in de tree om attrs te zien.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Recursive tree-node template voor AD-tab -->
+            <t t-name="myschool_admin.AdTreeNode">
+                <div class="ob-ad-tree-row"
+                     t-att-class="state.adSelectedDn === node.dn ? 'ob-ad-tree-row-selected' : ''"
+                     t-att-style="'padding-left: ' + (depth * 16) + 'px'"
+                     t-on-click="() => this.onAdSelectNode(node.dn)">
+                    <t t-if="node.kind === 'ou'">
+                        <i t-att-class="'fa fa-' + (state.adExpanded[node.dn.toLowerCase()] ? 'caret-down' : 'caret-right') + ' ob-ad-tree-toggle'"
+                           t-on-click.stop="() => this.onAdToggleExpand(node.dn)"
+                           t-att-style="!node.has_children ? 'visibility: hidden;' : ''"/>
+                        <i class="fa fa-folder"/>
+                    </t>
+                    <t t-else="">
+                        <span class="ob-ad-tree-toggle"/>
+                        <i t-attf-class="fa #{node.kind === 'group' ? 'fa-users' : (node.kind === 'user' ? 'fa-user' : 'fa-cube')}"/>
+                    </t>
+                    <span class="ob-ad-tree-label">
+                        <t t-esc="node.cn"/>
+                    </span>
+                    <span class="ob-ad-tree-spinner" t-if="state.adLoading[node.dn.toLowerCase()]">
+                        <i class="fa fa-spinner fa-spin"/>
+                    </span>
+                </div>
+                <t t-if="state.adExpanded[node.dn.toLowerCase()]">
+                    <t t-foreach="adChildrenOf(node.dn)" t-as="grand" t-key="grand.dn">
+                        <t t-call="myschool_admin.AdTreeNode">
+                            <t t-set="node" t-value="grand"/>
+                            <t t-set="depth" t-value="depth + 1"/>
+                        </t>
+                    </t>
+                </t>
+            </t>
+
             <!-- Context Menu -->
             <t t-if="state.contextMenu">
                 <ContextMenu x="state.contextMenu.x"
