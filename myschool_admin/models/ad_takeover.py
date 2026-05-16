@@ -1433,37 +1433,59 @@ class AdTakeoverSession(models.Model):
         return f'<div class="alert alert-warning">{msg}</div>'
 
     def _clone_ad(self):
-        """Clone AD-OUs (Fase F1). Groups/users/memberships volgen in F2.
-
-        Strategie:
-          1. Read prod scope-subtree (subtree onder base_dn van prod-
-             config + ou_fqdn_internal van scope_org).
-          2. Voor elk OU: rewrite DN (prod_base → test_base) en bepaal
-             parent-DN.
-          3. Sorteer op DN-lengte (kortste eerst) zodat parents vóór
-             kinderen geschreven worden.
-          4. Voor elke target-DN: check of die al bestaat in test
-             (SEARCH base) — skip + log indien zo; anders LDAP ADD met
-             objectClass=organizationalUnit.
+        """Orchestreert: OUs → groups → users → memberships.
+        Volgorde is dwingend: kinderen kunnen pas geschreven als hun
+        parent-OU bestaat; memberships pas als zowel group als member
+        in test bestaan.
         """
         ldap = self.env['myschool.ldap.service']
         ldap._check_ldap3_available()
         prod_cfg = self.ldap_config_id
         test_cfg = self.clone_target_ldap_config_id
-
-        # 1. Read prod-OUs in scope
         scope = (self.scope_org_id.ou_fqdn_internal or '').strip()
         if not scope:
             return self._clone_warning(
                 'Scope-org heeft geen ou_fqdn_internal — kan geen AD '
                 'subtree afleiden.')
+
+        prod_base = prod_cfg.base_dn.strip()
+        test_base = test_cfg.base_dn.strip()
+
+        # OUs
+        ou_block, ou_rewrites = self._clone_ad_ous(
+            ldap, prod_cfg, test_cfg, scope, prod_base, test_base)
+        # Groups
+        gr_block, gr_rewrites = self._clone_ad_groups(
+            ldap, prod_cfg, test_cfg, scope, prod_base, test_base)
+        # Users (returns map prod_dn → test_dn + password report)
+        usr_block, usr_dn_map, pwd_rows = self._clone_ad_users(
+            ldap, prod_cfg, test_cfg, scope, prod_base, test_base)
+        # Memberships — combineer alle DN-rewrites zodat memberships
+        # naar OUs/groups/users correct kunnen worden gerewriten.
+        all_dn_map = {p: t for p, t, *_ in ou_rewrites}
+        for p, t, *_ in gr_rewrites:
+            all_dn_map[p.lower()] = t
+        for p, t in usr_dn_map.items():
+            all_dn_map[p.lower()] = t
+        # Re-key on lowercase for case-insensitive matching
+        all_dn_map = {k.lower(): v for k, v in all_dn_map.items()}
+        mem_block = self._clone_ad_memberships(
+            ldap, prod_cfg, test_cfg, scope, all_dn_map)
+
+        pwd_block = self._render_password_report(pwd_rows)
+        return ou_block + gr_block + usr_block + mem_block + pwd_block
+
+    # ---------- OUs ----------
+
+    def _clone_ad_ous(self, ldap, prod_cfg, test_cfg, scope,
+                      prod_base, test_base):
         try:
             with ldap._get_connection(prod_cfg) as conn:
-                conn.search(
-                    search_base=scope,
-                    search_filter='(objectClass=organizationalUnit)',
-                    search_scope='SUBTREE',
-                    attributes=['distinguishedName', 'ou', 'description'])
+                conn.search(scope,
+                            '(objectClass=organizationalUnit)',
+                            search_scope='SUBTREE',
+                            attributes=['distinguishedName', 'ou',
+                                        'description'])
                 prod_ous = [
                     (self._entry_str(e, 'distinguishedName'),
                      self._entry_str(e, 'ou'),
@@ -1472,65 +1494,346 @@ class AdTakeoverSession(models.Model):
                     if self._entry_str(e, 'distinguishedName')
                 ]
         except Exception as e:
-            _logger.exception('[CLONE] prod read failed')
-            return self._clone_warning(
-                f'AD prod-read mislukt: {e}')
+            _logger.exception('[CLONE] prod OU read failed')
+            return self._clone_warning(f'OUs prod-read mislukt: {e}'), []
 
-        # 2. DN-rewrite + sort
-        prod_base = prod_cfg.base_dn.strip()
-        test_base = test_cfg.base_dn.strip()
         rewrites = []
         for prod_dn, ou_name, descr in prod_ous:
-            test_dn = self._clone_rewrite_ad_dn(
-                prod_dn, prod_base, test_base)
+            test_dn = self._clone_rewrite_ad_dn(prod_dn, prod_base, test_base)
             if not test_dn:
                 continue
             rewrites.append((prod_dn, test_dn, ou_name, descr))
-        # Shortest DN first = parents before children
         rewrites.sort(key=lambda r: r[1].count(','))
 
-        # 3. Write test
         created = skipped = failed = 0
         rows = []
-        try:
-            with ldap._get_connection(test_cfg) as conn:
-                for prod_dn, test_dn, ou_name, descr in rewrites:
-                    # Skip if exists
-                    try:
-                        conn.search(test_dn, '(objectClass=*)',
-                                    search_scope='BASE',
-                                    attributes=['distinguishedName'])
-                        if conn.entries:
-                            skipped += 1
-                            rows.append((test_dn, 'skipped',
-                                         'bestaat al in test'))
-                            continue
-                    except Exception:
-                        pass  # search failure → treat as not-exists, add
-                    try:
-                        attrs = {'ou': ou_name or test_dn.split(',', 1)[0][3:]}
-                        if descr:
-                            attrs['description'] = descr
-                        ok = conn.add(test_dn, 'organizationalUnit', attrs)
-                        if ok and conn.result.get('result') == 0:
-                            created += 1
-                            rows.append((test_dn, 'created', ''))
-                        else:
-                            failed += 1
-                            rows.append((
-                                test_dn, 'failed',
-                                conn.result.get('description') or 'unknown'))
-                    except Exception as e:
+        with ldap._get_connection(test_cfg) as conn:
+            for prod_dn, test_dn, ou_name, descr in rewrites:
+                if self._cloud_dn_exists(conn, test_dn):
+                    skipped += 1
+                    rows.append((test_dn, 'skipped', 'bestaat al in test'))
+                    continue
+                attrs = {'ou': ou_name or test_dn.split(',', 1)[0][3:]}
+                if descr:
+                    attrs['description'] = descr
+                try:
+                    ok = conn.add(test_dn, 'organizationalUnit', attrs)
+                    if ok and (conn.result or {}).get('result') == 0:
+                        created += 1
+                        rows.append((test_dn, 'created', ''))
+                    else:
                         failed += 1
-                        rows.append((test_dn, 'failed', str(e)))
-        except Exception as e:
-            _logger.exception('[CLONE] test write failed')
-            return self._clone_warning(
-                f'AD test-write mislukt: {e}')
+                        rows.append((test_dn, 'failed',
+                                     (conn.result or {}).get('description')
+                                     or 'unknown'))
+                except Exception as e:
+                    failed += 1
+                    rows.append((test_dn, 'failed', str(e)))
+        block = self._render_ad_clone_report(
+            'AD-clone: OUs', len(rewrites), created, skipped, failed, rows)
+        return block, rewrites
 
-        # 4. Render report block
+    # ---------- Groups ----------
+
+    def _clone_ad_groups(self, ldap, prod_cfg, test_cfg, scope,
+                         prod_base, test_base):
+        try:
+            with ldap._get_connection(prod_cfg) as conn:
+                conn.search(scope, '(objectClass=group)',
+                            search_scope='SUBTREE',
+                            attributes=['distinguishedName', 'cn',
+                                        'sAMAccountName', 'description',
+                                        'mail', 'groupType'])
+                prod_groups = []
+                for e in conn.entries:
+                    dn = self._entry_str(e, 'distinguishedName')
+                    if not dn:
+                        continue
+                    prod_groups.append({
+                        'dn': dn,
+                        'cn': self._entry_str(e, 'cn'),
+                        'sam': self._entry_str(e, 'sAMAccountName'),
+                        'description': self._entry_str(e, 'description'),
+                        'mail': self._entry_str(e, 'mail'),
+                        'groupType': self._entry_str(e, 'groupType'),
+                    })
+        except Exception as e:
+            _logger.exception('[CLONE] prod groups read failed')
+            return self._clone_warning(
+                f'Groups prod-read mislukt: {e}'), []
+
+        rewrites = []
+        for g in prod_groups:
+            test_dn = self._clone_rewrite_ad_dn(g['dn'], prod_base, test_base)
+            if not test_dn:
+                continue
+            rewrites.append((g['dn'], test_dn, g))
+
+        created = skipped = failed = 0
+        rows = []
+        with ldap._get_connection(test_cfg) as conn:
+            for prod_dn, test_dn, g in rewrites:
+                if self._cloud_dn_exists(conn, test_dn):
+                    skipped += 1
+                    rows.append((test_dn, 'skipped', 'bestaat al'))
+                    continue
+                attrs = {
+                    'cn': g['cn'] or test_dn.split(',', 1)[0][3:],
+                    'sAMAccountName': (g['sam']
+                                       or g['cn']
+                                       or test_dn.split(',', 1)[0][3:]),
+                }
+                if g['description']:
+                    attrs['description'] = g['description']
+                if g['groupType']:
+                    try:
+                        attrs['groupType'] = int(g['groupType'])
+                    except (ValueError, TypeError):
+                        pass
+                try:
+                    ok = conn.add(test_dn, 'group', attrs)
+                    if ok and (conn.result or {}).get('result') == 0:
+                        created += 1
+                        rows.append((test_dn, 'created', ''))
+                    else:
+                        failed += 1
+                        rows.append((test_dn, 'failed',
+                                     (conn.result or {}).get('description')
+                                     or 'unknown'))
+                except Exception as e:
+                    failed += 1
+                    rows.append((test_dn, 'failed', str(e)))
+        block = self._render_ad_clone_report(
+            'AD-clone: Groups', len(rewrites), created, skipped,
+            failed, rows)
+        return block, rewrites
+
+    # ---------- Users ----------
+
+    def _clone_ad_users(self, ldap, prod_cfg, test_cfg, scope,
+                        prod_base, test_base):
+        try:
+            with ldap._get_connection(prod_cfg) as conn:
+                conn.search(scope,
+                            '(&(objectClass=user)(!(objectClass=computer)))',
+                            search_scope='SUBTREE',
+                            attributes=['distinguishedName', 'cn',
+                                        'sAMAccountName', 'employeeID',
+                                        'mail', 'givenName', 'sn',
+                                        'displayName', 'description'])
+                prod_users = []
+                for e in conn.entries:
+                    dn = self._entry_str(e, 'distinguishedName')
+                    if not dn:
+                        continue
+                    prod_users.append({
+                        'dn': dn,
+                        'cn': self._entry_str(e, 'cn'),
+                        'sam': self._entry_str(e, 'sAMAccountName'),
+                        'employeeID': self._entry_str(e, 'employeeID'),
+                        'mail': self._entry_str(e, 'mail'),
+                        'givenName': self._entry_str(e, 'givenName'),
+                        'sn': self._entry_str(e, 'sn'),
+                        'displayName': self._entry_str(e, 'displayName'),
+                        'description': self._entry_str(e, 'description'),
+                    })
+        except Exception as e:
+            _logger.exception('[CLONE] prod users read failed')
+            return self._clone_warning(
+                f'Users prod-read mislukt: {e}'), {}, []
+
+        rewrites = []
+        for u in prod_users:
+            test_dn = self._clone_rewrite_ad_dn(u['dn'], prod_base, test_base)
+            if not test_dn:
+                continue
+            rewrites.append((u['dn'], test_dn, u))
+
+        # The (test_dn, plaintext_pwd) pairs — admin views these
+        # ONE time in the report; never persisted server-side.
+        pwd_rows = []
+        dn_map = {}
+        created = skipped = failed = 0
+        rows = []
+        with ldap._get_connection(test_cfg) as conn:
+            for prod_dn, test_dn, u in rewrites:
+                dn_map[prod_dn] = test_dn
+                if self._cloud_dn_exists(conn, test_dn):
+                    skipped += 1
+                    rows.append((test_dn, 'skipped', 'bestaat al'))
+                    continue
+                upn = ''
+                if test_cfg.upn_suffix:
+                    upn_suffix = test_cfg.upn_suffix.lstrip('@')
+                    upn = f'{u["sam"]}@{upn_suffix}' if u['sam'] else ''
+                attrs = {
+                    'cn': u['cn'] or test_dn.split(',', 1)[0][3:],
+                    'sAMAccountName': u['sam'] or u['cn'],
+                    'userAccountControl': 514,  # NORMAL_ACCOUNT + DISABLED
+                }
+                if upn:
+                    attrs['userPrincipalName'] = upn
+                if u['employeeID']:
+                    attrs['employeeID'] = u['employeeID']
+                if u['mail']:
+                    attrs['mail'] = u['mail']
+                if u['givenName']:
+                    attrs['givenName'] = u['givenName']
+                if u['sn']:
+                    attrs['sn'] = u['sn']
+                if u['displayName']:
+                    attrs['displayName'] = u['displayName']
+                if u['description']:
+                    attrs['description'] = u['description']
+                try:
+                    ok = conn.add(test_dn, 'user', attrs)
+                    if not ok or (conn.result or {}).get('result') != 0:
+                        failed += 1
+                        rows.append((test_dn, 'failed',
+                                     (conn.result or {}).get('description')
+                                     or 'add failed'))
+                        continue
+                    # Set random password (account stays disabled)
+                    pwd = ldap._generate_ad_complex_password()
+                    pwd_value = ('"' + pwd + '"').encode('utf-16-le')
+                    from ldap3 import MODIFY_REPLACE
+                    conn.modify(test_dn,
+                                {'unicodePwd':
+                                 [(MODIFY_REPLACE, [pwd_value])]})
+                    pw_result = (conn.result or {}).get('result')
+                    if pw_result == 0:
+                        pwd_rows.append((test_dn, u['sam'] or '', pwd))
+                        created += 1
+                        rows.append((test_dn, 'created',
+                                     'password gegenereerd (zie rapport)'))
+                    else:
+                        # User created but password modify failed —
+                        # nog steeds bruikbaar voor takeover-test
+                        created += 1
+                        rows.append((test_dn, 'created (no-pwd)',
+                                     (conn.result or {}).get('description')
+                                     or 'pwd modify failed'))
+                except Exception as e:
+                    failed += 1
+                    rows.append((test_dn, 'failed', str(e)))
+        block = self._render_ad_clone_report(
+            'AD-clone: Users', len(rewrites), created, skipped,
+            failed, rows)
+        return block, dn_map, pwd_rows
+
+    # ---------- Memberships ----------
+
+    def _clone_ad_memberships(self, ldap, prod_cfg, test_cfg, scope,
+                              dn_map):
+        """Voor elke prod-group: lees member-attribuut, rewrite naar
+        test-DNs en zet de member-lijst op de test-group via MODIFY_ADD."""
+        try:
+            with ldap._get_connection(prod_cfg) as conn:
+                conn.search(scope, '(objectClass=group)',
+                            search_scope='SUBTREE',
+                            attributes=['distinguishedName', 'member'])
+                prod_groups = []
+                for e in conn.entries:
+                    dn = self._entry_str(e, 'distinguishedName')
+                    if not dn:
+                        continue
+                    members = []
+                    try:
+                        m = e['member'].values
+                        if m:
+                            members = list(m)
+                    except Exception:
+                        pass
+                    prod_groups.append((dn, members))
+        except Exception as e:
+            _logger.exception('[CLONE] prod memberships read failed')
+            return self._clone_warning(
+                f'Memberships prod-read mislukt: {e}')
+
+        from ldap3 import MODIFY_ADD
+        ok_count = skip_count = err_count = 0
+        rows = []
+        with ldap._get_connection(test_cfg) as conn:
+            for prod_group_dn, prod_members in prod_groups:
+                test_group_dn = dn_map.get(prod_group_dn.lower())
+                if not test_group_dn:
+                    continue  # group not in our clone-set
+                # Resolve members
+                resolved = []
+                missing = []
+                for mdn in prod_members:
+                    tdn = dn_map.get((mdn or '').lower())
+                    if tdn:
+                        resolved.append(tdn)
+                    else:
+                        missing.append(mdn)
+                if missing:
+                    rows.append((
+                        test_group_dn, 'partial',
+                        f'{len(missing)} member(s) zonder test-mapping'))
+                if not resolved:
+                    skip_count += 1
+                    rows.append((test_group_dn, 'skipped', 'geen members'))
+                    continue
+                try:
+                    conn.modify(test_group_dn,
+                                {'member': [(MODIFY_ADD, resolved)]})
+                    result = (conn.result or {}).get('result')
+                    if result == 0:
+                        ok_count += 1
+                        rows.append((test_group_dn, 'ok',
+                                     f'{len(resolved)} member(s) toegevoegd'))
+                    elif result == 68:
+                        # Already exists — partial add succeeded already
+                        ok_count += 1
+                        rows.append((test_group_dn, 'ok-existing',
+                                     'member-lijst was al deels gevuld'))
+                    else:
+                        err_count += 1
+                        rows.append((test_group_dn, 'failed',
+                                     (conn.result or {}).get('description')
+                                     or 'unknown'))
+                except Exception as e:
+                    err_count += 1
+                    rows.append((test_group_dn, 'failed', str(e)))
+
         return self._render_ad_clone_report(
-            len(rewrites), created, skipped, failed, rows)
+            'AD-clone: Memberships', len(prod_groups), ok_count,
+            skip_count, err_count, rows)
+
+    # ---------- Helpers ----------
+
+    @staticmethod
+    def _cloud_dn_exists(conn, dn):
+        """SEARCH(BASE) op een DN; True als minstens één entry terug komt."""
+        try:
+            conn.search(dn, '(objectClass=*)', search_scope='BASE',
+                        attributes=['distinguishedName'])
+            return bool(conn.entries)
+        except Exception:
+            return False
+
+    def _render_password_report(self, pwd_rows):
+        if not pwd_rows:
+            return ''
+        rows = ''.join(
+            f'<tr><td><code>{sam}</code></td>'
+            f'<td><code>{pwd}</code></td>'
+            f'<td class="text-muted small">{dn}</td></tr>'
+            for dn, sam, pwd in pwd_rows
+        )
+        return (
+            '<h4>Gegenereerde test-passwords (eenmalig zichtbaar)</h4>'
+            '<div class="alert alert-warning">'
+            '⚠ Deze passwords zijn alleen in dit rapport zichtbaar — '
+            'kopieer wat je nodig hebt nu. Alle accounts zijn aangemaakt '
+            'als <strong>disabled</strong> (userAccountControl=514); enable '
+            'er één handmatig in test-AD om mee te kunnen testen.'
+            '</div>'
+            '<table class="table table-sm"><thead><tr>'
+            '<th>sAMAccountName</th><th>Password</th>'
+            '<th>Test-DN</th></tr></thead><tbody>'
+            + rows + '</tbody></table>')
 
     @staticmethod
     def _clone_rewrite_ad_dn(prod_dn, prod_base, test_base):
@@ -1546,20 +1849,25 @@ class AdTakeoverSession(models.Model):
         # Strip prod_base suffix (with leading comma), append test_base
         return prod_dn[: -len(prod_base)] + test_base
 
-    def _render_ad_clone_report(self, total, created, skipped, failed, rows):
+    def _render_ad_clone_report(self, title, total, created, skipped,
+                                failed, rows):
         header = (
-            f'<h4>AD-clone: OUs</h4>'
+            f'<h4>{title}</h4>'
             f'<p class="text-muted">Total: {total} · '
             f'<span class="badge text-bg-success">created {created}</span> '
             f'<span class="badge text-bg-warning">skipped {skipped}</span> '
             f'<span class="badge text-bg-danger">failed {failed}</span></p>'
         )
         if not rows:
-            return header + '<p>Geen OUs in scope.</p>'
+            return header + '<p>(geen rijen)</p>'
         body_rows = []
         for dn, status, msg in rows:
-            badge = {'created': 'bg-success', 'skipped': 'bg-warning',
-                     'failed': 'bg-danger'}.get(status, 'bg-secondary')
+            badge = (
+                'bg-success' if status.startswith(('created', 'ok'))
+                else 'bg-warning' if status in ('skipped', 'partial',
+                                                 'ok-existing')
+                else 'bg-danger' if status == 'failed'
+                else 'bg-secondary')
             body_rows.append(
                 f'<tr><td><code>{dn}</code></td>'
                 f'<td><span class="badge {badge}">{status}</span></td>'
