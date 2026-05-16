@@ -179,13 +179,28 @@ class AdTakeoverSession(models.Model):
         'myschool.ad.takeover.finding', 'session_id',
         domain=[('kind', '=', 'user')])
 
-    # Counters for the UI header
-    finding_count = fields.Integer(compute='_compute_counts')
-    investigate_count = fields.Integer(compute='_compute_counts')
-    delete_after_count = fields.Integer(compute='_compute_counts')
+    # Counters for the UI header.
+    # Legacy counters (investigate_count etc.) are kept so the current
+    # XML view continues to work; they're recomputed from the new state
+    # machine in `_compute_counts`. Commit 4 replaces the view fields
+    # with the *_count_v2 set.
+    finding_count          = fields.Integer(compute='_compute_counts')
+    investigate_count      = fields.Integer(compute='_compute_counts')
+    delete_after_count     = fields.Integer(compute='_compute_counts')
     takeover_pending_count = fields.Integer(compute='_compute_counts')
-    takeover_done_count = fields.Integer(compute='_compute_counts')
-    matched_count = fields.Integer(compute='_compute_counts')
+    takeover_done_count    = fields.Integer(compute='_compute_counts')
+    matched_count          = fields.Integer(compute='_compute_counts')
+
+    # New state-based counters (Fase A).
+    discovered_count       = fields.Integer(compute='_compute_counts')
+    proposed_count         = fields.Integer(compute='_compute_counts')
+    approved_count         = fields.Integer(compute='_compute_counts')
+    done_count             = fields.Integer(compute='_compute_counts')
+    conflict_count         = fields.Integer(compute='_compute_counts')
+    stamp_id_pending_count = fields.Integer(
+        compute='_compute_counts',
+        help='STAMP_ID-voorstellen die nog wachten op approve/apply — '
+             'blokkeren de overgang van pre-flight naar de koppel-fase.')
 
     @api.depends('scope_org_id.ou_fqdn_internal')
     def _compute_base_dn(self):
@@ -210,16 +225,35 @@ class AdTakeoverSession(models.Model):
                     'sess_env': s.environment,
                 })
 
-    @api.depends('finding_ids', 'finding_ids.status')
+    @api.depends('finding_ids', 'finding_ids.state', 'finding_ids.proposal_kind')
     def _compute_counts(self):
         for rec in self:
             f = rec.finding_ids
             rec.finding_count = len(f)
-            rec.investigate_count = len(f.filtered(lambda x: x.status == 'investigate'))
-            rec.delete_after_count = len(f.filtered(lambda x: x.status == 'delete_after_migration'))
-            rec.takeover_pending_count = len(f.filtered(lambda x: x.status == 'takeover_pending'))
-            rec.takeover_done_count = len(f.filtered(lambda x: x.status == 'takeover_done'))
-            rec.matched_count = len(f.filtered(lambda x: x.status == 'matched'))
+
+            # New state-based counters
+            rec.discovered_count = len(f.filtered(lambda x: x.state == 'discovered'))
+            rec.proposed_count   = len(f.filtered(lambda x: x.state == 'proposed'))
+            rec.approved_count   = len(f.filtered(lambda x: x.state == 'approved'))
+            rec.done_count       = len(f.filtered(lambda x: x.state == 'done'))
+            rec.conflict_count   = len(f.filtered(
+                lambda x: x.state == 'identity_conflict'))
+            rec.stamp_id_pending_count = len(f.filtered(
+                lambda x: x.proposal_kind == 'stamp_id'
+                          and x.state in ('discovered', 'proposed', 'approved')))
+
+            # Legacy aliases mapped from the new state. Preserved so the
+            # current XML view keeps rendering header counts during the
+            # Fase A transition; commit 4 removes these.
+            rec.investigate_count = rec.discovered_count
+            rec.takeover_pending_count = rec.proposed_count + rec.approved_count
+            rec.takeover_done_count = len(f.filtered(
+                lambda x: x.state == 'done' and x.proposal_kind == 'link_only'))
+            rec.delete_after_count = len(f.filtered(
+                lambda x: x.proposal_kind == 'delete_after'
+                          and x.state in ('proposed', 'approved')))
+            rec.matched_count = len(f.filtered(
+                lambda x: x.state == 'done' and not x.proposal_kind))
 
     # ------------------------------------------------------------------
     # Scan
@@ -235,7 +269,6 @@ class AdTakeoverSession(models.Model):
         ldap_service = self.env['myschool.ldap.service']
         ldap_service._check_ldap3_available()
 
-        # Pre-load DB index for matching
         index = self._build_db_index()
 
         ou_rows = []
@@ -244,14 +277,12 @@ class AdTakeoverSession(models.Model):
 
         try:
             with ldap_service._get_connection(self.ldap_config_id) as conn:
-                # OUs
                 conn.search(
                     search_base=self.base_dn,
                     search_filter='(objectClass=organizationalUnit)',
                     search_scope='SUBTREE',
                     attributes=['distinguishedName', 'ou', 'description'])
                 ou_rows = list(conn.entries)
-                # Groups
                 conn.search(
                     search_base=self.base_dn,
                     search_filter='(objectClass=group)',
@@ -259,75 +290,91 @@ class AdTakeoverSession(models.Model):
                     attributes=['distinguishedName', 'cn', 'sAMAccountName',
                                 'mail', 'description'])
                 group_rows = list(conn.entries)
-                # Users (exclude computer objects which also share the user class)
+                # Users — exclude computer objects (share the user class).
+                # employeeID is the cross-source identity key; userAccountControl
+                # surfaces disabled accounts so the linker can flag drift.
                 conn.search(
                     search_base=self.base_dn,
                     search_filter='(&(objectClass=user)(!(objectClass=computer)))',
                     search_scope='SUBTREE',
                     attributes=['distinguishedName', 'cn', 'sAMAccountName',
-                                'mail', 'givenName', 'sn'])
+                                'mail', 'givenName', 'sn',
+                                'employeeID', 'userAccountControl'])
                 user_rows = list(conn.entries)
         except Exception as e:
             _logger.exception('[AD-TAKEOVER] LDAP scan failed')
             raise UserError(_('LDAP-scan mislukt: %s') % e)
 
-        # Wipe the prior unmatched findings and rebuild — keep takeover_done /
-        # delete_done / ignored / explicit-status rows so admin doesn't lose
-        # progress on a re-scan.
-        keep_statuses = ('takeover_done', 'delete_done', 'ignored',
-                         'delete_after_migration', 'takeover_pending')
-        self.finding_ids.filtered(lambda r: r.status not in keep_statuses).unlink()
+        # On rescan: wipe ONLY rows the admin never touched. Anything past
+        # `discovered` represents human decisions or in-flight work and
+        # must survive the rescan.
+        wipe_states = ('discovered',)
+        self.finding_ids.filtered(
+            lambda r: r.state in wipe_states).unlink()
 
-        # Index already-tracked DNs so a re-scan refreshes matched-status
-        existing_by_dn = {self._norm_dn(f.ad_dn): f for f in self.finding_ids}
+        existing_by_extid = {
+            (f.source, self._norm_dn(f.external_id or f.ad_dn)): f
+            for f in self.finding_ids
+        }
 
+        Finding = self.env['myschool.ad.takeover.finding']
         ou_total = ou_match = 0
         gr_total = gr_match = 0
-        us_total = us_match = 0
+        us_total = us_match = us_conflict = us_stamp = us_orphan = 0
         new_findings = []
 
+        # ---------- OUs ----------
         for entry in ou_rows:
             ou_total += 1
             dn = self._entry_str(entry, 'distinguishedName')
             if not dn:
                 continue
             dn_norm = self._norm_dn(dn)
+            if ('ad', dn_norm) in existing_by_extid:
+                continue
             matched_org_id = index['ou_dn_to_org'].get(dn_norm)
             if matched_org_id:
                 ou_match += 1
                 continue
-            if dn_norm in existing_by_dn:
-                continue
             proposed = self._guess_ou_takeover(dn)
             new_findings.append({
                 'session_id': self.id,
+                'source': 'ad',
+                'external_id': dn,
                 'kind': 'ou',
                 'ad_dn': dn,
                 'ad_cn': self._entry_str(entry, 'ou'),
                 'ad_attributes_json': self._entry_to_json(entry),
                 'match_kind': 'unmatched',
-                'status': 'investigate',
+                'status': 'investigate',           # legacy mirror
+                'state': 'proposed',
+                'proposal_kind': 'link_only',
+                'risk_level': 'low',
                 'proposed_parent_org_id': proposed.get('parent_id'),
                 'proposed_org_type_id': proposed.get('type_id'),
             })
 
+        # ---------- Groups ----------
         for entry in group_rows:
             gr_total += 1
             dn = self._entry_str(entry, 'distinguishedName')
             if not dn:
                 continue
             dn_norm = self._norm_dn(dn)
+            if ('ad', dn_norm) in existing_by_extid:
+                continue
             matched_org_id = index['group_dn_to_org'].get(dn_norm)
             if matched_org_id:
                 gr_match += 1
                 continue
-            if dn_norm in existing_by_dn:
-                continue
-            cn = self._entry_str(entry, 'cn')
-            sam = self._entry_str(entry, 'sAMAccountName')
+            cn   = self._entry_str(entry, 'cn')
+            sam  = self._entry_str(entry, 'sAMAccountName')
             mail = self._entry_str(entry, 'mail')
+            parent = self._guess_group_parent(dn)
             new_findings.append({
                 'session_id': self.id,
+                'source': 'ad',
+                'external_id': dn,
                 'kind': 'group',
                 'ad_dn': dn,
                 'ad_cn': cn,
@@ -336,42 +383,35 @@ class AdTakeoverSession(models.Model):
                 'ad_attributes_json': self._entry_to_json(entry),
                 'match_kind': 'unmatched',
                 'status': 'investigate',
-                'proposed_parent_org_id': self._guess_group_parent(dn).id
-                    if self._guess_group_parent(dn) else False,
+                'state': 'proposed',
+                'proposal_kind': 'link_only',
+                'risk_level': 'low',
+                'proposed_parent_org_id': parent.id if parent else False,
             })
 
+        # ---------- Users — deterministic linker ----------
+        Person = self.env['myschool.person']
         for entry in user_rows:
             us_total += 1
             dn = self._entry_str(entry, 'distinguishedName')
             if not dn:
                 continue
             dn_norm = self._norm_dn(dn)
-            matched_person_id = index['user_dn_to_person'].get(dn_norm)
-            if matched_person_id:
-                us_match += 1
+            if ('ad', dn_norm) in existing_by_extid:
                 continue
-            if dn_norm in existing_by_dn:
-                continue
-            cn = self._entry_str(entry, 'cn')
-            sam = self._entry_str(entry, 'sAMAccountName')
+
+            cn   = self._entry_str(entry, 'cn')
+            sam  = self._entry_str(entry, 'sAMAccountName')
             mail = self._entry_str(entry, 'mail')
             given = self._entry_str(entry, 'givenName')
-            sn = self._entry_str(entry, 'sn')
-            # Fuzzy hint for notes
-            fuzzy_notes = []
-            if mail and mail.lower() in index['user_mail_to_person']:
-                pid = index['user_mail_to_person'][mail.lower()]
-                p = self.env['myschool.person'].browse(pid)
-                fuzzy_notes.append(
-                    f'⚠ Mail-match op DB-person {p.display_name} '
-                    f'(id={pid}) — DN verschilt; nakijken voor takeover.')
-            if sam and sam.lower() in index['user_sam_to_login']:
-                login = sam.lower()
-                fuzzy_notes.append(
-                    f'⚠ sAMAccountName matcht res.users.login "{login}".')
+            sn    = self._entry_str(entry, 'sn')
+            emp   = self._entry_str(entry, 'employeeID')
             parent_org = self._guess_user_parent(dn)
-            new_findings.append({
+
+            vals = {
                 'session_id': self.id,
+                'source': 'ad',
+                'external_id': dn,
                 'kind': 'user',
                 'ad_dn': dn,
                 'ad_cn': cn,
@@ -381,25 +421,104 @@ class AdTakeoverSession(models.Model):
                 'ad_sn': sn,
                 'ad_attributes_json': self._entry_to_json(entry),
                 'match_kind': 'unmatched',
-                'status': 'investigate',
+                'sap_ref': emp or False,
                 'proposed_parent_org_id': parent_org.id if parent_org else False,
                 'proposed_person_role_id': (
                     self._guess_role(parent_org).id
                     if parent_org and self._guess_role(parent_org)
                     else False),
-                'notes': '\n'.join(fuzzy_notes) if fuzzy_notes else False,
+            }
+
+            # 1) Strongest signal: employeeID == person.sap_ref
+            person_id = index['sap_ref_to_person'].get(emp.strip()) if emp else None
+            if person_id:
+                person = Person.browse(person_id)
+                existing_dn = (person.person_fqdn_internal or '').strip()
+                if existing_dn and self._norm_dn(existing_dn) != dn_norm:
+                    # Same sap_ref claimed at two different DNs → conflict.
+                    vals.update({
+                        'state': 'identity_conflict',
+                        'status': 'investigate',           # legacy mirror
+                        'matched_person_id': person.id,
+                        'risk_level': 'high',
+                        'conflict_reason': (
+                            f'AD-user met employeeID={emp} hangt op DN '
+                            f'{dn}, maar DB.person.person_fqdn_internal '
+                            f'wijst naar {existing_dn}.'),
+                    })
+                    us_conflict += 1
+                else:
+                    # Match + consistent → already linked.
+                    vals.update({
+                        'state': 'done',
+                        'status': 'matched',
+                        'matched_person_id': person.id,
+                        'match_kind': 'matched_in_db',
+                        'risk_level': 'low',
+                    })
+                    us_match += 1
+                new_findings.append(vals)
+                continue
+
+            # 2) No employeeID → look for a candidate via mail / login.
+            person_id = None
+            via = None
+            if mail and mail.lower() in index['user_mail_to_person']:
+                person_id = index['user_mail_to_person'][mail.lower()]
+                via = 'email_cloud'
+            elif sam and sam.lower() in index['login_to_person']:
+                person_id = index['login_to_person'][sam.lower()]
+                via = 'odoo_user.login'
+
+            if person_id:
+                person = Person.browse(person_id)
+                vals.update({
+                    'state': 'proposed',
+                    'status': 'investigate',
+                    'matched_person_id': person.id,
+                    'proposal_kind': 'stamp_id',
+                    'proposal_payload_json': json.dumps({
+                        'target_attribute': 'employeeID',
+                        'value': str(person.sap_ref or ''),
+                        'matched_via': via,
+                    }),
+                    'risk_level': 'low',
+                    'notes': (
+                        f'AD-user mist employeeID; gematcht via {via}. '
+                        f'Voorstel schrijft sap_ref={person.sap_ref} '
+                        f'naar AD employeeID. Geen wijziging in DN, '
+                        f'sAMAccountName of wachtwoord.'),
+                })
+                us_stamp += 1
+                new_findings.append(vals)
+                continue
+
+            # 3) Genuine orphan — admin decides.
+            vals.update({
+                'state': 'proposed',
+                'status': 'investigate',
+                'proposal_kind': 'link_only',
+                'risk_level': 'medium',
+                'notes': (
+                    'Geen DB-match op employeeID, mail of login. '
+                    'Mogelijk een extern account of een persoon die '
+                    'nog niet in Informat zit. Beslis: importeren of '
+                    'negeren.'),
             })
+            us_orphan += 1
+            new_findings.append(vals)
 
         if new_findings:
-            self.env['myschool.ad.takeover.finding'].create(new_findings)
+            Finding.create(new_findings)
 
         summary = (
-            f'OUs: {ou_total} gevonden — {ou_match} matched, '
-            f'{ou_total - ou_match} niet in DB.\n'
-            f'Groups: {gr_total} gevonden — {gr_match} matched, '
-            f'{gr_total - gr_match} niet in DB.\n'
-            f'Users: {us_total} gevonden — {us_match} matched, '
-            f'{us_total - us_match} niet in DB.'
+            f'OUs: {ou_total} gevonden — {ou_match} al gelinkt, '
+            f'{ou_total - ou_match} nieuw.\n'
+            f'Groups: {gr_total} gevonden — {gr_match} al gelinkt, '
+            f'{gr_total - gr_match} nieuw.\n'
+            f'Users: {us_total} gevonden — {us_match} al gelinkt, '
+            f'{us_stamp} STAMP_ID, {us_orphan} orphan, '
+            f'{us_conflict} identity-conflict.'
         )
         self.write({
             'state': 'discovered' if self.state == 'draft' else 'in_progress',
@@ -421,31 +540,75 @@ class AdTakeoverSession(models.Model):
     # Bulk apply
     # ------------------------------------------------------------------
 
-    def action_apply_pending_takeovers(self):
+    def action_apply_approved(self):
+        """Apply every finding in state=approved, routing by proposal_kind.
+
+        Fase A actively executes:
+          * link_only    — existing DB-create flow (unchanged behaviour)
+          * stamp_id     — write sap_ref into AD.employeeID
+          * delete_after — LDAP delete (user/group only)
+
+        rename / move / membership_add are accepted in the state-machine
+        but raise NotImplementedError when executed — Fase C lands them.
+        """
         self.ensure_one()
-        pending = self.finding_ids.filtered(
-            lambda r: r.status == 'takeover_pending')
-        if not pending:
-            raise UserError(_('Geen takeovers in status "takeover_pending".'))
+        approved = self.finding_ids.filtered(lambda r: r.state == 'approved')
+        if not approved:
+            raise UserError(_('Geen goedgekeurde voorstellen in deze sessie.'))
         ok = err = 0
-        for f in pending:
+        for f in approved:
             try:
                 f.action_takeover()
                 ok += 1
             except Exception as e:
-                _logger.exception('[AD-TAKEOVER] takeover failed for %s', f.ad_dn)
+                _logger.exception('[AD-TAKEOVER] apply failed for %s', f.ad_dn)
                 f.write({'action_message': str(e)})
                 err += 1
-        return self._notify(_('Takeovers toegepast'),
+        return self._notify(_('Goedgekeurde voorstellen toegepast'),
+                            f'OK: {ok}, Fouten: {err}',
+                            kind='success' if err == 0 else 'warning')
+
+    # Backwards-compat alias — the existing XML view still binds the
+    # button to this name. Re-targets the same state set internally
+    # ('proposed' status='takeover_pending' was approve+apply combined).
+    def action_apply_pending_takeovers(self):
+        self.ensure_one()
+        legacy_pending = self.finding_ids.filtered(
+            lambda r: r.state in ('proposed', 'approved')
+                      and r.proposal_kind in ('link_only', 'stamp_id'))
+        if not legacy_pending:
+            raise UserError(_(
+                'Geen openstaande voorstellen. Markeer eerst items als '
+                '"goedgekeurd" of gebruik de directe takeover-knop per rij.'))
+        ok = err = 0
+        for f in legacy_pending:
+            try:
+                f.action_takeover()
+                ok += 1
+            except Exception as e:
+                _logger.exception('[AD-TAKEOVER] apply failed for %s', f.ad_dn)
+                f.write({'action_message': str(e)})
+                err += 1
+        return self._notify(_('Voorstellen toegepast'),
                             f'OK: {ok}, Fouten: {err}',
                             kind='success' if err == 0 else 'warning')
 
     def action_apply_pending_deletes(self):
+        """Cleanup-phase: actually delete in AD what was flagged
+        ``proposal_kind=delete_after`` and approved by the admin.
+
+        Triggered only after the admin has worked through pre-flight,
+        link, and normalise — typically from the "Cleanup" tab.
+        """
         self.ensure_one()
         flagged = self.finding_ids.filtered(
-            lambda r: r.status == 'delete_after_migration')
+            lambda r: r.proposal_kind == 'delete_after'
+                      and r.state in ('approved', 'proposed'))
         if not flagged:
-            raise UserError(_('Geen items in status "delete_after_migration".'))
+            raise UserError(_(
+                'Geen items met voorstel "Verwijder na migratie". '
+                'Markeer eerst rijen via "Verwijder na migratie" + '
+                '"Goedkeuren" voordat je deze knop gebruikt.'))
 
         ldap_service = self.env['myschool.ldap.service']
         ok = err = skip = 0
@@ -467,7 +630,8 @@ class AdTakeoverSession(models.Model):
                     continue
                 if res.get('success'):
                     f.write({
-                        'status': 'delete_done',
+                        'state': 'done',
+                        'status': 'delete_done',        # legacy mirror
                         'action_message': res.get('message', ''),
                         'last_action_at': fields.Datetime.now(),
                     })
@@ -503,9 +667,19 @@ class AdTakeoverSession(models.Model):
     # ------------------------------------------------------------------
 
     def _build_db_index(self):
+        """Build the lookup maps the linker uses.
+
+        Fase A adds three deterministic identity-keys on top of the
+        original fuzzy/DN maps:
+          - sap_ref_to_person  — primary key for users in all sources
+          - email_cloud_to_person — secondary, used for STAMP_ID
+          - login_to_person    — secondary, used for STAMP_ID
+
+        ``person_id`` is stored in every map; the linker resolves it to
+        a Person record when needed.
+        """
         Org = self.env['myschool.org'].with_context(active_test=False)
         Person = self.env['myschool.person'].with_context(active_test=False)
-        Users = self.env['res.users'].sudo().with_context(active_test=False)
 
         ou_dn_to_org = {}
         group_dn_to_org = {}
@@ -517,25 +691,41 @@ class AdTakeoverSession(models.Model):
                 if v:
                     group_dn_to_org[v] = org.id
 
-        user_dn_to_person = {}
+        user_dn_to_person   = {}
         user_mail_to_person = {}
+        sap_ref_to_person   = {}
+        login_to_person     = {}
+
         for p in Person.search([]):
             if p.person_fqdn_internal:
                 user_dn_to_person[self._norm_dn(p.person_fqdn_internal)] = p.id
             if p.email_cloud:
                 user_mail_to_person[p.email_cloud.strip().lower()] = p.id
+            if p.sap_ref:
+                # Person.sap_ref carries a UNIQUE constraint, so the
+                # map is 1-to-1 by construction.
+                sap_ref_to_person[str(p.sap_ref).strip()] = p.id
+            if p.odoo_user_id and p.odoo_user_id.login:
+                login_to_person[p.odoo_user_id.login.strip().lower()] = p.id
 
+        # Kept for compatibility with the legacy fuzzy-notes block in
+        # action_scan (unused once the linker fully replaces it in
+        # commit 4 — left in for now so existing rescans don't lose
+        # the "matches res.users.login" hint).
+        Users = self.env['res.users'].sudo().with_context(active_test=False)
         user_sam_to_login = {}
         for u in Users.search([]):
             if u.login:
                 user_sam_to_login[u.login.strip().lower()] = u.id
 
         return {
-            'ou_dn_to_org': ou_dn_to_org,
-            'group_dn_to_org': group_dn_to_org,
-            'user_dn_to_person': user_dn_to_person,
-            'user_mail_to_person': user_mail_to_person,
-            'user_sam_to_login': user_sam_to_login,
+            'ou_dn_to_org':         ou_dn_to_org,
+            'group_dn_to_org':      group_dn_to_org,
+            'user_dn_to_person':    user_dn_to_person,
+            'user_mail_to_person':  user_mail_to_person,
+            'user_sam_to_login':    user_sam_to_login,
+            'sap_ref_to_person':    sap_ref_to_person,
+            'login_to_person':      login_to_person,
         }
 
     # ------------------------------------------------------------------
@@ -814,7 +1004,12 @@ class AdTakeoverFinding(models.Model):
     # ------------------------------------------------------------------
 
     def action_mark_investigate(self):
-        return self._set_status('investigate')
+        self.write({
+            'status': 'investigate',
+            'state': 'discovered',
+            'last_action_at': fields.Datetime.now(),
+        })
+        return True
 
     def action_mark_delete_after(self):
         for rec in self:
@@ -823,17 +1018,79 @@ class AdTakeoverFinding(models.Model):
                     'OU "%s" — OUs mogen niet als "verwijder na migratie" '
                     'worden gemarkeerd. Gebruik "Onderzoek" of "Takeover".'
                 ) % rec.ad_dn)
-        return self._set_status('delete_after_migration')
+        self.write({
+            'status': 'delete_after_migration',
+            'state': 'proposed',
+            'proposal_kind': 'delete_after',
+            'risk_level': 'high',
+            'last_action_at': fields.Datetime.now(),
+        })
+        return True
 
     def action_mark_takeover_pending(self):
-        return self._set_status('takeover_pending')
+        """Legacy: 'mark for bulk takeover'. Maps to approved+link_only/stamp_id
+        in the new state machine — same end result, distinct name kept
+        because the existing XML buttons still bind to this."""
+        for rec in self:
+            rec.write({
+                'status': 'takeover_pending',
+                'state': 'approved',
+                # If the linker already picked a proposal_kind (stamp_id,
+                # delete_after, ...), keep it. Otherwise default to
+                # link_only — the historical implicit meaning.
+                'proposal_kind': rec.proposal_kind or 'link_only',
+                'last_action_at': fields.Datetime.now(),
+            })
+        return True
+
+    def action_approve(self):
+        """Explicit approve step on an existing proposal. Distinct from
+        action_mark_takeover_pending only in stricter preconditions:
+        requires a non-empty proposal_kind and a state that can be
+        approved from."""
+        for rec in self:
+            if not rec.proposal_kind:
+                raise UserError(_(
+                    'Geen voorstel om goed te keuren op "%s".') % rec.ad_dn)
+            if rec.state not in ('proposed', 'rolled_back', 'discovered'):
+                raise UserError(_(
+                    'Goedkeuren kan vanaf state "proposed"/"rolled_back"/'
+                    '"discovered" — huidige state: %s.') % rec.state)
+            rec.write({
+                'state': 'approved',
+                'status': ('takeover_pending'
+                           if rec.proposal_kind in ('link_only', 'stamp_id')
+                           else rec.status),
+                'last_action_at': fields.Datetime.now(),
+            })
+        return True
 
     def action_mark_ignore(self):
-        return self._set_status('ignored')
-
-    def _set_status(self, status):
         self.write({
-            'status': status,
+            'status': 'ignored',
+            'state': 'ignored',
+            'proposal_kind': 'ignore',
+            'last_action_at': fields.Datetime.now(),
+        })
+        return True
+
+    def action_resolve_conflict(self):
+        """Acknowledge an identity_conflict — admin elects to ignore it
+        for the rest of the session. Genuine resolution still requires
+        fixing the DB record (e.g. person.person_fqdn_internal) by hand
+        and rescanning."""
+        for rec in self:
+            if rec.state != 'identity_conflict':
+                raise UserError(_(
+                    'Geen conflict op "%s" (state=%s).'
+                ) % (rec.ad_dn, rec.state))
+        self.write({
+            'state': 'ignored',
+            'status': 'ignored',
+            'proposal_kind': 'ignore',
+            'action_message': _(
+                'Identity-conflict expliciet genegeerd. Fix de DB-data '
+                'handmatig als dit een echt issue is en hertik scan.'),
             'last_action_at': fields.Datetime.now(),
         })
         return True
@@ -843,11 +1100,13 @@ class AdTakeoverFinding(models.Model):
     # ------------------------------------------------------------------
 
     def action_takeover(self):
-        """Create the corresponding DB record via the betask pipeline."""
-        # Guard against stale UI state: a re-scan on the parent session
-        # unlinks 'investigate' findings, but the browser may still show
-        # them. Without this check the user gets an opaque
-        # "Record does not exist" — surface a clearer message instead.
+        """Execute the row's proposal.
+
+        Dispatch order:
+          1. If proposal_kind is set → route to the matching handler.
+          2. Else (legacy rows pre-dating the linker) → use the kind-based
+             takeover path (creates a DB record, the original behaviour).
+        """
         live = self.exists()
         if len(live) != len(self):
             raise UserError(_(
@@ -855,27 +1114,50 @@ class AdTakeoverFinding(models.Model):
                 '(waarschijnlijk verwijderd door een nieuwe scan). '
                 'Vernieuw het scherm en probeer opnieuw.'))
         for rec in live:
-            if rec.match_kind == 'matched_in_db':
-                raise UserError(_('"%s" zit al in de DB.') % rec.ad_dn)
-            if rec.status in ('takeover_done', 'delete_done', 'matched'):
+            if rec.state == 'done' or rec.status in ('takeover_done',
+                                                     'delete_done',
+                                                     'matched'):
                 raise UserError(_(
-                    'Status "%s" — geen takeover mogelijk.') % rec.status)
+                    '"%s" is al voltooid — geen actie nodig.') % rec.ad_dn)
+            if rec.state == 'identity_conflict':
+                raise UserError(_(
+                    'Identity-conflict op "%s" — los het conflict eerst '
+                    'op via DB-data en hertik scan, of klik '
+                    '"Conflict negeren".') % rec.ad_dn)
+            if rec.match_kind == 'matched_in_db' and not rec.proposal_kind:
+                # Pure legacy state: a matched row without a proposal can
+                # only be ignored — nothing to take over.
+                raise UserError(_('"%s" zit al in de DB.') % rec.ad_dn)
             try:
-                if rec.kind == 'ou':
-                    rec._takeover_ou()
-                elif rec.kind == 'group':
-                    rec._takeover_group()
-                elif rec.kind == 'user':
-                    rec._takeover_user()
+                pk = rec.proposal_kind
+                if not pk or pk == 'link_only':
+                    if rec.kind == 'ou':
+                        rec._takeover_ou()
+                    elif rec.kind == 'group':
+                        rec._takeover_group()
+                    elif rec.kind == 'user':
+                        rec._takeover_user()
+                elif pk == 'stamp_id':
+                    rec._apply_stamp_id()
+                elif pk == 'delete_after':
+                    rec._apply_delete_after()
+                elif pk == 'ignore':
+                    raise UserError(_(
+                        'Voorstel-type "negeer" — niets te doen op "%s".'
+                    ) % rec.ad_dn)
+                elif pk in ('rename', 'move', 'membership_add'):
+                    raise UserError(_(
+                        'Voorstel-type "%s" is gepland voor Fase C en nog '
+                        'niet uitvoerbaar.') % pk)
+                else:
+                    raise UserError(_(
+                        'Onbekend voorstel-type: %s') % pk)
             except UserError:
                 raise
             except Exception as e:
                 _logger.exception(
                     '[AD-TAKEOVER] takeover failed for finding %s (%s, dn=%s)',
                     rec.id, rec.kind, rec.ad_dn)
-                # Re-check existence: if the cascade nuked the finding
-                # itself we want to say *that* clearly, not surface a
-                # confusing MissingError from the framework.
                 if not rec.exists():
                     raise UserError(_(
                         'Takeover voor "%s" is mislukt en de finding-rij is '
@@ -991,11 +1273,98 @@ class AdTakeoverFinding(models.Model):
                 })
         self._mark_done()
 
-    def _mark_done(self):
+    def _apply_stamp_id(self):
+        """Write the matched person's sap_ref into the AD user's
+        ``employeeID`` attribute.
+
+        Pure attribute write — no DN change, no group-membership
+        change, no password touch. The safest mutation in the system:
+        AD-users that miss employeeID get their identity-key filled in
+        so subsequent scans match them deterministically.
+        """
+        self.ensure_one()
+        if self.source != 'ad':
+            raise UserError(_(
+                'STAMP_ID is in Fase A alleen geïmplementeerd voor AD.'))
+        if self.kind != 'user':
+            raise UserError(_(
+                'STAMP_ID werkt alleen op user-findings (kind=%s).'
+            ) % self.kind)
+        try:
+            payload = json.loads(self.proposal_payload_json or '{}')
+        except (ValueError, TypeError):
+            payload = {}
+        attr  = payload.get('target_attribute', 'employeeID')
+        value = payload.get('value')
+        if attr != 'employeeID' or not value:
+            raise UserError(_(
+                'Ongeldige STAMP_ID-payload op "%s".') % self.ad_dn)
+
+        # Import lazily so the module loads even when ldap3 is missing
+        # (the scan itself would have already failed earlier).
+        from ldap3 import MODIFY_REPLACE
+        ldap = self.env['myschool.ldap.service']
+        config = self.session_id.ldap_config_id
+        with ldap._get_connection(config) as conn:
+            conn.modify(self.ad_dn,
+                        {'employeeID': [(MODIFY_REPLACE, [str(value)])]})
+            result = conn.result or {}
+            if result.get('result') != 0:
+                raise UserError(_(
+                    'LDAP MODIFY mislukt voor %(dn)s: %(err)s') % {
+                        'dn': self.ad_dn,
+                        'err': result.get('description') or result,
+                    })
+
+        # Mirror into DB: link person.person_fqdn_internal when empty, so
+        # the next rescan matches on the strongest key.
+        person = self.matched_person_id
+        if person and not person.person_fqdn_internal:
+            service = self.env['myschool.manual.task.service']
+            service.create_manual_task('PERSON', 'UPD', {
+                'person_id': person.id,
+                'vals': {'person_fqdn_internal': self.ad_dn},
+            })
+
+        self._mark_done(action_message=_(
+            'employeeID=%s naar AD geschreven (geen andere wijzigingen).'
+        ) % value)
+
+    def _apply_delete_after(self):
+        """Cleanup-phase LDAP delete for a single finding. Mirrors the
+        session-level apply_pending_deletes row-loop so the unified
+        action_takeover dispatcher can drive it too."""
+        self.ensure_one()
+        if self.kind == 'ou':
+            raise UserError(_(
+                'OUs worden niet verwijderd via deze flow.'))
+        if self.source != 'ad':
+            raise UserError(_(
+                'DELETE_AFTER is in Fase A alleen geïmplementeerd voor AD.'))
+        ldap = self.env['myschool.ldap.service']
+        config = self.session_id.ldap_config_id
+        if self.kind == 'user':
+            res = (ldap.delete_user_by_dn(config, self.ad_dn)
+                   if hasattr(ldap, 'delete_user_by_dn')
+                   else self.session_id._delete_dn(self.ad_dn))
+        else:  # group
+            res = ldap.delete_group(config, self.ad_dn)
+        if not res.get('success'):
+            raise UserError(_('LDAP delete mislukt: %s') % res.get(
+                'message', 'onbekende fout'))
         self.write({
-            'status': 'takeover_done',
+            'state': 'done',
+            'status': 'delete_done',          # legacy mirror
+            'action_message': res.get('message', ''),
             'last_action_at': fields.Datetime.now(),
-            'action_message': _('Takeover voltooid.'),
+        })
+
+    def _mark_done(self, action_message=None):
+        self.write({
+            'state': 'done',
+            'status': 'takeover_done',        # legacy mirror
+            'last_action_at': fields.Datetime.now(),
+            'action_message': action_message or _('Takeover voltooid.'),
         })
 
     @staticmethod
