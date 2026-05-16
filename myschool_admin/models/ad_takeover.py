@@ -1087,6 +1087,80 @@ class AdTakeoverSession(models.Model):
                             f'OK: {ok}, Fouten: {err}',
                             kind='success' if err == 0 else 'warning')
 
+    # ------------------------------------------------------------------
+    # Fase E1 — bulk-apply nadat 1 pilot OK is bevonden
+    # ------------------------------------------------------------------
+
+    def action_bulk_apply_after_pilot(self):
+        """Bulk-apply alle ``state=approved`` findings van elke
+        (source, proposal_kind)-combinatie waarvan minstens één
+        gelijkaardige finding al ``state=done`` is.
+
+        Reden voor de voorwaarde: een 'done' rij betekent dat de admin
+        de pilot heeft geverifieerd, of een directe takeover heeft
+        gedaan en het resultaat heeft gecontroleerd. Pas dan is bulk
+        veilig. Combinaties zonder eerdere succes worden overgeslagen
+        en gemeld zodat de admin daar eerst zelf één pilot doet.
+        """
+        self.ensure_one()
+        f_all = self.finding_ids
+        done = f_all.filtered(
+            lambda x: x.state == 'done' and x.proposal_kind)
+        if not done:
+            raise UserError(_(
+                'Bulk-apply vereist minstens één voltooid voorstel ('
+                'state=done) als bewijs dat de pilot OK was. Voer eerst '
+                'één pilot of directe takeover uit ter controle.'))
+
+        # Verzamel toegestane (source, proposal_kind)-paren — alleen die
+        # combinaties waar een done-precedent voor bestaat krijgen
+        # auto-apply.
+        approved_combos = set(
+            (d.source, d.proposal_kind) for d in done)
+
+        candidates = f_all.filtered(
+            lambda x: x.state == 'approved'
+                      and (x.source, x.proposal_kind) in approved_combos)
+        if not candidates:
+            raise UserError(_(
+                'Geen approved findings die overeenkomen met een eerder '
+                'verified voorstel. Voeg findings toe in state=approved.'))
+
+        # Sortering voor blanco-DB-vriendelijke volgorde (OUs eerst).
+        kind_order = {'ou': 0, 'group': 1, 'user': 2}
+        candidates = candidates.sorted(
+            key=lambda r: (kind_order.get(r.kind, 99), r.ad_dn or ''))
+
+        # Welke combinaties zijn approved maar NIET door pilot bewezen?
+        # Die meldt deze actie expliciet aan de admin in de notificatie.
+        unproven_combos = set(
+            (a.source, a.proposal_kind) for a in
+            f_all.filtered(lambda x: x.state == 'approved'
+                                     and (x.source, x.proposal_kind)
+                                     not in approved_combos))
+
+        ok = err = 0
+        for f in candidates:
+            try:
+                f.action_takeover()
+                ok += 1
+            except Exception as e:
+                _logger.exception(
+                    '[AD-TAKEOVER] bulk apply failed for %s', f.ad_dn)
+                f.write({'action_message': str(e)})
+                err += 1
+
+        msg_lines = [f'OK: {ok}, Fouten: {err}']
+        if unproven_combos:
+            unproven_str = ', '.join(
+                f'{src}/{pk}' for src, pk in sorted(unproven_combos))
+            msg_lines.append(
+                f'Niet gedaan (geen pilot-precedent): {unproven_str}')
+        return self._notify(
+            _('Bulk-apply na pilot voltooid'),
+            '\n'.join(msg_lines),
+            kind='success' if err == 0 else 'warning')
+
     def action_apply_pending_deletes(self):
         """Cleanup-phase: actually delete in AD what was flagged
         ``proposal_kind=delete_after`` and approved by the admin.

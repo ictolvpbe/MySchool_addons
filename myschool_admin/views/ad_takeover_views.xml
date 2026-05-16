@@ -323,6 +323,11 @@
                             icon="fa-check"
                             invisible="takeover_pending_count == 0"
                             confirm="Alle items met status 'takeover_pending' worden naar de DB gesynced."/>
+                    <button name="action_bulk_apply_after_pilot" type="object"
+                            string="Bulk-apply na pilot" class="btn-success"
+                            icon="fa-fast-forward"
+                            invisible="done_count == 0 or approved_count == 0"
+                            confirm="Alle approved findings waarvoor al een eerdere pilot is geverifieerd worden uitgevoerd. Combinaties zonder pilot-precedent blijven staan."/>
                     <button name="action_apply_pending_deletes" type="object"
                             string="Verwijder uit AD" class="btn-danger"
                             icon="fa-trash"
