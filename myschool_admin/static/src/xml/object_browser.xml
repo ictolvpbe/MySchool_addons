@@ -1260,12 +1260,29 @@
                                         <t t-esc="state.adRootDn"/>
                                     </code>
                                 </div>
-                                <!-- children of root -->
-                                <t t-foreach="adRootChildren" t-as="child" t-key="child.dn">
-                                    <t t-call="myschool_admin.AdTreeNode">
-                                        <t t-set="node" t-value="child"/>
-                                        <t t-set="depth" t-value="1"/>
-                                    </t>
+                                <!-- Flat depth-first lijst van zichtbare nodes.
+                                     Vervangt de recursieve t-call die OWL2
+                                     niet betrouwbaar resolved. -->
+                                <t t-foreach="flatAdNodes" t-as="row" t-key="row.node.dn">
+                                    <div class="ob-ad-tree-row"
+                                         t-att-class="state.adSelectedDn === row.node.dn ? 'ob-ad-tree-row-selected' : ''"
+                                         t-att-style="'padding-left: ' + (row.depth * 16) + 'px'"
+                                         t-on-click="() => this.onAdSelectNode(row.node.dn)">
+                                        <t t-if="row.node.kind === 'ou' and row.node.has_children">
+                                            <i t-att-class="'fa fa-' + (state.adExpanded[row.node.dn.toLowerCase()] ? 'caret-down' : 'caret-right') + ' ob-ad-tree-toggle'"
+                                               t-on-click.stop="() => this.onAdToggleExpand(row.node.dn)"/>
+                                        </t>
+                                        <t t-else="">
+                                            <span class="ob-ad-tree-toggle"/>
+                                        </t>
+                                        <i t-attf-class="fa #{row.node.kind === 'ou' ? 'fa-folder' : (row.node.kind === 'group' ? 'fa-users' : (row.node.kind === 'user' ? 'fa-user' : 'fa-cube'))}"/>
+                                        <span class="ob-ad-tree-label">
+                                            <t t-esc="row.node.cn"/>
+                                        </span>
+                                        <span class="ob-ad-tree-spinner" t-if="state.adLoading[row.node.dn.toLowerCase()]">
+                                            <i class="fa fa-spinner fa-spin"/>
+                                        </span>
+                                    </div>
                                 </t>
                             </t>
                             <div class="ob-ad-empty" t-if="!state.adRootDn">
@@ -1312,39 +1329,6 @@
                         </div>
                     </div>
                 </div>
-            </t>
-
-            <!-- Recursive tree-node template voor AD-tab -->
-            <t t-name="myschool_admin.AdTreeNode">
-                <div class="ob-ad-tree-row"
-                     t-att-class="state.adSelectedDn === node.dn ? 'ob-ad-tree-row-selected' : ''"
-                     t-att-style="'padding-left: ' + (depth * 16) + 'px'"
-                     t-on-click="() => this.onAdSelectNode(node.dn)">
-                    <t t-if="node.kind === 'ou'">
-                        <i t-att-class="'fa fa-' + (state.adExpanded[node.dn.toLowerCase()] ? 'caret-down' : 'caret-right') + ' ob-ad-tree-toggle'"
-                           t-on-click.stop="() => this.onAdToggleExpand(node.dn)"
-                           t-att-style="!node.has_children ? 'visibility: hidden;' : ''"/>
-                        <i class="fa fa-folder"/>
-                    </t>
-                    <t t-else="">
-                        <span class="ob-ad-tree-toggle"/>
-                        <i t-attf-class="fa #{node.kind === 'group' ? 'fa-users' : (node.kind === 'user' ? 'fa-user' : 'fa-cube')}"/>
-                    </t>
-                    <span class="ob-ad-tree-label">
-                        <t t-esc="node.cn"/>
-                    </span>
-                    <span class="ob-ad-tree-spinner" t-if="state.adLoading[node.dn.toLowerCase()]">
-                        <i class="fa fa-spinner fa-spin"/>
-                    </span>
-                </div>
-                <t t-if="state.adExpanded[node.dn.toLowerCase()]">
-                    <t t-foreach="adChildrenOf(node.dn)" t-as="grand" t-key="grand.dn">
-                        <t t-call="myschool_admin.AdTreeNode">
-                            <t t-set="node" t-value="grand"/>
-                            <t t-set="depth" t-value="depth + 1"/>
-                        </t>
-                    </t>
-                </t>
             </t>
 
             <!-- Context Menu -->

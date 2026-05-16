@@ -2164,8 +2164,6 @@ export class ObjectBrowserClient extends Component {
     }
 
     get adRootChildren() {
-        // Property voor de XML-template: lijst van child-objects onder
-        // de root, in DN-volgorde zoals teruggekomen van het backend.
         const rootKey = (this.state.adRootDn || '').toLowerCase();
         const childDns = this.state.adChildren[rootKey] || [];
         return childDns.map(dn => this.state.adTreeNodes[dn.toLowerCase()])
@@ -2177,6 +2175,29 @@ export class ObjectBrowserClient extends Component {
         const childDns = this.state.adChildren[key] || [];
         return childDns.map(d => this.state.adTreeNodes[d.toLowerCase()])
                        .filter(Boolean);
+    }
+
+    get flatAdNodes() {
+        // Plat depth-first traversal van de zichtbare AD-tree. Resultaat:
+        // [{node, depth}]. Niet-uitgeklapte OUs hun children worden
+        // overgeslagen. Vervangt de recursieve t-call die OWL2 niet
+        // betrouwbaar resolved binnen genest template.
+        const out = [];
+        const visit = (dnList, depth) => {
+            for (const dn of dnList) {
+                const node = this.state.adTreeNodes[dn.toLowerCase()];
+                if (!node) continue;
+                out.push({ node, depth });
+                const key = dn.toLowerCase();
+                if (node.kind === 'ou' && this.state.adExpanded[key]) {
+                    const childDns = this.state.adChildren[key] || [];
+                    visit(childDns, depth + 1);
+                }
+            }
+        };
+        const rootKey = (this.state.adRootDn || '').toLowerCase();
+        visit(this.state.adChildren[rootKey] || [], 1);
+        return out;
     }
 
     get adSelectedNode() {
