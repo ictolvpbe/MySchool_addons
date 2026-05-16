@@ -179,6 +179,35 @@ class AdTakeoverSession(models.Model):
         'myschool.ad.takeover.finding', 'session_id',
         domain=[('kind', '=', 'user')])
 
+    # Phase-filtered finding lists. Used by the per-phase notebook tabs
+    # in the new UI (commit 4) so the admin only sees findings relevant
+    # to the current phase.
+    finding_preflight_ids = fields.One2many(
+        'myschool.ad.takeover.finding', 'session_id',
+        domain=['|', ('proposal_kind', '=', 'stamp_id'),
+                     ('state', '=', 'identity_conflict')],
+        string='Pre-flight findings')
+    finding_link_ids = fields.One2many(
+        'myschool.ad.takeover.finding', 'session_id',
+        domain=[('proposal_kind', '=', 'link_only')],
+        string='Koppel-findings')
+    finding_normalise_ids = fields.One2many(
+        'myschool.ad.takeover.finding', 'session_id',
+        domain=[('proposal_kind', 'in', ('rename', 'move', 'membership_add'))],
+        string='Normaliseer-findings')
+    finding_cleanup_ids = fields.One2many(
+        'myschool.ad.takeover.finding', 'session_id',
+        domain=[('proposal_kind', '=', 'delete_after')],
+        string='Cleanup-findings')
+
+    # Pre-flight report — populated by action_preflight_report. Rendered
+    # in the form-view as a HTML field; not stored beyond the latest
+    # report (a new run overwrites).
+    preflight_report_html = fields.Html(
+        readonly=True, sanitize=False,
+        string='Pre-flight rapport')
+    preflight_report_at = fields.Datetime(readonly=True)
+
     # Counters for the UI header.
     # Legacy counters (investigate_count etc.) are kept so the current
     # XML view continues to work; they're recomputed from the new state
@@ -661,6 +690,295 @@ class AdTakeoverSession(models.Model):
                         'message': f'Delete failed: {conn.result}'}
         except Exception as e:
             return {'success': False, 'message': str(e)}
+
+    # ------------------------------------------------------------------
+    # Pre-flight rapport
+    # ------------------------------------------------------------------
+
+    def action_preflight_report(self):
+        """Build a read-only pre-flight report for the current scope.
+
+        Does NOT mutate findings. Pure analysis — surfaces classes of
+        identity-drift that an admin should fix before running the
+        actual takeover. Output lands in ``preflight_report_html`` for
+        the form view to render.
+        """
+        self.ensure_one()
+        if not self.scope_org_id:
+            raise UserError(_('Scope-org ontbreekt — kan geen rapport opbouwen.'))
+
+        data = self._build_preflight_data()
+        html = self._render_preflight_html(data)
+        self.write({
+            'preflight_report_html': html,
+            'preflight_report_at': fields.Datetime.now(),
+        })
+        total_blockers = sum(len(rows) for rows in data['critical'].values())
+        return self._notify(
+            _('Pre-flight rapport klaar'),
+            (f'{total_blockers} kritieke item(s) gevonden — '
+             f'zie het rapport in de vorm.'),
+            kind='warning' if total_blockers else 'success')
+
+    def _build_preflight_data(self):
+        """Verzamel de zeven analyse-categorieën zonder schrijfacties.
+
+        Categorieën zijn opgesplitst in 'critical' (blokkeren echt) en
+        'warning' (mag, maar duidt op drift). Resultaten zijn lijsten
+        van dicts klaar voor templating.
+        """
+        self.ensure_one()
+        scope = self.scope_org_id
+        Person = self.env['myschool.person'].with_context(active_test=False)
+
+        only_employees = self.role_filter_preflight == 'employees_only'
+
+        # All persons whose primary school is (or sits under) this
+        # session's scope-org. SCHOOL scope: direct match on
+        # current_school_id. SCHOOLBOARD scope: every SCHOOL whose
+        # name_tree starts with the schoolboard's name_tree counts.
+        scope_school_ids = [scope.id]
+        if (scope.org_type_id and scope.org_type_id.name == 'SCHOOLBOARD'
+                and scope.name_tree):
+            children = self.env['myschool.org'].search([
+                ('name_tree', '=ilike', f'{scope.name_tree}.%'),
+                ('org_type_id.name', '=', 'SCHOOL'),
+            ])
+            scope_school_ids = children.ids or scope_school_ids
+        persons_in_scope = Person.search([
+            ('current_school_id', 'in', scope_school_ids),
+        ])
+        if only_employees and persons_in_scope:
+            EMPLOYEE = self.env['myschool.person.type'].search(
+                [('name', '=', 'EMPLOYEE')], limit=1)
+            if EMPLOYEE:
+                persons_in_scope = persons_in_scope.filtered(
+                    lambda p: p.person_type_id.id == EMPLOYEE.id)
+
+        # Cat 1 — persons missing sap_ref entirely (cannot STAMP_ID).
+        cat_missing_sap = persons_in_scope.filtered(lambda p: not p.sap_ref)
+
+        # Cat 2 — persons with sap_ref but no person_fqdn_internal in scope
+        # (DB thinks they have no AD presence — rescan can reveal one).
+        cat_no_fqdn = persons_in_scope.filtered(
+            lambda p: p.sap_ref and not p.person_fqdn_internal)
+
+        # Cat 3 — duplicate sap_ref across persons (data corruption).
+        # The unique constraint on sap_ref normally blocks this, but
+        # legacy imports may have NULL-bypassed it. Defensive check.
+        seen_sap = {}
+        cat_dup_sap = []
+        for p in persons_in_scope:
+            if not p.sap_ref:
+                continue
+            other = seen_sap.get(p.sap_ref)
+            if other:
+                cat_dup_sap.append({'a': other, 'b': p, 'sap_ref': p.sap_ref})
+            else:
+                seen_sap[p.sap_ref] = p
+
+        # Cat 4 — findings already classified by the linker as
+        # identity_conflict. These MUST be resolved before bulk apply.
+        cat_conflicts = self.finding_ids.filtered(
+            lambda f: f.state == 'identity_conflict')
+
+        # Cat 5 — pending STAMP_ID voorstellen. Blokkeren pre-flight.
+        cat_stamp_pending = self.finding_ids.filtered(
+            lambda f: f.proposal_kind == 'stamp_id'
+                      and f.state in ('discovered', 'proposed', 'approved'))
+
+        # Cat 6 — orphan AD-users (linker found no match) — informational.
+        cat_orphans = self.finding_ids.filtered(
+            lambda f: f.kind == 'user' and f.proposal_kind == 'link_only'
+                      and f.state in ('proposed', 'discovered'))
+
+        # Cat 7 — sAMAccountName ≠ res.users.login while sap_ref matches.
+        # Surfaces via the existing linker notes — counted separately.
+        cat_sam_mismatch = self.finding_ids.filtered(
+            lambda f: f.kind == 'user' and f.matched_person_id
+                      and f.matched_person_id.odoo_user_id
+                      and f.ad_sam
+                      and f.matched_person_id.odoo_user_id.login
+                      and (f.ad_sam or '').lower() !=
+                           (f.matched_person_id.odoo_user_id.login or '').lower())
+
+        return {
+            'scope_name': scope.name_tree or scope.name,
+            'only_employees': only_employees,
+            'critical': {
+                'identity_conflicts': cat_conflicts,
+                'stamp_id_pending':   cat_stamp_pending,
+                'duplicate_sap_ref':  cat_dup_sap,
+            },
+            'warning': {
+                'persons_missing_sap_ref':     cat_missing_sap,
+                'persons_with_sap_no_fqdn':    cat_no_fqdn,
+                'orphan_ad_users':             cat_orphans,
+                'sam_login_mismatch':          cat_sam_mismatch,
+            },
+        }
+
+    def _render_preflight_html(self, data):
+        """Minimal, deterministic HTML — no template-file dependency.
+
+        The form-view embeds this as a sanitized HTML field; commit 4
+        replaces this with a proper QWeb template + per-row drill-down.
+        """
+        def _section(title, rows, kind, render_row):
+            badge = 'bg-danger' if kind == 'critical' else 'bg-warning'
+            count = len(rows)
+            chips = (f'<span class="badge {badge}">{count}</span>'
+                     if count else
+                     '<span class="badge bg-success">0</span>')
+            body = ''
+            if count:
+                body = '<ul>' + ''.join(render_row(r) for r in rows) + '</ul>'
+            return (f'<h4 class="mt-3">{title} {chips}</h4>{body}')
+
+        def _p_link(p):
+            return (f'<a href="#" data-oe-model="myschool.person" '
+                    f'data-oe-id="{p.id}">{p.display_name}</a> '
+                    f'(sap_ref={p.sap_ref or "—"})')
+
+        def _f_link(f):
+            return (f'<code>{f.ad_dn or ""}</code> — {f.ad_cn or ""}')
+
+        rows = []
+        rows.append(
+            f'<p class="text-muted">Scope: <strong>{data["scope_name"]}</strong>'
+            f' · filter: <strong>{"alleen werknemers" if data["only_employees"] else "iedereen"}</strong>'
+            f'</p>')
+
+        # Critical first
+        c = data['critical']
+        rows.append(_section(
+            'Identity-conflicts — moet handmatig opgelost',
+            c['identity_conflicts'], 'critical',
+            lambda f: f'<li>{_f_link(f)} · <em>{f.conflict_reason or ""}</em></li>'))
+        rows.append(_section(
+            'STAMP_ID openstaand — eerst goedkeuren en uitvoeren',
+            c['stamp_id_pending'], 'critical',
+            lambda f: f'<li>{_f_link(f)}'
+                      f' → schrijft <code>employeeID={getattr(f.matched_person_id, "sap_ref", "?")}</code></li>'))
+        rows.append(_section(
+            'Duplicate sap_ref in DB — datacorruptie',
+            c['duplicate_sap_ref'], 'critical',
+            lambda r: f'<li>sap_ref <code>{r["sap_ref"]}</code> op '
+                      f'<strong>{r["a"].display_name}</strong> én '
+                      f'<strong>{r["b"].display_name}</strong></li>'))
+
+        # Warnings
+        w = data['warning']
+        rows.append(_section(
+            'Personen zonder sap_ref — kunnen niet via STAMP_ID worden gefixt',
+            w['persons_missing_sap_ref'], 'warning',
+            lambda p: f'<li>{_p_link(p)}</li>'))
+        rows.append(_section(
+            'Personen met sap_ref maar geen person_fqdn_internal',
+            w['persons_with_sap_no_fqdn'], 'warning',
+            lambda p: f'<li>{_p_link(p)}</li>'))
+        rows.append(_section(
+            'Orphan AD-users — geen DB-match, admin beslist',
+            w['orphan_ad_users'], 'warning',
+            lambda f: f'<li>{_f_link(f)}</li>'))
+        rows.append(_section(
+            'sAMAccountName ≠ res.users.login — login-drift',
+            w['sam_login_mismatch'], 'warning',
+            lambda f: f'<li>{_f_link(f)}'
+                      f' · AD={f.ad_sam}'
+                      f' · DB={f.matched_person_id.odoo_user_id.login}</li>'))
+
+        return f'<div class="o_ad_takeover_preflight">{"".join(rows)}</div>'
+
+    # ------------------------------------------------------------------
+    # Phase gating
+    # ------------------------------------------------------------------
+
+    PHASE_ORDER = ('preflight', 'link', 'normalise', 'cleanup', 'done')
+
+    def _get_phase_blockers(self, phase=None):
+        """Return blocker counts for the given phase. Used by both the
+        UI to grey out the advance button, and by ``action_advance_phase``
+        to refuse the advance on test sessions.
+        """
+        self.ensure_one()
+        phase = phase or self.current_phase
+        f = self.finding_ids
+
+        def in_progress(states=('proposed', 'approved', 'discovered'),
+                        proposal=None, extra_state=None):
+            res = f.filtered(lambda x: x.state in states)
+            if proposal is not None:
+                res = res.filtered(lambda x: x.proposal_kind == proposal)
+            if extra_state is not None:
+                res = res | f.filtered(lambda x: x.state == extra_state)
+            return res
+
+        if phase == 'preflight':
+            return {
+                'stamp_id_pending': in_progress(proposal='stamp_id'),
+                'identity_conflicts': f.filtered(
+                    lambda x: x.state == 'identity_conflict'),
+            }
+        if phase == 'link':
+            return {
+                'link_only_pending': in_progress(proposal='link_only'),
+            }
+        if phase == 'normalise':
+            return {
+                'rename_pending':         in_progress(proposal='rename'),
+                'move_pending':           in_progress(proposal='move'),
+                'membership_add_pending': in_progress(proposal='membership_add'),
+            }
+        if phase == 'cleanup':
+            return {
+                'delete_after_pending': in_progress(proposal='delete_after'),
+            }
+        return {}
+
+    def action_advance_phase(self):
+        """Move ``current_phase`` to the next stage.
+
+        * Test sessions: hard block. Any blocker → UserError.
+        * Prod sessions: soft warning via the action_message; advance
+          succeeds anyway. Reasoning: prod admins occasionally need to
+          skip a finding for legitimate reasons; test should mirror the
+          full intended path.
+        """
+        self.ensure_one()
+        if self.current_phase == 'done':
+            raise UserError(_('Sessie staat al op fase "voltooid".'))
+
+        blockers = self._get_phase_blockers()
+        blocker_total = sum(len(rs) for rs in blockers.values())
+
+        if blocker_total and self.environment == 'test':
+            details = '\n'.join(
+                f'  - {k}: {len(rs)}' for k, rs in blockers.items() if rs)
+            raise UserError(_(
+                'Kan niet vooruit van fase "%(phase)s" — er staan nog '
+                '%(n)d blocker(s) open op deze test-sessie:\n%(d)s\n\n'
+                'Behandel ze eerst af, of zet ze expliciet op "negeer".'
+            ) % {
+                'phase': self.current_phase,
+                'n': blocker_total,
+                'd': details,
+            })
+
+        try:
+            idx = self.PHASE_ORDER.index(self.current_phase)
+        except ValueError:
+            raise UserError(_(
+                'Onbekende huidige fase: %s') % self.current_phase)
+        new_phase = self.PHASE_ORDER[idx + 1]
+        self.current_phase = new_phase
+
+        msg = _('Fase verplaatst naar: %s') % new_phase
+        if blocker_total:
+            msg += _(' (met %d openstaande blocker(s) — prod-sessie, '
+                     'soft override)') % blocker_total
+        return self._notify(_('Fase gewijzigd'), msg,
+                            kind='success' if not blocker_total else 'warning')
 
     # ------------------------------------------------------------------
     # DB index for matching

@@ -34,6 +34,10 @@
                     <button name="action_scan" type="object"
                             string="Scan AD" class="btn-primary"
                             icon="fa-search"/>
+                    <button name="action_preflight_report" type="object"
+                            string="Pre-flight rapport" class="btn-secondary"
+                            icon="fa-stethoscope"
+                            invisible="not last_scan_at"/>
                     <button name="action_apply_pending_takeovers" type="object"
                             string="Pas takeovers toe" class="btn-success"
                             icon="fa-check"
@@ -44,7 +48,14 @@
                             icon="fa-trash"
                             invisible="delete_after_count == 0"
                             confirm="LET OP: alle items gemarkeerd 'verwijder na migratie' worden definitief uit AD verwijderd. Bevestig alleen als alle takeovers afgerond en gecontroleerd zijn."/>
-                    <field name="state" widget="statusbar"
+                    <button name="action_advance_phase" type="object"
+                            string="Volgende fase →" class="btn-warning"
+                            icon="fa-arrow-right"
+                            invisible="current_phase == 'done'"
+                            confirm="Vooruit naar volgende fase. Test-sessies blokkeren bij openstaande items; prod-sessies tonen alleen een waarschuwing."/>
+                    <field name="current_phase" widget="statusbar"
+                           statusbar_visible="preflight,link,normalise,cleanup,done"/>
+                    <field name="state" widget="statusbar" invisible="1"
                            statusbar_visible="draft,discovered,in_progress,completed"/>
                 </header>
                 <sheet>
@@ -53,10 +64,17 @@
                     </div>
                     <group>
                         <group string="Scope">
-                            <field name="ldap_config_id" options="{'no_create': True}"/>
+                            <field name="environment" widget="radio"
+                                   options="{'horizontal': true}"/>
+                            <field name="ldap_config_id"
+                                   options="{'no_create': True}"
+                                   domain="[('environment', '=', environment)]"/>
                             <field name="scope_org_id" options="{'no_create': True}"/>
                             <field name="base_dn" readonly="1"/>
                             <field name="last_scan_at" readonly="1"/>
+                            <field name="role_filter_preflight" widget="radio"
+                                   options="{'horizontal': true}"
+                                   invisible="current_phase != 'preflight'"/>
                         </group>
                         <group string="Tellingen">
                             <field name="finding_count" readonly="1"/>
@@ -70,6 +88,13 @@
 
                     <group invisible="not scan_summary">
                         <field name="scan_summary" nolabel="1" widget="text" readonly="1"/>
+                    </group>
+
+                    <group invisible="not preflight_report_html"
+                           string="Pre-flight rapport">
+                        <field name="preflight_report_at" readonly="1"/>
+                        <field name="preflight_report_html" nolabel="1"
+                               readonly="1" widget="html"/>
                     </group>
 
                     <notebook>
