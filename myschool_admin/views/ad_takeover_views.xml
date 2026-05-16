@@ -97,8 +97,14 @@
                             <field name="ldap_config_id"
                                    options="{'no_create': True}"
                                    domain="[('environment', '=', environment)]"/>
+                            <field name="google_workspace_config_id"
+                                   options="{'no_create': True}"
+                                   domain="[('environment', '=', environment)]"/>
                             <field name="scope_org_id" options="{'no_create': True}"/>
-                            <field name="base_dn" readonly="1"/>
+                            <field name="base_dn" readonly="1"
+                                   invisible="not ldap_config_id"/>
+                            <field name="cloud_ou_path" readonly="1"
+                                   invisible="not google_workspace_config_id"/>
                             <field name="last_scan_at" readonly="1"/>
                             <field name="role_filter_preflight" widget="radio"
                                    options="{'horizontal': true}"

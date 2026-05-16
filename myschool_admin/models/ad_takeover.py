@@ -110,17 +110,33 @@ class AdTakeoverSession(models.Model):
     _order = 'create_date desc'
 
     name = fields.Char(required=True, default='Nieuwe AD-takeover sessie')
+    # Fase B: ldap_config_id is no longer strictly required — a session
+    # can scan AD, Cloud, or both. At least one source must be selected
+    # (enforced via _check_at_least_one_source).
     ldap_config_id = fields.Many2one(
-        'myschool.ldap.server.config', required=True,
-        string='LDAP-server',
-        domain="[('active', '=', True)]")
+        'myschool.ldap.server.config',
+        string='LDAP-server (AD)',
+        domain="[('active', '=', True)]",
+        help='Bronnetje voor de AD-scan. Leeg laten als deze sessie '
+             'alleen Cloud (Google Workspace) wil scannen.')
+    google_workspace_config_id = fields.Many2one(
+        'myschool.google.workspace.config',
+        string='Google Workspace',
+        domain="[('active', '=', True)]",
+        help='Bronnetje voor de Cloud-scan. Leeg laten als deze sessie '
+             'alleen AD wil scannen. Zoals bij LDAP filtert de UI op de '
+             'sessie-environment.')
     scope_org_id = fields.Many2one(
         'myschool.org', required=True, string='Scope (SCHOOL/SCHOOLBOARD)',
         domain="[('org_type_id.name', 'in', ['SCHOOL', 'SCHOOLBOARD'])]",
-        help='Scan-scope is SUBTREE onder ou_fqdn_internal van deze org. '
-             'Strikt — geen LDAP-zoekoperaties buiten deze tak.')
+        help='Scan-scope is SUBTREE onder ou_fqdn_internal van deze org '
+             '(AD) en orgUnitPath (Cloud). Strikt — geen scan buiten '
+             'deze tak.')
     base_dn = fields.Char(
         compute='_compute_base_dn', store=True, readonly=True)
+    cloud_ou_path = fields.Char(
+        compute='_compute_cloud_ou_path', store=True, readonly=True,
+        string='Cloud orgUnitPath')
 
     state = fields.Selection([
         ('draft', 'Draft'),
@@ -235,23 +251,54 @@ class AdTakeoverSession(models.Model):
         for rec in self:
             rec.base_dn = (rec.scope_org_id.ou_fqdn_internal or '').strip()
 
-    @api.constrains('ldap_config_id', 'environment')
+    @api.depends('scope_org_id', 'google_workspace_config_id')
+    def _compute_cloud_ou_path(self):
+        for rec in self:
+            if not rec.scope_org_id or not rec.google_workspace_config_id:
+                rec.cloud_ou_path = False
+                continue
+            svc = self.env['myschool.google.directory.service']
+            rec.cloud_ou_path = svc.org_to_google_path(
+                rec.scope_org_id, rec.google_workspace_config_id)
+
+    @api.constrains('ldap_config_id', 'google_workspace_config_id',
+                    'environment')
     def _check_environment_consistency(self):
         for s in self:
-            if not s.ldap_config_id:
-                continue
-            cfg_env = getattr(s.ldap_config_id, 'environment', 'prod')
-            if cfg_env != s.environment:
+            if s.ldap_config_id:
+                cfg_env = getattr(s.ldap_config_id, 'environment', 'prod')
+                if cfg_env != s.environment:
+                    raise ValidationError(_(
+                        'LDAP-config "%(cfg)s" is gemarkeerd als omgeving '
+                        '"%(cfg_env)s"; deze sessie staat op "%(sess_env)s". '
+                        'Kies een LDAP-config met dezelfde omgeving, of pas '
+                        'de sessie-omgeving aan.'
+                    ) % {
+                        'cfg': s.ldap_config_id.name,
+                        'cfg_env': cfg_env,
+                        'sess_env': s.environment,
+                    })
+            if s.google_workspace_config_id:
+                cfg_env = getattr(s.google_workspace_config_id,
+                                  'environment', 'prod')
+                if cfg_env != s.environment:
+                    raise ValidationError(_(
+                        'Google-config "%(cfg)s" is gemarkeerd als omgeving '
+                        '"%(cfg_env)s"; deze sessie staat op "%(sess_env)s".'
+                    ) % {
+                        'cfg': s.google_workspace_config_id.name,
+                        'cfg_env': cfg_env,
+                        'sess_env': s.environment,
+                    })
+
+    @api.constrains('ldap_config_id', 'google_workspace_config_id')
+    def _check_at_least_one_source(self):
+        for s in self:
+            if not s.ldap_config_id and not s.google_workspace_config_id:
                 raise ValidationError(_(
-                    'LDAP-config "%(cfg)s" is gemarkeerd als omgeving '
-                    '"%(cfg_env)s"; deze sessie staat op "%(sess_env)s". '
-                    'Kies een LDAP-config met dezelfde omgeving, of pas '
-                    'de sessie-omgeving aan.'
-                ) % {
-                    'cfg': s.ldap_config_id.name,
-                    'cfg_env': cfg_env,
-                    'sess_env': s.environment,
-                })
+                    'Kies minstens één bron: een LDAP-server of een '
+                    'Google Workspace tenant (of beide). Een sessie '
+                    'zonder bron kan niets scannen.'))
 
     @api.depends('finding_ids', 'finding_ids.state', 'finding_ids.proposal_kind')
     def _compute_counts(self):
@@ -288,21 +335,85 @@ class AdTakeoverSession(models.Model):
     # ------------------------------------------------------------------
 
     def action_scan(self):
+        """Orchestrator that runs every configured source-scanner.
+
+        Configured sources:
+          * ldap_config_id            → ``_scan_ad``
+          * google_workspace_config_id → ``_scan_cloud``  (Fase B2)
+          * (Fase B-future) smartschool_config_id → ``_scan_smartschool``
+
+        Each scanner returns ``(new_findings, summary)``. The
+        orchestrator wipes pre-existing ``discovered`` rows (no human
+        decision yet), runs every scanner, creates the collected
+        findings, and writes the combined summary.
+        """
         self.ensure_one()
-        if not self.base_dn:
+        if not self.ldap_config_id and not self.google_workspace_config_id:
+            raise UserError(_(
+                'Geen bron geconfigureerd. Kies minstens een LDAP-server '
+                'of een Google Workspace tenant.'))
+        if self.ldap_config_id and not self.base_dn:
             raise UserError(_(
                 'Scope org "%s" heeft geen ou_fqdn_internal — kan geen '
-                'base_dn afleiden.') % self.scope_org_id.name)
-
-        ldap_service = self.env['myschool.ldap.service']
-        ldap_service._check_ldap3_available()
+                'AD base_dn afleiden.') % self.scope_org_id.name)
 
         index = self._build_db_index()
+
+        # Wipe ``discovered`` rows (no admin decision yet) so a rescan
+        # cleanly rebuilds from the source. Everything past discovered
+        # represents human-made progress and survives.
+        self.finding_ids.filtered(
+            lambda r: r.state == 'discovered').unlink()
+
+        existing_by_extid = {
+            (f.source, self._norm_dn(f.external_id or f.ad_dn)): f
+            for f in self.finding_ids
+        }
+
+        all_new = []
+        summaries = []
+
+        if self.ldap_config_id:
+            new, summary = self._scan_ad(index, existing_by_extid)
+            all_new.extend(new)
+            summaries.append(summary)
+        if self.google_workspace_config_id:
+            new, summary = self._scan_cloud(index, existing_by_extid)
+            all_new.extend(new)
+            summaries.append(summary)
+
+        if all_new:
+            self.env['myschool.ad.takeover.finding'].create(all_new)
+
+        scan_summary = '\n\n'.join(summaries)
+        self.write({
+            'state': 'discovered' if self.state == 'draft' else 'in_progress',
+            'last_scan_at': fields.Datetime.now(),
+            'scan_summary': scan_summary,
+        })
+        return self._notify(
+            _('Scan voltooid'), scan_summary or _('Geen findings.'),
+            kind='success')
+
+    # ------------------------------------------------------------------
+    # AD scanner
+    # ------------------------------------------------------------------
+
+    def _scan_ad(self, index, existing_by_extid):
+        """Scan LDAP under ``base_dn``. Returns (list_of_finding_vals, summary).
+
+        Identity-linker:
+          1. employeeID (sap_ref) match → state=done OR identity_conflict
+          2. mail / login fallback → STAMP_ID proposal
+          3. orphan → LINK_ONLY proposal
+        """
+        self.ensure_one()
+        ldap_service = self.env['myschool.ldap.service']
+        ldap_service._check_ldap3_available()
 
         ou_rows = []
         group_rows = []
         user_rows = []
-
         try:
             with ldap_service._get_connection(self.ldap_config_id) as conn:
                 conn.search(
@@ -333,19 +444,8 @@ class AdTakeoverSession(models.Model):
             _logger.exception('[AD-TAKEOVER] LDAP scan failed')
             raise UserError(_('LDAP-scan mislukt: %s') % e)
 
-        # On rescan: wipe ONLY rows the admin never touched. Anything past
-        # `discovered` represents human decisions or in-flight work and
-        # must survive the rescan.
-        wipe_states = ('discovered',)
-        self.finding_ids.filtered(
-            lambda r: r.state in wipe_states).unlink()
-
-        existing_by_extid = {
-            (f.source, self._norm_dn(f.external_id or f.ad_dn)): f
-            for f in self.finding_ids
-        }
-
-        Finding = self.env['myschool.ad.takeover.finding']
+        # Wipe + existing_by_extid construction now happen in the
+        # orchestrator (action_scan), shared across all source-scanners.
         ou_total = ou_match = 0
         gr_total = gr_match = 0
         us_total = us_match = us_conflict = us_stamp = us_orphan = 0
@@ -536,33 +636,28 @@ class AdTakeoverSession(models.Model):
             us_orphan += 1
             new_findings.append(vals)
 
-        if new_findings:
-            Finding.create(new_findings)
-
         summary = (
-            f'OUs: {ou_total} gevonden — {ou_match} al gelinkt, '
+            f'AD-scan:\n'
+            f'  OUs: {ou_total} gevonden — {ou_match} al gelinkt, '
             f'{ou_total - ou_match} nieuw.\n'
-            f'Groups: {gr_total} gevonden — {gr_match} al gelinkt, '
+            f'  Groups: {gr_total} gevonden — {gr_match} al gelinkt, '
             f'{gr_total - gr_match} nieuw.\n'
-            f'Users: {us_total} gevonden — {us_match} al gelinkt, '
+            f'  Users: {us_total} gevonden — {us_match} al gelinkt, '
             f'{us_stamp} STAMP_ID, {us_orphan} orphan, '
             f'{us_conflict} identity-conflict.'
         )
-        self.write({
-            'state': 'discovered' if self.state == 'draft' else 'in_progress',
-            'last_scan_at': fields.Datetime.now(),
-            'scan_summary': summary,
-        })
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _('AD-scan voltooid'),
-                'message': summary,
-                'type': 'success',
-                'sticky': True,
-            },
-        }
+        return new_findings, summary
+
+    # ------------------------------------------------------------------
+    # Cloud scanner — Fase B2 implementation
+    # ------------------------------------------------------------------
+
+    def _scan_cloud(self, index, existing_by_extid):
+        """Scan Google Workspace under ``cloud_ou_path``. Stub in B1 —
+        full implementation lands in B2 (next commit).
+        """
+        self.ensure_one()
+        return [], _('Cloud-scan: nog niet geïmplementeerd (komt in B2).')
 
     # ------------------------------------------------------------------
     # Bulk apply
