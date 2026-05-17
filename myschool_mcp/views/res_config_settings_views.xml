@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="view_myschool_mcp_config_settings" model="ir.ui.view">
+            <field name="name">myschool.mcp.config.settings.form</field>
+            <field name="model">myschool.mcp.config</field>
+            <field name="arch" type="xml">
+                <form string="MCP Server Settings">
+                    <sheet>
+                        <div class="oe_title">
+                            <h1>MCP Server</h1>
+                            <p class="text-muted">
+                                Configureer de Model Context Protocol server.
+                                Per-user API-keys beheer je via
+                                <em>Preferences → Account Security</em>.
+                            </p>
+                        </div>
+                        <group>
+                            <group string="Rate-limit (per gebruiker)">
+                                <field name="mcp_rate_limit_calls"/>
+                                <field name="mcp_rate_limit_window"/>
+                            </group>
+                            <group string="Providers">
+                                <field name="mcp_provider_appfoundry"
+                                       widget="boolean_toggle"/>
+                            </group>
+                        </group>
+                        <div class="alert alert-info" role="alert">
+                            <strong>Endpoint:</strong>
+                            <code>POST /mcp</code> — auth via
+                            header <code>X-API-Key: &lt;odoo apikey&gt;</code>.
+                            <br/>
+                            <strong>Claude Code-config (workstation):</strong>
+                            <pre>claude mcp add --transport http myschool https://&lt;host&gt;/mcp --header "X-API-Key: ..."</pre>
+                        </div>
+                    </sheet>
+                    <footer>
+                        <button string="Bewaren"
+                                type="object"
+                                name="execute"
+                                class="oe_highlight"/>
+                        <button string="Annuleren"
+                                type="object"
+                                name="cancel"
+                                special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_myschool_mcp_config_settings" model="ir.actions.act_window">
+            <field name="name">MCP Server Settings</field>
+            <field name="res_model">myschool.mcp.config</field>
+            <field name="view_mode">form</field>
+            <field name="target">inline</field>
+        </record>
+
+    </data>
+</odoo>

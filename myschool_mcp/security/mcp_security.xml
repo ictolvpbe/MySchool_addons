@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- ============================================
+             MCP groep — vereist om tools te kunnen aanroepen.
+
+             De per-tool group-check (binnen de registry)
+             beperkt write-tools verder tot bv. AppFoundry
+             Manager. De MCP-groep is de POORTWACHTER: zonder
+             deze groep wordt elke tool-call afgewezen, ook
+             read-only.
+             ============================================ -->
+        <record id="group_mcp_user" model="res.groups">
+            <field name="name">MCP User</field>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">May invoke MCP tools via /mcp endpoint.</field>
+        </record>
+
+        <!-- MySchool admin krijgt automatisch MCP-toegang -->
+        <record id="myschool_core.group_myschool_core_admin" model="res.groups">
+            <field name="implied_ids" eval="[(4, ref('group_mcp_user'))]"/>
+        </record>
+
+    </data>
+</odoo>
