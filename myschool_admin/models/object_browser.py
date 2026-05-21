@@ -1635,7 +1635,22 @@ class ObjectBrowser(models.TransientModel):
         if isinstance(raw, (int, str)) and str(raw).strip().lstrip('-').isdigit():
             return {'error': f'Smartschool returncode {raw}', 'users': []}
 
-        users = self._ss_parse_users_xml(str(raw))
+        raw_str = str(raw)
+        users = self._ss_parse_users_xml(raw_str)
+        _logger.info(
+            '[SS-BROWSE] list config=%s raw_type=%s raw_len=%s parsed=%s',
+            config.name, type(raw).__name__, len(raw_str), len(users))
+        if not users:
+            # Niet-leeg payload maar 0 users geparsed → parser-mismatch.
+            # Surface een preview zodat we de echte structuur kunnen zien.
+            preview = raw_str.strip()[:400]
+            return {
+                'error': (
+                    f'Smartschool gaf {len(raw_str)} bytes terug maar de '
+                    f'parser vond geen users. Eerste 400 bytes: {preview!r}'),
+                'users': [],
+                'raw_preview': preview,
+            }
         # Sort op naam (achternaam, voornaam, username)
         users.sort(key=lambda u: (
             (u.get('name') or u.get('surname') or '').lower(),
@@ -1667,13 +1682,11 @@ class ObjectBrowser(models.TransientModel):
         if isinstance(raw, (int, str)) and str(raw).strip().lstrip('-').isdigit():
             return {'error': f'Smartschool returncode {raw}', 'user': None}
 
-        # Wrap as a list with single row + parse via shared helper
-        parsed = self._ss_parse_users_xml(
-            f'<root>{raw}</root>' if not str(raw).strip().startswith('<root')
-            else str(raw))
+        # _ss_parse_users_xml herkent zowel JSON (huidige SS-V3) als XML
+        # (legacy) — detail-fetch geeft meestal één object/record terug.
+        parsed = self._ss_parse_users_xml(raw)
         if not parsed:
-            # Soms wordt de detail-XML niet in <row> verpakt; probeer
-            # de hele tekst als één user-record te interpreteren.
+            # Legacy XML-fallback: detail-XML soms niet in <row> verpakt.
             parsed = self._ss_parse_users_xml(
                 f'<root><row>{raw}</row></root>')
         if not parsed:
@@ -1685,29 +1698,115 @@ class ObjectBrowser(models.TransientModel):
             user['matched_person'] = match
         return {'error': None, 'user': user}
 
-    @staticmethod
-    def _ss_parse_users_xml(xml_text):
-        """Identiek defensieve parser als in ad_takeover._ss_parse_users:
-        zoekt elke node met <username> en/of <internnumber> als child."""
-        if not xml_text or not xml_text.strip():
+    # Smartschool getAllAccountsExtended retourneert een JSON-array met
+    # Nederlandse veldnamen (bv. ``gebruikersnaam``, ``voornaam``,
+    # ``internnummer``). De rest van de code (matching, sorting, template)
+    # verwacht Engelse keys. Deze map normaliseert.
+    _SS_FIELD_MAP = {
+        'gebruikersnaam': 'username',
+        'voornaam': 'firstname',
+        'naam': 'name',
+        'extravoornamen': 'extranames',
+        'roepnaam': 'nickname',
+        'initialen': 'initials',
+        'internnummer': 'internnumber',
+        'emailadres': 'email',
+        'geslacht': 'gender',
+        'geboortedatum': 'birthdate',
+        'geboorteplaats': 'birthplace',
+        'geboorteland': 'birthcountry',
+        'rijksregisternummer': 'rijksregisternr',
+        'mobielnummer': 'mobile',
+        'telefoonnummer': 'phone',
+        'website': 'website',
+        'straat': 'street',
+        'huisnummer': 'housenumber',
+        'busnummer': 'box',
+        'postcode': 'postcode',
+        'woonplaats': 'city',
+        'land': 'country',
+        'status': 'status',
+    }
+
+    @classmethod
+    def _ss_normalize_user(cls, raw_user):
+        """Map Dutch SS-keys → English keys; keep originals as fallback.
+        Skip None / empty values so the matcher doesn't trip on them."""
+        if not isinstance(raw_user, dict):
+            return None
+        out = {}
+        for k, v in raw_user.items():
+            if v is None:
+                v = ''
+            elif not isinstance(v, str):
+                v = str(v)
+            v = v.strip()
+            key = cls._SS_FIELD_MAP.get(k.lower(), k.lower())
+            out[key] = v
+        # surname-alias zodat _ss_match_db_person + template ``name or surname`` blijven werken
+        if out.get('name') and 'surname' not in out:
+            out['surname'] = out['name']
+        if out.get('username') or out.get('internnumber'):
+            return out
+        return None
+
+    @classmethod
+    def _ss_parse_users_xml(cls, raw_text):
+        """Smartschool V3 `getAllAccountsExtended` retourneert in praktijk
+        een JSON-array (Nederlandse veldnamen) — niet XML zoals de naam
+        suggereert. Oude V2-platformen kunnen nog XML teruggeven, dus we
+        proberen beide:
+          1. JSON (snelste path, geldt voor alle moderne tenants)
+          2. XML met optionele synthetische <root>-wrap (legacy fallback)
+        """
+        if not raw_text or not str(raw_text).strip():
             return []
+        text = str(raw_text).strip()
+
+        # ---- JSON path (huidige SS-V3 default) -------------------------
+        if text[:1] in '[{':
+            try:
+                import json
+                data = json.loads(text)
+            except (ValueError, json.JSONDecodeError) as e:
+                _logger.warning('[SS-BROWSE] JSON parse failed: %s', e)
+                data = None
+            if isinstance(data, list):
+                users = []
+                for entry in data:
+                    norm = cls._ss_normalize_user(entry)
+                    if norm:
+                        users.append(norm)
+                return users
+            if isinstance(data, dict):
+                norm = cls._ss_normalize_user(data)
+                return [norm] if norm else []
+
+        # ---- XML path (legacy fallback) --------------------------------
+        import xml.etree.ElementTree as ET
         try:
-            import xml.etree.ElementTree as ET
-            root = ET.fromstring(xml_text)
-        except Exception:
-            return []
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            try:
+                root = ET.fromstring(f'<root>{text}</root>')
+            except ET.ParseError as e:
+                _logger.warning('[SS-BROWSE] XML parse failed: %s', e)
+                return []
         users = []
         for node in root.iter():
             child_tags = {c.tag.lower() for c in node}
-            if 'username' not in child_tags and 'internnumber' not in child_tags:
+            # Accept both English (username) en Dutch (gebruikersnaam) tags
+            if not (child_tags & {'username', 'internnumber',
+                                  'gebruikersnaam', 'internnummer'}):
                 continue
-            user = {}
+            raw_user = {}
             for c in node:
                 if list(c):
                     continue
-                user[c.tag.lower()] = (c.text or '').strip()
-            if user.get('username') or user.get('internnumber'):
-                users.append(user)
+                raw_user[c.tag.lower()] = (c.text or '').strip()
+            norm = cls._ss_normalize_user(raw_user)
+            if norm:
+                users.append(norm)
         return users
 
     def _ss_match_db_person(self, ss_user):

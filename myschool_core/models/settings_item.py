@@ -92,10 +92,10 @@ class SettingsItem(models.Model):
         inverse_name='settings_item_id',
         string='Waarden')
 
-    _sql_constraints = [
-        ('key_unique', 'UNIQUE(key)',
-         'Een Settings Item met deze sleutel bestaat al.'),
-    ]
+    _key_unique = models.Constraint(
+        'UNIQUE(key)',
+        'Een Settings Item met deze sleutel bestaat al.',
+    )
 
     # ------------------------------------------------------------------
     # Helpers

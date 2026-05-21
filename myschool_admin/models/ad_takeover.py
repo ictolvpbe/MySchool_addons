@@ -3199,18 +3199,18 @@ class AdTakeoverFinding(models.Model):
         help='Heuristische inschatting; gebruikt voor UI-sortering en '
              'als guard tegen onbedoelde bulk-acties op high-risk items.')
 
-    _sql_constraints = [
-        ('uniq_dn_per_session',
-         'UNIQUE(session_id, ad_dn)',
-         'Eén entry per DN per sessie.'),
-        # New uniqueness key — works alongside the legacy one. AD-only
-        # rows have external_id=ad_dn (set by the migration), so this
-        # adds no new rejections for existing data. Cloud/SS rows in
-        # Fase B will use this constraint instead of the DN-based one.
-        ('uniq_source_extid_per_session',
-         'UNIQUE(session_id, source, external_id, kind)',
-         'Eén entry per (bron, bron-ID, kind) per sessie.'),
-    ]
+    _uniq_dn_per_session = models.Constraint(
+        'UNIQUE(session_id, ad_dn)',
+        'Eén entry per DN per sessie.',
+    )
+    # New uniqueness key — works alongside the legacy one. AD-only rows
+    # have external_id=ad_dn (set by the migration), so this adds no new
+    # rejections for existing data. Cloud/SS rows in Fase B will use this
+    # constraint instead of the DN-based one.
+    _uniq_source_extid_per_session = models.Constraint(
+        'UNIQUE(session_id, source, external_id, kind)',
+        'Eén entry per (bron, bron-ID, kind) per sessie.',
+    )
 
     # ------------------------------------------------------------------
     # Quick-mark actions

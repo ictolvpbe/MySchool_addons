@@ -185,7 +185,7 @@
                              ouder-org in de kolom 'Org'. -->
                         <page string="Settings" name="settings">
                             <div class="alert alert-light border d-flex align-items-center" role="alert">
-                                <i class="fa fa-info-circle fa-lg me-2 text-info"/>
+                                <i class="fa fa-info-circle fa-lg me-2 text-info" title="Info" role="img"/>
                                 <div>
                                     Toont per-org SI-waarden. Zet
                                     <em>Toon ook geërfde waarden</em> aan om

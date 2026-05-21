@@ -119,7 +119,7 @@
                             </span>
                         </div>
                         <div class="mt-1" t-if="record.matched_person_id.raw_value">
-                            <i class="fa fa-link me-1"/>
+                            <i class="fa fa-link me-1" title="Gekoppelde persoon" role="img"/>
                             <field name="matched_person_id"/>
                         </div>
                         <div class="mt-1 text-muted small" t-if="record.notes.raw_value">
@@ -127,7 +127,7 @@
                         </div>
                         <div class="d-flex justify-content-between mt-2">
                             <span class="badge text-bg-danger" t-if="record.risk_level.raw_value == 'high'">
-                                <i class="fa fa-exclamation-triangle me-1"/>hoog
+                                <i class="fa fa-exclamation-triangle me-1" title="Hoog risico" role="img"/>hoog
                             </span>
                             <span class="badge text-bg-warning" t-if="record.risk_level.raw_value == 'medium'">medium</span>
                             <span t-if="record.sap_ref.raw_value" class="text-muted small ms-auto">
@@ -349,14 +349,14 @@
                 <sheet>
                     <div class="alert alert-info" role="alert"
                          invisible="environment != 'test'">
-                        <i class="fa fa-flask"/>
+                        <i class="fa fa-flask" title="Test-omgeving" role="img"/>
                         <strong>TEST-omgeving</strong> — wijzigingen blijven binnen de test-bronnen
                         (LDAP en/of Google). Geen impact op productie. Doorloop alle fasen,
                         daarna "Promoot naar prod".
                     </div>
                     <div class="alert alert-danger" role="alert"
                          invisible="environment != 'prod'">
-                        <i class="fa fa-exclamation-triangle"/>
+                        <i class="fa fa-exclamation-triangle" title="Waarschuwing" role="img"/>
                         <strong>PRODUCTIE-omgeving</strong> — wijzigingen raken live AD- én
                         Cloud-accounts en groepen. Goedkeur elk voorstel zorgvuldig;
                         pilot waar mogelijk.

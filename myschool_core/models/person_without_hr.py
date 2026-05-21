@@ -210,10 +210,14 @@ class Person(models.Model):
     # SQL Constraints
     # =========================================================================
     
-    _sql_constraints = [
-        ('sap_ref_unique', 'unique(sap_ref)', 'De SAP Referentie moet uniek zijn!'),
-        ('sap_uuid_unique', 'unique(sap_person_uuid)', 'De SAP Persoon UUID moet uniek zijn!'),
-    ]
+    _sap_ref_unique = models.Constraint(
+        'unique(sap_ref)',
+        'De SAP Referentie moet uniek zijn!',
+    )
+    _sap_uuid_unique = models.Constraint(
+        'unique(sap_person_uuid)',
+        'De SAP Persoon UUID moet uniek zijn!',
+    )
 
     # =========================================================================
     # Computed Fields

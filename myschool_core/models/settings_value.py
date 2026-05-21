@@ -37,7 +37,8 @@ class SettingsValue(models.Model):
     value_type = fields.Selection(
         related='settings_item_id.value_type', store=True)
     scope_kind = fields.Selection(
-        related='settings_item_id.scope_kind', store=True)
+        related='settings_item_id.scope_kind', store=True,
+        string='Scope Type')
 
     org_id = fields.Many2one(
         comodel_name='myschool.org', string='Organisatie',
@@ -69,16 +70,14 @@ class SettingsValue(models.Model):
     scope_label = fields.Char(
         compute='_compute_scope_label', string='Scope')
 
-    _sql_constraints = [
-        # Eén waarde-record per (SI, org, person)-combinatie. Met
-        # nullable kolommen behandelt PostgreSQL NULL ≠ NULL, dus
-        # meerdere globale waarden voor dezelfde SI worden door dit
-        # constraint NIET uitgesloten — daarvoor het python-level
-        # _check_scope_unique constraint hieronder.
-        ('uniq_per_scope',
-         'UNIQUE(settings_item_id, org_id, person_id)',
-         'Voor deze Settings Item bestaat al een waarde op deze scope.'),
-    ]
+    # Eén waarde-record per (SI, org, person)-combinatie. Met nullable
+    # kolommen behandelt PostgreSQL NULL ≠ NULL, dus meerdere globale
+    # waarden voor dezelfde SI worden door dit constraint NIET uitgesloten —
+    # daarvoor het python-level _check_scope_unique constraint hieronder.
+    _uniq_per_scope = models.Constraint(
+        'UNIQUE(settings_item_id, org_id, person_id)',
+        'Voor deze Settings Item bestaat al een waarde op deze scope.',
+    )
 
     # ------------------------------------------------------------------
     # Computes
