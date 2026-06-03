@@ -4,10 +4,13 @@ Naslagdocumentatie: branches, environments, instances, git-workflow.
 
 ## Inhoud
 
-- `branches.md` — TODO: branch-strategie (master/Dev/Dev-* feature-branches)
-- `environments.md` — TODO: prod/test/dev environment-mapping en welke FQDN bij welke instance hoort
-- `instances.md` — TODO: FQDN → VM:port mapping (myschool/myschool-ict/id/myschool-test/myschool-dev/id-test)
-- `git-workflow.md` — TODO: git-workflow.md (top-level) verplaatsen + bijwerken
+| Bestand | Doel | Status |
+|---|---|---|
+| [`branches.md`](branches.md) | Lijst + status van huidige branches, naming-conventie | done (2026-06-03) |
+| [`environments.md`](environments.md) | prod/test/dev mapping per FQDN, multi-env-VM-pattern, cert-strategie | done (2026-06-03) |
+| [`git-workflow.md`](git-workflow.md) | Git-workflow van repo (commits, merges, releases) | verplaatst van repo-root; inhouds-review pending |
+
+(`instances.md` als aparte file is niet meer nodig — FQDN-mapping zit nu compleet in `environments.md` en in deze README-inleiding hieronder.)
 
 ## Branch-conventie (kort)
 

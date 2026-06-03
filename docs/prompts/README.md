@@ -4,16 +4,19 @@ AI prompt-templates en kennisbank-plannen voor gebruik met Claude (Code, web, AP
 
 ## Inhoud
 
-- `improvement-prompts.md` — TODO: IMPROVEMENT_PROMPTS.md verplaatsen + reviewen
-- `bpmn-improvement-prompts.md` — TODO: BPMN_IMPROVEMENT_PROMPTS.md verplaatsen + reviewen
-- `llm-kennisbank-plan.md` — TODO: LLM_KENNISBANK_PLAN.md verplaatsen + reviewen
+| Bestand | Doel | Status |
+|---|---|---|
+| [`improvement-prompts.md`](improvement-prompts.md) | Prompt-templates voor code-improvement-rondes | inhouds-review pending |
+| [`bpmn-improvement-prompts.md`](bpmn-improvement-prompts.md) | Prompt-templates voor BPMN-flow-analyse + improvement (komt uit `process_mapper` workflow) | inhouds-review pending |
 
-## Migratie open
+## Inhouds-review TODO
 
-```
-git mv IMPROVEMENT_PROMPTS.md          docs/prompts/improvement-prompts.md
-git mv BPMN_IMPROVEMENT_PROMPTS.md     docs/prompts/bpmn-improvement-prompts.md
-git mv LLM_KENNISBANK_PLAN.md          docs/prompts/llm-kennisbank-plan.md
-```
+Op 2026-06-03 verplaatst vanuit repo-root naar `docs/prompts/`. Veel van deze prompts zijn van vóór de [`myschool_mcp`](../modules/myschool_mcp.md)-aanpak — bij review afwegen:
 
-Inhoud reviewen vóór verplaatsing — sommige prompts zijn mogelijk al verouderd of vervangen door de myschool_mcp + Claude Code-aanpak.
+- **Nog relevant** als manuele copy-paste-prompts? → behouden
+- **Vervangen** door MCP-tools die direct uitvoeren? → verwijzen naar MCP i.p.v. handmatig
+- **Per workflow** opsplitsen of samenvoegen?
+
+## Niet (meer) op deze branch
+
+- `LLM_KENNISBANK_PLAN.md` — vermoedelijk op feature-branch, bij merge meenemen naar `docs/prompts/llm-kennisbank-plan.md`
