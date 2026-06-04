@@ -65,7 +65,7 @@ def _serialize(project, with_children=False):
             {
                 'id': m.id,
                 'name': m.name,
-                'date': m.date.isoformat() if m.date else None,
+                'date': m.date_deadline.isoformat() if m.date_deadline else None,
                 'state': m.state,
             }
             for m in project.milestone_ids
@@ -237,7 +237,9 @@ def create_subproject(env, name, parent=None, code=None, responsible=None,
 
 @McpRegistry.tool(
     name='projects_add_milestone',
-    description='Add a milestone (dated checkpoint) to a project.',
+    description=(
+        'Add a milestone (a dated work item of type "milestone") to a project.'
+    ),
     input_schema={
         'type': 'object',
         'required': ['project', 'name'],
@@ -250,28 +252,31 @@ def create_subproject(env, name, parent=None, code=None, responsible=None,
             'date': {'type': 'string', 'description': 'Target date YYYY-MM-DD'},
             'state': {
                 'type': 'string',
-                'enum': ['pending', 'reached', 'missed'],
-                'default': 'pending',
+                'enum': ['todo', 'done', 'cancelled'],
+                'default': 'todo',
             },
             'description': {'type': 'string'},
         },
     },
     required_group=WRITE_GROUP,
 )
-def add_milestone(env, project, name, date=None, state='pending', description=None):
+def add_milestone(env, project, name, date=None, state='todo', description=None):
     p = _resolve_project(env, project)
-    vals = {'project_id': p.id, 'name': name, 'state': state}
+    vals = {
+        'project_id': p.id, 'name': name,
+        'item_type': 'milestone', 'state': state,
+    }
     if date:
-        vals['date'] = date
+        vals['date_deadline'] = date
     if description:
         vals['description'] = description
-    milestone = env['myschool.project.milestone'].create(vals)
+    milestone = env['myschool.project.task'].create(vals)
     return {
         'id': milestone.id,
         'project_id': p.id,
         'project_name': p.name,
         'name': milestone.name,
-        'date': milestone.date.isoformat() if milestone.date else None,
+        'date': milestone.date_deadline.isoformat() if milestone.date_deadline else None,
         'state': milestone.state,
     }
 
