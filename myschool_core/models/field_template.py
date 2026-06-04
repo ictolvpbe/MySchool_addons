@@ -45,7 +45,7 @@ import logging
 import re
 import unicodedata
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
@@ -211,26 +211,220 @@ class FieldTemplate(models.Model):
         - person_type_ids: either empty, OR contain the person's type;
           person-less calls (``person=None``, e.g. for org-level fields
           like ``com_group_email``) skip this filter.
+
+        Ranking — at equal ``priority`` the **more specific** template
+        wins. Specificity = +2 when the template explicitly lists the
+        resolved school in ``org_ids`` (vs. a catch-all empty list),
+        +1 when it explicitly lists the person's type in
+        ``person_type_ids``. So a school+type-specific template beats a
+        catch-all even when both are saved at the default priority.
+        Without this rank a generic ``firstname.lastname``-style
+        template registered first would silently apply to schools that
+        actually have their own (e.g. anonymised) naming convention.
+
+        DEBUG logging: enable ``[FIELD-TEMPLATE]`` lines (logger
+        ``odoo.addons.myschool_core.models.field_template``) at INFO
+        level to trace each candidate's accept/reject reason. Useful
+        when a template "should" match but doesn't.
         """
         if not field_name:
             return None
         school = self._resolve_school(org)
-        candidates = self.search([
+        raw_candidates = self.search([
             ('field_name', '=', field_name),
             ('active', '=', True),
         ])
+
+        ptype = person.person_type_id if person else None
+
+        def _specificity(tpl):
+            s = 0
+            if tpl.org_ids and school and school in tpl.org_ids:
+                s += 2
+            if tpl.person_type_ids and ptype and ptype in tpl.person_type_ids:
+                s += 1
+            return s
+
+        # Stable-sort: priority asc → specificity desc → id asc. The
+        # underlying search already ordered by (field_name, priority, id);
+        # re-sort here so the within-priority order honours specificity.
+        candidates = sorted(
+            raw_candidates,
+            key=lambda t: (t.priority, -_specificity(t), t.id))
+        org_name = org.display_name if org else '(no org)'
+        school_name = school.display_name if school else '(school not resolved)'
+        ptype_name = (person.person_type_id.display_name
+                      if person and person.person_type_id else '(no type)')
+        _logger.info(
+            '[FIELD-TEMPLATE] find_for(field=%s) — org=%s school=%s '
+            'person=%s type=%s — %d candidate(s)',
+            field_name, org_name, school_name,
+            getattr(person, 'name', '(no person)'), ptype_name,
+            len(candidates))
         for tpl in candidates:
             if tpl.org_ids:
-                if not school or school not in tpl.org_ids:
+                if not school:
+                    _logger.info(
+                        '[FIELD-TEMPLATE]  ✗ %s: school not resolved; '
+                        'template restricted to %s',
+                        tpl.name, [o.name_short or o.name for o in tpl.org_ids])
+                    continue
+                if school not in tpl.org_ids:
+                    _logger.info(
+                        '[FIELD-TEMPLATE]  ✗ %s: school %s not in template '
+                        'scope %s',
+                        tpl.name, school.name_short or school.name,
+                        [o.name_short or o.name for o in tpl.org_ids])
                     continue
             if tpl.person_type_ids:
                 if not person:
+                    _logger.info(
+                        '[FIELD-TEMPLATE]  ✗ %s: no person supplied, '
+                        'template restricted to types %s',
+                        tpl.name, [t.name for t in tpl.person_type_ids])
                     continue
                 ptype = person.person_type_id
-                if not ptype or ptype not in tpl.person_type_ids:
+                if not ptype:
+                    _logger.info(
+                        '[FIELD-TEMPLATE]  ✗ %s: person has no '
+                        'person_type_id; template restricted to %s',
+                        tpl.name, [t.name for t in tpl.person_type_ids])
                     continue
+                if ptype not in tpl.person_type_ids:
+                    _logger.info(
+                        '[FIELD-TEMPLATE]  ✗ %s: person_type %s not in '
+                        'template scope %s',
+                        tpl.name, ptype.name,
+                        [t.name for t in tpl.person_type_ids])
+                    continue
+            _logger.info(
+                '[FIELD-TEMPLATE]  ✓ %s matched (priority=%s, template=%r)',
+                tpl.name, tpl.priority, tpl.template)
             return tpl
+        _logger.info(
+            '[FIELD-TEMPLATE] no match for field=%s — falling back '
+            'to caller default', field_name)
         return None
+
+    def action_apply_to_persons(self):
+        """Re-run ``betask_processor._populate_person_account_fields``
+        for every person whose PERSON-TREE org falls under this
+        template's school scope and whose person_type matches.
+
+        Writes the freshly-computed ``email_cloud``,
+        ``person_fqdn_internal`` and ``person_fqdn_external`` to each
+        person record. Idempotent: ``_populate_person_account_fields``
+        only writes when the computed value differs from the stored
+        one. Does NOT cascade to LDAP/Workspace — admin can run
+        Operations → Backend Tasks afterwards if they want AD/Google
+        to follow.
+
+        Scope:
+          - schools: ``org_ids`` (empty = every non-admin SCHOOL)
+          - person types: ``person_type_ids`` (empty = every type)
+        """
+        self.ensure_one()
+        Person = self.env['myschool.person']
+        Org = self.env['myschool.org']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        processor = self.env['myschool.betask.processor']
+
+        # 1. Resolve target schools.
+        if self.org_ids:
+            target_schools = self.org_ids
+        else:
+            target_schools = Org.search([
+                ('org_type_id.name', '=', 'SCHOOL'),
+                ('is_administrative', '=', False),
+            ])
+        if not target_schools:
+            return self._notify(_('Geen scholen gevonden in de scope.'), 'warning')
+
+        # 2. Collect every descendant org under those schools — that's
+        #    where PERSON-TREE rows live (leaf orgs / classes etc.).
+        all_org_ids = set()
+        for school in target_schools:
+            if hasattr(processor, '_collect_org_descendant_ids'):
+                all_org_ids.update(
+                    processor._collect_org_descendant_ids(school))
+            else:
+                all_org_ids.add(school.id)
+
+        # 3. Find active PERSON-TREE rows in scope.
+        pt_type = PropRelationType.search(
+            [('name', '=', 'PERSON-TREE')], limit=1)
+        if not pt_type:
+            return self._notify(_('PERSON-TREE type ontbreekt.'), 'warning')
+        pt_rels = PropRelation.search([
+            ('proprelation_type_id', '=', pt_type.id),
+            ('id_org', 'in', list(all_org_ids)),
+            ('is_active', '=', True),
+            ('id_person', '!=', False),
+        ])
+
+        # 4. Dedupe by person — keep the first (= active) PERSON-TREE org.
+        person_to_org = {}
+        for rel in pt_rels:
+            if rel.id_person.id in person_to_org:
+                continue
+            if self.person_type_ids:
+                if not rel.id_person.person_type_id \
+                        or rel.id_person.person_type_id not in self.person_type_ids:
+                    continue
+            person_to_org[rel.id_person.id] = rel.id_org
+
+        # 5. Run the populate helper for each, count outcomes.
+        updated = 0
+        unchanged = 0
+        failed = 0
+        for person_id, target_org in person_to_org.items():
+            person = Person.browse(person_id).exists()
+            if not person:
+                continue
+            before = (
+                person.email_cloud or '',
+                person.person_fqdn_internal or '',
+                person.person_fqdn_external or '',
+            )
+            try:
+                processor._populate_person_account_fields(person, target_org)
+            except Exception as e:
+                _logger.warning(
+                    '[FIELD-TEMPLATE] apply failed for %s: %s',
+                    person.name, e)
+                failed += 1
+                continue
+            after = (
+                person.email_cloud or '',
+                person.person_fqdn_internal or '',
+                person.person_fqdn_external or '',
+            )
+            if before == after:
+                unchanged += 1
+            else:
+                updated += 1
+
+        parts = [_('%(u)s gewijzigd') % {'u': updated}]
+        if unchanged:
+            parts.append(_('%(c)s onveranderd') % {'c': unchanged})
+        if failed:
+            parts.append(_('%(f)s fout(en)') % {'f': failed})
+        msg = _('Persons in scope: %(t)s. %(d)s') % {
+            't': len(person_to_org), 'd': ', '.join(parts)}
+        return self._notify(msg, 'success' if not failed else 'warning')
+
+    def _notify(self, message, msg_type):
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Template %s') % self.name,
+                'message': message,
+                'type': msg_type,
+                'sticky': True,
+            },
+        }
 
     def evaluate(self, person, org=None, _seen=None):
         """Evaluate this template against a person + (leaf) org. Returns

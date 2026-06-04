@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_admin.MsThemeToggle" owl="1">
+        <div class="ms-theme-toggle d-none d-md-block pe-0 bg-inherit">
+            <button class="btn btn-link py-1 py-lg-0 ms-theme-toggle-btn"
+                    t-att-title="title"
+                    t-on-click="onClick">
+                <i t-att-class="iconClass"/>
+            </button>
+        </div>
+    </t>
+
+</templates>

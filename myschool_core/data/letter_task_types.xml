@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            LETTER betask type — used by the cascade after a successful
+            LDAP/USER/ADD to queue welcome-letter generation. Handler:
+            ``betask_processor.process_letter_user_generate``.
+        -->
+        <record id="letter_user_generate" model="myschool.betask.type">
+            <field name="target">LETTER</field>
+            <field name="object">USER</field>
+            <field name="action">GENERATE</field>
+            <field name="description">Generate welcome letter PDF for a person and attach it to the person record.</field>
+            <field name="priority">40</field>
+        </record>
+
+    </data>
+</odoo>

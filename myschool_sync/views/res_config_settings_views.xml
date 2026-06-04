@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ===========================================================
+         MySchool Sync — eigen tab in de MySchool-Settings primary view.
+
+         Erft van myschool_admin.myschool_settings_form zodat deze
+         tab alleen verschijnt in de MySchool Instellingen-menu, niet
+         in Odoo's standaard Settings (tandwiel-icoon). myschool_sync
+         heeft myschool_admin al als dependency, dus de xmlid-ref
+         resolved zonder problemen.
+         =========================================================== -->
+
+    <record id="res_config_settings_view_form_myschool_sync" model="ir.ui.view">
+        <field name="name">myschool.settings.tab.sync</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="myschool_admin.myschool_settings_form"/>
+        <field name="priority">60</field>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="MySchool Sync" string="MySchool Sync"
+                     name="myschool_sync"
+                     groups="myschool_core.group_myschool_core_admin">
+
+                    <block title="Verbinding" name="ms_sync_connection">
+                        <setting string="Sync-rol"
+                                 help="Bepaalt of deze instantie data uitzendt (master), ontvangt (slave), beide of niets doet. 'both' is alleen relevant in topologieën waar wederzijdse replicatie nodig is.">
+                            <div class="content-group">
+                                <div class="row mt16">
+                                    <label for="myschool_sync_role"
+                                           class="col-lg-3 o_light_label"/>
+                                    <field name="myschool_sync_role"/>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting string="API-sleutel"
+                                 help="Pre-shared key die de slave-controller verwacht in de Authorization-header van inkomende sync-requests. Op een slave configureer je deze waarde hier; op een master sla je dezelfde waarde op per sync.target-record.">
+                            <div class="content-group">
+                                <div class="row mt16">
+                                    <label for="myschool_sync_api_key"
+                                           class="col-lg-3 o_light_label"/>
+                                    <field name="myschool_sync_api_key"
+                                           password="True"/>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Beheer" name="ms_sync_management">
+                        <setting string="Sync-targets"
+                                 help="Beheer de lijst van slave-instanties waar data heen gestuurd wordt — URL, API-key per target, model-/school-filters, status van laatste sync.">
+                            <button name="action_open_sync_targets"
+                                    type="object" icon="fa-exchange"
+                                    string="Beheer sync-targets" class="btn-link"/>
+                        </setting>
+                        <setting string="Sync-log"
+                                 help="Historische log van uitgevoerde sync-acties — wie heeft wat naar wie gestuurd, status en eventuele fouten.">
+                            <button name="action_open_sync_log"
+                                    type="object" icon="fa-list-alt"
+                                    string="Open sync-log" class="btn-link"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

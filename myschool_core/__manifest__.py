@@ -19,7 +19,7 @@
     'license': 'LGPL-3',
     'depends': ['base', 'mail','hr'],
     'external_dependencies': {
-        'python': ['ldap3'],
+        'python': ['ldap3', 'google-api-python-client', 'google-auth', 'weasyprint', 'zeep'],
     },
     'data': [
         # Securityaccount_analytic_applicability
@@ -56,16 +56,37 @@
         #demo data
         'data/sequence.xml',
         'data/sys_event_data.xml',
-        'data/config_item_data.xml',
+        # Settings Items — catalogus (vervangt het oude config_item_data).
+        'data/settings_item_data.xml',
         'data/cron_data.xml',
         #'data/users_data.xml',
         # 'data/ldap_task_types.xml',
+        'data/cloud_task_types.xml',
+        'data/smartschool_task_types.xml',
+        'data/cloud_cron.xml',
+        'data/company_sync_cron.xml',
+        'data/letter_task_types.xml',
+        'data/letter_template_data.xml',
+        'data/password_wordlist_data.xml',
+        'data/mail_template_sap_safeguard.xml',
+        'data/sap_sync_cron.xml',
+        # report/letter_report_templates.xml — dropped in v0.5
+        # (replaced by direct WeasyPrint rendering, see letter_template.render_pdf)
 
         #Services
         #'services/data/ir_cron_data.xml',
 
         # User form extension
         'views/res_users_views.xml',
+
+        # Google Workspace integration
+        'views/google_workspace_config_views.xml',
+
+        # Smartschool integration
+        'views/smartschool_config_views.xml',
+
+        # Letter templates
+        'views/letter_template_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

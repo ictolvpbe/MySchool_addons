@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- =====================================================================
+         Settings Items — admin views + acties (SI-rework, fase 4)
+
+         Bevat:
+           * Catalog views (myschool.settings.item) — list/form/search
+           * Values views (myschool.settings.value)  — list/form/search
+           * Acties voor beide
+           * Server action voor legacy-migratie (fase 3)
+         ===================================================================== -->
+
+    <!-- =====================================================================
+         CATALOGUS — myschool.settings.item
+         ===================================================================== -->
+
+    <record id="view_settings_item_list" model="ir.ui.view">
+        <field name="name">myschool.settings.item.list</field>
+        <field name="model">myschool.settings.item</field>
+        <field name="arch" type="xml">
+            <list string="Settings Items"
+                  decoration-muted="not is_active"
+                  decoration-warning="is_encrypted">
+                <field name="key"/>
+                <field name="label"/>
+                <field name="category" widget="badge" optional="show"
+                       decoration-info="category == 'integrations'"
+                       decoration-success="category == 'lifecycle'"
+                       decoration-warning="category == 'ad_ou'"/>
+                <field name="value_type" widget="badge"
+                       decoration-info="value_type == 'string'"
+                       decoration-success="value_type == 'integer'"
+                       decoration-primary="value_type == 'boolean'"/>
+                <field name="scope_kind" widget="badge"
+                       decoration-info="scope_kind == 'global'"
+                       decoration-warning="scope_kind == 'org'"
+                       decoration-success="scope_kind == 'both'"
+                       decoration-primary="scope_kind == 'person'"/>
+                <field name="default_string" optional="hide"/>
+                <field name="default_integer" optional="hide"/>
+                <field name="default_boolean" optional="hide" widget="boolean"/>
+                <field name="is_encrypted" optional="hide" widget="boolean"/>
+                <field name="is_active" widget="boolean"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_settings_item_form" model="ir.ui.view">
+        <field name="name">myschool.settings.item.form</field>
+        <field name="model">myschool.settings.item</field>
+        <field name="arch" type="xml">
+            <form string="Settings Item">
+                <sheet>
+                    <widget name="web_ribbon" title="Encrypted" bg_color="warning"
+                            invisible="not is_encrypted"/>
+                    <widget name="web_ribbon" title="Inactief" bg_color="text-bg-danger"
+                            invisible="is_active"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="label" placeholder="Mens-leesbaar label"/>
+                        </h1>
+                        <h3 class="text-muted">
+                            Key: <field name="key" class="ms-field-mono oe_inline"
+                                        placeholder="MachineNaam"/>
+                        </h3>
+                    </div>
+                    <group>
+                        <group string="Classificatie">
+                            <field name="category"/>
+                            <field name="value_type"/>
+                            <field name="scope_kind"/>
+                            <field name="is_encrypted"/>
+                            <field name="is_active"/>
+                        </group>
+                        <group string="Default (terugval)">
+                            <field name="default_string"
+                                   invisible="value_type != 'string'"
+                                   password="is_encrypted"/>
+                            <field name="default_integer"
+                                   invisible="value_type != 'integer'"/>
+                            <field name="default_boolean"
+                                   invisible="value_type != 'boolean'"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Beschrijving" name="description">
+                            <field name="description"
+                                   placeholder="Wat doet dit Settings Item, en welke services lezen ervan?"/>
+                        </page>
+                        <page string="Waarden" name="values">
+                            <field name="value_ids">
+                                <list editable="bottom"
+                                      decoration-muted="not is_active">
+                                    <field name="scope_label" string="Scope" optional="show"/>
+                                    <field name="org_id" optional="show"/>
+                                    <field name="person_id" optional="hide"/>
+                                    <field name="value_display" string="Waarde"/>
+                                    <field name="string_value"
+                                           column_invisible="parent.value_type != 'string'"
+                                           password="parent.is_encrypted"/>
+                                    <field name="integer_value"
+                                           column_invisible="parent.value_type != 'integer'"/>
+                                    <field name="boolean_value"
+                                           column_invisible="parent.value_type != 'boolean'"
+                                           widget="boolean_toggle"/>
+                                    <field name="inherit_to_children" widget="boolean_toggle"/>
+                                    <field name="is_active" widget="boolean_toggle"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_settings_item_search" model="ir.ui.view">
+        <field name="name">myschool.settings.item.search</field>
+        <field name="model">myschool.settings.item</field>
+        <field name="arch" type="xml">
+            <search string="Zoek Settings Items">
+                <field name="key"/>
+                <field name="label"/>
+                <field name="description"/>
+                <separator/>
+                <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
+                <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
+                <separator/>
+                <filter string="Globaal" name="global" domain="[('scope_kind', '=', 'global')]"/>
+                <filter string="Per organisatie" name="org" domain="[('scope_kind', '=', 'org')]"/>
+                <filter string="Per persoon" name="person" domain="[('scope_kind', '=', 'person')]"/>
+                <filter string="Globaal + per org" name="both" domain="[('scope_kind', '=', 'both')]"/>
+                <separator/>
+                <filter string="Encrypted" name="encrypted" domain="[('is_encrypted', '=', True)]"/>
+                <separator/>
+                <filter string="Integraties" name="cat_integrations" domain="[('category', '=', 'integrations')]"/>
+                <filter string="Lifecycle" name="cat_lifecycle" domain="[('category', '=', 'lifecycle')]"/>
+                <filter string="AD/OU" name="cat_ad_ou" domain="[('category', '=', 'ad_ou')]"/>
+                <filter string="Algemeen" name="cat_general" domain="[('category', '=', 'general')]"/>
+                <separator/>
+                <filter string="Groepeer op categorie" name="group_category"
+                        context="{'group_by': 'category'}"/>
+                <filter string="Groepeer op scope" name="group_scope"
+                        context="{'group_by': 'scope_kind'}"/>
+                <filter string="Groepeer op type" name="group_type"
+                        context="{'group_by': 'value_type'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_settings_item" model="ir.actions.act_window">
+        <field name="name">Settings Items — catalogus</field>
+        <field name="res_model">myschool.settings.item</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_settings_item_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Definieer een nieuw Settings Item
+            </p>
+            <p>
+                De catalogus bevat de <strong>definities</strong> van alle SI's
+                (sleutel, type, default, scope-kind). De feitelijke waardes
+                staan in <em>Settings Values</em> en kunnen per org of per
+                persoon ingesteld worden.
+            </p>
+        </field>
+    </record>
+
+    <!-- =====================================================================
+         WAARDEN — myschool.settings.value
+         ===================================================================== -->
+
+    <record id="view_settings_value_list" model="ir.ui.view">
+        <field name="name">myschool.settings.value.list</field>
+        <field name="model">myschool.settings.value</field>
+        <field name="arch" type="xml">
+            <list string="Settings Values"
+                  decoration-muted="not is_active"
+                  multi_edit="1">
+                <field name="settings_key" string="Sleutel"/>
+                <field name="value_type" widget="badge" optional="show"/>
+                <field name="scope_label" widget="badge" optional="show"
+                       decoration-info="scope_label == 'globaal'"
+                       decoration-warning="scope_label == 'org'"
+                       decoration-primary="scope_label == 'persoon'"/>
+                <field name="org_id" optional="show"/>
+                <field name="person_id" optional="hide"/>
+                <field name="value_display" string="Waarde"/>
+                <field name="inherit_to_children" widget="boolean"
+                       optional="show"/>
+                <field name="is_active" widget="boolean"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_settings_value_form" model="ir.ui.view">
+        <field name="name">myschool.settings.value.form</field>
+        <field name="model">myschool.settings.value</field>
+        <field name="arch" type="xml">
+            <form string="Settings Value">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="display_name" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Definitie">
+                            <field name="settings_item_id"
+                                   options="{'no_create': True}"/>
+                            <field name="value_type" readonly="1"/>
+                            <field name="scope_kind" readonly="1"/>
+                        </group>
+                        <group string="Scope">
+                            <field name="org_id"
+                                   options="{'no_create': True}"
+                                   readonly="scope_kind == 'global' or scope_kind == 'person'"/>
+                            <field name="person_id"
+                                   options="{'no_create': True}"
+                                   readonly="scope_kind == 'global' or scope_kind == 'org' or scope_kind == 'both'"/>
+                            <field name="inherit_to_children"
+                                   readonly="not org_id"/>
+                            <field name="is_active"/>
+                        </group>
+                    </group>
+                    <group string="Waarde">
+                        <field name="string_value"
+                               invisible="value_type != 'string'"/>
+                        <field name="integer_value"
+                               invisible="value_type != 'integer'"/>
+                        <field name="boolean_value"
+                               invisible="value_type != 'boolean'"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_settings_value_search" model="ir.ui.view">
+        <field name="name">myschool.settings.value.search</field>
+        <field name="model">myschool.settings.value</field>
+        <field name="arch" type="xml">
+            <search string="Zoek Settings Values">
+                <field name="settings_key" string="Sleutel"/>
+                <field name="settings_item_id"/>
+                <field name="org_id"/>
+                <field name="person_id"/>
+                <separator/>
+                <filter string="Actief" name="active" domain="[('is_active', '=', True)]"/>
+                <filter string="Inactief" name="inactive" domain="[('is_active', '=', False)]"/>
+                <separator/>
+                <filter string="Globale waarden" name="scope_global"
+                        domain="[('org_id', '=', False), ('person_id', '=', False)]"/>
+                <filter string="Per-org waarden" name="scope_org"
+                        domain="[('org_id', '!=', False)]"/>
+                <filter string="Per-persoon waarden" name="scope_person"
+                        domain="[('person_id', '!=', False)]"/>
+                <separator/>
+                <filter string="Doorgeven aan subs" name="inherits"
+                        domain="[('inherit_to_children', '=', True)]"/>
+                <separator/>
+                <filter string="Groepeer op SI" name="group_si"
+                        context="{'group_by': 'settings_item_id'}"/>
+                <filter string="Groepeer op scope" name="group_scope"
+                        context="{'group_by': 'scope_label'}"/>
+                <filter string="Groepeer op org" name="group_org"
+                        context="{'group_by': 'org_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_settings_value" model="ir.actions.act_window">
+        <field name="name">Settings Values — alle waarden</field>
+        <field name="res_model">myschool.settings.value</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_settings_value_search"/>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Maak een nieuwe Settings Value
+            </p>
+            <p>
+                Elke value is gekoppeld aan een <em>Settings Item</em>
+                uit de catalogus en aan een scope: globaal (geen org/person),
+                per-org of per-persoon.
+            </p>
+        </field>
+    </record>
+
+    <!-- Action met domein = enkel globale waarden. Wordt gebruikt
+         vanuit "Open SI-beheer" in MySchool Instellingen. -->
+    <record id="action_settings_value_global" model="ir.actions.act_window">
+        <field name="name">Globale Settings Values</field>
+        <field name="res_model">myschool.settings.value</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_settings_value_search"/>
+        <field name="domain">[('org_id', '=', False), ('person_id', '=', False)]</field>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Voeg een eerste globale waarde toe
+            </p>
+            <p>
+                Toont enkel SI-waarden zonder org/person-koppeling.
+                Per-org overrides staan op het org-formulier.
+            </p>
+        </field>
+    </record>
+
+    <!-- =====================================================================
+         LEGACY MIGRATIE (fase 3)
+         ===================================================================== -->
+
+    <!-- Server action: migreer legacy myschool.config.item / .ci.relation
+         naar de nieuwe SI-modellen. Idempotent — meermaals draaien is
+         veilig. -->
+    <record id="action_si_migrate_from_legacy" model="ir.actions.server">
+        <field name="name">Settings Items — migreer vanaf legacy</field>
+        <field name="model_id" ref="myschool_core.model_myschool_settings_item"/>
+        <field name="state">code</field>
+        <field name="code">
+result = env['myschool.settings.item'].action_migrate_from_legacy()
+if result and isinstance(result, dict):
+    action = result
+        </field>
+    </record>
+
+</odoo>

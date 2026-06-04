@@ -129,10 +129,10 @@ class SysEvent(models.Model):
     
     user_id = fields.Many2one(
         comodel_name='res.users',
-        string='Responsible User',
+        string='Triggered By',
         default=lambda self: self.env.user,
         #Tracking=True,
-        help='User responsible for this event'
+        help='User who triggered this event'
     )
     
     # Related fields for easy access

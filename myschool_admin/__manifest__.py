@@ -1,8 +1,9 @@
 {
     'name': 'MySchool Admin Module',
-    'version': '0.1',
+    'version': '0.2',
     'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, periods ans services',
+    'post_init_hook': '_migrate_ad_takeover_phase_a_post_init',
     'description': """
         School Management System
         ========================
@@ -28,7 +29,6 @@
         'views/role_type_views.xml',
         'views/period_type_views.xml',
         'views/proprelation_type_views.xml',
-        'views/ci_relation_views.xml',
 
         # Views - Main models
         'views/org_views.xml',
@@ -37,7 +37,6 @@
         'views/role_views.xml',
         'views/period_views.xml',
         'views/proprelation_views.xml',
-        'views/config_item_views.xml',
         'views/betask_views.xml',
         'views/sys_event_views.xml',
         'views/sys_event_type_views.xml',
@@ -48,7 +47,15 @@
         'views/object_browser_views.xml',
         'views/ldap_server_config_views.xml',
         'views/sync_test_runner_views.xml',
+        'views/task_debug_runner_views.xml',
+        'views/smartschool_test_runner_views.xml',
+        'views/informat_sync_wizard_views.xml',
+        'views/sap_sync_run_views.xml',
         'views/res_company_views.xml',
+        'views/res_users_views.xml',
+        'views/password_wordlist_views.xml',
+        'views/password_template_views.xml',
+        'views/password_policy_views.xml',
         'views/field_template_views.xml',
 
         # Data Exchange
@@ -60,8 +67,24 @@
         # Health Check
         'views/health_check_views.xml',
 
+        # Cron tasks (ir.cron beheer)
+        'views/ir_cron_views.xml',
+
+        # AD Takeover (migratie-assistent)
+        'views/ad_takeover_views.xml',
+
         # Wizards (must load before menus that reference wizard actions)
         'views/wizard_views.xml',
+
+        # Settings Items — admin views (catalog + values + acties).
+        # Must load BEFORE res_config_settings_views.xml (button refs)
+        # and BEFORE menu_views.xml (menu refs).
+        'views/settings_item_views.xml',
+
+        # Settings — unified res.config.settings view (loaded BEFORE
+        # menus so the "Instellingen" menu can resolve cross-module
+        # action refs, e.g. base.action_res_config_settings).
+        'views/res_config_settings_views.xml',
 
         # Menus (must load after all actions are defined)
         'views/menu_views.xml',
@@ -78,6 +101,11 @@
             'myschool_admin/static/src/css/object_browser.css',
             'myschool_admin/static/src/css/log_viewer.css',
             'myschool_admin/static/src/css/persongroup_member_browser.css',
+            'myschool_admin/static/src/css/icon_color_widgets.css',
+            'myschool_admin/static/src/css/sap_sync_review.css',
+            'myschool_admin/static/src/js/services/theme_service.js',
+            'myschool_admin/static/src/js/systray/theme_toggle.js',
+            'myschool_admin/static/src/xml/theme_toggle.xml',
             'myschool_admin/static/src/js/dashboard.js',
             'myschool_admin/static/src/xml/dashboard.xml',
             'myschool_admin/static/src/js/object_browser.js',
@@ -86,6 +114,10 @@
             'myschool_admin/static/src/xml/log_viewer.xml',
             'myschool_admin/static/src/js/persongroup_member_browser.js',
             'myschool_admin/static/src/xml/persongroup_member_browser.xml',
+            'myschool_admin/static/src/js/fields/icon_color_widgets.js',
+            'myschool_admin/static/src/xml/icon_color_widgets.xml',
+            'myschool_admin/static/src/js/sap_sync_review.js',
+            'myschool_admin/static/src/xml/sap_sync_review.xml',
         ],
     },
     'demo': [],

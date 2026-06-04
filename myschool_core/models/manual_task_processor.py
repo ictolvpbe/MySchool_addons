@@ -87,6 +87,7 @@ class ManualTaskProcessor(models.AbstractModel):
             ('MANUAL', 'PROPRELATION', 'ADD'):   self.process_manual_proprelation_add,
             ('MANUAL', 'PROPRELATION', 'UPD'):   self.process_manual_proprelation_upd,
             ('MANUAL', 'PROPRELATION', 'DEACT'): self.process_manual_proprelation_deact,
+            ('MANUAL', 'DOMAIN', 'RENAME'):      self.process_manual_domain_rename,
         }
 
         handler = manual_handlers.get((target, obj, action))
@@ -311,22 +312,43 @@ class ManualTaskProcessor(models.AbstractModel):
                     f"WARN: backend role '{ppsbr_role_name}' not found — PPSBR skipped")
 
         # ---------------------------------------------------------------
-        # LDAP/USER/ADD betask — only when the resolved school is set up
-        # for LDAP/AD provisioning (has_ou flag on the school or its
-        # OU-for-classes/groups parent).
+        # USER-provisioning cascades (LDAP + Smartschool).
+        # Skip when ``defer_user_provisioning`` is set by the wizard's
+        # "save and edit details" flow: the admin first fills in extra
+        # details (address, abbreviation, …) and only on save of THAT
+        # form do we want the external accounts to be created. The deferred
+        # cascade fires via ``myschool.person.write`` once
+        # ``pending_provisioning`` is True.
         # ---------------------------------------------------------------
-        if org and school_org:
-            wants_ldap = bool(
-                getattr(school_org, 'has_ou', False)
-                or getattr(org, 'has_ou', False)
-            )
-            if wants_ldap:
-                label = f"LDAP/USER/ADD for {person.first_name} {person.name}"
-                changes.append(f"Queued {label}")
-                self._create_and_run_task('LDAP', 'USER', 'ADD', {
-                    'person_id': person.id,
-                    'org_id': org.id,
-                }, changes, label=label)
+        if data.get('defer_user_provisioning'):
+            person.with_context(
+                skip_provisioning_trigger=True,
+                skip_manual_audit=True,
+            ).write({'pending_provisioning': True})
+            changes.append(
+                f"Deferred USER-provisioning until details are saved "
+                f"(pending_provisioning=True on person {person.id})")
+        else:
+            # LDAP/USER/ADD — only when the resolved school is set up for
+            # LDAP/AD provisioning (has_ou flag on the school or its
+            # OU-for-classes/groups parent).
+            if org and school_org:
+                wants_ldap = bool(
+                    getattr(school_org, 'has_ou', False)
+                    or getattr(org, 'has_ou', False)
+                )
+                if wants_ldap:
+                    label = f"LDAP/USER/ADD for {person.first_name} {person.name}"
+                    changes.append(f"Queued {label}")
+                    self._create_and_run_task('LDAP', 'USER', 'ADD', {
+                        'person_id': person.id,
+                        'org_id': org.id,
+                    }, changes, label=label)
+
+            # Smartschool cascade — same EMPLOYEE-only gate. Runs unconditionally
+            # of the LDAP gate above: Smartschool deployments are independent of
+            # AD provisioning at OLVP (per-platform config has its own org-link).
+            self._emit_smartschool_user_task(person, 'ADD', changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -358,6 +380,7 @@ class ManualTaskProcessor(models.AbstractModel):
             }
             if any(k in update_vals for k in ldap_attrs):
                 self._emit_ldap_user_task(person, 'UPD', changes)
+                self._emit_smartschool_user_task(person, 'UPD', changes)
             return {'success': True, 'changes': '\n'.join(changes)}
 
         # Move mode (legacy)
@@ -446,6 +469,10 @@ class ManualTaskProcessor(models.AbstractModel):
                 'person_id': person.id,
                 'org_id': new_org.id,
             }, changes, label=label)
+
+        # Smartschool cascade — re-uses the persons new PERSON-TREE / PPSBR
+        # state to resolve which platform (if any) gets the saveUser push.
+        self._emit_smartschool_user_task(person, 'UPD', changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -559,6 +586,9 @@ class ManualTaskProcessor(models.AbstractModel):
         # LDAP cascade — emit BEFORE we deactivate, so the handler still
         # has access to the person record.
         self._emit_ldap_user_task(person, 'DEACT', changes)
+        # Smartschool cascade — same reasoning: resolve config now, before
+        # the person + PERSON-TREE flip to inactive.
+        self._emit_smartschool_user_task(person, 'DEACT', changes)
 
         person.write({'is_active': False, 'automatic_sync': False})
         changes.append(f"Deactivated person: {person_name}")
@@ -610,8 +640,13 @@ class ManualTaskProcessor(models.AbstractModel):
     def _emit_ldap_user_task(self, person, action, changes):
         """Queue *and run* an LDAP/USER/<action> betask if any of the
         person's active PERSON-TREE orgs is in an LDAP-enabled school.
-        Skips silently when no LDAP school is found."""
+        Skips silently when no LDAP school is found.
+
+        Honours ``person.automatic_sync=False`` as a veto — consistent
+        with the Smartschool emitter."""
         if not person:
+            return
+        if not person.automatic_sync:
             return
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
@@ -666,7 +701,14 @@ class ManualTaskProcessor(models.AbstractModel):
     @api.model
     def _emit_ldap_group_del_for_org(self, org, changes):
         """Emit LDAP/GROUP/DEL for any COM/SEC group attached to the org
-        when its parent school is LDAP-enabled. Skip silently otherwise."""
+        when its parent school is LDAP-enabled. Skip silently otherwise.
+
+        ``process_ldap_group_del`` requires ``group_dn`` in the payload —
+        without it the handler raises ``group_dn is required in task data``
+        and the cascade silently leaves AD groups dangling. We resolve
+        the DN from ``com_group_fqdn_internal`` / ``sec_group_fqdn_internal``
+        on the org itself.
+        """
         if not org:
             return
         processor = self.env['myschool.betask.processor']
@@ -675,17 +717,181 @@ class ManualTaskProcessor(models.AbstractModel):
                   else None)
         if not school or not self._school_wants_ldap(school, org):
             return
-        com_name = org.com_group_name if 'com_group_name' in org._fields else None
-        sec_name = org.sec_group_name if 'sec_group_name' in org._fields else None
-        for group_name, kind in ((com_name, 'COM'), (sec_name, 'SEC')):
-            if group_name:
-                label = f"LDAP/GROUP/DEL ({kind}: {group_name})"
-                changes.append(f"Queued {label}")
-                self._create_and_run_task('LDAP', 'GROUP', 'DEL', {
-                    'org_id': org.id,
-                    'group_name': group_name,
-                    'group_kind': kind,
-                }, changes, label=label)
+        com_dn = (org.com_group_fqdn_internal or '').strip() \
+            if 'com_group_fqdn_internal' in org._fields else ''
+        sec_dn = (org.sec_group_fqdn_internal or '').strip() \
+            if 'sec_group_fqdn_internal' in org._fields else ''
+        com_name = (org.com_group_name or '') if 'com_group_name' in org._fields else ''
+        sec_name = (org.sec_group_name or '') if 'sec_group_name' in org._fields else ''
+        for group_dn, group_name, kind in (
+                (com_dn, com_name, 'COM'),
+                (sec_dn, sec_name, 'SEC')):
+            if not group_dn:
+                if group_name:
+                    changes.append(
+                        f"  Skip LDAP/GROUP/DEL ({kind}: {group_name}): "
+                        f"no {kind.lower()}_group_fqdn_internal on org")
+                continue
+            label = f"LDAP/GROUP/DEL ({kind}: {group_dn})"
+            changes.append(f"Queued {label}")
+            self._create_and_run_task('LDAP', 'GROUP', 'DEL', {
+                'org_id': org.id,
+                'group_dn': group_dn,
+            }, changes, label=label)
+
+    @api.model
+    def _emit_cloud_user_task(self, person, action, changes):
+        """Mirror of ``_emit_ldap_user_task`` for Workspace. Queues +
+        runs CLOUD/USER/<action> when the resolved school has cloud
+        provisioning enabled. Skips silently otherwise.
+
+        Honours ``person.automatic_sync=False`` as a veto — consistent
+        with the Smartschool emitter."""
+        if not person:
+            return
+        if not person.automatic_sync:
+            return
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        pt_type = PropRelationType.search([('name', '=', 'PERSON-TREE')], limit=1)
+        if not pt_type:
+            return
+        pt_rel = PropRelation.search([
+            ('proprelation_type_id', '=', pt_type.id),
+            ('id_person', '=', person.id),
+            ('id_org', '!=', False),
+            ('is_active', '=', True),
+        ], limit=1)
+        org = pt_rel.id_org if pt_rel else False
+        if not org:
+            return
+        processor = self.env['myschool.betask.processor']
+        if not hasattr(processor, '_cloud_provisioning_enabled') \
+                or not processor._cloud_provisioning_enabled():
+            return
+        # Re-use the LDAP-wants gate — schools that want AD also want
+        # Workspace today (same policy as ``_emit_cloud_user_add_for_person``
+        # in betask_processor).
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        label = f"CLOUD/USER/{action} for {person.first_name} {person.name}"
+        changes.append(f"Queued {label}")
+        self._create_and_run_task('CLOUD', 'USER', action, {
+            'person_id': person.id,
+            'org_id': org.id,
+        }, changes, label=label)
+
+    @api.model
+    def _emit_smartschool_user_task(self, person, action, changes):
+        """Queue *and run* a SMARTSCHOOL/USER/<action> betask for ``person``.
+
+        Same MVP gates as the betask_processor emitter:
+          * ``_is_employee_person`` — leerkrachten only
+          * ``_school_wants_smartschool_for_person`` — school must have an
+            active ``myschool.smartschool.config``
+
+        ``action`` is one of ADD / UPD / DEACT / PWD. DEL is intentionally
+        NOT supported here — that path requires admin confirmation via the
+        lifecycle cron, not from the manual processor.
+
+        Skips silently when the gates reject so manual flows for non-EMPLOYEE
+        persons or non-Smartschool schools are unaffected.
+        """
+        if not person:
+            return
+        processor = self.env['myschool.betask.processor']
+        if not processor._is_employee_person(person):
+            return
+        if not person.automatic_sync:
+            return
+        if not processor._school_wants_smartschool_for_person(person):
+            return
+        label = (f"SMARTSCHOOL/USER/{action} for "
+                 f"{person.first_name} {person.name}")
+        changes.append(f"Queued {label}")
+        self._create_and_run_task('SMARTSCHOOL', 'USER', action, {
+            'person_id': person.id,
+        }, changes, label=label)
+
+    @api.model
+    def _emit_cloud_group_del_for_org(self, org, changes):
+        """Emit CLOUD/GROUP/DEL for the org's COM group (Google has no
+        SEC concept — only mail-enabled groups). Skip silently when no
+        ``com_group_email`` is set or Workspace isn't enabled."""
+        if not org:
+            return
+        processor = self.env['myschool.betask.processor']
+        if not hasattr(processor, '_cloud_provisioning_enabled') \
+                or not processor._cloud_provisioning_enabled():
+            return
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        group_email = (org.com_group_email or '').strip() \
+            if 'com_group_email' in org._fields else ''
+        if not group_email:
+            return
+        label = f"CLOUD/GROUP/DEL ({group_email})"
+        changes.append(f"Queued {label}")
+        self._create_and_run_task('CLOUD', 'GROUP', 'DEL', {
+            'org_id': org.id,
+            'group_email': group_email,
+        }, changes, label=label)
+
+    @api.model
+    def _emit_ldap_ou_del_for_org(self, org, changes):
+        """Emit LDAP/ORG/DEL for the org's OU. Skip persongroup orgs —
+        those have AD groups (not OUs) which are already covered by
+        ``_emit_ldap_group_del_for_org``."""
+        if not org:
+            return
+        # Persongroup orgs map to AD groups, not OUs.
+        if org.org_type_id and org.org_type_id.name == 'PERSONGROUP':
+            return
+        if 'ou_fqdn_internal' not in org._fields:
+            return
+        ou_dn = (org.ou_fqdn_internal or '').strip()
+        if not ou_dn:
+            return
+        processor = self.env['myschool.betask.processor']
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        label = f"LDAP/ORG/DEL ({ou_dn})"
+        changes.append(f"Queued {label}")
+        self._create_and_run_task('LDAP', 'ORG', 'DEL', {
+            'org_id': org.id,
+        }, changes, label=label)
+
+    @api.model
+    def _emit_cloud_org_del_for_org(self, org, changes):
+        """Emit CLOUD/ORG/DEL for the org's Google OU. Workspace's
+        ``orgunits.delete`` rejects when the OU still contains users
+        or devices — admin must clear them first (which is what the
+        per-person CLOUD/USER/DEL cascade does)."""
+        if not org:
+            return
+        processor = self.env['myschool.betask.processor']
+        if not hasattr(processor, '_cloud_provisioning_enabled') \
+                or not processor._cloud_provisioning_enabled():
+            return
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        label = f"CLOUD/ORG/DEL ({org.name})"
+        changes.append(f"Queued {label}")
+        self._create_and_run_task('CLOUD', 'ORG', 'DEL', {
+            'org_id': org.id,
+        }, changes, label=label)
 
     @api.model
     def process_manual_person_del(self, task):
@@ -706,10 +912,14 @@ class ManualTaskProcessor(models.AbstractModel):
         changes = []
         person_name = f"{person.first_name} {person.name}" if person.first_name else person.name
 
-        # LDAP cascade — emit BEFORE we delete the proprelations so the
-        # handler can still resolve the person's org context. The actual
-        # AD account removal will run when the LDAP betask is processed.
+        # LDAP + Cloud cascade — emit BEFORE we delete the proprelations
+        # so the handlers can still resolve the person's org context.
+        # The actual AD + Google account removal runs inline via
+        # ``_create_and_run_task``; failures leave the cascade task in
+        # ``status='error'`` for inspection but do not block the local
+        # person/proprelation unlink.
         self._emit_ldap_user_task(person, 'DEL', changes)
+        self._emit_cloud_user_task(person, 'DEL', changes)
 
         # Delete proprelations first
         PropRelation = self.env['myschool.proprelation']
@@ -848,6 +1058,11 @@ class ManualTaskProcessor(models.AbstractModel):
         # user/group creations in this org succeed without _ensure_ou_path
         # having to backfill.
         self._emit_ldap_org_add(child_org, changes)
+        # CLOUD cascade — same idea on the Workspace side: ensure the
+        # Google OU exists (and the persongroup's mail-enabled Group)
+        # so subsequent CLOUD/USER/ADD calls find a target OU and
+        # CLOUD/GROUPMEMBER/ADD finds the group.
+        self._emit_cloud_org_add(child_org, changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -879,6 +1094,51 @@ class ManualTaskProcessor(models.AbstractModel):
         self._create_and_run_task('LDAP', 'ORG', 'ADD', {
             'org_id': org.id,
         }, changes, label=label)
+
+    @api.model
+    def _emit_cloud_org_add(self, org, changes):
+        """Workspace counterpart of ``_emit_ldap_org_add``.
+
+        Routing mirrors LDAP:
+          - PERSONGROUP orgs → CLOUD/GROUP/ADD (mail-enabled Google
+            Group) using ``com_group_email``
+          - Other orgs → CLOUD/ORG/ADD (Google Org Unit) when the org
+            maps to an OU path
+
+        Skips silently when no active Workspace tenant exists.
+        """
+        if not org:
+            return
+        processor = self.env['myschool.betask.processor']
+        if not processor._cloud_provisioning_enabled():
+            return
+        # Re-use the same school-level gate as LDAP.
+        school = (processor._resolve_parent_school_from_org(org)
+                  if hasattr(processor, '_resolve_parent_school_from_org')
+                  else None)
+        if not school or not self._school_wants_ldap(school, org):
+            return
+        org_type_name = (org.org_type_id.name or '').upper()
+        if org_type_name == 'PERSONGROUP':
+            group_email = (org.com_group_email or '').strip()
+            if not group_email:
+                return
+            label = f"CLOUD/GROUP/ADD for {group_email}"
+            changes.append(f"Queued {label}")
+            self._create_and_run_task('CLOUD', 'GROUP', 'ADD', {
+                'group_email': group_email,
+                'group_name': org.com_group_name or org.name_short,
+                'description': org.name,
+                'org_id': org.id,
+            }, changes, label=label)
+        else:
+            # Regular org → OU. We intentionally always queue (the
+            # CLOUD/ORG/ADD handler is idempotent + walks the OU path).
+            label = f"CLOUD/ORG/ADD for {org.name}"
+            changes.append(f"Queued {label}")
+            self._create_and_run_task('CLOUD', 'ORG', 'ADD', {
+                'org_id': org.id,
+            }, changes, label=label)
 
     @api.model
     def process_manual_org_upd(self, task):
@@ -1038,10 +1298,19 @@ class ManualTaskProcessor(models.AbstractModel):
         changes = []
         org_name = org.name
 
-        # LDAP cascade — emit GROUP/DEL betasks BEFORE unlink so the
-        # handler can still resolve the org context when the AD groups
-        # are deleted. Captures both COM and SEC group names if present.
+        # LDAP + Cloud cascade — emit BEFORE unlink so the handlers
+        # can still resolve the org context.
+        #
+        # Order matters within the cloud cascade: GROUP/DEL drops the
+        # mail-enabled group first; ORG/DEL removes the Workspace OU
+        # last (Google rejects ``orgunits.delete`` when the OU still
+        # contains users/devices/groups). The actual user-side removal
+        # is driven by separate per-person CLOUD/USER/DEL tasks the
+        # caller should queue beforehand.
         self._emit_ldap_group_del_for_org(org, changes)
+        self._emit_cloud_group_del_for_org(org, changes)
+        self._emit_ldap_ou_del_for_org(org, changes)
+        self._emit_cloud_org_del_for_org(org, changes)
 
         # Delete all proprelations referencing this org
         all_rels = PropRelation.search([
@@ -1097,6 +1366,7 @@ class ManualTaskProcessor(models.AbstractModel):
             'person_id': ('id_person', 'myschool.person'),
             'org_id': ('id_org', 'myschool.org'),
             'org_parent_id': ('id_org_parent', 'myschool.org'),
+            'org_child_id': ('id_org_child', 'myschool.org'),
             'role_id': ('id_role', 'myschool.role'),
             'role_parent_id': ('id_role_parent', 'myschool.role'),
         }
@@ -1169,6 +1439,14 @@ class ManualTaskProcessor(models.AbstractModel):
             if grp_changes:
                 changes.extend(grp_changes)
 
+        # Cascade for PG-G (group-in-group): emit GROUPMEMBER/ADD on
+        # every shared (com/sec) flag-pair so AD/Cloud nest the child
+        # group inside the parent.
+        if rel_type_name == 'PG-G':
+            grp_changes = self._cascade_pg_g_group_membership(new_rel, action='ADD')
+            if grp_changes:
+                changes.extend(grp_changes)
+
         return {'success': True, 'changes': '\n'.join(changes)}
 
     @api.model
@@ -1219,6 +1497,361 @@ class ManualTaskProcessor(models.AbstractModel):
                         'group_kind': kind,
                     },
                     changes, label=lbl)
+        return changes
+
+    # =========================================================================
+    # MANUAL/DOMAIN/RENAME — bulk-rename internal/external domain
+    # =========================================================================
+
+    @staticmethod
+    def _domain_to_dc_suffix(domain):
+        """``school.local`` → ``dc=school,dc=local`` (lowercased)."""
+        if not domain:
+            return ''
+        parts = [p.strip() for p in domain.lower().split('.') if p.strip()]
+        return ','.join(f'dc={p}' for p in parts)
+
+    @staticmethod
+    def _replace_suffix_ci(value, old_suffix, new_suffix):
+        """Case-insensitive suffix replace. Preserves the prefix verbatim."""
+        if not value or not old_suffix:
+            return value
+        lower = value.lower()
+        if not lower.endswith(old_suffix.lower()):
+            return value
+        return value[:-len(old_suffix)] + new_suffix
+
+    @staticmethod
+    def _replace_email_suffix(value, old_domain, new_domain):
+        if not value or not old_domain:
+            return value
+        suffix_old = f'@{old_domain.lower()}'
+        suffix_new = f'@{new_domain}'
+        if value.lower().endswith(suffix_old):
+            return value[:-len(suffix_old)] + suffix_new
+        return value
+
+    @api.model
+    def process_manual_domain_rename(self, task):
+        """Bulk-rename ``domain_internal`` and/or ``domain_external``
+        across a SCHOOL or SCHOOLBOARD scope.
+
+        Steps:
+          1. Resolve scope orgs (target + ORG-TREE descendants).
+          2. Update DB strings on each org (domain fields + dc-suffix in
+             OU/group FQDN fields + ``com_group_email`` suffix).
+          3. Update DB strings on each person reachable via PERSON-TREE
+             (person FQDN fields + ``email_cloud`` suffix).
+          4. Update ``res.users.login`` for any user whose login ends in
+             the old external domain.
+          5. Sync ``res.company.email_domain`` for linked companies.
+          6. Queue (and run) LDAP/USER/UPD per affected person and
+             LDAP/GROUP/UPD per affected com/sec group.
+          7. Emit a high-priority ``DOMAIN.RENAMED`` sysevent.
+        """
+        data = self._get_manual_data(task)
+        if not data:
+            return {'success': False, 'error': 'No data in task'}
+
+        scope_org_id = data.get('scope_org_id')
+        old_int = (data.get('old_domain_internal') or '').lower().strip()
+        new_int = (data.get('new_domain_internal') or '').lower().strip() or None
+        old_ext = (data.get('old_domain_external') or '').lower().strip()
+        new_ext = (data.get('new_domain_external') or '').lower().strip() or None
+
+        if not scope_org_id:
+            return {'success': False, 'error': 'scope_org_id required'}
+        if not new_int and not new_ext:
+            return {'success': False, 'error': 'No new domain provided'}
+
+        Org = self.env['myschool.org']
+        scope_org = Org.browse(scope_org_id).exists()
+        if not scope_org:
+            return {'success': False, 'error': f'Org id {scope_org_id} not found'}
+
+        # ----- 1. Resolve scope ----------------------------------------
+        scope_orgs = self._domain_rename_collect_scope(scope_org)
+        changes = [f'Scope: {len(scope_orgs)} orgs onder {scope_org.name}']
+
+        old_dc_int = self._domain_to_dc_suffix(old_int) if (new_int and old_int) else ''
+        new_dc_int = self._domain_to_dc_suffix(new_int) if new_int else ''
+        old_dc_ext = self._domain_to_dc_suffix(old_ext) if (new_ext and old_ext) else ''
+        new_dc_ext = self._domain_to_dc_suffix(new_ext) if new_ext else ''
+
+        # ----- 2. Update orgs ------------------------------------------
+        org_field_specs_internal = (
+            ('ou_fqdn_internal', old_dc_int, new_dc_int),
+            ('com_group_fqdn_internal', old_dc_int, new_dc_int),
+            ('sec_group_fqdn_internal', old_dc_int, new_dc_int),
+        )
+        org_field_specs_external = (
+            ('ou_fqdn_external', old_dc_ext, new_dc_ext),
+            ('com_group_fqdn_external', old_dc_ext, new_dc_ext),
+            ('sec_group_fqdn_external', old_dc_ext, new_dc_ext),
+        )
+        affected_comgroup_orgs = self.env['myschool.org']
+        affected_secgroup_orgs = self.env['myschool.org']
+
+        for org in scope_orgs:
+            update = {}
+            if new_int:
+                if org.domain_internal != new_int:
+                    update['domain_internal'] = new_int
+                for f, old_s, new_s in org_field_specs_internal:
+                    val = getattr(org, f, None)
+                    if val and old_s and val.lower().endswith(old_s.lower()):
+                        update[f] = self._replace_suffix_ci(val, old_s, new_s)
+            if new_ext:
+                if org.domain_external != new_ext:
+                    update['domain_external'] = new_ext
+                for f, old_s, new_s in org_field_specs_external:
+                    val = getattr(org, f, None)
+                    if val and old_s and val.lower().endswith(old_s.lower()):
+                        update[f] = self._replace_suffix_ci(val, old_s, new_s)
+                if org.com_group_email and old_ext:
+                    new_email = self._replace_email_suffix(
+                        org.com_group_email, old_ext, new_ext)
+                    if new_email != org.com_group_email:
+                        update['com_group_email'] = new_email
+            if update:
+                org.with_context(skip_manual_audit=True,
+                                 skip_pg_flag_handling=True).write(update)
+            if org.has_comgroup and org.com_group_email:
+                affected_comgroup_orgs |= org
+            if org.has_secgroup:
+                affected_secgroup_orgs |= org
+
+        changes.append(
+            f'Org-strings bijgewerkt voor {len(scope_orgs)} org(s)')
+
+        # ----- 3. Update persons --------------------------------------
+        Person = self.env['myschool.person']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+        pt_type = PropRelationType.search(
+            [('name', '=', 'PERSON-TREE')], limit=1)
+        person_to_org = {}  # person.id -> org (target_org for LDAP UPD)
+        if pt_type:
+            pt_rels = PropRelation.search([
+                ('proprelation_type_id', '=', pt_type.id),
+                ('id_org', 'in', scope_orgs.ids),
+                ('is_active', '=', True),
+                ('id_person', '!=', False),
+            ])
+            for rel in pt_rels:
+                if rel.id_person.id not in person_to_org:
+                    person_to_org[rel.id_person.id] = rel.id_org
+
+        persons = Person.browse(list(person_to_org.keys())).exists()
+        for person in persons:
+            update = {}
+            if new_int and old_dc_int:
+                if person.person_fqdn_internal and \
+                        person.person_fqdn_internal.lower().endswith(old_dc_int.lower()):
+                    update['person_fqdn_internal'] = self._replace_suffix_ci(
+                        person.person_fqdn_internal, old_dc_int, new_dc_int)
+            if new_ext and old_dc_ext:
+                if person.person_fqdn_external and \
+                        person.person_fqdn_external.lower().endswith(old_dc_ext.lower()):
+                    update['person_fqdn_external'] = self._replace_suffix_ci(
+                        person.person_fqdn_external, old_dc_ext, new_dc_ext)
+            if new_ext and old_ext and person.email_cloud:
+                new_email = self._replace_email_suffix(
+                    person.email_cloud, old_ext, new_ext)
+                if new_email != person.email_cloud:
+                    update['email_cloud'] = new_email
+            if update:
+                person.with_context(skip_manual_audit=True).write(update)
+        changes.append(f'Person-strings bijgewerkt voor {len(persons)} person(en)')
+
+        # ----- 4. Update res.users.login -------------------------------
+        users_renamed = 0
+        if new_ext and old_ext:
+            ResUsers = self.env['res.users'].sudo()
+            users = ResUsers.search([('login', '=ilike', f'%@{old_ext}')])
+            for u in users:
+                new_login = self._replace_email_suffix(u.login, old_ext, new_ext)
+                if new_login != u.login:
+                    try:
+                        u.write({'login': new_login})
+                        users_renamed += 1
+                    except Exception as e:
+                        changes.append(
+                            f'  res.users login {u.login} → {new_login} FAILED: {e}')
+            changes.append(f'res.users.login hernoemd: {users_renamed}')
+
+        # ----- 5. Sync res.company.email_domain ------------------------
+        if new_ext:
+            for org in scope_orgs:
+                if org.company_id and org.domain_external:
+                    org.company_id.with_context(
+                        skip_school_rename_guard=True).write(
+                            {'email_domain': org.domain_external})
+
+        # ----- 6. Queue LDAP UPD tasks ---------------------------------
+        for person in persons:
+            target_org = person_to_org.get(person.id)
+            self._create_and_run_task(
+                'LDAP', 'USER', 'UPD',
+                {
+                    'person_id': person.id,
+                    'org_id': target_org.id if target_org else None,
+                },
+                changes,
+                label=f'LDAP/USER/UPD {person.name}')
+
+        # COM groups: only meaningful update for an external domain
+        # rename is the ``mail`` attribute. The DN itself lives under
+        # the internal DC suffix so it doesn't move. When ``domain_internal``
+        # also changes the AD group needs a DN move which ``update_group``
+        # cannot do — skip with a warning, admin should handle that
+        # separately (delete + re-add, or a manual modify_dn).
+        if new_int and old_int and new_int != old_int:
+            changes.append(
+                f'WARNING: domain_internal rename ({old_int} → {new_int}) '
+                f'requires AD group DN moves which are NOT cascaded. '
+                f'COM/SEC groups in {len(affected_comgroup_orgs) + len(affected_secgroup_orgs)} '
+                f'org(s) may need manual modify_dn.')
+        if new_ext:
+            for org in affected_comgroup_orgs:
+                group_dn = (org.com_group_fqdn_internal or '').strip()
+                if not group_dn:
+                    changes.append(
+                        f'  Skip LDAP/GROUP/UPD COM {org.name}: '
+                        f'no com_group_fqdn_internal')
+                    continue
+                self._create_and_run_task(
+                    'LDAP', 'GROUP', 'UPD',
+                    {
+                        'org_id': org.id,
+                        'group_dn': group_dn,
+                        'changes': {'mail': org.com_group_email or ''},
+                    },
+                    changes,
+                    label=f'LDAP/GROUP/UPD COM {org.name}')
+        # SEC groups: no mail attribute on AD security groups; an
+        # external-only rename leaves nothing to update. Skip silently.
+
+        # ----- 7. Sysevent ---------------------------------------------
+        SysEventService = self.env.get('myschool.sys.event.service')
+        if SysEventService:
+            SysEventService.create_sys_error(
+                'DOMAIN.RENAMED',
+                (f'Bulk-domeinrename: scope={scope_org.name} '
+                 f'(id={scope_org.id}, kind={scope_org.org_type_id.name}); '
+                 f'intern {old_int or "-"} → {new_int or "(ongewijzigd)"}; '
+                 f'extern {old_ext or "-"} → {new_ext or "(ongewijzigd)"}; '
+                 f'orgs={len(scope_orgs)}, persons={len(persons)}, '
+                 f'res.users={users_renamed}, com_groups='
+                 f'{len(affected_comgroup_orgs)}, sec_groups='
+                 f'{len(affected_secgroup_orgs)}'),
+                'ERROR-NONBLOCKING', True)
+
+        return {'success': True, 'changes': '\n'.join(changes)}
+
+    @api.model
+    def _domain_rename_collect_scope(self, root_org):
+        """BFS via ORG-TREE from ``root_org`` downward. Returns the org
+        + every active descendant. Identical traversal to the one in
+        the wizard but mirrored on the processor side so the betask is
+        self-contained."""
+        Org = self.env['myschool.org']
+        PropRelationType = self.env['myschool.proprelation.type']
+        PropRelation = self.env['myschool.proprelation']
+        org_tree_type = PropRelationType.search(
+            [('name', '=', 'ORG-TREE')], limit=1)
+        result_ids = {root_org.id}
+        if not org_tree_type:
+            return Org.browse(list(result_ids))
+        frontier = {root_org.id}
+        while frontier:
+            children = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org_parent', 'in', list(frontier)),
+                ('is_active', '=', True),
+            ])
+            child_ids = set()
+            for rel in children:
+                if rel.id_org and rel.id_org.id not in result_ids:
+                    child_ids.add(rel.id_org.id)
+                if rel.id_org_child and rel.id_org_child.id not in result_ids:
+                    child_ids.add(rel.id_org_child.id)
+            child_ids -= result_ids
+            result_ids.update(child_ids)
+            frontier = child_ids
+        return Org.browse(list(result_ids))
+
+    # =========================================================================
+
+    @api.model
+    def _cascade_pg_g_group_membership(self, pg_g, action='ADD'):
+        """When a PG-G (group-in-group) relation is (de)activated, queue
+        LDAP/GROUPMEMBER and CLOUD/GROUPMEMBER tasks so AD/Workspace nest
+        the child group inside the parent. One queued task per
+        flag-pair (COM, SEC) that BOTH parent and child carry — that's
+        the natural mapping: a com-group nests inside a com-group, a
+        sec-group inside a sec-group.
+
+        action: 'ADD' or 'REMOVE'.
+        """
+        changes = []
+        if not pg_g.id_org or not pg_g.id_org_child:
+            return changes
+        parent = pg_g.id_org
+        child = pg_g.id_org_child
+
+        flag_specs = [
+            ('has_comgroup', 'COM',
+             'com_group_fqdn_internal', 'com_group_email'),
+            ('has_secgroup', 'SEC',
+             'sec_group_fqdn_internal', None),  # SEC groups are AD-only
+        ]
+        cloud_enabled = False
+        try:
+            cloud_enabled = bool(self.env['myschool.google.workspace.config']
+                                 .sudo().search_count([('active', '=', True)]))
+        except Exception:
+            cloud_enabled = False
+
+        for flag, kind, fqdn_field, email_field in flag_specs:
+            if not getattr(parent, flag, False) or not getattr(child, flag, False):
+                continue
+
+            parent_dn = getattr(parent, fqdn_field, None)
+            child_dn = getattr(child, fqdn_field, None)
+            if parent_dn and child_dn:
+                lbl = (f"LDAP/GROUPMEMBER/{action} ({kind}) nested "
+                       f"{child.name} → {parent.name}")
+                self._create_and_run_task(
+                    'LDAP', 'GROUPMEMBER', action,
+                    {
+                        'group_dn': parent_dn,
+                        'member_dn': child_dn,
+                        'org_id': parent.id,
+                        'group_kind': kind,
+                        'pg_g_id': pg_g.id,
+                    },
+                    changes, label=lbl)
+                changes.append(f"Queued {lbl}")
+
+            # CLOUD path — only for COM (mail-enabled groups)
+            if cloud_enabled and kind == 'COM' and email_field:
+                parent_email = getattr(parent, email_field, None)
+                child_email = getattr(child, email_field, None)
+                if parent_email and child_email:
+                    cloud_lbl = (f"CLOUD/GROUPMEMBER/{action} nested "
+                                 f"{child.name} → {parent.name}")
+                    self._create_and_run_task(
+                        'CLOUD', 'GROUPMEMBER', action,
+                        {
+                            'group_email': parent_email,
+                            'member_email': child_email,
+                            'org_id': parent.id,
+                            'pg_g_id': pg_g.id,
+                        },
+                        changes, label=cloud_lbl)
+                    changes.append(f"Queued {cloud_lbl}")
+
         return changes
 
     @api.model
@@ -1304,11 +1937,13 @@ class ManualTaskProcessor(models.AbstractModel):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
+        pg_g_type = PropRelationType.search([('name', '=', 'PG-G')], limit=1)
         changes = []
 
         # Capture PPSBRs we'll deactivate so we can emit LDAP cascades
         # BEFORE the records are written inactive.
         affected_ppsbrs = self.env['myschool.proprelation']
+        affected_pg_g = self.env['myschool.proprelation']
 
         # Mode 1: explicit IDs
         proprelation_ids = data.get('proprelation_ids')
@@ -1318,10 +1953,17 @@ class ManualTaskProcessor(models.AbstractModel):
                 if ppsbr_type:
                     affected_ppsbrs |= rels.filtered(
                         lambda r: r.proprelation_type_id.id == ppsbr_type.id)
+                if pg_g_type:
+                    affected_pg_g |= rels.filtered(
+                        lambda r: r.proprelation_type_id.id == pg_g_type.id)
                 # Emit LDAP cascade BEFORE deactivation.
                 for ppsbr in affected_ppsbrs:
                     grp_changes = self._cascade_ppsbr_group_membership(
                         ppsbr, action='REMOVE')
+                    changes.extend(grp_changes)
+                for pg_g in affected_pg_g:
+                    grp_changes = self._cascade_pg_g_group_membership(
+                        pg_g, action='REMOVE')
                     changes.extend(grp_changes)
                 rels.write({'is_active': False})
                 changes.append(f"Deactivated {len(rels)} proprelation(s) by ID")
@@ -1347,6 +1989,26 @@ class ManualTaskProcessor(models.AbstractModel):
                         changes.extend(grp_changes)
                 rels.write({'is_active': False})
                 changes.append(f"Deactivated {len(rels)} {rel_type_name} relation(s) for person {person_id} in org {org_id}")
+
+        # Mode 3: PG-G by parent + child org (no person involved)
+        org_child_id = data.get('org_child_id')
+        if rel_type_name == 'PG-G' and org_id and org_child_id:
+            rel_type = self._get_or_create_proprelation_type('PG-G')
+            rels = PropRelation.search([
+                ('proprelation_type_id', '=', rel_type.id),
+                ('id_org', '=', org_id),
+                ('id_org_child', '=', org_child_id),
+                ('is_active', '=', True),
+            ])
+            if rels:
+                for pg_g in rels:
+                    grp_changes = self._cascade_pg_g_group_membership(
+                        pg_g, action='REMOVE')
+                    changes.extend(grp_changes)
+                rels.write({'is_active': False})
+                changes.append(
+                    f"Deactivated {len(rels)} PG-G relation(s) "
+                    f"(parent={org_id}, child={org_child_id})")
 
         if not changes:
             return {'success': False, 'error': 'No proprelations found to deactivate'}

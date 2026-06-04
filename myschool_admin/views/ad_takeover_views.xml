@@ -1,0 +1,687 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ===========================================================
+         AD TAKEOVER FINDING — search + kanban (Fase D1)
+         =========================================================== -->
+
+    <record id="view_ad_takeover_finding_search" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.finding.search</field>
+        <field name="model">myschool.ad.takeover.finding</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="ad_dn"/>
+                <field name="ad_cn"/>
+                <field name="ad_mail"/>
+                <field name="sap_ref"/>
+                <field name="matched_person_id"/>
+                <field name="session_id"/>
+
+                <separator/>
+                <filter string="AD" name="src_ad"
+                        domain="[('source', '=', 'ad')]"/>
+                <filter string="Cloud" name="src_cloud"
+                        domain="[('source', '=', 'cloud')]"/>
+                <filter string="Smartschool" name="src_ss"
+                        domain="[('source', '=', 'smartschool')]"/>
+
+                <separator/>
+                <filter string="OUs" name="kind_ou"
+                        domain="[('kind', '=', 'ou')]"/>
+                <filter string="Groups" name="kind_group"
+                        domain="[('kind', '=', 'group')]"/>
+                <filter string="Users" name="kind_user"
+                        domain="[('kind', '=', 'user')]"/>
+
+                <separator/>
+                <filter string="STAMP_ID" name="pk_stamp_id"
+                        domain="[('proposal_kind', '=', 'stamp_id')]"/>
+                <filter string="LINK_ONLY" name="pk_link_only"
+                        domain="[('proposal_kind', '=', 'link_only')]"/>
+                <filter string="RENAME" name="pk_rename"
+                        domain="[('proposal_kind', '=', 'rename')]"/>
+                <filter string="MOVE" name="pk_move"
+                        domain="[('proposal_kind', '=', 'move')]"/>
+                <filter string="MEMBERSHIP_ADD" name="pk_member"
+                        domain="[('proposal_kind', '=', 'membership_add')]"/>
+                <filter string="DELETE_AFTER" name="pk_delete"
+                        domain="[('proposal_kind', '=', 'delete_after')]"/>
+
+                <separator/>
+                <filter string="Ontdekt" name="st_discovered"
+                        domain="[('state', '=', 'discovered')]"/>
+                <filter string="Voorstel klaar" name="st_proposed"
+                        domain="[('state', '=', 'proposed')]"/>
+                <filter string="Goedgekeurd" name="st_approved"
+                        domain="[('state', '=', 'approved')]"/>
+                <filter string="Pilot loopt" name="st_pilot"
+                        domain="[('state', '=', 'applied_pilot')]"/>
+                <filter string="Voltooid" name="st_done"
+                        domain="[('state', '=', 'done')]"/>
+                <filter string="Identity-conflict" name="st_conflict"
+                        domain="[('state', '=', 'identity_conflict')]"/>
+
+                <separator/>
+                <filter string="Hoog risico" name="risk_high"
+                        domain="[('risk_level', '=', 'high')]"/>
+                <filter string="Medium risico" name="risk_medium"
+                        domain="[('risk_level', '=', 'medium')]"/>
+
+                <separator/>
+                <filter string="Groeperen op state (pipeline)" name="gb_state"
+                        context="{'group_by': 'state'}"/>
+                <filter string="Groeperen op bron" name="gb_source"
+                        context="{'group_by': 'source'}"/>
+                <filter string="Groeperen op kind" name="gb_kind"
+                        context="{'group_by': 'kind'}"/>
+                <filter string="Groeperen op voorstel-type" name="gb_proposal_kind"
+                        context="{'group_by': 'proposal_kind'}"/>
+                <filter string="Groeperen op sessie" name="gb_session"
+                        context="{'group_by': 'session_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_ad_takeover_finding_kanban" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.finding.kanban</field>
+        <field name="model">myschool.ad.takeover.finding</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" class="o_kanban_small_column"
+                    records_draggable="0" sample="1">
+                <field name="ad_dn"/>
+                <field name="ad_cn"/>
+                <field name="ad_mail"/>
+                <field name="source"/>
+                <field name="kind"/>
+                <field name="state"/>
+                <field name="proposal_kind"/>
+                <field name="risk_level"/>
+                <field name="sap_ref"/>
+                <field name="matched_person_id"/>
+                <field name="notes"/>
+                <field name="sibling_ids"/>
+                <progressbar field="state" colors='{"discovered":"muted","proposed":"info","approved":"warning","applied_pilot":"warning","done":"success","identity_conflict":"danger","ignored":"muted"}'/>
+                <templates>
+                    <t t-name="card">
+                        <div class="d-flex align-items-center mb-1">
+                            <i t-attf-class="fa #{record.kind.raw_value == 'ou' ? 'fa-folder' : (record.kind.raw_value == 'group' ? 'fa-users' : 'fa-user')} me-2"/>
+                            <field name="ad_cn" class="fw-bold"/>
+                            <span class="ms-auto badge text-bg-info" t-if="record.source.raw_value == 'ad'">AD</span>
+                            <span class="ms-auto badge text-bg-warning" t-if="record.source.raw_value == 'cloud'">Cloud</span>
+                            <span class="ms-auto badge text-bg-success" t-if="record.source.raw_value == 'smartschool'">SS</span>
+                        </div>
+                        <div class="text-muted small text-truncate" t-att-title="record.ad_dn.raw_value">
+                            <field name="ad_dn"/>
+                        </div>
+                        <div class="mt-1" t-if="record.proposal_kind.raw_value">
+                            <span class="badge text-bg-secondary">
+                                <field name="proposal_kind"/>
+                            </span>
+                        </div>
+                        <div class="mt-1" t-if="record.matched_person_id.raw_value">
+                            <i class="fa fa-link me-1" title="Gekoppelde persoon" role="img"/>
+                            <field name="matched_person_id"/>
+                        </div>
+                        <div class="mt-1 text-muted small" t-if="record.notes.raw_value">
+                            <field name="notes"/>
+                        </div>
+                        <div class="d-flex justify-content-between mt-2">
+                            <span class="badge text-bg-danger" t-if="record.risk_level.raw_value == 'high'">
+                                <i class="fa fa-exclamation-triangle me-1" title="Hoog risico" role="img"/>hoog
+                            </span>
+                            <span class="badge text-bg-warning" t-if="record.risk_level.raw_value == 'medium'">medium</span>
+                            <span t-if="record.sap_ref.raw_value" class="text-muted small ms-auto">
+                                sap_ref=<field name="sap_ref"/>
+                            </span>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Diff-wizard form-view (slide-over) -->
+    <record id="view_ad_takeover_diff_wizard_form" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.diff.wizard.form</field>
+        <field name="model">myschool.ad.takeover.diff.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <h2>
+                            <field name="source" widget="badge"
+                                   decoration-info="source == 'ad'"
+                                   decoration-warning="source == 'cloud'"/>
+                            <field name="kind"/>:
+                            <field name="ad_cn" readonly="1"/>
+                        </h2>
+                        <div class="text-muted">
+                            <field name="ad_dn" readonly="1"/>
+                        </div>
+                    </div>
+
+                    <group>
+                        <group string="State + voorstel">
+                            <field name="state" widget="badge"
+                                   decoration-info="state in ('discovered', 'proposed')"
+                                   decoration-warning="state in ('approved', 'applied_pilot')"
+                                   decoration-success="state == 'done'"
+                                   decoration-danger="state == 'identity_conflict'"
+                                   decoration-muted="state == 'ignored'"/>
+                            <field name="proposal_kind" widget="badge"/>
+                            <field name="risk_level" widget="badge"
+                                   decoration-danger="risk_level == 'high'"
+                                   decoration-warning="risk_level == 'medium'"/>
+                            <field name="matched_person_id"/>
+                            <field name="sibling_ids" widget="many2many_tags"
+                                   string="Cross-source"
+                                   invisible="not sibling_ids"/>
+                        </group>
+                    </group>
+
+                    <group string="Diff — 3 kolommen">
+                        <group string="BRON (huidige staat)">
+                            <field name="bron_text" nolabel="1"
+                                   widget="text" readonly="1"/>
+                        </group>
+                        <group string="DB (myschool)">
+                            <field name="db_text" nolabel="1"
+                                   widget="text" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group string="ACTIE — wat dit voorstel gaat doen">
+                        <field name="actie_text" nolabel="1"
+                               widget="text" readonly="1"/>
+                    </group>
+
+                    <group string="⚠ Veiligheidsnotities"
+                           invisible="not risk_note">
+                        <field name="risk_note" nolabel="1"
+                               widget="text" readonly="1"/>
+                    </group>
+
+                    <group string="Snapshot (rollback)"
+                           invisible="not snapshot_preview">
+                        <field name="snapshot_preview" nolabel="1"
+                               widget="text" readonly="1"/>
+                    </group>
+                </sheet>
+
+                <footer>
+                    <button name="action_approve" type="object"
+                            string="Goedkeuren" class="btn-success"
+                            invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
+                    <button name="action_pilot" type="object"
+                            string="Pilot" class="btn-warning"
+                            invisible="state != 'approved' or proposal_kind not in ('stamp_id', 'rename', 'move', 'membership_add')"
+                            confirm="Pilot voert het voorstel uit en maakt een rollback-snapshot. Bevestig."/>
+                    <button name="action_verify" type="object"
+                            string="Verifieer pilot" class="btn-success"
+                            invisible="state != 'applied_pilot'"/>
+                    <button name="action_rollback" type="object"
+                            string="Rollback" class="btn-danger"
+                            invisible="state != 'applied_pilot'"
+                            confirm="Rollback voert de inverse bron-actie uit op basis van de snapshot."/>
+                    <button name="action_takeover" type="object"
+                            string="Voer direct uit"
+                            invisible="state in ('done', 'ignored', 'identity_conflict', 'applied_pilot')"/>
+                    <button name="action_resolve_conflict" type="object"
+                            string="Conflict negeren" class="btn-secondary"
+                            invisible="state != 'identity_conflict'"/>
+                    <button name="action_ignore" type="object"
+                            string="Negeer"
+                            invisible="state == 'ignored'"/>
+                    <button string="Sluiten" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ad_takeover_diff_wizard" model="ir.actions.act_window">
+        <field name="name">Voorstel-diff</field>
+        <field name="res_model">myschool.ad.takeover.diff.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="action_ad_takeover_finding" model="ir.actions.act_window">
+        <field name="name">AD-takeover findings</field>
+        <field name="res_model">myschool.ad.takeover.finding</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="view_ad_takeover_finding_search"/>
+        <field name="context">{'search_default_gb_state': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Geen findings — start een AD-takeover sessie en draai
+                "Scan" om de pipeline te vullen.
+            </p>
+        </field>
+    </record>
+
+    <!-- ===========================================================
+         AD TAKEOVER SESSION
+         =========================================================== -->
+
+    <record id="view_ad_takeover_session_list" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.session.list</field>
+        <field name="model">myschool.ad.takeover.session</field>
+        <field name="arch" type="xml">
+            <list decoration-info="environment == 'test'"
+                  decoration-danger="environment == 'prod'">
+                <field name="name"/>
+                <field name="environment" widget="badge"
+                       decoration-success="environment == 'prod'"
+                       decoration-info="environment == 'test'"/>
+                <field name="current_phase" widget="badge"
+                       decoration-info="current_phase == 'preflight'"
+                       decoration-warning="current_phase in ('link', 'normalise')"
+                       decoration-success="current_phase == 'done'"/>
+                <field name="ldap_config_id" optional="show"/>
+                <field name="google_workspace_config_id" optional="show"/>
+                <field name="scope_org_id"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'discovered'"
+                       decoration-warning="state == 'in_progress'"
+                       decoration-success="state == 'completed'"/>
+                <field name="finding_count"/>
+                <field name="proposed_count"/>
+                <field name="approved_count"/>
+                <field name="done_count"/>
+                <field name="conflict_count" optional="show"/>
+                <field name="last_scan_at"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ad_takeover_session_form" model="ir.ui.view">
+        <field name="name">myschool.ad.takeover.session.form</field>
+        <field name="model">myschool.ad.takeover.session</field>
+        <field name="arch" type="xml">
+            <form string="AD-takeover sessie">
+                <header>
+                    <button name="action_scan" type="object"
+                            string="Scan AD" class="btn-primary"
+                            icon="fa-search"/>
+                    <button name="action_preflight_report" type="object"
+                            string="Pre-flight rapport" class="btn-secondary"
+                            icon="fa-stethoscope"
+                            invisible="not last_scan_at"/>
+                    <button name="action_apply_pending_takeovers" type="object"
+                            string="Pas takeovers toe" class="btn-success"
+                            icon="fa-check"
+                            invisible="takeover_pending_count == 0"
+                            confirm="Alle items met status 'takeover_pending' worden naar de DB gesynced."/>
+                    <button name="action_bulk_apply_after_pilot" type="object"
+                            string="Bulk-apply na pilot" class="btn-success"
+                            icon="fa-fast-forward"
+                            invisible="done_count == 0 or approved_count == 0"
+                            confirm="Alle approved findings waarvoor al een eerdere pilot is geverifieerd worden uitgevoerd. Combinaties zonder pilot-precedent blijven staan."/>
+                    <button name="action_apply_pending_deletes" type="object"
+                            string="Verwijder uit AD" class="btn-danger"
+                            icon="fa-trash"
+                            invisible="delete_after_count == 0"
+                            confirm="LET OP: alle items gemarkeerd 'verwijder na migratie' worden definitief uit AD verwijderd. Bevestig alleen als alle takeovers afgerond en gecontroleerd zijn."/>
+                    <button name="action_advance_phase" type="object"
+                            string="Volgende fase →" class="btn-warning"
+                            icon="fa-arrow-right"
+                            invisible="current_phase == 'done'"
+                            confirm="Vooruit naar volgende fase. Test-sessies blokkeren bij openstaande items; prod-sessies tonen alleen een waarschuwing."/>
+                    <button name="action_promote_to_prod" type="object"
+                            string="Promoot naar prod →" class="btn-danger"
+                            icon="fa-rocket"
+                            invisible="environment != 'test' or current_phase != 'done'"
+                            confirm="Een nieuwe prod-sessie wordt aangemaakt. De prod-omgeving wordt gescand en alle test-voorstellen worden gekopieerd. Goedkeuring per voorstel blijft nodig in de nieuwe prod-sessie."/>
+                    <button name="action_export_audit_report" type="object"
+                            string="Audit-rapport (CSV)" class="btn-secondary"
+                            icon="fa-download"
+                            invisible="finding_count == 0"/>
+                    <button name="action_clone_to_test" type="object"
+                            string="Stage in test ⤵" class="btn-warning"
+                            icon="fa-copy"
+                            invisible="environment != 'prod' or (not clone_target_ldap_config_id and not clone_target_google_workspace_config_id)"
+                            confirm="Kopieert de prod-skeleton (OUs/groups/users/memberships) naar de test-omgeving. Bestaande test-objecten worden ongemoeid gelaten. Wachtwoorden zijn random + accounts disabled — niet voor productie-gebruik."/>
+                    <field name="current_phase" widget="statusbar"
+                           statusbar_visible="preflight,link,normalise,cleanup,done"/>
+                    <field name="state" widget="statusbar" invisible="1"
+                           statusbar_visible="draft,discovered,in_progress,completed"/>
+                </header>
+                <sheet>
+                    <div class="alert alert-info" role="alert"
+                         invisible="environment != 'test'">
+                        <i class="fa fa-flask" title="Test-omgeving" role="img"/>
+                        <strong>TEST-omgeving</strong> — wijzigingen blijven binnen de test-bronnen
+                        (LDAP en/of Google). Geen impact op productie. Doorloop alle fasen,
+                        daarna "Promoot naar prod".
+                    </div>
+                    <div class="alert alert-danger" role="alert"
+                         invisible="environment != 'prod'">
+                        <i class="fa fa-exclamation-triangle" title="Waarschuwing" role="img"/>
+                        <strong>PRODUCTIE-omgeving</strong> — wijzigingen raken live AD- én
+                        Cloud-accounts en groepen. Goedkeur elk voorstel zorgvuldig;
+                        pilot waar mogelijk.
+                    </div>
+
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Sessienaam, bv. Migratie BAWA — maart 2026"/></h1>
+                    </div>
+                    <group>
+                        <group string="Scope">
+                            <field name="environment" widget="radio"
+                                   options="{'horizontal': true}"/>
+                            <field name="ldap_config_id"
+                                   options="{'no_create': True}"
+                                   domain="[('environment', '=', environment)]"/>
+                            <field name="google_workspace_config_id"
+                                   options="{'no_create': True}"
+                                   domain="[('environment', '=', environment)]"/>
+                            <field name="smartschool_config_id"
+                                   options="{'no_create': True}"
+                                   help="Smartschool kent geen test-omgeving; environment-validatie wordt overgeslagen."/>
+                            <field name="scope_org_id" options="{'no_create': True}"/>
+                            <field name="base_dn" readonly="1"
+                                   invisible="not ldap_config_id"/>
+                            <field name="cloud_ou_path" readonly="1"
+                                   invisible="not google_workspace_config_id"/>
+                            <field name="last_scan_at" readonly="1"/>
+                            <field name="role_filter_preflight" widget="radio"
+                                   options="{'horizontal': true}"
+                                   invisible="current_phase != 'preflight'"/>
+                            <field name="clone_target_ldap_config_id"
+                                   options="{'no_create': True}"
+                                   invisible="environment != 'prod'"
+                                   string="Clone-doel LDAP"/>
+                            <field name="clone_target_google_workspace_config_id"
+                                   options="{'no_create': True}"
+                                   invisible="environment != 'prod'"
+                                   string="Clone-doel Google"/>
+                        </group>
+                        <group string="Tellingen">
+                            <field name="finding_count" readonly="1"/>
+                            <field name="discovered_count" readonly="1"
+                                   string="Ontdekt"/>
+                            <field name="proposed_count" readonly="1"
+                                   string="Voorstel klaar"/>
+                            <field name="approved_count" readonly="1"
+                                   string="Goedgekeurd"/>
+                            <field name="applied_pilot_count" readonly="1"
+                                   string="Pilot loopt"
+                                   invisible="applied_pilot_count == 0"/>
+                            <field name="done_count" readonly="1"
+                                   string="Voltooid"/>
+                            <field name="conflict_count" readonly="1"
+                                   string="Identity-conflict"/>
+                            <field name="stamp_id_pending_count" readonly="1"
+                                   string="STAMP_ID openstaand"
+                                   invisible="stamp_id_pending_count == 0"/>
+                        </group>
+                    </group>
+
+                    <group invisible="not scan_summary">
+                        <field name="scan_summary" nolabel="1" widget="text" readonly="1"/>
+                    </group>
+
+                    <group invisible="not preflight_report_html"
+                           string="Pre-flight rapport">
+                        <field name="preflight_report_at" readonly="1"/>
+                        <field name="preflight_report_html" nolabel="1"
+                               readonly="1" widget="html"/>
+                    </group>
+
+                    <group invisible="not clone_report_html"
+                           string="Clone-rapport (Stage in test)">
+                        <field name="clone_report_at" readonly="1"/>
+                        <field name="clone_report_html" nolabel="1"
+                               readonly="1" widget="html"/>
+                    </group>
+
+                    <notebook>
+                        <page string="Pipeline" name="pipeline">
+                            <field name="finding_ids"
+                                   mode="kanban,list"
+                                   context="{'search_default_gb_state': 1}"/>
+                        </page>
+
+                        <page string="OUs" name="ous">
+                            <field name="finding_ou_ids"
+                                   context="{'default_session_id': id, 'default_kind': 'ou'}">
+                                <list editable="bottom"
+                                      decoration-success="state == 'done'"
+                                      decoration-warning="state in ('proposed', 'approved', 'applied_pilot')"
+                                      decoration-danger="state == 'identity_conflict'"
+                                      decoration-muted="state == 'ignored'">
+                                    <field name="source" widget="badge"
+                                           decoration-info="source == 'ad'"
+                                           decoration-warning="source == 'cloud'"
+                                           decoration-success="source == 'smartschool'"/>
+                                    <field name="ad_dn" readonly="1"/>
+                                    <field name="ad_cn" readonly="1"/>
+                                    <field name="proposed_parent_org_id"
+                                           options="{'no_create': True}"/>
+                                    <field name="proposed_org_type_id"
+                                           options="{'no_create': True}"/>
+                                    <field name="proposal_kind" widget="badge"
+                                           optional="show"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state in ('discovered', 'proposed')"
+                                           decoration-warning="state in ('approved', 'applied_pilot')"
+                                           decoration-success="state in ('done', 'verified')"
+                                           decoration-danger="state == 'identity_conflict'"
+                                           decoration-muted="state in ('ignored', 'rolled_back')"/>
+                                    <field name="risk_level" widget="badge"
+                                           decoration-info="risk_level == 'low'"
+                                           decoration-warning="risk_level == 'medium'"
+                                           decoration-danger="risk_level == 'high'"
+                                           optional="hide"/>
+                                    <field name="notes" optional="show"/>
+                                    <button name="action_open_diff_wizard"
+                                            type="object" icon="fa-eye"
+                                            title="Diff-preview (BRON / DB / ACTIE)"/>
+                                    <button name="action_approve"
+                                            type="object" icon="fa-check"
+                                            title="Goedkeuren"
+                                            invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
+                                    <button name="action_pilot"
+                                            type="object" icon="fa-flask"
+                                            title="Pilot — eerst snapshot, dan uitvoeren"
+                                            invisible="state != 'approved' or proposal_kind not in ('stamp_id', 'rename', 'move', 'membership_add')"/>
+                                    <button name="action_verify"
+                                            type="object" icon="fa-thumbs-up"
+                                            title="Verifieer pilot → done"
+                                            invisible="state != 'applied_pilot'"/>
+                                    <button name="action_rollback"
+                                            type="object" icon="fa-undo"
+                                            title="Rollback pilot"
+                                            invisible="state != 'applied_pilot'"
+                                            confirm="Rollback voert de inverse bron-actie uit op basis van de snapshot. Bevestig om door te gaan."/>
+                                    <button name="action_takeover"
+                                            type="object" icon="fa-bolt"
+                                            title="Voer voorstel direct uit (geen pilot)"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict', 'applied_pilot')"/>
+                                    <button name="action_mark_ignore"
+                                            type="object" icon="fa-times"
+                                            title="Negeer"
+                                            invisible="state == 'ignored'"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Groups" name="groups">
+                            <field name="finding_group_ids"
+                                   context="{'default_session_id': id, 'default_kind': 'group'}">
+                                <list editable="bottom"
+                                      decoration-success="state == 'done'"
+                                      decoration-warning="state in ('proposed', 'approved', 'applied_pilot')"
+                                      decoration-danger="state == 'identity_conflict' or (proposal_kind == 'delete_after' and state in ('proposed', 'approved'))"
+                                      decoration-muted="state == 'ignored'">
+                                    <field name="source" widget="badge"
+                                           decoration-info="source == 'ad'"
+                                           decoration-warning="source == 'cloud'"
+                                           decoration-success="source == 'smartschool'"/>
+                                    <field name="ad_dn" readonly="1"/>
+                                    <field name="ad_cn" readonly="1"/>
+                                    <field name="ad_mail" readonly="1" optional="show"/>
+                                    <field name="proposed_parent_org_id"
+                                           options="{'no_create': True}"/>
+                                    <field name="proposal_kind" widget="badge"
+                                           optional="show"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state in ('discovered', 'proposed')"
+                                           decoration-warning="state in ('approved', 'applied_pilot')"
+                                           decoration-success="state in ('done', 'verified')"
+                                           decoration-danger="state == 'identity_conflict'"
+                                           decoration-muted="state in ('ignored', 'rolled_back')"/>
+                                    <field name="risk_level" widget="badge"
+                                           decoration-info="risk_level == 'low'"
+                                           decoration-warning="risk_level == 'medium'"
+                                           decoration-danger="risk_level == 'high'"
+                                           optional="hide"/>
+                                    <field name="notes" optional="show"/>
+                                    <button name="action_open_diff_wizard"
+                                            type="object" icon="fa-eye"
+                                            title="Diff-preview (BRON / DB / ACTIE)"/>
+                                    <button name="action_approve"
+                                            type="object" icon="fa-check"
+                                            title="Goedkeuren"
+                                            invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
+                                    <button name="action_pilot"
+                                            type="object" icon="fa-flask"
+                                            title="Pilot — eerst snapshot, dan uitvoeren"
+                                            invisible="state != 'approved' or proposal_kind not in ('stamp_id', 'rename', 'move', 'membership_add')"/>
+                                    <button name="action_verify"
+                                            type="object" icon="fa-thumbs-up"
+                                            title="Verifieer pilot → done"
+                                            invisible="state != 'applied_pilot'"/>
+                                    <button name="action_rollback"
+                                            type="object" icon="fa-undo"
+                                            title="Rollback pilot"
+                                            invisible="state != 'applied_pilot'"
+                                            confirm="Rollback voert de inverse bron-actie uit op basis van de snapshot. Bevestig om door te gaan."/>
+                                    <button name="action_takeover"
+                                            type="object" icon="fa-bolt"
+                                            title="Voer voorstel direct uit (geen pilot)"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict', 'applied_pilot')"/>
+                                    <button name="action_mark_delete_after"
+                                            type="object" icon="fa-trash"
+                                            title="Markeer als 'verwijder na migratie'"
+                                            invisible="proposal_kind == 'delete_after' or state in ('done', 'ignored')"/>
+                                    <button name="action_mark_ignore"
+                                            type="object" icon="fa-times"
+                                            title="Negeer"
+                                            invisible="state == 'ignored'"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Users" name="users">
+                            <field name="finding_user_ids"
+                                   context="{'default_session_id': id, 'default_kind': 'user'}">
+                                <list editable="bottom"
+                                      decoration-success="state == 'done'"
+                                      decoration-warning="state in ('proposed', 'approved', 'applied_pilot')"
+                                      decoration-danger="state == 'identity_conflict' or (proposal_kind == 'delete_after' and state in ('proposed', 'approved'))"
+                                      decoration-muted="state == 'ignored'">
+                                    <field name="source" widget="badge"
+                                           decoration-info="source == 'ad'"
+                                           decoration-warning="source == 'cloud'"
+                                           decoration-success="source == 'smartschool'"/>
+                                    <field name="ad_dn" readonly="1"/>
+                                    <field name="ad_cn" readonly="1"/>
+                                    <field name="ad_givenname" readonly="1" optional="show"/>
+                                    <field name="ad_sn" readonly="1" optional="show"/>
+                                    <field name="ad_mail" readonly="1" optional="show"/>
+                                    <field name="ad_sam" readonly="1" optional="hide"/>
+                                    <field name="sap_ref" readonly="1" optional="show"/>
+                                    <field name="sibling_ids" widget="many2many_tags"
+                                           readonly="1" optional="show"
+                                           string="Cross-source"/>
+                                    <field name="matched_person_id" readonly="1"
+                                           optional="show"/>
+                                    <field name="proposed_parent_org_id"
+                                           options="{'no_create': True}"
+                                           optional="hide"/>
+                                    <field name="proposed_person_role_id"
+                                           options="{'no_create': True}"
+                                           optional="hide"/>
+                                    <field name="proposal_kind" widget="badge"
+                                           optional="show"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state in ('discovered', 'proposed')"
+                                           decoration-warning="state in ('approved', 'applied_pilot')"
+                                           decoration-success="state in ('done', 'verified')"
+                                           decoration-danger="state == 'identity_conflict'"
+                                           decoration-muted="state in ('ignored', 'rolled_back')"/>
+                                    <field name="risk_level" widget="badge"
+                                           decoration-info="risk_level == 'low'"
+                                           decoration-warning="risk_level == 'medium'"
+                                           decoration-danger="risk_level == 'high'"
+                                           optional="show"/>
+                                    <field name="notes" optional="show"/>
+                                    <button name="action_open_diff_wizard"
+                                            type="object" icon="fa-eye"
+                                            title="Diff-preview (BRON / DB / ACTIE)"/>
+                                    <button name="action_approve"
+                                            type="object" icon="fa-check"
+                                            title="Goedkeuren"
+                                            invisible="state not in ('proposed', 'discovered', 'rolled_back')"/>
+                                    <button name="action_pilot"
+                                            type="object" icon="fa-flask"
+                                            title="Pilot — eerst snapshot, dan uitvoeren"
+                                            invisible="state != 'approved' or proposal_kind not in ('stamp_id', 'rename', 'move', 'membership_add')"/>
+                                    <button name="action_verify"
+                                            type="object" icon="fa-thumbs-up"
+                                            title="Verifieer pilot → done"
+                                            invisible="state != 'applied_pilot'"/>
+                                    <button name="action_rollback"
+                                            type="object" icon="fa-undo"
+                                            title="Rollback pilot"
+                                            invisible="state != 'applied_pilot'"
+                                            confirm="Rollback voert de inverse bron-actie uit op basis van de snapshot. Bevestig om door te gaan."/>
+                                    <button name="action_takeover"
+                                            type="object" icon="fa-bolt"
+                                            title="Voer voorstel direct uit (geen pilot)"
+                                            invisible="state in ('done', 'ignored', 'identity_conflict', 'applied_pilot')"/>
+                                    <button name="action_resolve_conflict"
+                                            type="object" icon="fa-wrench"
+                                            title="Conflict negeren"
+                                            invisible="state != 'identity_conflict'"/>
+                                    <button name="action_mark_delete_after"
+                                            type="object" icon="fa-trash"
+                                            title="Markeer als 'verwijder na migratie'"
+                                            invisible="proposal_kind == 'delete_after' or state in ('done', 'ignored')"/>
+                                    <button name="action_mark_ignore"
+                                            type="object" icon="fa-times"
+                                            title="Negeer"
+                                            invisible="state == 'ignored'"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ad_takeover_session" model="ir.actions.act_window">
+        <field name="name">AD-takeover</field>
+        <field name="res_model">myschool.ad.takeover.session</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Migratie-assistent voor AD én Google Workspace. Ontdek
+                objecten die niet in de MySchool-DB zitten en beslis
+                per item wat ermee moet gebeuren.
+            </p>
+            <p>
+                Maak een nieuwe sessie, kies een omgeving (test/prod),
+                koppel een LDAP-server en/of een Google Workspace
+                config, kies de scope-org, klik "Scan". Findings
+                komen onder de tabs OUs / Groups / Users met een
+                source-badge (AD of Cloud). De cross-source linker
+                koppelt automatisch AD- en Cloud-tegenhangers van
+                dezelfde persoon via sap_ref.
+            </p>
+        </field>
+    </record>
+
+</odoo>

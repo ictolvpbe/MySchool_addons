@@ -56,6 +56,47 @@ class PropRelation(models.Model):
     # Constraints
     # -------------------------------------------------------------------------
 
+    @api.constrains('proprelation_type_id', 'id_org', 'id_org_child', 'is_active')
+    def _check_pg_g_no_cycle(self):
+        """For PG-G (Persongroup-in-Persongroup) relations, prevent
+        cycles. A PG-G says "id_org contains id_org_child as a member".
+        Walking the membership graph upward from id_org must never
+        reach id_org_child."""
+        for rec in self:
+            ptype = rec.proprelation_type_id
+            if not ptype or ptype.name != 'PG-G':
+                continue
+            if not rec.is_active or not rec.id_org or not rec.id_org_child:
+                continue
+            if rec.id_org.id == rec.id_org_child.id:
+                raise ValidationError(
+                    f'PG-G: een groep kan zichzelf niet bevatten '
+                    f'({rec.id_org.name}).')
+            # Walk upward: which groups already contain id_org? If
+            # id_org_child appears among those ancestors, we'd close a
+            # loop.
+            visited = set()
+            frontier = {rec.id_org.id}
+            while frontier:
+                next_frontier = set()
+                for parent_id in frontier:
+                    if parent_id in visited:
+                        continue
+                    visited.add(parent_id)
+                    if parent_id == rec.id_org_child.id:
+                        raise ValidationError(
+                            f'PG-G: cyclus gedetecteerd — '
+                            f'{rec.id_org.name} bevat (via een ander '
+                            f'pad) al {rec.id_org_child.name}.')
+                    parents = self.search([
+                        ('proprelation_type_id', '=', ptype.id),
+                        ('id_org_child', '=', parent_id),
+                        ('is_active', '=', True),
+                    ])
+                    next_frontier.update(p.id_org.id for p in parents
+                                         if p.id_org)
+                frontier = next_frontier - visited
+
     @api.constrains('is_master', 'id_person', 'is_active')
     def _check_single_master(self):
         """Only one active is_master=True proprelation per person."""
@@ -89,12 +130,50 @@ class PropRelation(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        now = fields.Datetime.now()
         for vals in vals_list:
             if vals.get('is_master'):
                 vals['automatic_sync'] = False
+            # Stamp start_date on every freshly-active record so the
+            # lifecycle window (start..end) is always populated. Callers
+            # that want a specific datum can still pass start_date
+            # explicitly — that wins because we use setdefault.
+            if vals.get('is_active', True) and 'start_date' not in vals:
+                vals['start_date'] = now
         return super().create(vals_list)
 
     def write(self, vals):
         if vals.get('is_master'):
             vals['automatic_sync'] = False
+
+        # Auto-stamp end_date / start_date when is_active flips, so that
+        # every deactivation path — manual DEACT, sync cascades, cleanup
+        # routines, person.unlink cascade, group-cleanup — leaves a
+        # readable timestamp behind. Callers that pass an explicit
+        # end_date / start_date in `vals` win.
+        if 'is_active' in vals:
+            now = fields.Datetime.now()
+            if vals['is_active'] is False:
+                # Deactivation: stamp end_date on records that flip from
+                # True → False. Keep records that were already inactive
+                # untouched (preserve the original end_date).
+                if 'end_date' not in vals:
+                    flipping = self.filtered(lambda r: r.is_active)
+                    if flipping:
+                        super(PropRelation, flipping).write({'end_date': now})
+            elif vals['is_active'] is True:
+                # Reactivation: clear end_date and refresh start_date for
+                # records that flip from False → True. Re-stamping
+                # start_date keeps the lifecycle window meaningful for
+                # the new active period.
+                flipping = self.filtered(lambda r: not r.is_active)
+                if flipping:
+                    upd = {}
+                    if 'end_date' not in vals:
+                        upd['end_date'] = False
+                    if 'start_date' not in vals:
+                        upd['start_date'] = now
+                    if upd:
+                        super(PropRelation, flipping).write(upd)
+
         return super().write(vals)

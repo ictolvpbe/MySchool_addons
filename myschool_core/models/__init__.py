@@ -12,8 +12,10 @@ from . import period
 from . import proprelation_type
 from . import proprelation
 from . import proprelation_service
-from . import config_item
-from . import ci_relation
+# Settings Items — vervangt het oude config_item + ci_relation systeem
+# (verwijderd in fase 5 van de SI-rework).
+from . import settings_item
+from . import settings_value
 from . import field_template
 from . import betask_type
 from . import betask_type_service
@@ -27,17 +29,34 @@ from . import sys_event_type_service
 from . import sys_event
 from . import sys_event_service
 
+from . import sap_sync_change
+from . import sap_sync_run
+from . import sap_sync_service
 from . import informat_service
 from . import informat_service_config
 from . import informat_dto
+from . import smartschool_config
 from . import smartschool_service
 from . import ldap_server_config
 from . import ldap_service
+from . import google_workspace_config
+from . import google_directory_service
+from . import res_config_settings
+from . import google_drive_service
+from . import google_classroom_service
+from . import google_license_service
+from . import letter_template
 from . import res_company
 from . import res_users
 from . import mail_mail_rewrite_from
 from . import hr_employee_display_name
 from . import archive_runner
+
+# Password policy (depends on org/person/role/person_type/proprelation)
+from . import password_wordlist
+from . import password_template
+from . import password_policy
+from . import org_password_policy
 
 # Process models
 from . import process

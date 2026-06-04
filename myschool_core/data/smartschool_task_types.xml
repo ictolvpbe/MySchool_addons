@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            SMARTSCHOOL BeTask types.
+            Registered so emitters in betask_processor (and the lifecycle
+            cron) can call BeTaskService.create_task('SMARTSCHOOL', ...)
+            without admin intervention.
+
+            Priority 25 — runs after LDAP/CLOUD (20) so the Smartschool
+            push sees an already-provisioned account on the AD/Google side
+            when an admin watches a cron cycle progress. Not strictly
+            required (handlers are independent), just nicer to look at.
+
+            Handlers land in Fase 3. Until then, missing handlers fall
+            through ``_process_task_generic``'s fallback path which logs
+            a warning and marks the task as success — no failed tasks
+            pile up in the queue.
+        -->
+
+        <!-- USER -->
+        <record id="smartschool_user_add" model="myschool.betask.type">
+            <field name="target">SMARTSCHOOL</field>
+            <field name="object">USER</field>
+            <field name="action">ADD</field>
+            <field name="description">Create user in Smartschool platform</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="smartschool_user_upd" model="myschool.betask.type">
+            <field name="target">SMARTSCHOOL</field>
+            <field name="object">USER</field>
+            <field name="action">UPD</field>
+            <field name="description">Update user fields in Smartschool (saveUser is upsert)</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="smartschool_user_deact" model="myschool.betask.type">
+            <field name="target">SMARTSCHOOL</field>
+            <field name="object">USER</field>
+            <field name="action">DEACT</field>
+            <field name="description">Set Smartschool account status to inactive</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="smartschool_user_pwd" model="myschool.betask.type">
+            <field name="target">SMARTSCHOOL</field>
+            <field name="object">USER</field>
+            <field name="action">PWD</field>
+            <field name="description">Set / rotate Smartschool user password</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="smartschool_user_del" model="myschool.betask.type">
+            <field name="target">SMARTSCHOOL</field>
+            <field name="object">USER</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete user from Smartschool</field>
+            <field name="priority">30</field>
+            <field name="requires_confirmation" eval="True"/>
+        </record>
+
+        <!-- GROUPMEMBER (klas / groep koppeling, ingeschakeld vanaf Fase 4) -->
+        <record id="smartschool_groupmember_add" model="myschool.betask.type">
+            <field name="target">SMARTSCHOOL</field>
+            <field name="object">GROUPMEMBER</field>
+            <field name="action">ADD</field>
+            <field name="description">Add user to Smartschool class/group</field>
+            <field name="priority">25</field>
+        </record>
+        <record id="smartschool_groupmember_remove" model="myschool.betask.type">
+            <field name="target">SMARTSCHOOL</field>
+            <field name="object">GROUPMEMBER</field>
+            <field name="action">REMOVE</field>
+            <field name="description">Remove user from Smartschool class/group</field>
+            <field name="priority">25</field>
+        </record>
+
+    </data>
+</odoo>

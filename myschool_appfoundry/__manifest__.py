@@ -5,7 +5,7 @@
     'summary': 'Development project management with agile workflow',
     'description': """
         AppFoundry
-        ======
+        ==========
         Development project management for MySchool with:
         * User stories, bugs, tasks, and improvements
         * Kanban board with configurable stages

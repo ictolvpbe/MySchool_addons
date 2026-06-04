@@ -331,8 +331,11 @@ class BeTaskProcessor(models.AbstractModel):
             vals[odoo_field] = value
         
         # Build full name: "LASTNAME, Firstname"
-        first_name = employee_json.get('voornaam', '')
-        last_name = employee_json.get('naam', '')
+        # See ``_map_student_json_to_person_vals`` for the rationale
+        # behind ``_clean_informat_string`` — the literal "null" needs
+        # the same normalisation here.
+        first_name = self._clean_informat_string(employee_json.get('voornaam'))
+        last_name = self._clean_informat_string(employee_json.get('naam'))
         if last_name or first_name:
             vals['name'] = f"{last_name}, {first_name}".strip(', ')
         
@@ -388,9 +391,25 @@ class BeTaskProcessor(models.AbstractModel):
     # JSON TO ODOO MAPPING METHODS - STUDENT
     # =========================================================================
 
+    @staticmethod
+    def _clean_informat_string(value):
+        """Normalise an Informat string field.
+
+        Informat occasionally serialises missing values as the
+        **literal string** ``"null"`` (with quotes) instead of a JSON
+        null or omitting the key. Treat both as "not provided" so
+        callers don't end up with ``person.name = "null"`` or similar.
+        """
+        if value is None:
+            return ''
+        s = str(value).strip()
+        if s.lower() == 'null':
+            return ''
+        return s
+
     def _map_student_json_to_person_vals(
-        self, 
-        registration_json: dict, 
+        self,
+        registration_json: dict,
         student_json: dict = None
     ) -> dict:
         """Map imported Informat student JSON to myschool.person field values."""
@@ -418,11 +437,17 @@ class BeTaskProcessor(models.AbstractModel):
             
             vals[odoo_field] = value
         
-        first_name = merged_data.get('voornaam', '')
-        last_name = merged_data.get('naam', '')
+        # Informat sometimes ships the literal string ``"null"`` (in
+        # quotes) for missing names — not a real JSON null. The
+        # for-loop above already skips that pattern; the fallback
+        # name-builder used to assume both values were either real
+        # strings or empty, which led to ``person.name = "null"``
+        # being persisted verbatim.
+        first_name = self._clean_informat_string(merged_data.get('voornaam'))
+        last_name = self._clean_informat_string(merged_data.get('naam'))
         if last_name or first_name:
             vals['name'] = f"{last_name}, {first_name}".strip(', ')
-        
+
         vals['is_active'] = True
         vals['automatic_sync'] = True
         
@@ -627,26 +652,19 @@ class BeTaskProcessor(models.AbstractModel):
             )
             _logger.info(f'Created ODOO-PERSON-ADD task for {new_person.name}')
         else:
-            # No active assignments — skip account creation; flag the
-            # suspend-clock so the lifecycle cron picks it up later.
-            new_person.write({
-                'deactivation_pending_since': fields.Date.context_today(self),
-            })
-            # Deactivate any proprelations for this person
-            PropRelation = self.env['myschool.proprelation']
-            active_proprels = PropRelation.search([
-                '|', '|',
-                ('id_person', '=', new_person.id),
-                ('id_person_parent', '=', new_person.id),
-                ('id_person_child', '=', new_person.id),
-                ('is_active', '=', True),
-            ])
-            if active_proprels:
-                active_proprels.write({'is_active': False})
+            # No active assignments — skip account creation. We do NOT
+            # start the suspend-clock here: ``deactivation_pending_since``
+            # marks a *transition* from "had assignments" to "has none",
+            # not a permanent "never had any". A brand-new employee
+            # imported without assignments has simply not been
+            # provisioned yet; if/when they later acquire an assignment
+            # the regular flow takes over, and if they never do they'll
+            # remain dormant — which is the same end-state without
+            # racing the lifecycle cron.
             _logger.info(
                 f'No active assignments for {new_person.name} — '
-                f'skipping account creation, deactivation_pending_since set, '
-                f'{len(active_proprels)} proprelation(s) deactivated'
+                f'skipping account creation; not starting suspend-clock '
+                f'(no prior active state to transition from)'
             )
 
         # Only create PPSBR if employee has active assignments
@@ -883,22 +901,13 @@ class BeTaskProcessor(models.AbstractModel):
                 )
                 _logger.info(f'Created ODOO-PERSON-UPD task for {person.name}')
         else:
-            # No active assignments anywhere — start the suspend-clock
-            # (if not already running) and remove the person from all
-            # groups. Account-deactivation + AD-removal happen later,
-            # via the lifecycle cron, when account_deactivation_due_date
-            # arrives.
-            if not person.deactivation_pending_since:
-                person.write({
-                    'deactivation_pending_since': fields.Date.context_today(self),
-                })
-                field_changes.append(
-                    "Set deactivation_pending_since — no active assignments remaining"
-                )
-                _logger.info(
-                    f'Set deactivation_pending_since for {person.name} — '
-                    f'no active assignments remaining'
-                )
+            # No active assignments in this iteration — deactivate any
+            # remaining proprelations and let the post-sync sweep
+            # decide whether the suspend-clock should start. The sweep
+            # has the full picture (across all instnrs and after Phase
+            # 2) and applies the "transition-only" rule that
+            # distinguishes a real active→inactive transition from a
+            # never-active import.
             # Deactivate proprelations for this person
             PropRelation = self.env['myschool.proprelation']
             active_proprels = PropRelation.search([
@@ -1028,6 +1037,58 @@ class BeTaskProcessor(models.AbstractModel):
         # Create PPSBR and PERSON-TREE relations for the student
         self._create_student_relations(new_person, registration_json, effective_inst_nr)
 
+        # Sync persongroup memberships. The student sync builds PPSBR +
+        # PERSON-TREE rows directly (no DB/PROPRELATION/ADD betask), so
+        # the persongroup cascade that ``process_db_proprelation_add``
+        # runs for employees is otherwise skipped here. Without this
+        # call the class-org persongroup (and any role-anchored
+        # persongroup like ``studenten-<school>``) never picks up the
+        # new student until something else triggers a re-sync.
+        self._sync_persongroup_memberships(new_person)
+
+        # Auto-complete account fields (email_cloud, person_fqdn_*) so
+        # the DB matches what LDAP/USER/ADD + CLOUD/USER/ADD will
+        # actually produce — both use _build_user_cn via FieldTemplate,
+        # so without this the DB ``person.email_cloud`` keeps whatever
+        # SAP supplied (typically firstname.lastname) while AD/Google
+        # store the anonymised form. Same helper as the employee path.
+        # Fall back to the school org by inst_nr if PERSON-TREE wasn't
+        # created (e.g. class-org lookup in ``_create_student_relations``
+        # exited early) — at least the school-level domain + FQDN can
+        # then still be applied.
+        account_target = self._resolve_current_person_tree_org(new_person)
+        if not account_target and effective_inst_nr:
+            account_target = self.env['myschool.org'].search([
+                ('inst_nr', '=', effective_inst_nr),
+                ('is_active', '=', True),
+            ], limit=1) or None
+        if account_target:
+            try:
+                self._populate_person_account_fields(new_person, account_target)
+            except Exception as e:
+                _logger.warning(
+                    '[STUDENT-ACCOUNT] populate failed for %s: %s',
+                    new_person.name, e)
+        else:
+            _logger.warning(
+                '[STUDENT-ACCOUNT] no target org for %s (inst_nr=%s) — '
+                'email_cloud / FQDN not populated',
+                new_person.name, effective_inst_nr)
+
+        # Cascade — queue LDAP/USER/ADD + CLOUD/USER/ADD now that the
+        # PERSON-TREE position exists. Without this the student lives
+        # only in MySchool and never gets an AD account. The employee
+        # path runs the same emits from ``process_db_proprelation_add``;
+        # students go through a different flow (this one) which
+        # historically never wired it up. Idempotent dedupe inside
+        # ``_emit_*`` keeps re-runs safe.
+        cascade_log = []
+        self._emit_ldap_user_add_for_person(new_person, cascade_log)
+        self._emit_cloud_user_add_for_person(new_person, cascade_log)
+        self._emit_smartschool_user_add_for_person(new_person, cascade_log)
+        for line in cascade_log:
+            _logger.info('[STUDENT-CASCADE] %s', line)
+
         return new_person
 
     def _assign_student_backend_role(self, person, inst_nr: str):
@@ -1143,7 +1204,7 @@ class BeTaskProcessor(models.AbstractModel):
         PeriodType = self.env['myschool.period.type']
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
 
         # --- Determine active class from inschrKlassen ---
         inschr_klassen = registration_json.get('inschrKlassen', []) or registration_json.get('inschrklassen', [])
@@ -1222,8 +1283,9 @@ class BeTaskProcessor(models.AbstractModel):
                     break
                 current = candidate
 
-        # Get OuForClasses CI to find the parent org for classgroups
-        ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')
+        # Get OuForClasses SI to find the parent org for classgroups.
+        # ORG-TREE inheritance gebeurt nu intern in SettingsItem.get().
+        ou_value = SettingsItem.get('OuForClasses', org=ci_lookup_org)
 
         class_org = None
         if ou_value:
@@ -1501,6 +1563,80 @@ class BeTaskProcessor(models.AbstractModel):
             field_changes.append(f"Created first PersonDetails version for instNr {inst_nr}")
             _logger.info(f"Created first PersonDetails for {person.name}, instNr {inst_nr}")
 
+        # ---- Class / school relation (re-)sync ------------------------
+        # The registration's inschrKlassen drives PERSON-TREE membership
+        # at the leaf class-org and the per-class backend-role PPSBR.
+        # Without this call an existing student moving from class A to
+        # class B kept the old PERSON-TREE pointing at A — only the
+        # ``reg_group_code`` field updated. ``_create_student_relations``
+        # is idempotent: it updates the existing PERSON-TREE in place
+        # and deactivates old class-role PPSBRs/trees automatically.
+        # On REACTIVATE the registration carries a full inschrKlassen
+        # snapshot, so the same call restores the active class-link
+        # that ``_deactivate_person`` had wiped earlier.
+        effective_inst_nr = inst_nr or registration_json.get('instelnr', '')
+        try:
+            self._create_student_relations(
+                person, registration_json, effective_inst_nr)
+            field_changes.append(
+                "Class relations re-synced from inschrKlassen")
+        except Exception as e:
+            _logger.exception(
+                '[STUDENT-REL] re-sync failed for %s: %s', person.name, e)
+            field_changes.append(
+                f"WARN: class-relation re-sync failed: {e}")
+
+        # Re-sync persongroup memberships after the class-relation
+        # rewrite. A class change (PERSON-TREE moves from class A to B,
+        # or a new classgroup-role PPSBR is created/deactivated) must
+        # ripple to the PG-P rows: drop class A's persongroup, add
+        # class B's. ``_sync_persongroup_memberships`` walks both the
+        # PPSBR-driven and currently-hosting persongroups, so the diff
+        # handles add + remove in one pass. Idempotent: a no-op
+        # registration update just re-validates the existing PG-Ps.
+        try:
+            self._sync_persongroup_memberships(person)
+            field_changes.append(
+                "Persongroup memberships re-synced")
+        except Exception as e:
+            _logger.exception(
+                '[STUDENT-PG] sync failed for %s: %s', person.name, e)
+            field_changes.append(
+                f"WARN: persongroup membership sync failed: {e}")
+
+        # Re-populate account fields against the (possibly new) class-
+        # org. A class change shifts ``ou_fqdn_internal/external`` so
+        # ``person_fqdn_*`` must follow; ``email_cloud`` is re-run
+        # through ``field.template`` to match what LDAP/USER/UPD +
+        # CLOUD/USER/UPD will compute. Idempotent.
+        current_tree_org = self._resolve_current_person_tree_org(person)
+        if current_tree_org:
+            try:
+                self._populate_person_account_fields(person, current_tree_org)
+                field_changes.append(
+                    "Account fields (email_cloud, FQDN) re-synced")
+            except Exception as e:
+                _logger.exception(
+                    '[STUDENT-ACCOUNT] populate failed for %s: %s',
+                    person.name, e)
+                field_changes.append(
+                    f"WARN: account-field sync failed: {e}")
+
+        # Cascade — same idempotent emits as on the create path. Useful
+        # for students that exist in MySchool but never got an AD/Cloud
+        # account (e.g. the student was created before the cascade was
+        # wired up; the next sync update re-emits and provisions them
+        # belatedly). Both ``_emit_*`` helpers dedupe on pending tasks
+        # so a routine UPDATE never spawns new work when the AD/Cloud
+        # accounts are already in place.
+        cascade_log = []
+        self._emit_ldap_user_add_for_person(person, cascade_log)
+        self._emit_cloud_user_add_for_person(person, cascade_log)
+        self._emit_smartschool_user_add_for_person(person, cascade_log)
+        for line in cascade_log:
+            _logger.info('[STUDENT-CASCADE] %s', line)
+            field_changes.append(line)
+
         return {'success': True, 'field_changes': field_changes}
 
     # =========================================================================
@@ -1630,6 +1766,29 @@ class BeTaskProcessor(models.AbstractModel):
         if task.status not in ['new', 'error']:
             _logger.warning(f'Task {task.name} is not in processable status: {task.status}')
             return False
+
+        # Context-driven skip: lets the sync test runner (and any
+        # other caller) bypass entire backend integrations for the
+        # duration of a process_all_pending run. Catches tasks that
+        # are queued mid-processing too — the equivalent ``_skip_*``
+        # helpers only run once before processing starts.
+        target = task.betasktype_id.target
+        if (target == 'CLOUD'
+                and self.env.context.get('skip_cloud_processing')):
+            task.write({
+                'status': 'completed_ok',
+                'changes': 'Skipped via context (skip_cloud_processing=True)',
+                'lastrun': fields.Datetime.now(),
+            })
+            return True
+        if (target in ('LDAP', 'AD')
+                and self.env.context.get('skip_ldap_processing')):
+            task.write({
+                'status': 'completed_ok',
+                'changes': 'Skipped via context (skip_ldap_processing=True)',
+                'lastrun': fields.Datetime.now(),
+            })
+            return True
 
         task.action_set_processing()
 
@@ -1817,6 +1976,61 @@ class BeTaskProcessor(models.AbstractModel):
 
             # LDAP ORG (=OU) handlers
             ('LDAP', 'ORG', 'ADD'): self.process_ldap_org_add,
+            ('LDAP', 'ORG', 'DEL'): self.process_ldap_ou_del,
+
+            # =========================================================
+            # CLOUD (Google Workspace) handlers
+            # =========================================================
+            # USER lifecycle
+            ('CLOUD', 'USER', 'ADD'): self.process_cloud_user_add,
+            ('CLOUD', 'USER', 'UPD'): self.process_cloud_user_upd,
+            ('CLOUD', 'USER', 'DEACT'): self.process_cloud_user_deact,
+            ('CLOUD', 'USER', 'DEL'): self.process_cloud_user_del,
+            ('CLOUD', 'USER', 'MOVE'): self.process_cloud_user_move,
+            ('CLOUD', 'USER', 'PWD'): self.process_cloud_user_pwd,
+            # ORG (= OU) lifecycle
+            ('CLOUD', 'ORG', 'ADD'): self.process_cloud_org_add,
+            ('CLOUD', 'ORG', 'UPD'): self.process_cloud_org_upd,
+            ('CLOUD', 'ORG', 'DEL'): self.process_cloud_org_del,
+            # GROUP + GROUPMEMBER
+            ('CLOUD', 'GROUP', 'ADD'): self.process_cloud_group_add,
+            ('CLOUD', 'GROUP', 'UPD'): self.process_cloud_group_upd,
+            ('CLOUD', 'GROUP', 'DEL'): self.process_cloud_group_del,
+            ('CLOUD', 'GROUPMEMBER', 'ADD'): self.process_cloud_groupmember_add,
+            ('CLOUD', 'GROUPMEMBER', 'REMOVE'): self.process_cloud_groupmember_remove,
+            # DEVICE (ChromeOS)
+            ('CLOUD', 'DEVICE', 'MOVE'): self.process_cloud_device_move,
+            ('CLOUD', 'DEVICE', 'UPD'): self.process_cloud_device_move,  # alias
+            ('CLOUD', 'DEVICE', 'DEACT'): self.process_cloud_device_deact,
+            ('CLOUD', 'DEVICE', 'DEL'): self.process_cloud_device_del,
+            # DRIVE (Shared Drive)
+            ('CLOUD', 'DRIVE', 'ADD'): self.process_cloud_drive_add,
+            ('CLOUD', 'DRIVE', 'UPD'): self.process_cloud_drive_upd,
+            ('CLOUD', 'DRIVE', 'ARC'): self.process_cloud_drive_arc,
+            ('CLOUD', 'DRIVE', 'DEL'): self.process_cloud_drive_del,
+            # COURSE (Classroom)
+            ('CLOUD', 'COURSE', 'ADD'): self.process_cloud_course_add,
+            ('CLOUD', 'COURSE', 'UPD'): self.process_cloud_course_upd,
+            ('CLOUD', 'COURSE', 'ARC'): self.process_cloud_course_arc,
+            ('CLOUD', 'COURSE', 'DEL'): self.process_cloud_course_del,
+            # LICENSE assignments
+            ('CLOUD', 'LICENSE', 'ADD'): self.process_cloud_license_add,
+            ('CLOUD', 'LICENSE', 'UPD'): self.process_cloud_license_upd,
+            ('CLOUD', 'LICENSE', 'DEL'): self.process_cloud_license_del,
+
+            # =========================================================
+            # SMARTSCHOOL handlers (MVP: EMPLOYEE / leerkrachten)
+            # =========================================================
+            ('SMARTSCHOOL', 'USER', 'ADD'): self.process_smartschool_user_add,
+            ('SMARTSCHOOL', 'USER', 'UPD'): self.process_smartschool_user_upd,
+            ('SMARTSCHOOL', 'USER', 'DEACT'): self.process_smartschool_user_deact,
+            ('SMARTSCHOOL', 'USER', 'PWD'): self.process_smartschool_user_pwd,
+            ('SMARTSCHOOL', 'USER', 'DEL'): self.process_smartschool_user_del,
+
+            # =========================================================
+            # LETTER (PDF document generation)
+            # =========================================================
+            ('LETTER', 'USER', 'GENERATE'): self.process_letter_user_generate,
         }
         
         handler = handler_map.get((target, obj, action))
@@ -2090,7 +2304,12 @@ class BeTaskProcessor(models.AbstractModel):
             return False
 
         inst_nr = data.get('instelnr', '') or data.get('instNr', '')
-        person_uuid = data.get('persoonId') or data.get('personId')
+        # Accept all three uuid spellings — historic tasks used 'uuid',
+        # the canonical sender now emits 'persoonId', and 'personId' is
+        # the spelling used elsewhere in the codebase.
+        person_uuid = (data.get('persoonId')
+                       or data.get('personId')
+                       or data.get('uuid'))
 
         # Skip manual audit for backend task processing
         Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
@@ -2183,7 +2402,7 @@ class BeTaskProcessor(models.AbstractModel):
                 PropRelation = self.env['myschool.proprelation']
                 PropRelationType = self.env['myschool.proprelation.type']
                 OrgType = self.env['myschool.org.type']
-                ConfigItem = self.env['myschool.config.item']
+                SettingsItem = self.env['myschool.settings.item']
                 classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
                 school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
                 org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
@@ -2234,7 +2453,7 @@ class BeTaskProcessor(models.AbstractModel):
 
                 # Create ORG-TREE: place classgroup under OuForClasses org
                 if parent_school and org_tree_type:
-                    ou_value = ConfigItem.get_ci_value_by_org_and_name(parent_school.name_short, 'OuForClasses')
+                    ou_value = SettingsItem.get('OuForClasses', org=parent_school)
                     if ou_value:
                         child_rels = PropRelation.search([
                             ('proprelation_type_id', '=', org_tree_type.id),
@@ -2265,7 +2484,7 @@ class BeTaskProcessor(models.AbstractModel):
                             # Set AD/OU fields inherited from parent
                             self._populate_classgroup_ad_fields(
                                 new_org, ou_for_classes_org, parent_school,
-                                org_tree_type, ConfigItem, changes)
+                                org_tree_type, changes)
                         else:
                             _logger.warning(f'[ORG-ADD] OuForClasses org "{ou_value}" not found under {parent_school.name_short}')
                     else:
@@ -2284,13 +2503,14 @@ class BeTaskProcessor(models.AbstractModel):
             raise
     
     def _populate_classgroup_ad_fields(self, new_org, ou_for_classes_org, parent_school,
-                                       org_tree_type, ConfigItem, changes):
+                                       org_tree_type, changes):
         """Populate AD/OU fields for a newly created classgroup org.
 
         Sets: domain_internal, domain_external, has_ou, has_comgroup,
         has_secgroup, ou_fqdn_internal, ou_fqdn_external, com_group_name,
         sec_group_name, com/sec_group_fqdn_internal/external, name_tree.
         """
+        SettingsItem = self.env['myschool.settings.item']
         org_update = {
             'has_ou': True,
             'has_comgroup': True,
@@ -2303,14 +2523,18 @@ class BeTaskProcessor(models.AbstractModel):
         if ou_for_classes_org.domain_external:
             org_update['domain_external'] = ou_for_classes_org.domain_external
 
-        org_short = new_org.name_short.lower() if new_org.name_short else ''
+        # .strip() guards against stray whitespace in name_short — see
+        # informat_service.py klasCode normalization. Without this, a
+        # value like "l5a " produces "ou=l5a ,..." which AD stores as
+        # "OU=l5a\ ,..." (a phantom OU invisible in ADUC).
+        org_short = (new_org.name_short or '').strip().lower()
         if not org_short:
             new_org.write(org_update)
             return
 
         # --- OU FQDN fields ---
-        parent_fqdn_int = (ou_for_classes_org.ou_fqdn_internal or '').lower()
-        parent_fqdn_ext = (ou_for_classes_org.ou_fqdn_external or '').lower()
+        parent_fqdn_int = (ou_for_classes_org.ou_fqdn_internal or '').strip().lower()
+        parent_fqdn_ext = (ou_for_classes_org.ou_fqdn_external or '').strip().lower()
 
         if parent_fqdn_int:
             org_update['ou_fqdn_internal'] = f"ou={org_short},{parent_fqdn_int}"
@@ -2377,8 +2601,8 @@ class BeTaskProcessor(models.AbstractModel):
         # under the parent SCHOOL* — not under OuForClasses (parent_fqdn_*).
         # Anchoring on OuForClasses would produce nested duplicates like
         # ou=cgroup,ou=klassen,... whenever the classgroup OU was nested.
-        ou_for_groups = ConfigItem.get_ci_value_by_org_and_name(
-            parent_school.name_short, 'OuForGroups') if parent_school else None
+        ou_for_groups = SettingsItem.get(
+            'OuForGroups', org=parent_school) if parent_school else None
         school_fqdn_int = (parent_school.ou_fqdn_internal or '').lower() if parent_school else ''
         school_fqdn_ext = (parent_school.ou_fqdn_external or '').lower() if parent_school else ''
 
@@ -2398,6 +2622,64 @@ class BeTaskProcessor(models.AbstractModel):
                      f"name_tree={org_update.get('name_tree')}, "
                      f"com_group={com_group_name}, sec_group={sec_group_name}")
 
+        # Queue LDAP/ORG/ADD so the OU container is actually created in
+        # AD. Without this the FQDN fields above are pure metadata —
+        # no AD entry materialises until somebody (or some other task)
+        # walks the path. The manual-creation flow in
+        # ``manual_task_processor._emit_ldap_org_add`` does the same,
+        # but the sync-driven path went straight from
+        # ``process_db_org_add`` → ``_populate_classgroup_ad_fields``
+        # without ever queueing the LDAP side, leaving every CLASSGROUP
+        # OU stuck on disk only.
+        self._emit_classgroup_ad_tasks(new_org, changes)
+
+    def _emit_classgroup_ad_tasks(self, org, changes):
+        """Queue LDAP/ORG/ADD (+ optional CLOUD/ORG/ADD) for ``org``.
+
+        Idempotent dedupe via ``_has_pending_task`` — re-running
+        ``_populate_classgroup_ad_fields`` on the same org doesn't
+        produce duplicates. Both task handlers are themselves
+        idempotent (``create_ou`` reports "already exists" as success),
+        so even if the dedupe ever lets a duplicate slip through it's
+        a no-op at execution time.
+        """
+        if not org or not org.ou_fqdn_internal:
+            return
+        BeTaskType = self.env['myschool.betask.type']
+        BeTask = self.env['myschool.betask']
+
+        ldap_type = BeTaskType.search([
+            ('target', '=', 'LDAP'),
+            ('object', '=', 'ORG'),
+            ('action', '=', 'ADD'),
+        ], limit=1)
+        if ldap_type and not self._has_pending_task(BeTask, ldap_type, [
+                f'"org_id": {org.id}']):
+            BeTask.create({
+                'name': f'LDAP/ORG/ADD for {org.name}',
+                'betasktype_id': ldap_type.id,
+                'status': 'new',
+                'data': json.dumps({'org_id': org.id}),
+            })
+            changes.append(f'Queued LDAP/ORG/ADD for {org.name}')
+
+        # Cloud OU mirrors the AD OU when Workspace is configured.
+        if self._cloud_provisioning_enabled():
+            cloud_type = BeTaskType.search([
+                ('target', '=', 'CLOUD'),
+                ('object', '=', 'ORG'),
+                ('action', '=', 'ADD'),
+            ], limit=1)
+            if cloud_type and not self._has_pending_task(BeTask, cloud_type, [
+                    f'"org_id": {org.id}']):
+                BeTask.create({
+                    'name': f'CLOUD/ORG/ADD for {org.name}',
+                    'betasktype_id': cloud_type.id,
+                    'status': 'new',
+                    'data': json.dumps({'org_id': org.id}),
+                })
+                changes.append(f'Queued CLOUD/ORG/ADD for {org.name}')
+
     def _ensure_classgroup_ad_fields(self, org, changes):
         """Resolve parent school / OuForClasses and populate AD/OU fields.
 
@@ -2410,7 +2692,7 @@ class BeTaskProcessor(models.AbstractModel):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         OrgType = self.env['myschool.org.type']
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
 
         classgroup_type = OrgType.search([('name', '=', 'CLASSGROUP')], limit=1)
         school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
@@ -2453,9 +2735,9 @@ class BeTaskProcessor(models.AbstractModel):
             return
 
         # Find OuForClasses org under parent school
-        ou_value = ConfigItem.get_ci_value_by_org_and_name(parent_school.name_short, 'OuForClasses')
+        ou_value = SettingsItem.get('OuForClasses', org=parent_school)
         if not ou_value:
-            _logger.warning(f'[ORG-UPD] No OuForClasses CI found for {parent_school.name_short}')
+            _logger.warning(f'[ORG-UPD] No OuForClasses SI found for {parent_school.name_short}')
             return
 
         child_rels = PropRelation.search([
@@ -2478,7 +2760,7 @@ class BeTaskProcessor(models.AbstractModel):
 
         self._populate_classgroup_ad_fields(
             org, ou_for_classes_org, parent_school,
-            org_tree_type, ConfigItem, changes)
+            org_tree_type, changes)
 
     @api.model
     def process_db_org_upd(self, task):
@@ -2622,10 +2904,16 @@ class BeTaskProcessor(models.AbstractModel):
         _logger.info(f'Processing DB_PROPRELATION_ADD: {task.name}')
         changes = []
 
+        def _fail(code, msg):
+            """Log to SysEvents *and* return a dict so the dispatcher
+            writes the reason into ``task.error_description`` — no more
+            opaque 'Processing returned False'."""
+            self._log_error(code, f'{msg}. Task: {task.name}')
+            return {'success': False, 'error': f'[{code}] {msg}'}
+
         data = self._parse_task_data(task.data)
         if not data:
-            self._log_error('BETASK-700', f'No data in task {task.name}')
-            return False
+            return _fail('BETASK-700', 'No data in task')
 
         try:
             PropRelation = self.env['myschool.proprelation']
@@ -2634,24 +2922,26 @@ class BeTaskProcessor(models.AbstractModel):
             Org = self.env['myschool.org']
             Role = self.env['myschool.role']
             Period = self.env['myschool.period']
-            
+
             # -----------------------------------------------------------------
             # Step 1: Get Person
             # -----------------------------------------------------------------
             person_id = data.get('person_db_id')
             person_uuid = data.get('personId')
-            
+
             if person_id:
                 person = Person.browse(person_id)
             elif person_uuid:
                 person = Person.search([('sap_person_uuid', '=', person_uuid)], limit=1)
             else:
-                self._log_error('BETASK-701', f'No person identifier in task {task.name}')
-                return False
-            
+                return _fail('BETASK-701',
+                             'No person identifier (person_db_id or personId required)')
+
             if not person or not person.exists():
-                self._log_error('BETASK-702', f'Person not found for task {task.name}')
-                return False
+                return _fail(
+                    'BETASK-702',
+                    f'Person not found (person_db_id={person_id}, '
+                    f'personId={person_uuid})')
             
             # -----------------------------------------------------------------
             # Step 2: Get School Org
@@ -2693,8 +2983,8 @@ class BeTaskProcessor(models.AbstractModel):
                 if backend_role and backend_role.exists():
                     _logger.info(f'[PPSBR] Using Backend Role directly: {backend_role.name} (ID: {backend_role.id})')
                 else:
-                    self._log_error('BETASK-703', f'Role with ID {role_id} not found. Task: {task.name}')
-                    return False
+                    return _fail('BETASK-703',
+                                 f'Backend Role with ID {role_id} not found')
 
             # Scenario B: roleCode provided - find SAP Role, then lookup Backend Role via SR-BR
             elif role_code:
@@ -2703,8 +2993,8 @@ class BeTaskProcessor(models.AbstractModel):
 
                 if not sap_role:
                     _logger.warning(f'[PPSBR] SAP Role not found for roleCode={role_code}')
-                    self._log_error('BETASK-703', f'SAP Role not found for roleCode={role_code}. Task: {task.name}')
-                    return False
+                    return _fail('BETASK-703',
+                                 f'SAP Role not found for roleCode={role_code}')
 
                 _logger.debug(f'[PPSBR] Found SAP Role: {sap_role.name} (shortname: {sap_role.shortname}, ID: {sap_role.id})')
 
@@ -2730,16 +3020,15 @@ class BeTaskProcessor(models.AbstractModel):
                             f'for SAP Role {sap_role.name} (ID: {sap_role.id})'
                         )
                     else:
-                        self._log_error(
+                        return _fail(
                             'BETASK-703',
-                            f'No SR-BR relation found for SAP Role {sap_role.name} (roleCode={role_code}). '
-                            f'Please ensure SR-BR mapping exists. Task: {task.name}'
-                        )
-                        return False
+                            f'No SR-BR relation found for SAP Role '
+                            f'{sap_role.name} (roleCode={role_code}). '
+                            f'Configure the SR-BR mapping for this SAP Role.')
                 else:
                     _logger.warning(f'[PPSBR] SR-BR PropRelationType not found!')
-                    self._log_error('BETASK-703', f'SR-BR PropRelationType not found. Task: {task.name}')
-                    return False
+                    return _fail('BETASK-703',
+                                 'SR-BR PropRelationType missing from DB')
 
             # Fallback: try to find by roleName
             elif role_name:
@@ -2747,11 +3036,11 @@ class BeTaskProcessor(models.AbstractModel):
                 if backend_role:
                     _logger.info(f'[PPSBR] Found Role by name: {backend_role.name} (ID: {backend_role.id})')
                 else:
-                    self._log_error('BETASK-703', f'Role not found for roleName={role_name}. Task: {task.name}')
-                    return False
+                    return _fail('BETASK-703',
+                                 f'Role not found for roleName={role_name}')
             else:
-                self._log_error('BETASK-703', f'No role identifier in task {task.name}')
-                return False
+                return _fail('BETASK-703',
+                             'No role identifier (roleId, roleCode or roleName required)')
 
             role_to_use = backend_role
             
@@ -2802,6 +3091,8 @@ class BeTaskProcessor(models.AbstractModel):
                 self._update_person_tree_position(person)
                 self._sync_persongroup_memberships(person)
                 self._emit_ldap_user_add_for_person(person, changes)
+                self._emit_cloud_user_add_for_person(person, changes)
+                self._emit_smartschool_user_add_for_person(person, changes)
                 self._cascade_ppsbr_group_membership_safe(existing, 'ADD', changes)
                 changes.append(f"PPSBR already exists for {person.name}")
                 changes.append(f"Updated PERSON-TREE position")
@@ -2860,6 +3151,8 @@ class BeTaskProcessor(models.AbstractModel):
             self._update_person_tree_position(person)
             self._sync_persongroup_memberships(person)
             self._emit_ldap_user_add_for_person(person, changes)
+            self._emit_cloud_user_add_for_person(person, changes)
+            self._emit_smartschool_user_add_for_person(person, changes)
             # Mirror the manual-flow cascade: queue LDAP/GROUPMEMBER/ADD
             # for every COM/SEC group the new PPSBR's role is mapped to
             # at this school via an active BRSO. Without this, sync-driven
@@ -3060,7 +3353,13 @@ class BeTaskProcessor(models.AbstractModel):
         """Queue LDAP/GROUP/ADD + LDAP/GROUPMEMBER/<action> for one
         ``target_org``. Idempotent / dedupe-aware via
         ``_has_pending_task``. Both COM and SEC sides are handled when
-        the corresponding org-flag is set."""
+        the corresponding org-flag is set.
+
+        When Workspace is configured we additionally queue the
+        matching CLOUD/GROUP/ADD + CLOUD/GROUPMEMBER/<action>. Only the
+        COM side maps to a real Google Group (security groups are an
+        AD concept; in Workspace ACLs are expressed via OU + group
+        membership of the same mail-enabled group)."""
         for org_flag, kind, name_field, fqdn_field in (
                 ('has_comgroup', 'COM', 'com_group_name', 'com_group_fqdn_internal'),
                 ('has_secgroup', 'SEC', 'sec_group_name', 'sec_group_fqdn_internal')):
@@ -3117,6 +3416,84 @@ class BeTaskProcessor(models.AbstractModel):
                 f'Queued LDAP/GROUPMEMBER/{action} ({kind}) '
                 f'{group_name or group_dn} for {person.name}')
 
+            # CLOUD cascade — only the COM side has an email-addressable
+            # Google Group counterpart. We need both a group email
+            # (target_org.com_group_email) and a member email
+            # (person.email_cloud) — skip silently when either is
+            # absent, since CLOUD/GROUPMEMBER/ADD requires both.
+            if kind == 'COM' and self._cloud_provisioning_enabled():
+                self._queue_cloud_group_tasks_for_target(
+                    target_org, person, action, changes, BeTask)
+
+    def _queue_cloud_group_tasks_for_target(self, target_org, person, action,
+                                            changes, BeTask):
+        """Mirror of ``_queue_group_tasks_for_target`` for Workspace.
+
+        Only the COM (mail-enabled) side has a Workspace counterpart
+        — security-group semantics don't map cleanly to Google Groups.
+        We require both ``target_org.com_group_email`` and
+        ``person.email_cloud`` because CLOUD/GROUPMEMBER tasks
+        identify members by email (Google has no DN equivalent).
+        """
+        BeTaskType = self.env['myschool.betask.type']
+        group_email = (target_org.com_group_email or '').strip()
+        member_email = (person.email_cloud or '').strip()
+        if not group_email or not member_email:
+            # No email_cloud yet → CLOUD/USER/ADD hasn't run / hasn't
+            # populated person.email_cloud. The next sync pass will hit
+            # this same code path once it is set. Skip silently.
+            return
+        cloud_grp_add = BeTaskType.search([
+            ('target', '=', 'CLOUD'),
+            ('object', '=', 'GROUP'),
+            ('action', '=', 'ADD'),
+        ], limit=1)
+        cloud_gm_action = 'ADD' if action == 'ADD' else 'REMOVE'
+        cloud_gm = BeTaskType.search([
+            ('target', '=', 'CLOUD'),
+            ('object', '=', 'GROUPMEMBER'),
+            ('action', '=', cloud_gm_action),
+        ], limit=1)
+        if not cloud_gm:
+            _logger.warning(
+                '[CLOUD-CASCADE] CLOUD/GROUPMEMBER/%s task type missing',
+                cloud_gm_action)
+            return
+        # 1) Ensure Google Group exists.
+        if action == 'ADD' and cloud_grp_add and not self._has_pending_task(
+                BeTask, cloud_grp_add, [f'"group_email": "{group_email}"']):
+            BeTask.create({
+                'name': f'CLOUD/GROUP/ADD {group_email}',
+                'betasktype_id': cloud_grp_add.id,
+                'status': 'new',
+                'data': json.dumps({
+                    'group_email': group_email,
+                    'group_name': target_org.com_group_name or target_org.name_short,
+                    'description': target_org.name,
+                    'org_id': target_org.id,
+                }),
+            })
+            changes.append(f'Queued CLOUD/GROUP/ADD {group_email}')
+        # 2) Membership (ADD or REMOVE).
+        if self._has_pending_task(BeTask, cloud_gm, [
+                f'"group_email": "{group_email}"',
+                f'"member_email": "{member_email}"',
+        ]):
+            return
+        BeTask.create({
+            'name': f'CLOUD/GROUPMEMBER/{cloud_gm_action} {group_email} / {person.name}',
+            'betasktype_id': cloud_gm.id,
+            'status': 'new',
+            'data': json.dumps({
+                'group_email': group_email,
+                'member_email': member_email,
+                'org_id': target_org.id,
+            }),
+        })
+        changes.append(
+            f'Queued CLOUD/GROUPMEMBER/{cloud_gm_action} '
+            f'{group_email} for {person.name}')
+
     def _has_pending_task(self, BeTask, task_type, ilike_terms):
         """Return True if there's already a pending task of ``task_type``
         whose ``data`` contains all of the given substrings."""
@@ -3151,6 +3528,66 @@ class BeTaskProcessor(models.AbstractModel):
         ], limit=1)
         return rec.id_org if rec else None
 
+    def _cloud_provisioning_enabled(self):
+        """Cheap gate for the CLOUD cascade.
+
+        Returns True only when at least one active Google Workspace
+        configuration exists. This lets us call ``_emit_cloud_*`` from
+        every LDAP cascade site unconditionally — when no Workspace
+        tenant is configured the calls are no-ops, so installs that
+        only use AD don't spawn dead-end CLOUD/* tasks.
+        """
+        try:
+            return bool(self.env['myschool.google.workspace.config'].sudo().search_count(
+                [('active', '=', True)]))
+        except Exception:
+            # Model may not be installed yet during a fresh upgrade.
+            return False
+
+    def _emit_cloud_user_add_for_person(self, person, changes):
+        """Mirror of ``_emit_ldap_user_add_for_person`` for Workspace.
+
+        Same dedupe + queue-only philosophy: the actual provisioning
+        runs via ``process_cloud_user_add``, which re-resolves the
+        PERSON-TREE org at execution time so the highest-priority
+        role's OU still wins. Skips silently when Workspace isn't
+        configured or when the school doesn't want LDAP-style
+        provisioning (we re-use ``_school_wants_ldap_for_person`` as
+        the gate — schools that want AD also want Workspace today).
+        """
+        if not person:
+            return
+        if not person.automatic_sync:
+            return
+        if not self._cloud_provisioning_enabled():
+            return
+        if not self._school_wants_ldap_for_person(person):
+            return
+        BeTask = self.env['myschool.betask']
+        BeTaskType = self.env['myschool.betask.type']
+        task_type = BeTaskType.search([
+            ('target', '=', 'CLOUD'),
+            ('object', '=', 'USER'),
+            ('action', '=', 'ADD'),
+        ], limit=1)
+        if not task_type:
+            _logger.warning('[CLOUD-CASCADE] CLOUD/USER/ADD task type missing')
+            return
+        existing = BeTask.search([
+            ('betasktype_id', '=', task_type.id),
+            ('status', '=', 'new'),
+            ('data', 'ilike', f'"person_id": {person.id}'),
+        ], limit=1)
+        if existing:
+            return
+        BeTask.create({
+            'name': f'CLOUD/USER/ADD for {person.name}',
+            'betasktype_id': task_type.id,
+            'status': 'new',
+            'data': json.dumps({'person_id': person.id}),
+        })
+        changes.append(f'Queued CLOUD/USER/ADD for {person.name}')
+
     def _emit_ldap_user_add_for_person(self, person, changes):
         """Queue (do **not** inline-run) an LDAP/USER/ADD for a
         sync-driven person if the resolved school wants LDAP.
@@ -3169,8 +3606,13 @@ class BeTaskProcessor(models.AbstractModel):
 
         Idempotency: ``process_ldap_user_add`` skips when the user
         already exists in AD, and we dedupe pending tasks here so we
-        don't spam one queue per PPSBR."""
+        don't spam one queue per PPSBR.
+
+        Honours ``person.automatic_sync=False`` as a veto — consistent
+        with the Smartschool emitter."""
         if not person:
+            return
+        if not person.automatic_sync:
             return
         if not self._school_wants_ldap_for_person(person):
             return
@@ -3204,6 +3646,112 @@ class BeTaskProcessor(models.AbstractModel):
             'data': json.dumps(data_payload),
         })
         changes.append(f'Queued LDAP/USER/ADD for {person.name}')
+
+    # =========================================================================
+    # Smartschool emitters (MVP: leerkrachten / EMPLOYEE only)
+    # =========================================================================
+
+    def _school_wants_smartschool_for_person(self, person):
+        """True when there is an active ``myschool.smartschool.config`` for
+        any of the orgs the person is reachable from.
+
+        Reuses the same candidate-org set as ``_school_wants_ldap_for_person``
+        (PERSON-TREE org + every PPSBR ``id_org_parent``/``id_org``) so the
+        Smartschool routing matches the AD/Cloud routing. The config's own
+        ``get_server_for_org`` walks ``name_tree`` upwards, so a single
+        school-level config covers everything under it.
+        """
+        if not person:
+            return False
+        Config = self.env['myschool.smartschool.config']
+        candidates = []
+        pt_org = self._resolve_current_person_tree_org(person)
+        if pt_org:
+            candidates.append(pt_org)
+            try:
+                school = self._resolve_parent_school_from_org(pt_org)
+                if school:
+                    candidates.append(school)
+            except Exception:
+                pass
+        PropRelationType = self.env['myschool.proprelation.type']
+        PropRelation = self.env['myschool.proprelation']
+        ppsbr_type = PropRelationType.search(
+            [('name', '=', self.PROPRELATION_TYPE_PPSBR)], limit=1)
+        if ppsbr_type:
+            ppsbrs = PropRelation.search([
+                ('id_person', '=', person.id),
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('is_active', '=', True),
+            ])
+            for rel in ppsbrs:
+                if rel.id_org_parent:
+                    candidates.append(rel.id_org_parent)
+                if rel.id_org:
+                    candidates.append(rel.id_org)
+        for org in candidates:
+            if Config.get_server_for_org(org):
+                return True
+        return False
+
+    def _is_employee_person(self, person):
+        """MVP gate: only EMPLOYEE-typed persons get pushed to Smartschool.
+
+        Students and other types are out of scope for the first Smartschool
+        milestone. Remove or widen this check when expanding scope.
+        """
+        return bool(
+            person and person.person_type_id
+            and person.person_type_id.name
+            and person.person_type_id.name.upper() == 'EMPLOYEE'
+        )
+
+    def _emit_smartschool_user_add_for_person(self, person, changes):
+        """Queue a SMARTSCHOOL/USER/ADD task for a person if their school has
+        a Smartschool platform configured.
+
+        Same queue-only philosophy as ``_emit_cloud_user_add_for_person``:
+        the actual provisioning happens later in
+        ``process_smartschool_user_add`` (Fase 3) which re-resolves the
+        person's school + platform at execution time, so the most up-to-date
+        role/tree position wins. Dedupes against pending tasks for the same
+        person.
+
+        Honours ``person.automatic_sync=False`` as a veto so admins can
+        opt-out specific persons from Smartschool provisioning.
+        """
+        if not person:
+            return
+        if not self._is_employee_person(person):
+            return
+        if not person.automatic_sync:
+            return
+        if not self._school_wants_smartschool_for_person(person):
+            return
+        BeTask = self.env['myschool.betask']
+        BeTaskType = self.env['myschool.betask.type']
+        task_type = BeTaskType.search([
+            ('target', '=', 'SMARTSCHOOL'),
+            ('object', '=', 'USER'),
+            ('action', '=', 'ADD'),
+        ], limit=1)
+        if not task_type:
+            _logger.warning('[SMARTSCHOOL-CASCADE] SMARTSCHOOL/USER/ADD task type missing')
+            return
+        existing = BeTask.search([
+            ('betasktype_id', '=', task_type.id),
+            ('status', '=', 'new'),
+            ('data', 'ilike', f'"person_id": {person.id}'),
+        ], limit=1)
+        if existing:
+            return
+        BeTask.create({
+            'name': f'SMARTSCHOOL/USER/ADD for {person.name}',
+            'betasktype_id': task_type.id,
+            'status': 'new',
+            'data': json.dumps({'person_id': person.id}),
+        })
+        changes.append(f'Queued SMARTSCHOOL/USER/ADD for {person.name}')
 
     def _school_wants_ldap_for_person(self, person):
         """True if any of the orgs the person is reachable from rolls up
@@ -3456,43 +4004,26 @@ class BeTaskProcessor(models.AbstractModel):
 
                 changes.append(f"Recalculated PERSON-TREE for {person.name}")
 
-            # Check if person should be deactivated (no more active proprelations)
-            # This check runs for ALL proprelation types, not just PPSBR
-            # Only auto-deactivate persons with automatic_sync=True
+            # Note: we no longer flip ``is_active=False`` here when the
+            # last proprelation drops away. The suspend pipeline owns
+            # that decision: the post-sync sweep flags
+            # ``deactivation_pending_since=today`` (transition guard
+            # via proprelation history), and the daily lifecycle cron
+            # — Phase 1 in ``cron_employee_account_lifecycle`` — flips
+            # ``is_active`` and queues ``LDAP/USER/DEL`` only after
+            # ``EmployeeSuspendPeriod`` has elapsed. Immediate
+            # deactivation here would short-circuit the entire grace
+            # period.
             if person and person.is_active and person.automatic_sync:
-                remaining_active_proprels = PropRelation.search([
+                remaining_active_proprels = PropRelation.search_count([
                     ('id_person', '=', person.id),
-                    ('is_active', '=', True)
+                    ('is_active', '=', True),
                 ])
-
-                _logger.info(f'Remaining active proprelations for {person.name}: {len(remaining_active_proprels)}')
-
-                if not remaining_active_proprels:
-                    _logger.info(f'No active proprelations left for {person.name} - deactivating person')
-                    changes.append(f"No active proprelations remaining - deactivating person")
-
-                    # Skip manual audit for backend task processing
-                    person_ctx = person.with_context(skip_manual_audit=True)
-
-                    # Create ODOO-PERSON-DEACT task if person has Odoo user
-                    if person.odoo_user_id:
-                        odoo_task_data = {
-                            'person_id': person.id,
-                            'personId': person.sap_person_uuid,
-                            'reason': 'No active proprelations'
-                        }
-                        self._create_betask_internal(
-                            'ODOO', 'PERSON', 'DEACT',
-                            json.dumps(odoo_task_data),
-                            None
-                        )
-                        _logger.info(f'Created ODOO-PERSON-DEACT task for {person.name}')
-                        changes.append(f"Created ODOO-PERSON-DEACT task")
-
-                    # Only deactivate the person, NOT their other proprelations
-                    person_ctx.write({'is_active': False})
-                    _logger.info(f"Deactivated person {person.name}")
-                    changes.append(f"Person {person.name} deactivated")
+                _logger.info(
+                    f'Remaining active proprelations for {person.name}: '
+                    f'{remaining_active_proprels} '
+                    f'(suspend pipeline handles deactivation; '
+                    f'no immediate is_active flip)')
 
             return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -3523,6 +4054,21 @@ class BeTaskProcessor(models.AbstractModel):
 
     def _find_domain_external(self, org):
         """Walk up the org hierarchy to find domain_external value."""
+        return self._walk_org_for_field(org, 'domain_external')
+
+    def _find_ou_fqdn(self, org, field_name):
+        """Walk up the org hierarchy to find an ``ou_fqdn_internal`` /
+        ``ou_fqdn_external`` value. Leaf orgs (classes / departments)
+        typically don't carry their own FQDN — the school does — so
+        the leaf record is the bottom of the walk."""
+        return self._walk_org_for_field(org, field_name)
+
+    def _walk_org_for_field(self, org, field_name):
+        """Generic walk-up: return the first non-empty value of
+        ``getattr(ancestor, field_name)`` along the active ORG-TREE
+        from ``org`` upwards. ``None`` when nothing matches."""
+        if not org:
+            return None
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
@@ -3531,8 +4077,9 @@ class BeTaskProcessor(models.AbstractModel):
         current = org
         while current and current.id not in visited:
             visited.add(current.id)
-            if current.domain_external:
-                return current.domain_external
+            value = getattr(current, field_name, None)
+            if value:
+                return value
             if not org_tree_type:
                 break
             parent_rel = PropRelation.search([
@@ -3547,11 +4094,13 @@ class BeTaskProcessor(models.AbstractModel):
     def _populate_person_account_fields(self, person, target_org):
         """Auto-complete email_cloud, person_fqdn_internal, person_fqdn_external.
 
-        Naming spec (delegated to ldap_service._build_user_cn):
-        - cn: firstname.lastname (cleaned), OR per-school template via the
-          ``anonymous_account_template`` CI for basisschool students.
-        - email_cloud: matching ``myschool.field.template`` for
-          ``email_cloud``, fallback ``<cn>@<school.domain_external>``.
+        Naming spec — every templatable field is resolved through
+        ``myschool.field.template`` (configured per school + person_type
+        via Integrations → Field Templates):
+        - cn: ``field.template`` with ``field_name='cn'`` (delegated to
+          ldap_service._build_user_cn); fallback ``firstname.lastname``.
+        - email_cloud: ``field.template`` with ``field_name='email_cloud'``;
+          fallback ``<cn>@<school.domain_external>``.
         - person_fqdn_internal: ``CN=<cn>,<ou_fqdn_internal>``
         - person_fqdn_external: ``CN=<cn>,<ou_fqdn_external>``
         """
@@ -3585,12 +4134,16 @@ class BeTaskProcessor(models.AbstractModel):
             vals['email_cloud'] = expected_email
 
         # --- person_fqdn_internal / external ---
-        if target_org.ou_fqdn_internal:
-            vals['person_fqdn_internal'] = (
-                f"CN={cn},{target_org.ou_fqdn_internal}")
-        if target_org.ou_fqdn_external:
-            vals['person_fqdn_external'] = (
-                f"CN={cn},{target_org.ou_fqdn_external}")
+        # Walk up ORG-TREE for an ancestor with the OU-FQDN field
+        # filled. Class-orgs typically don't carry their own FQDN —
+        # the school does. Falling back lets the DB at least mirror
+        # the school-level container even when the leaf has no FQDN.
+        ou_internal = self._find_ou_fqdn(target_org, 'ou_fqdn_internal')
+        ou_external = self._find_ou_fqdn(target_org, 'ou_fqdn_external')
+        if ou_internal:
+            vals['person_fqdn_internal'] = f"CN={cn},{ou_internal}"
+        if ou_external:
+            vals['person_fqdn_external'] = f"CN={cn},{ou_external}"
 
         if vals:
             person.write(vals)
@@ -3958,6 +4511,179 @@ class BeTaskProcessor(models.AbstractModel):
 
         return config
 
+    # =========================================================================
+    # Group self-healing helpers (used by GROUPMEMBER/ADD handlers)
+    # =========================================================================
+
+    def _ldap_group_exists(self, config, group_dn):
+        """Cheap existence-check on a group DN. Returns True/False.
+
+        Returns True on errors that aren't "not found" — better to let
+        the subsequent add_group_member call raise the real error
+        than to mask connection issues as "group missing".
+        """
+        try:
+            ldap_service = self.env['myschool.ldap.service']
+            with ldap_service._get_connection(config) as conn:
+                conn.search(
+                    search_base=group_dn,
+                    search_filter='(objectClass=group)',
+                    search_scope='BASE',
+                    attributes=['distinguishedName'])
+                present = bool(conn.entries)
+                _logger.info(
+                    '[GROUP-HEAL] LDAP existence check %s -> %s',
+                    group_dn, 'present' if present else 'missing')
+                return present
+        except Exception as e:
+            # noSuchObject → group not present. Other errors → assume
+            # present (don't try to heal what we can't diagnose).
+            msg = str(e).lower()
+            if 'nosuchobject' in msg:
+                _logger.info(
+                    '[GROUP-HEAL] LDAP existence check %s -> missing '
+                    '(noSuchObject)', group_dn)
+                return False
+            _logger.warning(
+                '[GROUP-HEAL] LDAP existence check inconclusive '
+                'for %s: %s — assuming present', group_dn, e)
+            return True
+
+    def _ldap_self_heal_create_group(self, config, group_dn, data, changes):
+        """Create the missing AD group inline.
+
+        ``data`` is the GROUPMEMBER/ADD task payload. We try to
+        recover enough to call ``create_group_at_dn``:
+          - org_id → look up the org and use its com/sec_group fields
+          - else: derive cn from group_dn's leftmost RDN, no description
+
+        Returns True when the create succeeded (or we have reason to
+        believe it did), False when self-healing isn't possible — in
+        the latter case the caller should let the membership-add fail
+        with its native error.
+        """
+        ldap_service = self.env['myschool.ldap.service']
+        org_id = data.get('org_id')
+        org = self.env['myschool.org'].browse(org_id).exists() \
+            if org_id else None
+
+        # Decide which side this DN matches (COM vs SEC) so we know
+        # whether to mark it as security-group.
+        kind = None
+        cn = None
+        description = None
+        mail = None
+        if org and org.com_group_fqdn_internal == group_dn:
+            kind = 'COM'
+            cn = (org.com_group_name or org.name_short or '').strip()
+            description = org.name
+            mail = (org.com_group_email or '').strip() or None
+        elif org and org.sec_group_fqdn_internal == group_dn:
+            kind = 'SEC'
+            cn = (org.sec_group_name or org.name_short or '').strip()
+            description = org.name
+
+        if not cn:
+            # Fall back to the leftmost RDN value of the DN.
+            first = (group_dn.split(',', 1) or [''])[0]
+            if first.lower().startswith('cn='):
+                cn = first[3:].strip()
+        if not cn:
+            changes.append(
+                f'[SELF-HEAL] LDAP group missing at {group_dn} but no '
+                f'CN could be derived — falling back to native error')
+            _logger.warning(
+                '[GROUP-HEAL] No CN derivable from %s, skipping self-heal',
+                group_dn)
+            return False
+
+        _logger.info(
+            '[GROUP-HEAL] LDAP self-heal create: dn=%s cn=%s '
+            'security=%s mail=%s', group_dn, cn, kind != 'COM', mail)
+        result = ldap_service.create_group_at_dn(
+            config, dn=group_dn, group_name=cn,
+            description=description, mail=mail,
+            security=(kind != 'COM'))
+        _logger.info(
+            '[GROUP-HEAL] create_group_at_dn returned: success=%s '
+            'dn=%s msg=%s',
+            result.get('success'), result.get('dn'), result.get('message'))
+        if result.get('success'):
+            # If create_group_at_dn discovered an sAMAccountName
+            # collision, the returned ``dn`` is the REAL location of
+            # the existing group — different from the one we asked
+            # for. Stash it on ``data`` so the calling handler can
+            # retry the modify against the real DN.
+            real_dn = result.get('dn')
+            if real_dn and real_dn.lower() != group_dn.lower():
+                data['_resolved_group_dn'] = real_dn
+                changes.append(
+                    f'[SELF-HEAL] Group {cn} found at real DN '
+                    f'{real_dn} (was requested at {group_dn})')
+            else:
+                changes.append(
+                    f'[SELF-HEAL] Created/found LDAP group {group_dn} — '
+                    f'{result.get("message")}')
+            return True
+        changes.append(
+            f'[SELF-HEAL] Could not create {group_dn}: '
+            f'{result.get("message")}')
+        return False
+
+    def _cloud_group_exists(self, config, group_email):
+        """Cheap Workspace existence-check on a group email."""
+        try:
+            svc = self.env['myschool.google.directory.service']
+            directory = svc._get_directory_service(config)
+            present = svc._get_group(directory, group_email) is not None
+            _logger.info(
+                '[GROUP-HEAL] Cloud existence check %s -> %s',
+                group_email, 'present' if present else 'missing')
+            return present
+        except Exception as e:
+            _logger.warning(
+                '[GROUP-HEAL] Cloud existence check inconclusive '
+                'for %s: %s — assuming present', group_email, e)
+            return True
+
+    def _cloud_self_heal_create_group(self, config, group_email,
+                                       data, changes):
+        """Create the missing Workspace group inline.
+
+        Same pattern as the LDAP variant. Falls back to using the
+        local-part of ``group_email`` as the display name when no
+        org context is available.
+        """
+        svc = self.env['myschool.google.directory.service']
+        org_id = data.get('org_id')
+        org = self.env['myschool.org'].browse(org_id).exists() \
+            if org_id else None
+        if org:
+            group_name = (org.com_group_name or org.name_short
+                          or org.name or group_email)
+            description = org.name
+        else:
+            group_name = group_email.split('@', 1)[0]
+            description = ''
+        _logger.info(
+            '[GROUP-HEAL] Cloud self-heal create: email=%s name=%s',
+            group_email, group_name)
+        result = svc.create_group(
+            config, group_email,
+            group_name=group_name, description=description)
+        _logger.info(
+            '[GROUP-HEAL] create_group returned: success=%s msg=%s',
+            result.get('success'), result.get('message'))
+        if result.get('success'):
+            changes.append(
+                f'[SELF-HEAL] Created missing Cloud group {group_email} — '
+                f'{result.get("message")}')
+            return True
+        changes.append(
+            f'[SELF-HEAL] Could not create {group_email}: '
+            f'{result.get("message")}')
+        return False
+
     @api.model
     def process_ldap_user_add(self, task):
         """
@@ -4026,6 +4752,14 @@ class BeTaskProcessor(models.AbstractModel):
             if result.get('success'):
                 changes.append(f"User created: {result.get('dn', 'N/A')}")
                 changes.append(result.get('message', ''))
+                # Trailing cascade: queue welcome-letter generation for
+                # the just-provisioned account. Skipped silently when
+                # the message says "already existed" (then password is
+                # preserved + an earlier letter exists). Idempotent
+                # via dedupe inside ``_emit_letter_generate_for_person``.
+                if 'already existed' not in (result.get('message') or '').lower():
+                    self._emit_letter_generate_for_person(
+                        person, changes, trigger_event='account_created')
                 task.write({'changes': '\n'.join(changes)})
                 return True
             else:
@@ -4483,8 +5217,59 @@ class BeTaskProcessor(models.AbstractModel):
             if not member_dn:
                 raise ValidationError(_('member_dn or person_id is required in task data'))
 
+            # Self-healing: if the group doesn't exist yet, create it
+            # inline before adding the member. We do this AT THE LAST
+            # MOMENT (rather than via a separate queued task) so a single
+            # GROUPMEMBER/ADD task is fully idempotent — re-running it
+            # on a fresh AD will both create the group AND add the
+            # member, no manual prep needed. The earlier cascade still
+            # queues a GROUP/ADD ahead of time when it can; this is
+            # the safety net.
+            if not dry_run and not self._ldap_group_exists(config, group_dn):
+                self._ldap_self_heal_create_group(
+                    config, group_dn, data, changes)
+                # Self-heal may have discovered the group lives at a
+                # different DN (sAMAccountName collision elsewhere in
+                # AD) — switch to that real DN before the modify.
+                resolved = data.get('_resolved_group_dn')
+                if resolved:
+                    group_dn = resolved
+                    changes.append(
+                        f'[GROUP-HEAL] Using real group DN: {group_dn}')
+
             # Call LDAP service
             result = ldap_service.add_group_member(config, group_dn, member_dn, dry_run=dry_run)
+
+            # Last-ditch retry: if the modify failed with noSuchObject
+            # (group still missing — pre-flight check passed but the
+            # state changed, or self-heal silently failed) we run the
+            # heal once more and try again. Saves a manual re-run.
+            if (not dry_run and not result.get('success')
+                    and 'nosuchobject' in (result.get('message') or '').lower()):
+                _logger.warning(
+                    '[GROUP-HEAL] add_group_member returned noSuchObject '
+                    'for %s — retrying self-heal once', group_dn)
+                # Try to find the group elsewhere by sAMAccountName
+                # before falling back to create.
+                cn = group_dn.split(',', 1)[0].split('=', 1)[1] \
+                    if ',' in group_dn else None
+                real_dn = ldap_service.find_group_by_samaccountname(
+                    config, cn) if cn else None
+                if real_dn and real_dn.lower() != group_dn.lower():
+                    changes.append(
+                        f'[GROUP-HEAL] Found existing group at real DN '
+                        f'{real_dn} — retargeting modify')
+                    group_dn = real_dn
+                    result = ldap_service.add_group_member(
+                        config, group_dn, member_dn, dry_run=dry_run)
+                elif self._ldap_self_heal_create_group(
+                        config, group_dn, data, changes):
+                    target_dn = data.get('_resolved_group_dn') or group_dn
+                    result = ldap_service.add_group_member(
+                        config, target_dn, member_dn, dry_run=dry_run)
+                if result.get('success'):
+                    changes.append(
+                        '[SELF-HEAL] Recovered after second-pass lookup')
 
             if result.get('success'):
                 changes.append(f"Member added to group: {member_dn}")
@@ -4648,6 +5433,57 @@ class BeTaskProcessor(models.AbstractModel):
             task.write({'changes': '\n'.join(changes)})
             raise
 
+    @api.model
+    def process_ldap_ou_del(self, task):
+        """Process LDAP/ORG/DEL — delete the AD OU for ``org``.
+
+        Counterpart of ``process_ldap_org_add`` (OU branch). Expects:
+            {"org_id": 123, "dry_run": false}
+
+        AD refuses to delete a non-empty OU, so the caller must have
+        already deleted the contained users / groups / sub-OUs via
+        their own betask cascades. We surface the AD error verbatim
+        when that's not the case so the admin can clean up by hand.
+
+        Persongroup orgs are *not* routed here — their counterpart is
+        ``process_ldap_group_del``. Callers must emit GROUP/DEL for
+        persongroups and ORG/DEL only for OU-backed orgs.
+        """
+        _logger.info(f'Processing LDAP_ORG_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data)
+            if not data:
+                raise ValidationError(_('Task data is missing or invalid'))
+            org_id = data.get('org_id')
+            if not org_id:
+                raise ValidationError(_('org_id is required in task data'))
+            org = self.env['myschool.org'].browse(org_id).exists()
+            if not org:
+                raise ValidationError(
+                    _('Organization with id %s not found') % org_id)
+            ou_dn = (org.ou_fqdn_internal or '').strip()
+            if not ou_dn:
+                changes.append(
+                    f"Skipped: org {org.name} has no ou_fqdn_internal")
+                task.write({'changes': '\n'.join(changes)})
+                return True
+            dry_run = bool(data.get('dry_run'))
+            config = self._get_ldap_config_for_task(task, org_id)
+            changes.append(f"Using LDAP server: {config.name}")
+            ldap_service = self.env['myschool.ldap.service']
+            result = ldap_service.delete_ou(config, ou_dn, dry_run=dry_run)
+            if not result.get('success'):
+                raise ValidationError(result.get('message', 'Unknown error'))
+            changes.append(result.get('message', f'OU deleted: {ou_dn}'))
+            task.write({'changes': '\n'.join(changes)})
+            return True
+        except Exception as e:
+            _logger.exception(f'LDAP_ORG_DEL failed: {task.name}')
+            changes.append(f"ERROR: {str(e)}")
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
     def _create_ldap_persongroup(self, ldap_service, config, org, changes,
                                  dry_run=False):
         """Create the AD group(s) for a PERSONGROUP org.
@@ -4707,6 +5543,1405 @@ class BeTaskProcessor(models.AbstractModel):
             changes.append(
                 f"Skipped: persongroup {org.name} has no com/sec group "
                 f"flags or FQDNs set")
+
+    # =========================================================================
+    # CLOUD (Google Workspace) TASK PROCESSORS
+    # =========================================================================
+    #
+    # Mirrors the LDAP layout: each handler resolves a Workspace
+    # config via ``_get_google_config_for_task``, dispatches to the
+    # corresponding service method, and records ``message`` / errors
+    # in ``task.changes``. The services are AbstractModels — see
+    # ``myschool.google.directory.service`` etc.
+    # =========================================================================
+
+    @api.model
+    def _get_google_config_for_task(self, task, org_id=None):
+        """Resolve the Google Workspace config for a task.
+
+        Same fallback chain as ``_get_ldap_config_for_task``: explicit
+        org_id → org_id parsed from task.data → first active config.
+        """
+        cfg_model = self.env['myschool.google.workspace.config']
+        cfg = None
+        if org_id:
+            cfg = cfg_model.get_server_for_org(org_id)
+        else:
+            data = self._parse_task_data(task.data)
+            if isinstance(data, dict) and data.get('org_id'):
+                cfg = cfg_model.get_server_for_org(data['org_id'])
+            if not cfg:
+                cfg = cfg_model.search(
+                    [('active', '=', True)], limit=1, order='sequence')
+        if not cfg:
+            raise ValidationError(_(
+                'No Google Workspace configuration is active. Configure '
+                'one under Settings → Integrations → Google Workspace.'))
+        return cfg
+
+    def _record_cloud_result(self, task, changes, result):
+        """Append the service result to ``changes`` and persist on task.
+
+        Returns True on success; raises ValidationError otherwise so
+        the betask processor flips the task to ``error`` with the
+        message visible in the UI.
+        """
+        if result.get('success'):
+            if result.get('id'):
+                changes.append(f"id: {result['id']}")
+            changes.append(result.get('message') or 'OK')
+            task.write({'changes': '\n'.join(changes)})
+            return True
+        changes.append(f"ERROR: {result.get('message') or 'Unknown error'}")
+        task.write({'changes': '\n'.join(changes)})
+        raise ValidationError(result.get('message') or 'Unknown error')
+
+    # ----- USER ---------------------------------------------------------
+
+    @api.model
+    def process_cloud_user_add(self, task):
+        """CLOUD/USER/ADD — provision a Google Workspace user.
+
+        Re-resolves the target org from the current PERSON-TREE, just
+        like the LDAP path does, so a higher-priority role queued
+        afterwards still wins. Pushes the password from
+        ``person.password`` (generating one if missing) so AD and
+        Google share the same plaintext.
+        """
+        _logger.info(f'Processing CLOUD_USER_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person_id = data.get('person_id')
+            if not person_id:
+                raise ValidationError(_('person_id is required in task data'))
+            person = self.env['myschool.person'].browse(person_id).exists()
+            if not person:
+                raise ValidationError(_('Person %s not found') % person_id)
+
+            current_tree_org = self._resolve_current_person_tree_org(person)
+            org_id = data.get('org_id')
+            if current_tree_org:
+                if org_id and current_tree_org.id != org_id:
+                    changes.append(
+                        f"Org override: queued org_id={org_id} replaced by "
+                        f"current PERSON-TREE org={current_tree_org.name}")
+                org_id = current_tree_org.id
+            org = self.env['myschool.org'].browse(org_id) if org_id else None
+
+            cfg = self._get_google_config_for_task(task, org_id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+
+            svc = self.env['myschool.google.directory.service']
+            result = svc.create_user(
+                cfg, person, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_upd(self, task):
+        _logger.info(f'Processing CLOUD_USER_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].browse(
+                data.get('person_id', 0)).exists()
+            if not person:
+                raise ValidationError(_('person_id required'))
+            org = self.env['myschool.org'].browse(data['org_id']) \
+                if data.get('org_id') else None
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.update_user(
+                cfg, person, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_deact(self, task):
+        """CLOUD/USER/DEACT — suspend (Google's equivalent of disable)."""
+        _logger.info(f'Processing CLOUD_USER_DEACT: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].browse(
+                data.get('person_id', 0)).exists()
+            if not person:
+                raise ValidationError(_('person_id required'))
+            org = self.env['myschool.org'].browse(data['org_id']) \
+                if data.get('org_id') else self._resolve_current_person_tree_org(person)
+            cfg = self._get_google_config_for_task(
+                task, org.id if org else None)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.suspend_user(
+                cfg, person, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_DEACT failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_del(self, task):
+        """CLOUD/USER/DEL — replaces the placeholder in lifecycle phase 2."""
+        _logger.info(f'Processing CLOUD_USER_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].with_context(
+                active_test=False).browse(data.get('person_id', 0)).exists()
+            if not person:
+                raise ValidationError(_('person_id required'))
+            org = self.env['myschool.org'].browse(data['org_id']) \
+                if data.get('org_id') else None
+            cfg = self._get_google_config_for_task(
+                task, org.id if org else None)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.delete_user(
+                cfg, person, org=org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_move(self, task):
+        """CLOUD/USER/MOVE — relocate a user to another OU.
+
+        Expected data: {'person_id', 'target_org_id'}.
+        """
+        _logger.info(f'Processing CLOUD_USER_MOVE: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].browse(
+                data.get('person_id', 0)).exists()
+            target_org = self.env['myschool.org'].browse(
+                data.get('target_org_id', 0)).exists()
+            if not person or not target_org:
+                raise ValidationError(_(
+                    'person_id and target_org_id required'))
+            cfg = self._get_google_config_for_task(task, target_org.id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.move_user_ou(
+                cfg, person, target_org,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_MOVE failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_user_pwd(self, task):
+        """CLOUD/USER/PWD — push (or rotate) the user's password.
+
+        Reuses ``person.password`` so AD and Google end up with the
+        same plaintext. ``change_at_next_login`` defaults to False
+        (post-create cascade) but admins triggering a manual reset
+        should pass True via task data.
+        """
+        _logger.info(f'Processing CLOUD_USER_PWD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person = self.env['myschool.person'].browse(
+                data.get('person_id', 0)).exists()
+            if not person:
+                raise ValidationError(_('person_id required'))
+            org = None
+            if data.get('org_id'):
+                org = self.env['myschool.org'].browse(data['org_id']).exists()
+            cfg = self._get_google_config_for_task(
+                task, org.id if org else None)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+
+            # Resolve plaintext exactly like LDAP create_user does.
+            plaintext = (person.password or '').strip()
+            ldap_svc = self.env['myschool.ldap.service']
+            if not plaintext or not ldap_svc._is_ad_complex_password(plaintext):
+                plaintext = ldap_svc._generate_ad_complex_password()
+                person.sudo().write({'password': plaintext})
+                changes.append(
+                    'Generated new complex password (persisted on person.password)')
+
+            svc = self.env['myschool.google.directory.service']
+            result = svc.set_user_password(
+                cfg, person, plaintext, org=org,
+                change_at_next_login=bool(data.get('change_at_next_login', False)),
+                dry_run=bool(data.get('dry_run')))
+            ok = self._record_cloud_result(task, changes, result)
+            # Letter cascade — fire "password_reset" template after a
+            # successful non-dry-run rotation so the user gets the new
+            # credentials in writing. Skipped silently when no template
+            # is configured (admins haven't seeded one yet).
+            if ok and not data.get('dry_run'):
+                self._emit_letter_generate_for_person(
+                    person, [], trigger_event='password_reset')
+            return ok
+        except Exception as e:
+            _logger.exception(f'CLOUD_USER_PWD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- ORG (= OU) ---------------------------------------------------
+
+    @api.model
+    def process_cloud_org_add(self, task):
+        _logger.info(f'Processing CLOUD_ORG_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            org = self.env['myschool.org'].browse(
+                data.get('org_id', 0)).exists()
+            if not org:
+                raise ValidationError(_('org_id required'))
+            cfg = self._get_google_config_for_task(task, org.id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.create_orgunit(
+                cfg, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_ORG_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_org_upd(self, task):
+        _logger.info(f'Processing CLOUD_ORG_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            org = self.env['myschool.org'].browse(
+                data.get('org_id', 0)).exists()
+            if not org:
+                raise ValidationError(_('org_id required'))
+            cfg = self._get_google_config_for_task(task, org.id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.update_orgunit(
+                cfg, org,
+                new_name=data.get('new_name'),
+                new_description=data.get('new_description'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_ORG_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_org_del(self, task):
+        _logger.info(f'Processing CLOUD_ORG_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            org = self.env['myschool.org'].with_context(
+                active_test=False).browse(data.get('org_id', 0)).exists()
+            if not org:
+                raise ValidationError(_('org_id required'))
+            cfg = self._get_google_config_for_task(task, org.id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.delete_orgunit(
+                cfg, org, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_ORG_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- GROUP --------------------------------------------------------
+
+    @api.model
+    def process_cloud_group_add(self, task):
+        """CLOUD/GROUP/ADD — accepts either a persongroup ``org_id`` or
+        explicit ``group_email``/``group_name``."""
+        _logger.info(f'Processing CLOUD_GROUP_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            group_name = data.get('group_name')
+            description = data.get('description')
+            org_id = data.get('org_id')
+            if not group_email and org_id:
+                org = self.env['myschool.org'].browse(org_id).exists()
+                if org:
+                    group_email = org.com_group_email
+                    group_name = group_name or org.com_group_name or org.name_short
+                    description = description or org.name
+            if not group_email:
+                raise ValidationError(_(
+                    'group_email required (or supply an org_id with com_group_email)'))
+            cfg = self._get_google_config_for_task(task, org_id)
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.create_group(
+                cfg, group_email,
+                group_name=group_name,
+                description=description,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUP_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_group_upd(self, task):
+        _logger.info(f'Processing CLOUD_GROUP_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            if not group_email:
+                raise ValidationError(_('group_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.update_group(
+                cfg, group_email,
+                name=data.get('name'),
+                description=data.get('description'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUP_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_group_del(self, task):
+        _logger.info(f'Processing CLOUD_GROUP_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            if not group_email:
+                raise ValidationError(_('group_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.delete_group(
+                cfg, group_email, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUP_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_groupmember_add(self, task):
+        _logger.info(f'Processing CLOUD_GROUPMEMBER_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            member_email = data.get('member_email')
+            if not group_email or not member_email:
+                raise ValidationError(_(
+                    'group_email and member_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+
+            # Self-healing: ensure the group exists before adding a
+            # member. See process_ldap_groupmember_add for the
+            # rationale — same pattern, different backend.
+            dry_run = bool(data.get('dry_run'))
+            if not dry_run and not self._cloud_group_exists(cfg, group_email):
+                self._cloud_self_heal_create_group(
+                    cfg, group_email, data, changes)
+
+            result = svc.add_group_member(
+                cfg, group_email, member_email,
+                role=data.get('role') or 'MEMBER',
+                dry_run=dry_run)
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUPMEMBER_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_groupmember_remove(self, task):
+        _logger.info(f'Processing CLOUD_GROUPMEMBER_REMOVE: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            group_email = data.get('group_email')
+            member_email = data.get('member_email')
+            if not group_email or not member_email:
+                raise ValidationError(_(
+                    'group_email and member_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.remove_group_member(
+                cfg, group_email, member_email,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_GROUPMEMBER_REMOVE failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- DEVICE (Chromebook) -----------------------------------------
+
+    @api.model
+    def process_cloud_device_move(self, task):
+        """CLOUD/DEVICE/MOVE (and UPD alias) — move ChromeOS devices.
+
+        Two ways to identify devices:
+          - ``device_ids``: list of Google deviceIds (opaque GUIDs)
+          - ``asset_ids``: list of myschool.asset ids — each must
+            carry ``cloud_device_id`` (synced via the inventory cron)
+
+        Target OU comes from ``target_org_id`` (preferred) or the
+        explicit ``ou_path`` payload key when no org maps cleanly.
+        """
+        _logger.info(f'Processing CLOUD_DEVICE_MOVE: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            target_org = None
+            ou_path = data.get('ou_path')
+            if data.get('target_org_id'):
+                target_org = self.env['myschool.org'].browse(
+                    data['target_org_id']).exists()
+            cfg = self._get_google_config_for_task(
+                task, target_org.id if target_org else None)
+            svc = self.env['myschool.google.directory.service']
+
+            if not ou_path and target_org:
+                ou_path = svc.org_to_google_path(target_org, cfg)
+            if not ou_path:
+                raise ValidationError(_(
+                    'target_org_id or ou_path required'))
+            changes.append(f"Target OU: {ou_path}")
+
+            device_ids = list(data.get('device_ids') or [])
+            asset_ids = data.get('asset_ids') or []
+            if asset_ids:
+                assets = self.env['myschool.asset'].browse(asset_ids)
+                resolved = []
+                for a in assets:
+                    cdid = getattr(a, 'cloud_device_id', None)
+                    if cdid:
+                        resolved.append(cdid)
+                    else:
+                        changes.append(
+                            f"Skipped asset {a.id}: no cloud_device_id")
+                device_ids.extend(resolved)
+
+            result = svc.move_chromeos_devices(
+                cfg, ou_path, device_ids,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DEVICE_MOVE failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_device_deact(self, task):
+        """CLOUD/DEVICE/DEACT — disable a single Chromebook."""
+        _logger.info(f'Processing CLOUD_DEVICE_DEACT: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            device_id = data.get('device_id')
+            if not device_id:
+                raise ValidationError(_('device_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.action_chromeos_device(
+                cfg, device_id, 'disable',
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DEVICE_DEACT failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_device_del(self, task):
+        """CLOUD/DEVICE/DEL — deprovision (= remove from fleet)."""
+        _logger.info(f'Processing CLOUD_DEVICE_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            device_id = data.get('device_id')
+            if not device_id:
+                raise ValidationError(_('device_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.directory.service']
+            result = svc.action_chromeos_device(
+                cfg, device_id, 'deprovision',
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DEVICE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- DRIVE (Shared Drive) ----------------------------------------
+
+    @api.model
+    def process_cloud_drive_add(self, task):
+        _logger.info(f'Processing CLOUD_DRIVE_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            name = data.get('name')
+            if not name:
+                raise ValidationError(_('name required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.drive.service']
+            result = svc.create_shared_drive(
+                cfg, name,
+                request_id=data.get('request_id'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DRIVE_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_drive_upd(self, task):
+        _logger.info(f'Processing CLOUD_DRIVE_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            drive_id = data.get('drive_id')
+            if not drive_id:
+                raise ValidationError(_('drive_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.drive.service']
+            result = svc.update_shared_drive(
+                cfg, drive_id,
+                name=data.get('name'),
+                hidden=data.get('hidden'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DRIVE_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_drive_arc(self, task):
+        """ARC = hide. Convenience wrapper around UPD with hidden=True."""
+        _logger.info(f'Processing CLOUD_DRIVE_ARC: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            drive_id = data.get('drive_id')
+            if not drive_id:
+                raise ValidationError(_('drive_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.drive.service']
+            result = svc.update_shared_drive(
+                cfg, drive_id, hidden=True,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DRIVE_ARC failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_drive_del(self, task):
+        _logger.info(f'Processing CLOUD_DRIVE_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            drive_id = data.get('drive_id')
+            if not drive_id:
+                raise ValidationError(_('drive_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.drive.service']
+            result = svc.delete_shared_drive(
+                cfg, drive_id, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_DRIVE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- COURSE (Classroom) ------------------------------------------
+
+    @api.model
+    def process_cloud_course_add(self, task):
+        _logger.info(f'Processing CLOUD_COURSE_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            name = data.get('name')
+            owner_email = data.get('owner_email')
+            if not name or not owner_email:
+                raise ValidationError(_(
+                    'name and owner_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.classroom.service']
+            result = svc.create_course(
+                cfg, name=name, owner_email=owner_email,
+                section=data.get('section'),
+                description=data.get('description'),
+                room=data.get('room'),
+                course_state=data.get('course_state') or 'ACTIVE',
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_COURSE_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_course_upd(self, task):
+        _logger.info(f'Processing CLOUD_COURSE_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            course_id = data.get('course_id')
+            if not course_id:
+                raise ValidationError(_('course_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.classroom.service']
+            result = svc.update_course(
+                cfg, course_id,
+                name=data.get('name'),
+                section=data.get('section'),
+                description=data.get('description'),
+                room=data.get('room'),
+                course_state=data.get('course_state'),
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_COURSE_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_course_arc(self, task):
+        _logger.info(f'Processing CLOUD_COURSE_ARC: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            course_id = data.get('course_id')
+            if not course_id:
+                raise ValidationError(_('course_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.classroom.service']
+            result = svc.archive_course(
+                cfg, course_id, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_COURSE_ARC failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_course_del(self, task):
+        _logger.info(f'Processing CLOUD_COURSE_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            course_id = data.get('course_id')
+            if not course_id:
+                raise ValidationError(_('course_id required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.classroom.service']
+            result = svc.delete_course(
+                cfg, course_id, dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_COURSE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # ----- LICENSE -----------------------------------------------------
+
+    @api.model
+    def process_cloud_license_add(self, task):
+        _logger.info(f'Processing CLOUD_LICENSE_ADD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            product_id = data.get('product_id')
+            sku_id = data.get('sku_id')
+            user_email = data.get('user_email')
+            if not (product_id and sku_id and user_email):
+                raise ValidationError(_(
+                    'product_id, sku_id and user_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.license.service']
+            result = svc.assign_license(
+                cfg, product_id, sku_id, user_email,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_LICENSE_ADD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_license_upd(self, task):
+        """UPD = reassign within the same product (SKU change)."""
+        _logger.info(f'Processing CLOUD_LICENSE_UPD: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            product_id = data.get('product_id')
+            old_sku = data.get('old_sku_id')
+            new_sku = data.get('new_sku_id')
+            user_email = data.get('user_email')
+            if not (product_id and old_sku and new_sku and user_email):
+                raise ValidationError(_(
+                    'product_id, old_sku_id, new_sku_id and user_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.license.service']
+            result = svc.reassign_license(
+                cfg, product_id, old_sku, new_sku, user_email,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_LICENSE_UPD failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    @api.model
+    def process_cloud_license_del(self, task):
+        _logger.info(f'Processing CLOUD_LICENSE_DEL: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            product_id = data.get('product_id')
+            sku_id = data.get('sku_id')
+            user_email = data.get('user_email')
+            if not (product_id and sku_id and user_email):
+                raise ValidationError(_(
+                    'product_id, sku_id and user_email required'))
+            cfg = self._get_google_config_for_task(task, data.get('org_id'))
+            changes.append(f"Using Workspace tenant: {cfg.name}")
+            svc = self.env['myschool.google.license.service']
+            result = svc.revoke_license(
+                cfg, product_id, sku_id, user_email,
+                dry_run=bool(data.get('dry_run')))
+            return self._record_cloud_result(task, changes, result)
+        except Exception as e:
+            _logger.exception(f'CLOUD_LICENSE_DEL failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
+
+    # =========================================================================
+    # SMARTSCHOOL TASK PROCESSORS (MVP: leerkrachten / EMPLOYEE only)
+    # =========================================================================
+    #
+    # All SOAP calls flow through ``myschool.smartschool.service._call``,
+    # which respects the three safeguard layers (per-config dry_run,
+    # global ``myschool.safeguard_mode``, ownership-check via
+    # ``check_ownership``). The handlers below add a fourth check:
+    # ``_is_employee_person`` rejects any non-EMPLOYEE that slipped past
+    # the cascade gate, so a misrouted task can't push a student to a
+    # Smartschool platform during MVP.
+    # =========================================================================
+
+    def _resolve_smartschool_config_for_person(self, person):
+        """Return the Smartschool config that serves ``person``'s school.
+
+        Reuses the same candidate-org walk as ``_school_wants_smartschool_for_person``
+        (PERSON-TREE org + every PPSBR ``id_org_parent``/``id_org``).
+        Returns an empty recordset when no platform is configured.
+        """
+        Config = self.env['myschool.smartschool.config']
+        if not person:
+            return Config.browse()
+        candidates = []
+        pt_org = self._resolve_current_person_tree_org(person)
+        if pt_org:
+            candidates.append(pt_org)
+            try:
+                school = self._resolve_parent_school_from_org(pt_org)
+                if school:
+                    candidates.append(school)
+            except Exception:
+                pass
+        PropRelationType = self.env['myschool.proprelation.type']
+        PropRelation = self.env['myschool.proprelation']
+        ppsbr_type = PropRelationType.search(
+            [('name', '=', self.PROPRELATION_TYPE_PPSBR)], limit=1)
+        if ppsbr_type:
+            ppsbrs = PropRelation.search([
+                ('id_person', '=', person.id),
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('is_active', '=', True),
+            ])
+            for rel in ppsbrs:
+                if rel.id_org_parent:
+                    candidates.append(rel.id_org_parent)
+                if rel.id_org:
+                    candidates.append(rel.id_org)
+        for org in candidates:
+            cfg = Config.get_server_for_org(org)
+            if cfg:
+                return cfg
+        return Config.browse()
+
+    def _smartschool_username_for_person(self, person):
+        """Smartschool ``userIdentifier`` = local-part of email_cloud.
+
+        Returns None when no email_cloud is set — caller must handle that
+        as a hard failure (we can't create an account without a username).
+        """
+        if not person or not person.email_cloud:
+            return None
+        local = person.email_cloud.split('@', 1)[0].strip()
+        return local or None
+
+    def _smartschool_generate_password(self):
+        """Random 12-char password meeting Smartschool complexity rules.
+
+        Forces at least one upper / lower / digit / punctuation, then
+        randomises the remaining 8 chars. ``secrets`` over ``random`` for
+        crypto-grade entropy (random module is already imported but is
+        not safe for passwords).
+        """
+        import secrets
+        alphabet = string.ascii_letters + string.digits + '!@#$%'
+        chars = [
+            secrets.choice(string.ascii_uppercase),
+            secrets.choice(string.ascii_lowercase),
+            secrets.choice(string.digits),
+            secrets.choice('!@#$%'),
+        ]
+        chars += [secrets.choice(alphabet) for _ in range(8)]
+        # Shuffle with secrets-grade RNG too.
+        for i in range(len(chars) - 1, 0, -1):
+            j = secrets.randbelow(i + 1)
+            chars[i], chars[j] = chars[j], chars[i]
+        return ''.join(chars)
+
+    def _smartschool_build_save_user_payload(self, person, config, password=None):
+        """Map a ``myschool.person`` + config to ``saveUser`` kwargs.
+
+        Field names follow the WSDL the OLVP Smartschool platforms expose
+        (Vlaams-NL variant):
+          username, internnumber, stamboeknummer, name, surname, extranames,
+          initials, sex, birthday, birthplace, birthcountry, address,
+          postalcode, location, country, email, mobilephone, homephone, fax,
+          prn, untis, basisrol, passwd1/2/3
+
+        MVP scope: only the fields needed for leerkrachten. Optional fields
+        (sex, address, birthday, ...) are sent empty — Smartschool keeps the
+        existing remote value when a field is empty on update, so we don't
+        accidentally erase data the school admin maintains by hand.
+        """
+        sap_ref = person.sap_ref or ''
+        # ``internnumber`` is our idempotency key on Smartschool.
+        # ``stamboeknummer`` (rijksregister) and ``prn`` (persoonlijk
+        # referentienummer) are kept empty for MVP: they have specific
+        # legal formats in Vlaams onderwijs and putting the internal SAP
+        # ref in there triggered error 23 ("onbekende fout") server-side.
+        payload = {
+            'username': self._smartschool_username_for_person(person),
+            'internnumber': sap_ref,
+            'stamboeknummer': '',
+            'name': person.first_name or '',
+            'surname': person.last_name or '',
+            'extranames': '',
+            'initials': person.abbreviation or '',
+            'sex': '',
+            'birthday': '',
+            'birthplace': '',
+            'birthcountry': '',
+            'address': '',
+            'postalcode': '',
+            'location': '',
+            'country': '',
+            'email': person.email_cloud or '',
+            'mobilephone': '',
+            'homephone': '',
+            'fax': '',
+            'prn': '',
+            'untis': '',
+            'basisrol': config.default_role_teacher or 'Leerkracht',
+        }
+        if password is not None:
+            payload['passwd1'] = password
+            payload['passwd2'] = ''
+            payload['passwd3'] = ''
+        return payload
+
+    @api.model
+    def process_smartschool_user_add(self, task):
+        """SMARTSCHOOL/USER/ADD — upsert a teacher account via saveUser.
+
+        Steps:
+          1. Resolve person + config (skip if either missing).
+          2. EMPLOYEE-only guard (defense-in-depth — emitter already filters).
+          3. Ownership-check: pre-existing account with mismatched
+             internnumber → skip + audit, never overwrite.
+          4. saveUser with full payload (random password only for new
+             users; updates omit ``passwd1`` so we don't reset existing
+             passwords on routine syncs).
+          5. Optional forcePasswordReset when config.force_password_reset
+             AND we just created the account.
+        """
+        _logger.info(f'Processing SMARTSCHOOL_USER_ADD: {task.name}')
+        data = self._parse_task_data(task.data) or {}
+        person_id = data.get('person_id') if isinstance(data, dict) else None
+        if not person_id:
+            return {'success': False, 'error': 'Missing person_id in task data'}
+
+        person = self.env['myschool.person'].browse(person_id).exists()
+        if not person:
+            return {'success': False,
+                    'error': f'Person {person_id} not found'}
+
+        if not self._is_employee_person(person):
+            return {'success': True,
+                    'changes': f'Skipped: {person.name} is not EMPLOYEE (MVP scope)'}
+
+        config = self._resolve_smartschool_config_for_person(person)
+        if not config:
+            return {'success': True,
+                    'changes': f'Skipped: no Smartschool config for {person.name}'}
+
+        username = self._smartschool_username_for_person(person)
+        if not username:
+            return {'success': False,
+                    'error': f'Cannot derive Smartschool username — '
+                             f'{person.name} has no email_cloud'}
+
+        svc = self.env['myschool.smartschool.service']
+        ownership = svc.check_ownership(
+            config, username, person.sap_ref or '', person=person)
+        if not ownership['owned']:
+            return {
+                'success': True,
+                'changes': (f'Skipped: pre-existing Smartschool user {username!r} '
+                            f'has internnumber {ownership["existing_internnumber"]!r}, '
+                            f'expected {person.sap_ref!r}'),
+            }
+
+        is_new_user = ownership['existing_internnumber'] is None
+        password = self._smartschool_generate_password() if is_new_user else None
+
+        payload = self._smartschool_build_save_user_payload(
+            person, config, password=password)
+        result = svc._call(config, 'saveUser',
+                           mutating=True, person=person, **payload)
+
+        if not result.get('success'):
+            return {'success': False,
+                    'error': f'saveUser failed: {result.get("message")}'}
+
+        changes = []
+        if result.get('dry_run'):
+            changes.append(f'[DRY RUN] saveUser would {"create" if is_new_user else "update"} {username}')
+        elif is_new_user:
+            changes.append(f'Created Smartschool user {username} for {person.name}')
+            # MVP: random password is logged at INFO level so the cron
+            # output shows it during initial rollout. Productiehouding
+            # vereist een LETTER/USER/GENERATE-cascade die het wachtwoord
+            # naar de gebruiker mailt — TODO Fase 4.
+            _logger.info(
+                '[SMARTSCHOOL] Created %s — initial password: %s',
+                username, password)
+            # Persist on person.password so a LETTER template can pick
+            # it up via ``{{ object.password }}`` later.
+            try:
+                person.sudo().write({'password': password})
+            except Exception as e:
+                _logger.warning(
+                    '[SMARTSCHOOL] could not store password on person.%s: %s',
+                    person.id, e)
+        else:
+            changes.append(f'Updated Smartschool user {username} for {person.name}')
+
+        if is_new_user and config.force_password_reset and not result.get('dry_run'):
+            try:
+                reset_result = svc._call(
+                    config, 'forcePasswordReset',
+                    mutating=True, person=person,
+                    userIdentifier=username,
+                    accountType='1')
+                if reset_result.get('success'):
+                    changes.append('forcePasswordReset OK')
+                else:
+                    changes.append(
+                        f'WARN: forcePasswordReset failed: {reset_result.get("message")}')
+            except Exception as e:
+                _logger.warning(
+                    '[SMARTSCHOOL] forcePasswordReset raised for %s: %s', username, e)
+                changes.append(f'WARN: forcePasswordReset exception: {e}')
+
+        return {'success': True, 'changes': '\n'.join(changes)}
+
+    @api.model
+    def process_smartschool_user_upd(self, task):
+        """SMARTSCHOOL/USER/UPD — saveUser is upsert, so delegate to ADD.
+
+        The ADD path already handles the existing-user case (skips the
+        password, runs the ownership-check). Duplicating logic here would
+        only mean two paths to keep in sync.
+        """
+        return self.process_smartschool_user_add(task)
+
+    @api.model
+    def process_smartschool_user_deact(self, task):
+        """SMARTSCHOOL/USER/DEACT — set account status to inactive.
+
+        Called from ``cron_employee_account_lifecycle`` phase 1. The
+        person record may already be ``is_active=False`` at this point,
+        so we browse with ``active_test=False``.
+        """
+        _logger.info(f'Processing SMARTSCHOOL_USER_DEACT: {task.name}')
+        data = self._parse_task_data(task.data) or {}
+        person_id = data.get('person_id') if isinstance(data, dict) else None
+        if not person_id:
+            return {'success': False, 'error': 'Missing person_id'}
+
+        person = self.env['myschool.person'].with_context(
+            active_test=False).browse(person_id).exists()
+        if not person:
+            return {'success': False, 'error': f'Person {person_id} not found'}
+
+        config = self._resolve_smartschool_config_for_person(person)
+        if not config:
+            return {'success': True,
+                    'changes': f'Skipped: no Smartschool config for {person.name}'}
+
+        username = self._smartschool_username_for_person(person)
+        if not username:
+            return {'success': True,
+                    'changes': f'Skipped: no Smartschool username for {person.name}'}
+
+        svc = self.env['myschool.smartschool.service']
+        ownership = svc.check_ownership(
+            config, username, person.sap_ref or '', person=person)
+        if ownership['existing_internnumber'] is None:
+            return {'success': True,
+                    'changes': f'Skipped: {username!r} does not exist on Smartschool'}
+        if not ownership['owned']:
+            return {'success': True,
+                    'changes': f'Skipped: {username!r} not MySchool-managed'}
+
+        result = svc._call(
+            config, 'setAccountStatus',
+            mutating=True, person=person,
+            userIdentifier=username,
+            accountStatus='inactive')
+        if not result.get('success'):
+            return {'success': False,
+                    'error': f'setAccountStatus failed: {result.get("message")}'}
+        msg = (f'[DRY RUN] would deactivate {username}'
+               if result.get('dry_run')
+               else f'Deactivated Smartschool user {username}')
+        return {'success': True, 'changes': msg}
+
+    @api.model
+    def process_smartschool_user_pwd(self, task):
+        """SMARTSCHOOL/USER/PWD — set / rotate the user's password.
+
+        Data: ``{'person_id': N, 'password': '<optional>',
+                 'change_at_next_login': True/False (optional)}``.
+        When ``password`` is omitted, a fresh random one is generated
+        and persisted on ``person.password`` so a follow-up letter
+        template can pick it up.
+        """
+        _logger.info(f'Processing SMARTSCHOOL_USER_PWD: {task.name}')
+        data = self._parse_task_data(task.data) or {}
+        person_id = data.get('person_id') if isinstance(data, dict) else None
+        if not person_id:
+            return {'success': False, 'error': 'Missing person_id'}
+        person = self.env['myschool.person'].browse(person_id).exists()
+        if not person:
+            return {'success': False, 'error': f'Person {person_id} not found'}
+
+        config = self._resolve_smartschool_config_for_person(person)
+        if not config:
+            return {'success': True,
+                    'changes': f'Skipped: no Smartschool config for {person.name}'}
+
+        username = self._smartschool_username_for_person(person)
+        if not username:
+            return {'success': False,
+                    'error': f'No Smartschool username for {person.name}'}
+
+        svc = self.env['myschool.smartschool.service']
+        ownership = svc.check_ownership(
+            config, username, person.sap_ref or '', person=person)
+        if not ownership['owned']:
+            return {'success': True,
+                    'changes': f'Skipped: {username!r} not MySchool-managed'}
+
+        password = data.get('password') or self._smartschool_generate_password()
+        change_at_next = data.get('change_at_next_login',
+                                  config.force_password_reset)
+
+        result = svc._call(
+            config, 'savePassword',
+            mutating=True, person=person,
+            userIdentifier=username,
+            password=password,
+            accountType='1',
+            changePasswordAtNextLogin='1' if change_at_next else '0')
+        if not result.get('success'):
+            return {'success': False,
+                    'error': f'savePassword failed: {result.get("message")}'}
+
+        if not result.get('dry_run'):
+            try:
+                person.sudo().write({'password': password})
+            except Exception as e:
+                _logger.warning(
+                    '[SMARTSCHOOL] could not store rotated password on person.%s: %s',
+                    person.id, e)
+
+        msg = (f'[DRY RUN] would rotate password for {username}'
+               if result.get('dry_run')
+               else f'Rotated Smartschool password for {username}')
+        return {'success': True, 'changes': msg}
+
+    @api.model
+    def process_smartschool_user_del(self, task):
+        """SMARTSCHOOL/USER/DEL — permanent delete via delUser.
+
+        Used by Phase 2 of the account lifecycle. Requires
+        ``requires_confirmation=True`` on the task type (registered in
+        smartschool_task_types.xml) so it never auto-runs without
+        explicit admin approval.
+        """
+        _logger.info(f'Processing SMARTSCHOOL_USER_DEL: {task.name}')
+        data = self._parse_task_data(task.data) or {}
+        person_id = data.get('person_id') if isinstance(data, dict) else None
+        if not person_id:
+            return {'success': False, 'error': 'Missing person_id'}
+
+        person = self.env['myschool.person'].with_context(
+            active_test=False).browse(person_id).exists()
+        if not person:
+            return {'success': False, 'error': f'Person {person_id} not found'}
+
+        config = self._resolve_smartschool_config_for_person(person)
+        if not config:
+            return {'success': True,
+                    'changes': f'Skipped: no Smartschool config for {person.name}'}
+
+        username = self._smartschool_username_for_person(person)
+        if not username:
+            return {'success': True,
+                    'changes': f'Skipped: no Smartschool username for {person.name}'}
+
+        svc = self.env['myschool.smartschool.service']
+        ownership = svc.check_ownership(
+            config, username, person.sap_ref or '', person=person)
+        if ownership['existing_internnumber'] is None:
+            return {'success': True,
+                    'changes': f'Skipped: {username!r} already absent on Smartschool'}
+        if not ownership['owned']:
+            return {'success': True,
+                    'changes': f'Skipped: {username!r} not MySchool-managed'}
+
+        result = svc._call(
+            config, 'delUser',
+            mutating=True, person=person,
+            userIdentifier=username,
+            officialDate='')
+        if not result.get('success'):
+            return {'success': False,
+                    'error': f'delUser failed: {result.get("message")}'}
+        msg = (f'[DRY RUN] would delete {username}'
+               if result.get('dry_run')
+               else f'Deleted Smartschool user {username}')
+        return {'success': True, 'changes': msg}
+
+    # =========================================================================
+    # LETTER (PDF document generation) TASK PROCESSORS
+    # =========================================================================
+
+    def _emit_letter_generate_for_person(self, person, changes,
+                                         trigger_event='account_created'):
+        """Queue a LETTER/USER/GENERATE task for ``person`` × ``trigger_event``.
+
+        Skips silently when:
+          - No template matches (trigger_event, person_type) — admin
+            hasn't seeded one for this event yet, perfectly fine.
+          - An unprocessed task for the same (person, trigger_event)
+            pair already exists — dedupe key includes trigger_event so
+            a welcome-letter task and a farewell-letter task for the
+            same person co-exist without cancelling each other.
+        """
+        if not person:
+            return
+        BeTaskType = self.env['myschool.betask.type']
+        BeTask = self.env['myschool.betask']
+        Tpl = self.env['myschool.letter.template']
+        if not Tpl.find_for_person(person, trigger_event=trigger_event):
+            # No template for this event — quiet skip.
+            return
+        task_type = BeTaskType.search([
+            ('target', '=', 'LETTER'),
+            ('object', '=', 'USER'),
+            ('action', '=', 'GENERATE'),
+        ], limit=1)
+        if not task_type:
+            _logger.warning(
+                '[LETTER-CASCADE] LETTER/USER/GENERATE task type missing')
+            return
+        existing = BeTask.search([
+            ('betasktype_id', '=', task_type.id),
+            ('status', '=', 'new'),
+            ('data', 'ilike', f'"person_id": {person.id}'),
+            ('data', 'ilike', f'"trigger_event": "{trigger_event}"'),
+        ], limit=1)
+        if existing:
+            return
+        BeTask.create({
+            'name': f'LETTER/USER/GENERATE ({trigger_event}) for {person.name}',
+            'betasktype_id': task_type.id,
+            'status': 'new',
+            'data': json.dumps({
+                'person_id': person.id,
+                'trigger_event': trigger_event,
+            }),
+        })
+        changes.append(
+            f'Queued LETTER/USER/GENERATE ({trigger_event}) for {person.name}')
+
+    @api.model
+    def process_letter_user_generate(self, task):
+        """LETTER/USER/GENERATE — render and attach the PDF.
+
+        Expected data: ``{'person_id': N, 'trigger_event': '<event>',
+        'template_code': 'OPTIONAL'}``. When ``template_code`` is set
+        it wins (admin override). Otherwise ``find_for_person`` picks
+        the template matching ``(trigger_event, person_type)``.
+        ``trigger_event`` defaults to ``account_created`` for backward
+        compatibility with tasks queued before v0.6.
+        """
+        _logger.info(f'Processing LETTER_USER_GENERATE: {task.name}')
+        changes = []
+        try:
+            data = self._parse_task_data(task.data) or {}
+            person_id = data.get('person_id')
+            trigger_event = data.get('trigger_event') or 'account_created'
+            if not person_id:
+                raise ValidationError(_('person_id is required'))
+            # Suspended/deleted persons: lookup with active_test=False.
+            person = self.env['myschool.person'].with_context(
+                active_test=False).browse(person_id).exists()
+            if not person:
+                raise ValidationError(_('Person %s not found') % person_id)
+
+            Tpl = self.env['myschool.letter.template']
+            template = None
+            if data.get('template_code'):
+                template = Tpl.search(
+                    [('code', '=', data['template_code']),
+                     ('active', '=', True)], limit=1)
+                if not template:
+                    raise ValidationError(_(
+                        'Letter template with code "%s" not found / inactive'
+                    ) % data['template_code'])
+            else:
+                template = Tpl.find_for_person(
+                    person, trigger_event=trigger_event)
+                if not template:
+                    raise ValidationError(_(
+                        'No active letter template for trigger "%s" on '
+                        'myschool.person') % trigger_event)
+            changes.append(
+                f'Using template: {template.code} (trigger={trigger_event})')
+
+            attachment = template.generate_letter_attachment(
+                person, attach=True)
+            changes.append(
+                f'Generated attachment id={attachment.id} '
+                f'name={attachment.name}')
+
+            # Auto-send the cover email when the template requests it.
+            # We don't fail the betask if the email itself fails — the
+            # PDF is already attached on the record and an admin can
+            # re-send manually. Email errors are logged + recorded in
+            # task.changes for traceability.
+            if template.auto_send_email:
+                try:
+                    mail = template.send_email(person, attachment=attachment)
+                    changes.append(
+                        f'Sent email mail_id={mail.id} '
+                        f'subject="{mail.subject}" to={mail.email_to}')
+                except Exception as mail_e:
+                    _logger.exception(
+                        'LETTER auto-send failed (template=%s person=%s)',
+                        template.code, person.id)
+                    changes.append(
+                        f'WARN: auto-send email failed: {mail_e} '
+                        f'(PDF still attached to record)')
+
+            task.write({'changes': '\n'.join(changes)})
+            return True
+        except Exception as e:
+            _logger.exception(f'LETTER_USER_GENERATE failed: {task.name}')
+            changes.append(f'ERROR: {e}')
+            task.write({'changes': '\n'.join(changes)})
+            raise
 
     # =========================================================================
     # ODOO PERSON TASK PROCESSORS (User/Employee Management)
@@ -5817,11 +8052,10 @@ class BeTaskProcessor(models.AbstractModel):
         """
         if not school_org:
             return None, None
-        ConfigItem = self.env['myschool.config.item']
-        ou_value = ConfigItem.get_ci_value_by_org_and_name(
-            school_org.name_short, 'OuForGroups')
+        SettingsItem = self.env['myschool.settings.item']
+        ou_value = SettingsItem.get('OuForGroups', org=school_org)
         if not ou_value:
-            _logger.warning(f'[PG-SYNC] No OuForGroups CI found for {school_org.name_short}')
+            _logger.warning(f'[PG-SYNC] No OuForGroups SI found for {school_org.name_short}')
             return None, None
 
         PropRelation = self.env['myschool.proprelation']
@@ -6188,9 +8422,24 @@ class BeTaskProcessor(models.AbstractModel):
             if not school_org:
                 _logger.warning(f'[PG-SYNC] Cannot resolve school for org {org.name}')
                 return
+            # If the org already carries its own canonical group name
+            # (set by ``_handle_persongroup_flags`` / wizard /
+            # ``_populate_classgroup_ad_fields``), pass it as
+            # ``group_name_override`` so the sibling persongroup reuses
+            # the **full-path** name (e.g. ``grp-lkr-pers-bawa``) and
+            # the lookup-by-name_short under OuForGroups finds the
+            # existing sibling. Without the override we'd fall back to
+            # the SHORT formula ``grp-{org.name_short}-{school_short}``
+            # (``grp-lkr-bawa``), creating a duplicate persongroup +
+            # duplicate AD group with the same role+school but a
+            # different (shorter) DN.
+            override = (org.com_group_name or org.sec_group_name or '').strip() or None
             persongroup, _created = self._find_or_create_persongroup(
                 org.name, org.name_short, school_org,
-                source_label=f'org:{org.name}')
+                source_label=f'org:{org.name}',
+                group_name_override=override,
+                has_comgroup=bool(org.has_comgroup),
+                has_secgroup=bool(org.has_secgroup))
             if not persongroup:
                 return
 
@@ -6322,8 +8571,30 @@ class BeTaskProcessor(models.AbstractModel):
             if not sn or sn == '0':
                 sn = role.name or ''
             role_short = sn.lower()
+
+            # If a BRSO target_org for this role+school already carries
+            # its own canonical com_group_name (set by the org-flag
+            # promotion path → ``_handle_persongroup_flags``), reuse
+            # that name as override. Otherwise the SHORT formula
+            # ``grp-{role_short}-{school_short}`` produces a sibling
+            # with a shorter name (``grp-lkr-bawa``) and AD ends up
+            # with two groups for the same logical role+school
+            # (``grp-lkr-pers-bawa`` *and* ``grp-lkr-bawa``).
+            override = None
+            for b in brso_rels:
+                if not b.id_org or not b.id_org_parent:
+                    continue
+                resolved = self._resolve_school_org(b.id_org_parent)
+                if not resolved or resolved.id != school_id:
+                    continue
+                if b.id_org.com_group_name:
+                    override = b.id_org.com_group_name.strip()
+                    break
+
             persongroup, _created = self._find_or_create_persongroup(
-                role.name, role_short, school_org, source_label=f'role:{role.name}')
+                role.name, role_short, school_org,
+                source_label=f'role:{role.name}',
+                group_name_override=override)
             if not persongroup:
                 continue
 
@@ -6354,28 +8625,37 @@ class BeTaskProcessor(models.AbstractModel):
     def _sync_persongroup_memberships(self, person):
         """Sync persongroup PG-P memberships for a person.
 
-        Strategy: for every active PPSBR of the person, find the BRSO
-        whose ``id_role`` matches and whose ``id_org_parent`` lives in
-        the same school context (ORG-TREE ancestors of the PPSBR's
-        id_org plus orgs sharing the same ``inst_nr``). The BRSO's
-        ``id_org`` is the target — if its ``has_comgroup`` is set,
-        re-sync that target's persongroup.
+        Strategy: re-sync every persongroup that *should* host this
+        person (driven by their PPSBRs and PERSON-TREE) **plus** every
+        persongroup that *currently* hosts them via an active PG-P
+        record. Without the second set, deactivating the last PPSBR
+        leaves stale PG-P records — the BRSO-target lookup yields
+        zero entries (no live PPSBR to resolve a role from), so the
+        previously-hosting persongroups never get re-evaluated.
 
-        This replaces the older "role-based persongroup" path that
-        produced ``grp-{role}-{school}``-named persongroups, which
-        diverged from the target-org's persongroup created by
-        ``_handle_persongroup_flags``. There's now one persongroup per
-        target_org (the canonical one) and every relevant PPSBR
-        contributes to its membership.
-
-        Plus: the person's active PERSON-TREE org's persongroup is
-        always re-synced — that's the placement-anchored membership.
+        The set-based diff inside ``_sync_pg_p_members`` then handles
+        the remove half: a persongroup whose desired-member set no
+        longer contains this person deactivates the PG-P link.
         """
         if not person:
             return
 
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
+        Org = self.env['myschool.org']
+
+        targets_to_sync = self.env['myschool.org']
+        synced_target_ids = set()
+
+        def _add_target(org_record):
+            if not org_record or org_record.id in synced_target_ids:
+                return
+            if not (org_record.has_comgroup or org_record.has_secgroup
+                    or org_record.has_odoo_group):
+                return
+            synced_target_ids.add(org_record.id)
+            nonlocal targets_to_sync
+            targets_to_sync |= org_record
 
         # 1. Placement-based — the org the person lives under via
         # PERSON-TREE.
@@ -6387,53 +8667,60 @@ class BeTaskProcessor(models.AbstractModel):
                 ('is_active', '=', True),
                 ('id_org', '!=', False),
             ], limit=1)
-            if pt_rel and pt_rel.id_org and (
-                    pt_rel.id_org.has_comgroup
-                    or pt_rel.id_org.has_secgroup
-                    or pt_rel.id_org.has_odoo_group):
-                self._sync_org_persongroup(pt_rel.id_org)
+            if pt_rel and pt_rel.id_org:
+                _add_target(pt_rel.id_org)
 
-        # 2. PPSBR-based — every BRSO target_org (with has_comgroup)
-        # that any of the person's PPSBRs maps to.
+        # 2. PPSBR-based — every BRSO target_org (with any group flag)
+        # that any of the person's currently-active PPSBRs maps to.
         ppsbr_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PPSBR)], limit=1)
         brso_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_BRSO)], limit=1)
-        if not ppsbr_type or not brso_type:
-            return
-        Org = self.env['myschool.org']
-        ppsbr_rels = PropRelation.search([
-            ('proprelation_type_id', '=', ppsbr_type.id),
-            ('id_person', '=', person.id),
-            ('is_active', '=', True),
-            ('id_role', '!=', False),
-            ('id_org', '!=', False),
-        ])
-        synced_target_ids = set()
-        for ppsbr in ppsbr_rels:
-            ancestor_ids = set(self._collect_org_ancestor_ids(ppsbr.id_org)) \
-                or {ppsbr.id_org.id}
-            inst_nrs = {o.inst_nr for o in Org.browse(list(ancestor_ids))
-                        if o.inst_nr}
-            if inst_nrs:
-                same_inst = Org.search([
-                    ('inst_nr', 'in', list(inst_nrs)),
+        if ppsbr_type and brso_type:
+            ppsbr_rels = PropRelation.search([
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('id_person', '=', person.id),
+                ('is_active', '=', True),
+                ('id_role', '!=', False),
+                ('id_org', '!=', False),
+            ])
+            for ppsbr in ppsbr_rels:
+                ancestor_ids = set(self._collect_org_ancestor_ids(ppsbr.id_org)) \
+                    or {ppsbr.id_org.id}
+                inst_nrs = {o.inst_nr for o in Org.browse(list(ancestor_ids))
+                            if o.inst_nr}
+                if inst_nrs:
+                    same_inst = Org.search([
+                        ('inst_nr', 'in', list(inst_nrs)),
+                        ('is_active', '=', True),
+                    ])
+                    ancestor_ids.update(same_inst.ids)
+                brsos = PropRelation.search([
+                    ('proprelation_type_id', '=', brso_type.id),
+                    ('id_role', '=', ppsbr.id_role.id),
+                    ('id_org_parent', 'in', list(ancestor_ids)),
                     ('is_active', '=', True),
+                    ('id_org', '!=', False),
                 ])
-                ancestor_ids.update(same_inst.ids)
-            brsos = PropRelation.search([
-                ('proprelation_type_id', '=', brso_type.id),
-                ('id_role', '=', ppsbr.id_role.id),
-                ('id_org_parent', 'in', list(ancestor_ids)),
+                for brso in brsos:
+                    _add_target(brso.id_org)
+
+        # 3. Currently-hosting persongroups — every PG-P record where
+        # this person is still listed as an active member. This catches
+        # persongroups that should drop the person now that their
+        # PPSBRs are gone but that the PPSBR-walk above can no longer
+        # discover.
+        pg_p_type = PropRelationType.search([('name', '=', 'PG-P')], limit=1)
+        if pg_p_type:
+            current_pg_p = PropRelation.search([
+                ('proprelation_type_id', '=', pg_p_type.id),
+                ('id_person', '=', person.id),
                 ('is_active', '=', True),
                 ('id_org', '!=', False),
             ])
-            for brso in brsos:
-                target = brso.id_org
-                if not target or target.id in synced_target_ids:
-                    continue
-                synced_target_ids.add(target.id)
-                if (target.has_comgroup or target.has_secgroup
-                        or target.has_odoo_group):
-                    self._sync_org_persongroup(target)
+            for rel in current_pg_p:
+                _add_target(rel.id_org)
+
+        for target in targets_to_sync:
+            self._sync_org_persongroup(target)
 
     # =========================================================================
     # CRON JOB ENTRY POINT
@@ -6499,9 +8786,22 @@ class BeTaskProcessor(models.AbstractModel):
             ('person_type_id.name', '=', 'EMPLOYEE'),
         ])
         flagged_count = 0
+        # Transition-only guard: only flag persons whose proprelation
+        # history shows they were once linked to a school. A
+        # brand-new import without proprelations is dormant, not in
+        # suspend.
+        AllPropRelation = PropRelation.with_context(active_test=False)
         for person in candidates:
             try:
                 if self._person_has_active_assignments(person):
+                    continue
+                ever_had = bool(AllPropRelation.search_count([
+                    '|', '|',
+                    ('id_person', '=', person.id),
+                    ('id_person_parent', '=', person.id),
+                    ('id_person_child', '=', person.id),
+                ]))
+                if not ever_had:
                     continue
                 person.write({'deactivation_pending_since': today})
                 rels = PropRelation.search([
@@ -6542,16 +8842,58 @@ class BeTaskProcessor(models.AbstractModel):
                     person.account_deactivation_due_date)
                 # Queue AD-removal BEFORE flipping is_active so the LDAP
                 # handler still has access to the active person+org context.
-                try:
-                    BeTaskService.create_task('LDAP', 'USER', 'DEL', data={
-                        'person_id': person.id,
-                        'personId': person.sap_person_uuid or '',
-                        'reason': 'Account suspend: EmployeeSuspendPeriod elapsed',
-                    })
-                except Exception as e:
-                    _logger.error(
-                        '[LIFECYCLE-1] LDAP/USER/DEL queue failed for %s: %s',
-                        person.name, e)
+                # Honours ``automatic_sync=False`` as veto — admins use that
+                # flag to keep a person off the auto-managed external systems.
+                if person.automatic_sync:
+                    try:
+                        BeTaskService.create_task('LDAP', 'USER', 'DEL', data={
+                            'person_id': person.id,
+                            'personId': person.sap_person_uuid or '',
+                            'reason': 'Account suspend: EmployeeSuspendPeriod elapsed',
+                        })
+                    except Exception as e:
+                        _logger.error(
+                            '[LIFECYCLE-1] LDAP/USER/DEL queue failed for %s: %s',
+                            person.name, e)
+
+                # Also suspend the Workspace account (= Google's "disable").
+                # Mailbox + Drive content stay intact — the hard-delete
+                # follows in Phase 2 once google_account_delete_due_date
+                # has elapsed. Skip silently when Workspace isn't
+                # configured so AD-only installs aren't affected.
+                if person.automatic_sync and self._cloud_provisioning_enabled():
+                    try:
+                        BeTaskService.create_task('CLOUD', 'USER', 'DEACT', data={
+                            'person_id': person.id,
+                            'reason': 'Account suspend: EmployeeSuspendPeriod elapsed',
+                        })
+                    except Exception as e:
+                        _logger.error(
+                            '[LIFECYCLE-1] CLOUD/USER/DEACT queue failed for %s: %s',
+                            person.name, e)
+
+                # Suspend Smartschool account too. Same gate as the ADD
+                # cascade — only when this person's school has a platform
+                # configured. saveUser-with-status / setAccountStatus is
+                # idempotent so re-running is safe.
+                if (self._is_employee_person(person)
+                        and person.automatic_sync
+                        and self._school_wants_smartschool_for_person(person)):
+                    try:
+                        BeTaskService.create_task('SMARTSCHOOL', 'USER', 'DEACT', data={
+                            'person_id': person.id,
+                            'reason': 'Account suspend: EmployeeSuspendPeriod elapsed',
+                        })
+                    except Exception as e:
+                        _logger.error(
+                            '[LIFECYCLE-1] SMARTSCHOOL/USER/DEACT queue failed for %s: %s',
+                            person.name, e)
+
+                # Letter cascade — fire "account_suspended" template
+                # while the person is still active so the recipient
+                # email (email_cloud) is still resolvable.
+                self._emit_letter_generate_for_person(
+                    person, [], trigger_event='account_suspended')
 
                 person.write({
                     'is_active': False,
@@ -6586,6 +8928,11 @@ class BeTaskProcessor(models.AbstractModel):
                     'email_cloud': person.email_cloud or '',
                     'reason': 'Google delete: EmployeeDeletePeriod elapsed',
                 })
+                # Letter cascade — final farewell. Fired BEFORE the
+                # Google account is gone so the recipient email is
+                # still deliverable.
+                self._emit_letter_generate_for_person(
+                    person, [], trigger_event='account_deleted')
                 person.write({
                     'google_account_deletion_requested_date': today,
                 })
@@ -6603,4 +8950,115 @@ class BeTaskProcessor(models.AbstractModel):
             'flagged': flagged_count,
             'suspended': suspended_count,
             'google_queued': google_queued_count,
+        }
+
+    @api.model
+    def cron_sync_chromeos_inventory(self):
+        """Daily sync of ChromeOS devices from Workspace into ``myschool.asset``.
+
+        Strategy:
+            1. Pull every Chromebook in the tenant via the Directory
+               API (``chromeosdevices.list`` with ``projection=FULL``).
+            2. For each device try, in order, to find a matching asset:
+                   a. ``cloud_device_id`` matches the Google deviceId
+                      (already linked — refresh OU + last_sync only).
+                   b. ``serial_number`` matches the device's
+                      ``serialNumber`` (newly discovered link — set
+                      cloud_device_id + cloud_serial).
+                   c. No match → log; we do NOT auto-create a
+                      myschool.asset because asset_type_id is required
+                      and the right type is project-specific. Admins
+                      can pre-create draft assets keyed by serial.
+            3. Stamp ``cloud_last_sync`` on every touched asset.
+
+        Idempotent: runs nightly are cheap because step 2a is the
+        common case after the first sync.
+        """
+        _logger.info('Cron started: ChromeOS Inventory Sync')
+
+        WorkspaceConfig = self.env['myschool.google.workspace.config']
+        cfg = WorkspaceConfig.search(
+            [('active', '=', True)], limit=1, order='sequence')
+        if not cfg:
+            _logger.info('[CHROMEOS-SYNC] No active Workspace config — skipping')
+            return {'matched': 0, 'updated': 0, 'unmatched': 0}
+
+        if not cfg.scope_directory_device:
+            _logger.warning(
+                '[CHROMEOS-SYNC] Workspace config %s does not have the '
+                'directory.device.chromeos scope enabled — skipping',
+                cfg.name)
+            return {'matched': 0, 'updated': 0, 'unmatched': 0}
+
+        Asset = self.env['myschool.asset']
+        directory_svc = self.env['myschool.google.directory.service']
+
+        try:
+            devices = directory_svc.list_chromeos_devices(cfg)
+        except Exception as e:
+            _logger.exception('[CHROMEOS-SYNC] list_chromeos_devices failed')
+            self._log_error(
+                'BETASK-820',
+                f'ChromeOS sync failed during list: {e}',
+                blocking=False)
+            return False
+
+        now = fields.Datetime.now()
+        matched = 0
+        updated = 0
+        unmatched = 0
+
+        for dev in devices:
+            device_id = dev.get('deviceId')
+            serial = (dev.get('serialNumber') or '').strip()
+            ou_path = dev.get('orgUnitPath') or ''
+            if not device_id:
+                continue
+
+            # Step 2a — already linked.
+            asset = Asset.search(
+                [('cloud_device_id', '=', device_id)], limit=1)
+            link_status = 'refresh'
+
+            if not asset and serial:
+                # Step 2b — first-time link via serial.
+                asset = Asset.search(
+                    [('serial_number', '=', serial),
+                     ('cloud_device_id', '=', False)], limit=1)
+                if asset:
+                    link_status = 'newlink'
+
+            if not asset:
+                unmatched += 1
+                _logger.info(
+                    '[CHROMEOS-SYNC] No asset for deviceId=%s serial=%s '
+                    '(OU=%s) — pre-create the asset to enable cascade',
+                    device_id, serial, ou_path)
+                continue
+
+            vals = {
+                'cloud_org_unit_path': ou_path,
+                'cloud_last_sync': now,
+            }
+            if link_status == 'newlink':
+                vals['cloud_device_id'] = device_id
+                vals['cloud_serial'] = serial or asset.serial_number
+                _logger.info(
+                    '[CHROMEOS-SYNC] Linked asset %s (id=%d) → device %s',
+                    asset.name, asset.id, device_id)
+
+            asset.sudo().write(vals)
+            matched += 1
+            if link_status == 'newlink':
+                updated += 1
+
+        _logger.info(
+            'Cron completed: ChromeOS Inventory Sync — '
+            'matched=%d, newly-linked=%d, unmatched=%d (total=%d)',
+            matched, updated, unmatched, len(devices))
+        return {
+            'matched': matched,
+            'updated': updated,
+            'unmatched': unmatched,
+            'total': len(devices),
         }

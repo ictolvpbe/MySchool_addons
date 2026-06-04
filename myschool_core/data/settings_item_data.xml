@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- ===============================================================
+             Seed-definities voor Settings Items.
+
+             Deze records definiëren de catalogus — ze bevatten *geen*
+             waarden. Echte waarden leven in myschool.settings.value
+             (per scope: globaal / per-org / per-person).
+
+             Bij upgrade van de module worden bestaande records niet
+             overschreven (noupdate=1). Pas de defaults dus aan via UI of
+             via een aparte data-migratie.
+             =============================================================== -->
+
+        <!-- Globale SI: huidig schooljaar.
+             Was vroeger gekoppeld aan 'olvp' via een ci.relation; wordt
+             nu echt globaal. -->
+        <record id="si_current_school_year" model="myschool.settings.item">
+            <field name="key">CurrentSchoolYear</field>
+            <field name="label">Huidig schooljaar</field>
+            <field name="description">Huidig schooljaar (formaat YYYY-YYYY). Wordt door Informat-sync en diverse processen gelezen.</field>
+            <field name="category">general</field>
+            <field name="value_type">string</field>
+            <field name="scope_kind">global</field>
+            <field name="default_string">2025-2026</field>
+        </record>
+
+        <!-- Lifecycle (globaal + per-org override mogelijk) -->
+        <record id="si_employee_suspend_period" model="myschool.settings.item">
+            <field name="key">EmployeeSuspendPeriod</field>
+            <field name="label">Periode tot account-suspensie (dagen)</field>
+            <field name="description">Aantal dagen na het wegvallen van de assignments waarna het account gedeactiveerd wordt en het AD-account verwijderd.</field>
+            <field name="category">lifecycle</field>
+            <field name="value_type">integer</field>
+            <field name="scope_kind">both</field>
+            <field name="default_integer">30</field>
+        </record>
+
+        <record id="si_employee_delete_period" model="myschool.settings.item">
+            <field name="key">EmployeeDeletePeriod</field>
+            <field name="label">Periode tot definitieve verwijdering (dagen)</field>
+            <field name="description">Aantal dagen na de account-deactivatie waarna het Google-account verwijderd moet worden.</field>
+            <field name="category">lifecycle</field>
+            <field name="value_type">integer</field>
+            <field name="scope_kind">both</field>
+            <field name="default_integer">30</field>
+        </record>
+
+        <record id="si_cleanup_retention_days" model="myschool.settings.item">
+            <field name="key">CLEANUP_RETENTION_DAYS</field>
+            <field name="label">Retentie opgeruimde records (dagen)</field>
+            <field name="description">Bewaartermijn voor opgeruimde records (logs, gedeactiveerde betasks).</field>
+            <field name="category">lifecycle</field>
+            <field name="value_type">integer</field>
+            <field name="scope_kind">global</field>
+            <field name="default_integer">90</field>
+        </record>
+
+        <!-- Per-org SI's voor AD/OU-configuratie -->
+        <record id="si_ou_for_groups" model="myschool.settings.item">
+            <field name="key">OuForGroups</field>
+            <field name="label">OU voor communicatie- en security-groepen</field>
+            <field name="description">Naam (name_short) van de OU-org waaronder communicatie- en security-groepen geplaatst worden.</field>
+            <field name="category">ad_ou</field>
+            <field name="value_type">string</field>
+            <field name="scope_kind">org</field>
+        </record>
+
+        <record id="si_ou_for_classes" model="myschool.settings.item">
+            <field name="key">OuForClasses</field>
+            <field name="label">OU voor klasgroepen</field>
+            <field name="description">Naam (name_short) van de OU-org waaronder klasgroep-orgs geplaatst worden.</field>
+            <field name="category">ad_ou</field>
+            <field name="value_type">string</field>
+            <field name="scope_kind">org</field>
+        </record>
+
+        <!-- Per-org SI's voor Informat-API credentials -->
+        <record id="si_sap_informat_api_id" model="myschool.settings.item">
+            <field name="key">SapInformatJSONApiId</field>
+            <field name="label">Informat API-identifier</field>
+            <field name="description">API-identifier voor de Informat JSON-koppeling. Per school in te stellen.</field>
+            <field name="category">integrations</field>
+            <field name="value_type">string</field>
+            <field name="scope_kind">org</field>
+        </record>
+
+        <record id="si_sap_informat_api_password" model="myschool.settings.item">
+            <field name="key">SapInformatJSONApiPassword</field>
+            <field name="label">Informat API-wachtwoord</field>
+            <field name="description">Wachtwoord voor de Informat JSON-koppeling. Per school in te stellen.</field>
+            <field name="category">integrations</field>
+            <field name="value_type">string</field>
+            <field name="scope_kind">org</field>
+            <field name="is_encrypted">1</field>
+        </record>
+
+    </data>
+</odoo>

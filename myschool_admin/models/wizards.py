@@ -259,11 +259,14 @@ class CreatePersonWizard(models.TransientModel):
     email_private = fields.Char(string='Email Private',
         help='Private email address')
     
-    # Role selection (mutually exclusive)
+    # Role selection (mutually exclusive). With the FieldTemplate-based
+    # naming flow there is no longer any operational reason to split
+    # students by school-level: each school's template handles the
+    # naming convention (firstname.lastname for SO, ``b<sap_ref>+1631``
+    # for basisschool, …) automatically.
     person_type = fields.Selection([
         ('employee', 'Employee'),
-        ('student_so', 'Student SO'),
-        ('student_basis', 'Student Basis'),
+        ('student', 'Student'),
     ], string='Person Type', default=False)
     
     # Employee-specific fields
@@ -415,52 +418,137 @@ class CreatePersonWizard(models.TransientModel):
         result = ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
         return result
 
-    def _generate_email_standard(self):
-        """Generate email address for Employee and Student SO: firstname.lastname@domain."""
-        if not self.first_name or not self.last_name or not self.external_domain:
+    def _generate_email_for_person(self):
+        """Resolve the email_cloud value for the current wizard input.
+
+        Same chain ``_populate_person_account_fields`` uses post-create,
+        so what the admin sees here is what will be persisted on the
+        person record:
+          1. ``field.template`` with ``field_name='email_cloud'`` for
+             the wizard's org + matching person-type.
+          2. ``field.template`` with ``field_name='cn'`` →
+             ``<cn>@<external_domain>``.
+          3. ``firstname.lastname@external_domain`` as final fallback.
+
+        Schools that need a different naming convention (e.g.
+        ``b<sap_ref>+1631`` for basisschool) must have a FieldTemplate
+        configured for ``cn`` (or ``email_cloud``) scoped to that
+        school + STUDENT person-type. The wizard no longer carries any
+        per-school hard-coded logic.
+        """
+        self._dbg(f"[{self.person_type}] generating email")
+        if not self.external_domain:
+            self._dbg(f"[{self.person_type}] no external_domain → empty")
             return ''
-        
-        # Clean names: remove diacritics and spaces, lowercase
+
+        person_type_name = 'EMPLOYEE' if self.person_type == 'employee' else 'STUDENT'
+
+        # (1) Direct email_cloud template
+        local = self._resolve_field_template_value('email_cloud', person_type_name)
+        if local:
+            result = local.lower() if '@' in local \
+                else f"{local.lower()}@{self.external_domain}"
+            self._dbg(f"[{self.person_type}] using email_cloud template → {result}")
+            return result
+
+        # (2) cn template → <cn>@<domain>
+        cn = self._resolve_field_template_value('cn', person_type_name)
+        if cn:
+            result = f"{cn.lower()}@{self.external_domain}"
+            self._dbg(f"[{self.person_type}] using cn template → {result}")
+            return result
+
+        # (3) Final fallback: firstname.lastname@domain.
+        if not self.first_name or not self.last_name:
+            self._dbg(f"[{self.person_type}] no first/last → empty")
+            return ''
         clean_first = self._remove_diacritics(self.first_name).replace(' ', '').lower()
         clean_last = self._remove_diacritics(self.last_name).replace(' ', '').lower()
-        
-        return f"{clean_first}.{clean_last}@{self.external_domain}"
+        result = f"{clean_first}.{clean_last}@{self.external_domain}"
+        self._dbg(f"[{self.person_type}] no template matched → fallback {result}")
+        return result
 
-    def _generate_email_student_basis(self):
-        """Generate email address for Student Basis: b+sap_ref+1631@domain."""
-        if not self.sap_ref or not self.external_domain:
+    def _build_template_person_shim(self, person_type_name):
+        """Build an in-memory ``myschool.person`` record (``.new()``) so
+        ``field.template.find_for`` / ``evaluate`` can run against wizard
+        input before the real person is persisted.
+
+        ``Person.new(vals)`` returns a recordset with ``_fields`` and
+        attribute access, so the FieldTemplate engine treats it like a
+        real person. id is False — no DB row exists."""
+        Person = self.env['myschool.person']
+        PersonType = self.env['myschool.person.type']
+        vals = {
+            'first_name': self.first_name or '',
+            'last_name': self.last_name or '',
+            'name': (self.last_name or '').strip(),
+            'sap_ref': self.sap_ref or '',
+        }
+        if person_type_name:
+            pt = PersonType.search([('name', '=', person_type_name)], limit=1)
+            if pt:
+                vals['person_type_id'] = pt.id
+        return Person.new(vals)
+
+    def _dbg(self, line):
+        """Append ``line`` to ``debug_info`` so the wizard form surfaces
+        the FieldTemplate-resolution trace without needing log access."""
+        self.debug_info = ((self.debug_info or '') + '\n' + line).strip()
+
+    def _resolve_field_template_value(self, field_name, person_type_name):
+        """Try ``field.template`` for ``field_name`` against a wizard
+        shim. Returns the evaluated string or ``''`` when no template
+        applies. Writes a one-line trace into the wizard's debug_info
+        so the form can show why a template did / didn't apply."""
+        if not self.org_id:
+            self._dbg(f"  [tpl {field_name}] skip: no org_id")
             return ''
-        
-        # Clean sap_ref: remove spaces
-        clean_sap_ref = self.sap_ref.replace(' ', '')
-        
-        return f"b{clean_sap_ref}1631@{self.external_domain}"
+        FieldTemplate = self.env['myschool.field.template']
+        shim = self._build_template_person_shim(person_type_name)
+        tpl = FieldTemplate.find_for(field_name, shim, self.org_id)
+        if not tpl:
+            self._dbg(
+                f"  [tpl {field_name}] no template matched "
+                f"(org={self.org_id.name_short or self.org_id.name}, "
+                f"type={person_type_name})")
+            return ''
+        try:
+            result = (tpl.evaluate(shim, self.org_id) or '').strip()
+            self._dbg(
+                f"  [tpl {field_name}] matched '{tpl.name}' "
+                f"(priority={tpl.priority}) → {result!r}")
+            return result
+        except Exception as e:
+            _logger.warning(
+                '[WIZARD-TEMPLATE] %s template %s failed: %s',
+                field_name, tpl.name, e)
+            self._dbg(
+                f"  [tpl {field_name}] '{tpl.name}' raised: {e}")
+            return ''
 
     def _update_email(self):
-        """Update email based on current role selection."""
-        debug_lines = (self.debug_info or "").split("\n")
-        debug_lines.append(f"--- _update_email called ---")
-        debug_lines.append(f"person_type: {self.person_type}")
-        debug_lines.append(f"first_name: {self.first_name}")
-        debug_lines.append(f"last_name: {self.last_name}")
-        debug_lines.append(f"sap_ref: {self.sap_ref}")
-        debug_lines.append(f"external_domain: {self.external_domain}")
-        
-        if self.person_type in ('employee', 'student_so'):
-            # Standard email: firstname.lastname@domain
-            email = self._generate_email_standard()
-            debug_lines.append(f"Generated standard email: {email}")
-            self.email_cloud = email
-        elif self.person_type == 'student_basis':
-            # Student basis email: b+sap_ref+1631@domain
-            email = self._generate_email_student_basis()
-            debug_lines.append(f"Generated student_basis email: {email}")
+        """Update email based on current role selection.
+
+        Uses ``_dbg`` throughout so the FieldTemplate-resolution trace
+        emitted by the generators interleaves correctly. Previously this
+        method built a local ``debug_lines`` list and over-wrote
+        ``self.debug_info`` at the end, silently dropping the inner
+        ``_dbg`` appends from ``_generate_email_*``.
+        """
+        self._dbg("--- _update_email called ---")
+        self._dbg(f"person_type: {self.person_type}")
+        self._dbg(f"first_name: {self.first_name}")
+        self._dbg(f"last_name: {self.last_name}")
+        self._dbg(f"sap_ref: {self.sap_ref}")
+        self._dbg(f"external_domain: {self.external_domain}")
+
+        if self.person_type in ('employee', 'student'):
+            email = self._generate_email_for_person()
+            self._dbg(f"Generated email: {email}")
             self.email_cloud = email
         else:
-            debug_lines.append("No person_type selected, email cleared")
+            self._dbg("No person_type selected, email cleared")
             self.email_cloud = ''
-        
-        self.debug_info = "\n".join(debug_lines)
 
     def _get_role_by_name(self, role_name):
         """Find role by name."""
@@ -709,14 +797,18 @@ class CreatePersonWizard(models.TransientModel):
 
     @api.onchange('first_name', 'last_name')
     def _onchange_names(self):
-        """Generate email when names change (for employee or student SO)."""
-        if self.person_type in ('employee', 'student_so'):
+        """Regenerate email when names change. Triggered for both
+        employee and student because the underlying FieldTemplate
+        chain may reference ``<first_name>`` / ``<name>``."""
+        if self.person_type in ('employee', 'student'):
             self._update_email()
 
     @api.onchange('sap_ref')
     def _onchange_sap_ref(self):
-        """Generate email when sap_ref changes (for student basis)."""
-        if self.person_type == 'student_basis':
+        """Regenerate email when sap_ref changes — basisschool templates
+        typically embed ``<sap_ref>+N``, so editing the SAP ref needs
+        to refresh the preview."""
+        if self.person_type == 'student':
             self._update_email()
 
     @api.onchange('email_cloud')
@@ -744,23 +836,25 @@ class CreatePersonWizard(models.TransientModel):
         # Get external_domain (can't rely on readonly field being sent back)
         external_domain = self._get_domain_external_static(self.org_id, [])
 
-        # Generate email based on person type
+        # Email generation — re-use the same FieldTemplate-aware helpers
+        # the form preview uses, so what the admin sees is what gets
+        # persisted. ``external_domain`` was already resolved above and
+        # is passed implicitly via ``self.external_domain`` inside the
+        # helpers (it returns '' when the wizard's onchange hasn't
+        # populated that field yet).
+        # ``self.external_domain`` is the live readonly field which can
+        # be stale if the user hasn't triggered an onchange; align it
+        # with the freshly-resolved value first.
+        self.external_domain = external_domain or self.external_domain or ''
         email_cloud = None
-        if self.person_type in ('employee', 'student_so'):
-            if self.first_name and self.last_name and external_domain:
-                clean_first = self._remove_diacritics(self.first_name).replace(' ', '').lower()
-                clean_last = self._remove_diacritics(self.last_name).replace(' ', '').lower()
-                email_cloud = f"{clean_first}.{clean_last}@{external_domain}"
-        elif self.person_type == 'student_basis':
-            if self.sap_ref and external_domain:
-                clean_sap_ref = self.sap_ref.replace(' ', '')
-                email_cloud = f"b{clean_sap_ref}1631@{external_domain}"
+        if self.person_type in ('employee', 'student'):
+            email_cloud = self._generate_email_for_person()
 
-        # Determine person_type_name
+        # Determine person_type_name for the MANUAL/PERSON/ADD payload.
         person_type_name = None
         if self.person_type == 'employee':
             person_type_name = 'EMPLOYEE'
-        elif self.person_type in ('student_so', 'student_basis'):
+        elif self.person_type == 'student':
             person_type_name = 'STUDENT'
 
         data = {
@@ -823,11 +917,22 @@ class CreatePersonWizard(models.TransientModel):
             })
 
     def action_create(self):
-        """Create the person via betask and open the person form."""
+        """Create the person via betask and open the person form.
+
+        Uses ``defer_user_provisioning`` so the LDAP/Cloud/Smartschool
+        USER-cascades are POSTPONED until the admin saves the details
+        form. The flag flips ``pending_provisioning=True`` on the person;
+        the first ``write()`` on that person (which is what saving the
+        details form triggers) flushes the cascades — see
+        ``myschool.person.write``.
+        """
         self.ensure_one()
 
+        data = self._build_person_task_data()
+        data['defer_user_provisioning'] = True
+
         service = self.env['myschool.manual.task.service']
-        task = service.create_manual_task('PERSON', 'ADD', self._build_person_task_data())
+        task = service.create_manual_task('PERSON', 'ADD', data)
 
         person_id = self._extract_person_id_from_task(task)
         if person_id:
@@ -1148,62 +1253,12 @@ class AddChildOrgWizard(models.TransientModel):
         """
         if not self.parent_org_id:
             return None
-        
-        # Check if CI models exist
-        if 'myschool.config.item' not in self.env:
+        # SI-lookup doet ORG-TREE walk + inherit_to_children intern.
+        # De manuele walk-fallback uit de oude code is hierdoor overbodig.
+        SettingsItem = self.env.get('myschool.settings.item')
+        if SettingsItem is None:
             return None
-        
-        ConfigItem = self.env['myschool.config.item']
-        
-        # Try to get via ConfigItem's method if available
-        if hasattr(ConfigItem, 'get_ci_value_by_org_and_name'):
-            parent_short = self.parent_org_id.name_short if hasattr(self.parent_org_id, 'name_short') else self.parent_org_id.name
-            value = ConfigItem.get_ci_value_by_org_and_name(parent_short, 'OuForGroups')
-            if value:
-                return value
-        
-        # Fallback: search directly in CiRelation
-        if 'myschool.ci.relation' in self.env:
-            CiRelation = self.env['myschool.ci.relation']
-            PropRelationType = self.env['myschool.proprelation.type']
-
-            # Get ORG-TREE type
-            org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
-
-            # Walk up the org hierarchy to find the CI (only via ORG-TREE relations)
-            current_org = self.parent_org_id
-            visited = set()
-
-            while current_org and current_org.id not in visited:
-                visited.add(current_org.id)
-
-                # Search for OuForGroups CI linked to this org
-                ci_relation = CiRelation.search([
-                    ('id_org', '=', current_org.id),
-                    ('id_ci.name', '=', 'OuForGroups'),
-                    ('isactive', '=', True)
-                ], limit=1)
-
-                if ci_relation and ci_relation.id_ci and ci_relation.id_ci.string_value:
-                    return ci_relation.id_ci.string_value
-
-                # Move to parent org via ORG-TREE relation only
-                try:
-                    PropRelation = self.env['myschool.proprelation']
-                    search_domain = [
-                        ('id_org', '=', current_org.id),
-                        ('id_org_parent', '!=', False),
-                        ('is_active', '=', True),
-                    ]
-                    if org_tree_type:
-                        search_domain.append(('proprelation_type_id', '=', org_tree_type.id))
-
-                    parent_rel = PropRelation.search(search_domain, limit=1)
-                    current_org = parent_rel.id_org_parent if parent_rel else None
-                except KeyError:
-                    break
-
-        return None
+        return SettingsItem.get('OuForGroups', org=self.parent_org_id)
     
     def _update_com_group_fqdns(self):
         """Update communication group FQDNs based on group name and OU paths.
@@ -1599,292 +1654,12 @@ class BulkMoveWizard(models.TransientModel):
 
 
 # =============================================================================
-# Configuration Item Wizards
+# Settings Item / Settings Value beheer gebeurt nu via:
+#   - myschool.settings.item (catalogus) — eigen list/form views
+#   - myschool.settings.value (waarden)  — eigen list/form views + One2many
+#                                          op myschool.org (tab Settings)
+# Geen wizards meer nodig. Zie myschool_admin/views/settings_item_views.xml.
 # =============================================================================
-
-class ManageCiRelationsWizard(models.TransientModel):
-    """Wizard to manage Configuration Item relations for an organization."""
-    _name = 'myschool.manage.ci.relations.wizard'
-    _description = 'Manage Configuration Items'
-
-    org_id = fields.Many2one('myschool.org', string='Organization', required=True)
-    org_name = fields.Char(string='Organization Name', compute='_compute_org_name')
-    ci_relation_count = fields.Integer(compute='_compute_ci_relation_count')
-    
-    @api.depends('org_id')
-    def _compute_org_name(self):
-        for wizard in self:
-            if wizard.org_id:
-                wizard.org_name = wizard.org_id.name_tree or wizard.org_id.name
-            else:
-                wizard.org_name = ''
-    
-    @api.depends('org_id')
-    def _compute_ci_relation_count(self):
-        CiRelation = self.env['myschool.ci.relation']
-        for wizard in self:
-            if wizard.org_id:
-                wizard.ci_relation_count = CiRelation.search_count([
-                    ('id_org', '=', wizard.org_id.id),
-                    ('isactive', '=', True)
-                ])
-            else:
-                wizard.ci_relation_count = 0
-    
-    def action_add_ci(self):
-        """Open wizard to add a new CI relation."""
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.add.ci.relation.wizard',
-            'views': [[False, 'form']],
-            'target': 'new',
-            'context': {
-                'default_org_id': self.org_id.id,
-            },
-        }
-    
-    def action_view_all(self):
-        """View all CI relations for this org in a list."""
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.ci.relation',
-            'views': [[False, 'tree'], [False, 'form']],
-            'target': 'current',
-            'domain': [('id_org', '=', self.org_id.id)],
-            'context': {
-                'default_id_org': self.org_id.id,
-            },
-        }
-
-
-class AddCiRelationWizard(models.TransientModel):
-    """Wizard to add a Configuration Item relation to an organization."""
-    _name = 'myschool.add.ci.relation.wizard'
-    _description = 'Add Configuration Item'
-
-    org_id = fields.Many2one('myschool.org', string='Organization', required=True)
-    org_name = fields.Char(string='Organization', compute='_compute_org_name')
-    
-    # Option 1: Select existing CI
-    use_existing_ci = fields.Boolean(string='Use Existing Config Item', default=True)
-    existing_ci_id = fields.Many2one('myschool.config.item', string='Config Item',
-        domain=[('is_active', '=', True)])
-    
-    # Option 2: Create new CI
-    new_ci_name = fields.Char(string='Name')
-    new_ci_scope = fields.Selection([
-        ('global', 'Global'),
-        ('local', 'Local'),
-        ('module', 'Module'),
-        ('org', 'Organization'),
-        ('user', 'User'),
-    ], string="Scope", default='org')
-    new_ci_type = fields.Selection([
-        ('config', 'Configuration'),
-        ('status', 'Status'),
-        ('setting', 'Setting'),
-        ('parameter', 'Parameter'),
-        ('credential', 'Credential'),
-        ('api', 'API Setting'),
-    ], string="Type", default='config')
-    
-    # Value fields
-    value_type = fields.Selection([
-        ('string', 'Text'),
-        ('integer', 'Number'),
-        ('boolean', 'Yes/No'),
-    ], string="Value Type", default='string')
-    string_value = fields.Char(string='Text Value')
-    integer_value = fields.Integer(string='Number Value')
-    boolean_value = fields.Boolean(string='Yes/No Value')
-    
-    new_ci_description = fields.Text(string='Description')
-    
-    @api.depends('org_id')
-    def _compute_org_name(self):
-        for wizard in self:
-            if wizard.org_id:
-                wizard.org_name = wizard.org_id.name_tree or wizard.org_id.name
-            else:
-                wizard.org_name = ''
-    
-    def action_add(self):
-        """Add the CI relation."""
-        self.ensure_one()
-        
-        CiRelation = self.env['myschool.ci.relation']
-        ConfigItem = self.env['myschool.config.item']
-        
-        if self.use_existing_ci:
-            if not self.existing_ci_id:
-                raise UserError("Please select a Configuration Item")
-            config_item = self.existing_ci_id
-        else:
-            if not self.new_ci_name:
-                raise UserError("Please enter a name for the Configuration Item")
-            
-            # Create new ConfigItem
-            ci_vals = {
-                'name': self.new_ci_name,
-                'scope': self.new_ci_scope,
-                'type': self.new_ci_type,
-                'is_active': True,
-            }
-            
-            # Set value based on type
-            if self.value_type == 'string':
-                ci_vals['string_value'] = self.string_value
-            elif self.value_type == 'integer':
-                ci_vals['integer_value'] = self.integer_value
-            elif self.value_type == 'boolean':
-                ci_vals['boolean_value'] = self.boolean_value
-            
-            if self.new_ci_description:
-                ci_vals['description'] = self.new_ci_description
-            
-            config_item = ConfigItem.create(ci_vals)
-        
-        # Check if relation already exists
-        existing = CiRelation.search([
-            ('id_org', '=', self.org_id.id),
-            ('id_ci', '=', config_item.id),
-            ('isactive', '=', True),
-        ], limit=1)
-        
-        if existing:
-            raise UserError(f"Configuration Item '{config_item.name}' is already linked to this organization")
-        
-        # Create the relation
-        CiRelation.create({
-            'id_org': self.org_id.id,
-            'id_ci': config_item.id,
-            'isactive': True,
-        })
-        
-        return {'type': 'ir.actions.act_window_close'}
-    
-    def action_add_and_new(self):
-        """Add the CI relation and open wizard for another."""
-        self.action_add()
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'myschool.add.ci.relation.wizard',
-            'views': [[False, 'form']],
-            'target': 'new',
-            'context': {
-                'default_org_id': self.org_id.id,
-            },
-        }
-
-
-class EditCiRelationWizard(models.TransientModel):
-    """Wizard to edit a Configuration Item relation value."""
-    _name = 'myschool.edit.ci.relation.wizard'
-    _description = 'Edit Configuration Item'
-
-    ci_relation_id = fields.Many2one('myschool.ci.relation', string='Relation', required=True)
-    ci_name = fields.Char(string='Config Item', readonly=True)
-    org_name = fields.Char(string='Organization', readonly=True)
-    
-    # Value fields
-    value_type = fields.Selection([
-        ('string', 'Text'),
-        ('integer', 'Number'),
-        ('boolean', 'Yes/No'),
-    ], string="Value Type", default='string')
-    string_value = fields.Char(string='Text Value')
-    integer_value = fields.Integer(string='Number Value')
-    boolean_value = fields.Boolean(string='Yes/No Value')
-    
-    @api.model
-    def default_get(self, fields_list):
-        """Load current values from the CI relation."""
-        res = super().default_get(fields_list)
-        
-        if 'ci_relation_id' in res and res['ci_relation_id']:
-            relation = self.env['myschool.ci.relation'].browse(res['ci_relation_id'])
-            if relation.exists() and relation.id_ci:
-                ci = relation.id_ci
-                res['ci_name'] = ci.name
-                if relation.id_org:
-                    res['org_name'] = relation.id_org.name_tree or relation.id_org.name
-                else:
-                    res['org_name'] = ''
-                
-                # Determine value type and load value
-                if ci.string_value:
-                    res['value_type'] = 'string'
-                    res['string_value'] = ci.string_value
-                elif ci.integer_value:
-                    res['value_type'] = 'integer'
-                    res['integer_value'] = ci.integer_value
-                elif ci.boolean_value is not None:
-                    res['value_type'] = 'boolean'
-                    res['boolean_value'] = ci.boolean_value
-        
-        return res
-    
-    def action_save(self):
-        """Save the updated value."""
-        self.ensure_one()
-        
-        if not self.ci_relation_id or not self.ci_relation_id.id_ci:
-            raise UserError("Invalid Configuration Item relation")
-        
-        ci = self.ci_relation_id.id_ci
-        
-        # Update value based on type
-        vals = {
-            'string_value': False,
-            'integer_value': 0,
-            'boolean_value': False,
-        }
-        
-        if self.value_type == 'string':
-            vals['string_value'] = self.string_value
-        elif self.value_type == 'integer':
-            vals['integer_value'] = self.integer_value
-        elif self.value_type == 'boolean':
-            vals['boolean_value'] = self.boolean_value
-        
-        ci.write(vals)
-        
-        return {'type': 'ir.actions.act_window_close'}
-
-
-class RemoveCiRelationWizard(models.TransientModel):
-    """Wizard to remove (deactivate) a Configuration Item relation."""
-    _name = 'myschool.remove.ci.relation.wizard'
-    _description = 'Remove Configuration Item'
-
-    ci_relation_id = fields.Many2one('myschool.ci.relation', string='Relation', required=True)
-    ci_name = fields.Char(string='Config Item', readonly=True)
-    org_name = fields.Char(string='Organization', readonly=True)
-    
-    @api.model
-    def default_get(self, fields_list):
-        """Load info from the CI relation."""
-        res = super().default_get(fields_list)
-        
-        if 'ci_relation_id' in res and res['ci_relation_id']:
-            relation = self.env['myschool.ci.relation'].browse(res['ci_relation_id'])
-            if relation.exists():
-                res['ci_name'] = relation.id_ci.name if relation.id_ci else ''
-                if relation.id_org:
-                    res['org_name'] = relation.id_org.name_tree or relation.id_org.name
-                else:
-                    res['org_name'] = ''
-        
-        return res
-    
-    def action_remove(self):
-        """Deactivate the CI relation."""
-        self.ensure_one()
-        
-        if self.ci_relation_id:
-            self.ci_relation_id.write({'isactive': False})
-        
-        return {'type': 'ir.actions.act_window_close'}
 
 
 # =============================================================================
@@ -2131,7 +1906,7 @@ class LinkRoleToOrgWizard(models.TransientModel):
         readonly=True,
         help='The organization to link the role to'
     )
-    org_name = fields.Char(string='Organization', compute='_compute_org_info')
+    org_name = fields.Char(string='Organization Name', compute='_compute_org_info')
     org_type_name = fields.Char(string='Organization Type', compute='_compute_org_info')
     
     school_id = fields.Many2one(
@@ -2407,6 +2182,9 @@ class ManageOrgRolesWizard(models.TransientModel):
                     'proprelation_id': rel.id,
                     'role_name': role.name if role else '',
                     'role_label': role.label or role.name if role else '',
+                    'school_name': (
+                        rel.id_org_parent.display_name
+                        if rel.id_org_parent else ''),
                     'is_active': rel.is_active,
                     'is_master': rel.is_master,
                     'automatic_sync': rel.automatic_sync,
@@ -2815,6 +2593,29 @@ class PasswordWizard(models.TransientModel):
             chars = string.ascii_letters + string.digits
             self.new_password = ''.join(random.choice(chars) for _ in range(8))
             self.confirm_password = self.new_password
+
+    def action_generate_from_policy(self):
+        """Resolve the wachtwoordbeleid voor deze persoon en vul het
+        new_password / confirm_password veld in met het resultaat.
+
+        Walks: person → school → policy → matching rule.
+        """
+        self.ensure_one()
+        if not self.person_id:
+            raise UserError("Geen persoon geselecteerd.")
+        Policy = self.env['myschool.password.policy']
+        try:
+            pwd = Policy.generate_password_for_person(self.person_id)
+        except UserError:
+            raise
+        except Exception as e:
+            raise UserError("Kon geen wachtwoord genereren: %s" % e)
+        self.new_password = pwd
+        self.confirm_password = pwd
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload_context',
+        }
     
     def action_save_password(self):
         """Save the new password."""
@@ -3224,8 +3025,7 @@ class InitSchoolyearWizard(models.TransientModel):
 
     def _default_new_schoolyear_name(self):
         """Suggest next schoolyear by parsing CurrentSchoolYear and incrementing."""
-        ConfigItem = self.env['myschool.config.item']
-        current = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
+        current = self.env['myschool.settings.item'].get('CurrentSchoolYear')
         if current and '-' in current:
             try:
                 parts = current.split('-')
@@ -3245,8 +3045,6 @@ class InitSchoolyearWizard(models.TransientModel):
         Role = self.env['myschool.role']
         Period = self.env['myschool.period']
         PeriodType = self.env['myschool.period.type']
-        ConfigItem = self.env['myschool.config.item']
-        CiRelation = self.env['myschool.ci.relation']
 
         # TODO: reactivate steps below when ready
 
@@ -3499,7 +3297,7 @@ class CreatePersongroupWizard(models.TransientModel):
     _description = 'Create Persongroup'
 
     parent_org_id = fields.Many2one('myschool.org', string='Parent Organization', required=True)
-    parent_org_name = fields.Char(string='Parent Organization', readonly=True)
+    parent_org_name = fields.Char(string='Parent Organization Name', readonly=True)
     group_name = fields.Char(string='Group Name', required=True,
         help='Human-readable name for the persongroup')
     group_name_short = fields.Char(string='Short Name (auto)', readonly=True,
@@ -3574,12 +3372,12 @@ class CreatePersongroupWizard(models.TransientModel):
         if not school_org:
             return None, None
 
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         Org = self.env['myschool.org']
 
-        ou_value = ConfigItem.get_ci_value_by_org_and_name(school_org.name_short, 'OuForGroups')
+        ou_value = SettingsItem.get('OuForGroups', org=school_org)
         if not ou_value:
             return None, None
 
@@ -3805,7 +3603,7 @@ class ManagePersongroupMembersWizard(models.TransientModel):
 
     persongroup_id = fields.Many2one(
         'myschool.org', string='Persongroup', required=True)
-    persongroup_name = fields.Char(string='Persongroup', readonly=True)
+    persongroup_name = fields.Char(string='Persongroup Name', readonly=True)
 
     # ── Pane 1: current members ────────────────────────────────────────
     current_member_ids = fields.Many2many(
@@ -3838,6 +3636,23 @@ class ManagePersongroupMembersWizard(models.TransientModel):
         help='Selecteer hier personen om toe te voegen, klik daarna '
              '"Voeg geselecteerden toe".')
 
+    # ── Pane 3: nested groups (PG-G) — analoog aan PG-P maar met
+    #            persongroup-orgs als child. Hetzelfde knoppenpaar:
+    #            verwijderen/toevoegen runs in dezelfde actions.
+    current_group_member_ids = fields.Many2many(
+        'myschool.org', 'persongroup_wizard_current_groups_rel',
+        string='Huidige geneste groepen', readonly=True)
+    remove_group_ids = fields.Many2many(
+        'myschool.org', 'persongroup_wizard_remove_groups_rel',
+        string='Te verwijderen groepen',
+        domain="[('id', 'in', current_group_member_ids)]",
+        help='Selecteer hier de geneste groepen die je wilt verwijderen.')
+    add_group_ids = fields.Many2many(
+        'myschool.org', 'persongroup_wizard_add_groups_rel',
+        string='Groepen toe te voegen',
+        help='Selecteer hier andere persongroups om als geneste groep '
+             'toe te voegen.')
+
     @api.depends('candidate_filter_org_id', 'candidate_filter_org_id.name_tree',
                  'candidate_include_descendants')
     def _compute_candidate_filter_pattern(self):
@@ -3859,6 +3674,8 @@ class ManagePersongroupMembersWizard(models.TransientModel):
             if pg.exists():
                 res['persongroup_name'] = pg.name_tree or pg.name
                 res['current_member_ids'] = [(6, 0, self._load_current_members(pg_id))]
+                res['current_group_member_ids'] = [
+                    (6, 0, self._load_current_group_members(pg_id))]
         return res
 
     @staticmethod
@@ -3878,13 +3695,32 @@ class ManagePersongroupMembersWizard(models.TransientModel):
     def _load_current_members(self, pg_id):
         return self._load_current_members_static(self.env, pg_id)
 
+    @staticmethod
+    def _load_current_group_members_static(env, pg_id):
+        PropRelation = env['myschool.proprelation']
+        PropRelationType = env['myschool.proprelation.type']
+        pg_g_type = PropRelationType.search([('name', '=', 'PG-G')], limit=1)
+        if not pg_g_type:
+            return []
+        rels = PropRelation.search([
+            ('proprelation_type_id', '=', pg_g_type.id),
+            ('id_org', '=', pg_id),
+            ('is_active', '=', True),
+        ])
+        return [r.id_org_child.id for r in rels if r.id_org_child]
+
+    def _load_current_group_members(self, pg_id):
+        return self._load_current_group_members_static(self.env, pg_id)
+
     # ─── Actions ───────────────────────────────────────────────────────
 
     def action_remove_selected(self):
-        """Deactivate PG-P for every person ticked in `remove_member_ids`."""
+        """Deactivate PG-P / PG-G for every member ticked in
+        ``remove_member_ids`` (persons) or ``remove_group_ids`` (nested
+        groups). Both pipelines are routed through manual betasks."""
         self.ensure_one()
-        if not self.remove_member_ids:
-            raise UserError("Selecteer minstens één lid om te verwijderen.")
+        if not (self.remove_member_ids or self.remove_group_ids):
+            raise UserError("Selecteer minstens één lid of groep om te verwijderen.")
         service = self.env['myschool.manual.task.service']
         for person in self.remove_member_ids:
             service.create_manual_task('PROPRELATION', 'DEACT', {
@@ -3892,17 +3728,28 @@ class ManagePersongroupMembersWizard(models.TransientModel):
                 'org_id': self.persongroup_id.id,
                 'person_id': person.id,
             })
+        for grp in self.remove_group_ids:
+            service.create_manual_task('PROPRELATION', 'DEACT', {
+                'type': 'PG-G',
+                'org_id': self.persongroup_id.id,
+                'org_child_id': grp.id,
+            })
+        pg_id = self.persongroup_id.id
         self.write({
-            'current_member_ids': [(6, 0, self._load_current_members(self.persongroup_id.id))],
+            'current_member_ids': [(6, 0, self._load_current_members(pg_id))],
             'remove_member_ids': [(5, 0, 0)],
+            'current_group_member_ids': [(6, 0, self._load_current_group_members(pg_id))],
+            'remove_group_ids': [(5, 0, 0)],
         })
         return self._reopen()
 
     def action_add_selected(self):
-        """Create PG-P for every person ticked in `add_member_ids`."""
+        """Create PG-P / PG-G for every entry ticked in
+        ``add_member_ids`` (persons) or ``add_group_ids`` (nested
+        groups). Both pipelines are routed through manual betasks."""
         self.ensure_one()
-        if not self.add_member_ids:
-            raise UserError("Selecteer minstens één persoon om toe te voegen.")
+        if not (self.add_member_ids or self.add_group_ids):
+            raise UserError("Selecteer minstens één persoon of groep om toe te voegen.")
         service = self.env['myschool.manual.task.service']
         for person in self.add_member_ids:
             service.create_manual_task('PROPRELATION', 'ADD', {
@@ -3910,9 +3757,22 @@ class ManagePersongroupMembersWizard(models.TransientModel):
                 'org_id': self.persongroup_id.id,
                 'person_id': person.id,
             })
+        for grp in self.add_group_ids:
+            if grp.id == self.persongroup_id.id:
+                # Self-loop is rejected by the cycle constraint anyway,
+                # but skip eagerly so we don't queue a doomed betask.
+                continue
+            service.create_manual_task('PROPRELATION', 'ADD', {
+                'type': 'PG-G',
+                'org_id': self.persongroup_id.id,
+                'org_child_id': grp.id,
+            })
+        pg_id = self.persongroup_id.id
         self.write({
-            'current_member_ids': [(6, 0, self._load_current_members(self.persongroup_id.id))],
+            'current_member_ids': [(6, 0, self._load_current_members(pg_id))],
             'add_member_ids': [(5, 0, 0)],
+            'current_group_member_ids': [(6, 0, self._load_current_group_members(pg_id))],
+            'add_group_ids': [(5, 0, 0)],
         })
         return self._reopen()
 
@@ -3989,9 +3849,11 @@ class CleanupWizard(models.TransientModel):
     @api.model
     def default_get(self, fields_list):
         res = super().default_get(fields_list)
-        ci = self._get_retention_ci()
-        if ci and ci.integer_value:
-            res['retention_days'] = ci.integer_value
+        # CLEANUP_RETENTION_DAYS is een globale integer-SI met default 90.
+        value = self.env['myschool.settings.item'].get(
+            'CLEANUP_RETENTION_DAYS', default=90)
+        if value:
+            res['retention_days'] = value
         return res
 
     def _get_schoolboard_org(self):
@@ -3999,9 +3861,6 @@ class CleanupWizard(models.TransientModel):
         if not sb_type:
             return self.env['myschool.org']
         return self.env['myschool.org'].search([('org_type_id', '=', sb_type.id), ('is_active', '=', True)], limit=1)
-
-    def _get_retention_ci(self):
-        return self.env['myschool.config.item'].search([('name', '=', 'CLEANUP_RETENTION_DAYS')], limit=1)
 
     def _get_status_domain(self):
         if self.cleanup_target == 'betasks':
@@ -4046,23 +3905,11 @@ class CleanupWizard(models.TransientModel):
                 wizard.preview_count = 0
 
     def _save_retention_ci(self):
-        ci = self._get_retention_ci()
-        if not ci:
-            ci = self.env['myschool.config.item'].create({
-                'name': 'CLEANUP_RETENTION_DAYS',
-                'scope': 'org',
-                'type': 'setting',
-                'integer_value': self.retention_days,
-                'description': 'Number of days to retain completed/error backend tasks and closed/error system events before cleanup.',
-            })
-            sb_org = self._get_schoolboard_org()
-            if sb_org:
-                self.env['myschool.ci.relation'].create({
-                    'id_ci': ci.id,
-                    'id_org': sb_org.id,
-                })
-        else:
-            ci.write({'integer_value': self.retention_days})
+        # Bewaart de retentie als globale SI-waarde. De SI-definitie
+        # 'CLEANUP_RETENTION_DAYS' wordt door myschool_core geseed.
+        # Set() maakt of overschrijft de globale waarde (org=None).
+        self.env['myschool.settings.item'].set(
+            'CLEANUP_RETENTION_DAYS', self.retention_days)
 
     def action_cleanup(self):
         self.ensure_one()
@@ -4149,6 +3996,22 @@ class ResetSyncDataWizard(models.TransientModel):
         help='Delete BACKEND roles auto-created with the same name as a '
              'classgroup org. Only roles whose name matches a classgroup '
              'being deleted in this run are removed.')
+    cleanup_ldap = fields.Boolean(
+        string='Cleanup LDAP backends',
+        default=True,
+        help='Voor de DB-unlinks ook AD-objecten verwijderen: users '
+             '(via _find_user_dn), groepen voor PERSONGROUP-orgs '
+             '(com_group_fqdn_internal + sec_group_fqdn_internal) en '
+             'OUs voor CLASSGROUP-orgs (recursieve subtree-delete via '
+             'AD tree-delete control). Uitvinken alleen als AD '
+             'onbereikbaar is — anders blijven dangling-objecten '
+             'achter na de DB-unlink.')
+    cleanup_cloud = fields.Boolean(
+        string='Cleanup Cloud (Workspace) backends',
+        default=True,
+        help='Idem voor Google Workspace: users, groups (mail-enabled '
+             'side), en OrgUnits voor classgroups. Skipt netjes als '
+             'geen actieve Workspace-config bestaat.')
 
     person_count = fields.Integer(string='Persons to delete',
                                   compute='_compute_counts')
@@ -4256,6 +4119,172 @@ class ResetSyncDataWizard(models.TransientModel):
             wiz.proprelation_count = len(proprels)
 
     # ------------------------------------------------------------------
+    # Backend cleanup
+    # ------------------------------------------------------------------
+
+    def _cleanup_backends(self, persons, orgs):
+        """Best-effort delete of AD / Cloud objects for the targets.
+
+        Called BEFORE the DB unlinks so service methods like
+        ``ldap_service.delete_user`` can still resolve DNs from the
+        live person records. Mirrors the equivalent helper on the
+        sync test runner — same idempotent + log-and-continue approach.
+
+        Returns a list of human-readable lines for inclusion in the
+        wizard's ``result_text``.
+        """
+        log = []
+        LdapConfig = self.env['myschool.ldap.server.config']
+        WsConfig = self.env['myschool.google.workspace.config']
+        ldap_cfg = (LdapConfig.search([('active', '=', True)],
+                                       limit=1, order='sequence')
+                    if self.cleanup_ldap else LdapConfig.browse())
+        ws_cfg = (WsConfig.search([('active', '=', True)],
+                                   limit=1, order='sequence')
+                  if self.cleanup_cloud else WsConfig.browse())
+        if not ldap_cfg and not ws_cfg:
+            log.append('Backend cleanup: skipped (geen actieve config).')
+            return log
+
+        ldap_svc = self.env['myschool.ldap.service'] if ldap_cfg else None
+        gd_svc = (self.env['myschool.google.directory.service']
+                  if ws_cfg else None)
+
+        # ---- Persons -----------------------------------------------
+        ldap_ok = ldap_err = cloud_ok = cloud_err = 0
+        for person in persons:
+            if ldap_svc:
+                try:
+                    res = ldap_svc.delete_user(ldap_cfg, person)
+                    if res.get('success'):
+                        ldap_ok += 1
+                    else:
+                        ldap_err += 1
+                except Exception as e:
+                    ldap_err += 1
+                    _logger.warning(
+                        '[RESET-SYNC-DATA] LDAP user delete failed for '
+                        '%s: %s', person.name, e)
+            if gd_svc:
+                processor = self.env['myschool.betask.processor']
+                tree_org = None
+                try:
+                    tree_org = processor._resolve_current_person_tree_org(person)
+                except Exception:
+                    pass
+                try:
+                    res = gd_svc.delete_user(ws_cfg, person, org=tree_org)
+                    if res.get('success'):
+                        cloud_ok += 1
+                    else:
+                        cloud_err += 1
+                except Exception as e:
+                    cloud_err += 1
+                    _logger.warning(
+                        '[RESET-SYNC-DATA] Cloud user delete failed for '
+                        '%s: %s', person.name, e)
+
+        if ldap_svc and (ldap_ok or ldap_err):
+            log.append(
+                f'LDAP: {ldap_ok} user(s) verwijderd, {ldap_err} fout(en).')
+        if gd_svc and (cloud_ok or cloud_err):
+            log.append(
+                f'Cloud: {cloud_ok} user(s) verwijderd, {cloud_err} fout(en).')
+
+        # ---- Orgs --------------------------------------------------
+        ldap_grp_ok = ldap_grp_err = 0
+        ldap_ou_ok = ldap_ou_err = 0
+        cloud_grp_ok = cloud_grp_err = 0
+        cloud_ou_ok = cloud_ou_err = 0
+        for org in orgs:
+            org_type = (org.org_type_id.name or '').upper() \
+                if org.org_type_id else ''
+            if org_type == 'PERSONGROUP':
+                if ldap_svc:
+                    for fqdn_field in (
+                            'com_group_fqdn_internal',
+                            'sec_group_fqdn_internal'):
+                        dn = (getattr(org, fqdn_field, '') or '').strip()
+                        if not dn:
+                            continue
+                        try:
+                            res = ldap_svc.delete_group(ldap_cfg, dn)
+                            if res.get('success'):
+                                ldap_grp_ok += 1
+                            else:
+                                ldap_grp_err += 1
+                        except Exception as e:
+                            ldap_grp_err += 1
+                            _logger.warning(
+                                '[RESET-SYNC-DATA] LDAP group delete %s: %s',
+                                dn, e)
+                if gd_svc:
+                    grp_email = (org.com_group_email or '').strip()
+                    if grp_email:
+                        try:
+                            res = gd_svc.delete_group(ws_cfg, grp_email)
+                            if res.get('success'):
+                                cloud_grp_ok += 1
+                            else:
+                                cloud_grp_err += 1
+                        except Exception as e:
+                            cloud_grp_err += 1
+                            _logger.warning(
+                                '[RESET-SYNC-DATA] Cloud group delete %s: %s',
+                                grp_email, e)
+            else:
+                # CLASSGROUP / DEPARTMENT / SCHOOL — for CLASSGROUPs we
+                # also wipe the LDAP OU recursively (AD tree-delete
+                # control). Skipped for SCHOOL / SCHOOLBOARD / DEPARTMENT
+                # to avoid blowing away parent containers; those aren't
+                # in scope of "auto-sync data" anyway. Cloud OU-delete
+                # runs for any non-PERSONGROUP org as before.
+                if ldap_svc and org_type == 'CLASSGROUP':
+                    ou_dn = (org.ou_fqdn_internal or '').strip()
+                    if ou_dn:
+                        try:
+                            res = ldap_svc.delete_ou(ldap_cfg, ou_dn)
+                            if res.get('success'):
+                                ldap_ou_ok += 1
+                            else:
+                                ldap_ou_err += 1
+                        except Exception as e:
+                            ldap_ou_err += 1
+                            _logger.warning(
+                                '[RESET-SYNC-DATA] LDAP OU delete %s: %s',
+                                ou_dn, e)
+                if gd_svc:
+                    try:
+                        res = gd_svc.delete_orgunit(ws_cfg, org)
+                        if res.get('success'):
+                            cloud_ou_ok += 1
+                        else:
+                            cloud_ou_err += 1
+                    except Exception as e:
+                        cloud_ou_err += 1
+                        _logger.warning(
+                            '[RESET-SYNC-DATA] Cloud OU delete %s: %s',
+                            org.name, e)
+
+        if ldap_svc and (ldap_grp_ok or ldap_grp_err):
+            log.append(
+                f'LDAP: {ldap_grp_ok} group(en) verwijderd, '
+                f'{ldap_grp_err} fout(en).')
+        if ldap_svc and (ldap_ou_ok or ldap_ou_err):
+            log.append(
+                f'LDAP: {ldap_ou_ok} OU(s) (subtree) verwijderd, '
+                f'{ldap_ou_err} fout(en).')
+        if gd_svc and (cloud_grp_ok or cloud_grp_err):
+            log.append(
+                f'Cloud: {cloud_grp_ok} group(en) verwijderd, '
+                f'{cloud_grp_err} fout(en).')
+        if gd_svc and (cloud_ou_ok or cloud_ou_err):
+            log.append(
+                f'Cloud: {cloud_ou_ok} OU(s) verwijderd, '
+                f'{cloud_ou_err} fout(en).')
+        return log
+
+    # ------------------------------------------------------------------
     # Action
     # ------------------------------------------------------------------
 
@@ -4279,6 +4308,12 @@ class ResetSyncDataWizard(models.TransientModel):
 
         ctx = {'skip_manual_audit': True, 'active_test': False}
         report = []
+
+        # Backend cleanup FIRST — needs the live person/org records to
+        # resolve DNs / primaryEmails before we unlink them in the DB.
+        if self.cleanup_ldap or self.cleanup_cloud:
+            backend_log = self._cleanup_backends(persons, orgs)
+            report.extend(backend_log)
 
         # Order matters: kill proprelations first so FK constraints don't
         # block the person/org/role deletes that follow. person_details

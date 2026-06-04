@@ -65,87 +65,154 @@ EXPECTATIONS = {
             {'type': 'person_reg_inst_nr', 'uuid': 'a65d06d9-7250-4660-b0b1-6b319d1ca286', 'inst_nr': '038281'},
         ],
     },
-    '2 - Class move to other instnr': {
+    # ------------------------------------------------------------------
+    # Students-mode lifecycle — followed leerling: Wagenaar Lukas
+    #   uuid    : 07e582c9-4182-474e-9473-a0e4f6bc3ba9
+    #   inst    : 038281
+    # Klas-deactivatie en klas-verhuizing tussen instellingen worden
+    # apart getest (bewaard onder _deferred-class-tests/).
+    # ------------------------------------------------------------------
+
+    '2 - Student data added (Wagenaar)': {
         'description': (
-            'De klas 5BEORb (met enig lid Ouchan) verhuist van 038307 naar '
-            '038281. De klas blijft bestaan (geen DEACT/ADD), enkel inst_nr '
-            'wijzigt. Ouchan (b163d052…) krijgt reg_inst_nr=038281.'
+            'Leerling: Wagenaar Lukas (07e582c9…). '
+            'Verwacht: Wagenaar bestaat al uit stap 1 met enkel reg-data. '
+            'Stap 2 levert dev-students-038281.json met zijn volledige '
+            'persoonsdata (naam, voornaam, geboortedatum, adres, e-mail, '
+            'relatie). Persoon actief, reg_end_date leeg, actieve klas '
+            'blijft 1DOEa, en first_name/last_name worden bijgewerkt.'
         ),
         'checks': [
-            {'type': 'classgroup_active', 'name_short': '5BEORb', 'inst_nr': '038281'},
-            {'type': 'classgroup_inactive_at', 'name_short': '5BEORb', 'inst_nr': '038307'},
-            {'type': 'person_reg_inst_nr', 'uuid': 'b163d052-d88f-4972-a74a-6ac689f8fdf0', 'inst_nr': '038281'},
-            {'type': 'person_active_class', 'uuid': 'b163d052-d88f-4972-a74a-6ac689f8fdf0', 'klas_code': '5BEORb'},
+            {'type': 'person_exists_active',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_reg_end_empty',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_active_class',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'klas_code': '1DOEa'},
         ],
     },
-    '3 - class deact': {
+    '3 - Student class change (Wagenaar)': {
         'description': (
-            'Buysse (a90bd8f1…) verhuist van 3GRLA naar 3ECWE4. 3GRLA raakt '
-            'leeg maar blijft actief (auto-deact gebeurt niet — opruiming '
-            'volgt bij schooljaar-init). 3ECWE4 actief en bevat Buysse.'
+            'Leerling: Wagenaar Lukas (07e582c9…). '
+            'Verwacht: Wagenaar verhuist binnen instelling 038281 van '
+            'klas 1DOEa naar 1DOEb. De inschrKlassen-entry voor 1DOEa '
+            'krijgt een einddatum, 1DOEb staat open. Persoon blijft '
+            'actief; actieve klas = 1DOEb; niet meer lid van 1DOEa.'
         ),
         'checks': [
-            {'type': 'classgroup_active', 'name_short': '3ECWE4'},
-            {'type': 'person_active_class', 'uuid': 'a90bd8f1-e497-4b7a-87ba-6b27e7c6c049', 'klas_code': '3ECWE4'},
-            {'type': 'person_not_in_class', 'uuid': 'a90bd8f1-e497-4b7a-87ba-6b27e7c6c049', 'klas_code': '3GRLA'},
+            {'type': 'person_exists_active',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_reg_inst_nr',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'inst_nr': '038281'},
+            {'type': 'person_active_class',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'klas_code': '1DOEb'},
+            {'type': 'person_not_in_class',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'klas_code': '1DOEa'},
         ],
     },
-    '4 - add students': {
+    '4 - Student deactivated (Wagenaar)': {
         'description': (
-            'Twee nieuwe leerlingen — Jansen Emma in 038281/1ONTAa en '
-            'De Smet Lars in 038307/3BEORb. Beide moeten bestaan en aan '
-            'hun klas gekoppeld zijn.'
+            'Leerling: Wagenaar Lukas (07e582c9…). '
+            'Verwacht: registratie krijgt een einddatum (2026-05-05). '
+            'De sync moet een DB/PERSON/DEACT-task aanmaken — Wagenaar '
+            'wordt inactief óf zijn reg_end_date wordt gezet. Klas-rel '
+            'wordt afgesloten.'
         ),
         'checks': [
-            {'type': 'person_exists_active', 'uuid': 'c1111111-0000-4000-8000-000000000281'},
-            {'type': 'person_exists_active', 'uuid': 'c2222222-0000-4000-8000-000000000307'},
-            {'type': 'person_active_class', 'uuid': 'c1111111-0000-4000-8000-000000000281', 'klas_code': '1ONTAa'},
-            {'type': 'person_active_class', 'uuid': 'c2222222-0000-4000-8000-000000000307', 'klas_code': '3BEORb'},
+            {'type': 'person_inactive_or_ended',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
         ],
     },
-    '5 - classmove-to-other-instnr': {
+    '5 - Student reactivated (Wagenaar)': {
         'description': (
-            'Karpenko (a8aac5cc…) verhuist individueel van 038307/3BEORb '
-            'naar 038281/3ECWE4. Beide reg_inst_nr en klas wijzigen. '
-            '3BEORb in 038307 kan leeg raken maar blijft actief.'
+            'Leerling: Wagenaar Lukas (07e582c9…). '
+            'Verwacht: einddatum op de registratie wordt geleegd, '
+            'Wagenaar wordt heractiveerd. Persoon actief, '
+            'reg_end_date leeg, actieve klas = 1DOEb.'
         ),
         'checks': [
-            {'type': 'person_reg_inst_nr', 'uuid': 'a8aac5cc-2e07-4766-9228-2d7dd1d7b193', 'inst_nr': '038281'},
-            {'type': 'person_active_class', 'uuid': 'a8aac5cc-2e07-4766-9228-2d7dd1d7b193', 'klas_code': '3ECWE4'},
-            {'type': 'person_not_in_class', 'uuid': 'a8aac5cc-2e07-4766-9228-2d7dd1d7b193', 'klas_code': '3BEORb'},
+            {'type': 'person_exists_active',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_reg_end_empty',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9'},
+            {'type': 'person_active_class',
+             'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9',
+             'klas_code': '1DOEb'},
         ],
     },
-    '5 - reactivate student in other class': {
+
+    # ------------------------------------------------------------------
+    # Basisschool flow — separate testset under
+    # ``dev - testsets/students-basisschool/``.
+    #
+    # bawa (011007) en baple (107839), 3 leerlingen per school in
+    # L1A / L2AL / 3A. Geanonimiseerde account-naam wordt afgedwongen
+    # via een ``field.template`` voor cn (scope = bawa+baple,
+    # person_type = STUDENT). Stap 1 registreert, stap 2 levert de
+    # volledige persoonsdata aan.
+    #
+    # Om deze set te draaien: open een Sync Test Runner session,
+    # zet ``testsets_path`` op
+    #   <extra-addons>/myschool_core/storage/sapimport/
+    #   dev - testsets/students-basisschool
+    # en klik "Refresh Steps".
+    # ------------------------------------------------------------------
+    '1 - bawa+baple registrations': {
         'description': (
-            'Belhaj (4c8b3375…) was uitgeschreven (reg_end_date gezet). '
-            'Nieuwe JSON haalt de einddatum weg en zet hem in 3BEORb. '
-            'Persoon actief, reg_end_date leeg, actieve klas=3BEORb.'
+            'Registratie van 6 nieuwe basisschoolleerlingen — 3 in bawa '
+            '(011007) en 3 in baple (107839), telkens één per klas '
+            '(L1A, L2AL, 3A). Verwacht: 6 actieve persons, elk met de '
+            'juiste actieve klas; klas-orgs moeten bestaan in MySchool.'
         ),
         'checks': [
-            {'type': 'person_exists_active', 'uuid': '4c8b3375-c9a8-442f-b88a-c6e2fa03b786'},
-            {'type': 'person_reg_end_empty', 'uuid': '4c8b3375-c9a8-442f-b88a-c6e2fa03b786'},
-            {'type': 'person_active_class', 'uuid': '4c8b3375-c9a8-442f-b88a-c6e2fa03b786', 'klas_code': '3BEORb'},
+            # bawa
+            {'type': 'classgroup_active', 'name_short': 'L1A'},
+            {'type': 'classgroup_active', 'name_short': 'L2AL'},
+            {'type': 'classgroup_active', 'name_short': '3A'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0001-1100-4007-a000-000000000001'},
+            {'type': 'person_reg_inst_nr', 'uuid': '0a0a0001-1100-4007-a000-000000000001', 'inst_nr': '011007'},
+            {'type': 'person_active_class', 'uuid': '0a0a0001-1100-4007-a000-000000000001', 'klas_code': 'L1A'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0002-1100-4007-a000-000000000002'},
+            {'type': 'person_active_class', 'uuid': '0a0a0002-1100-4007-a000-000000000002', 'klas_code': 'L2AL'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0003-1100-4007-a000-000000000003'},
+            {'type': 'person_active_class', 'uuid': '0a0a0003-1100-4007-a000-000000000003', 'klas_code': '3A'},
+            # baple
+            {'type': 'person_exists_active', 'uuid': '0a0a0004-1078-4839-a000-000000000004'},
+            {'type': 'person_reg_inst_nr', 'uuid': '0a0a0004-1078-4839-a000-000000000004', 'inst_nr': '107839'},
+            {'type': 'person_active_class', 'uuid': '0a0a0004-1078-4839-a000-000000000004', 'klas_code': 'L1A'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0005-1078-4839-a000-000000000005'},
+            {'type': 'person_active_class', 'uuid': '0a0a0005-1078-4839-a000-000000000005', 'klas_code': 'L2AL'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0006-1078-4839-a000-000000000006'},
+            {'type': 'person_active_class', 'uuid': '0a0a0006-1078-4839-a000-000000000006', 'klas_code': '3A'},
         ],
     },
-    '6 - classmove-in-same-instnr': {
+    '2 - bawa+baple student data': {
         'description': (
-            'Wagenaar (07e582c9…) verhuist binnen 038281 van 1DOEa naar 1DOEb. '
-            'Actieve klas=1DOEb, niet meer als lid van 1DOEa.'
+            'Volledige persoonsdata voor de 6 basisschoolleerlingen — '
+            'naam, voornaam, geboortedatum, adres, school-email. '
+            'Verwacht: alle 6 persons actief, reg_end_date leeg, '
+            'eerste/laatste naam bijgewerkt, klas-relatie blijft staan. '
+            'De cn/email_cloud op de DB moeten volgens het basisschool-'
+            'template geanonimiseerd zijn (b<sap_ref+1631>) zodra het '
+            'cn-FieldTemplate voor bawa+baple+STUDENT geconfigureerd is.'
         ),
         'checks': [
-            {'type': 'person_active_class', 'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9', 'klas_code': '1DOEb'},
-            {'type': 'person_not_in_class', 'uuid': '07e582c9-4182-474e-9473-a0e4f6bc3ba9', 'klas_code': '1DOEa'},
-            {'type': 'classgroup_active', 'name_short': '1DOEb'},
-        ],
-    },
-    '7 -  deactivate student': {
-        'description': (
-            'Zirjaoui (6e32356f…) wordt uitgeschreven met einddatum '
-            '2026-02-28. Persoon moet inactief zijn of reg_end_date '
-            'gezet hebben.'
-        ),
-        'checks': [
-            {'type': 'person_inactive_or_ended', 'uuid': '6e32356f-790a-44c8-86d4-595b8880c088'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0001-1100-4007-a000-000000000001'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0001-1100-4007-a000-000000000001'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0002-1100-4007-a000-000000000002'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0002-1100-4007-a000-000000000002'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0003-1100-4007-a000-000000000003'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0003-1100-4007-a000-000000000003'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0004-1078-4839-a000-000000000004'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0004-1078-4839-a000-000000000004'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0005-1078-4839-a000-000000000005'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0005-1078-4839-a000-000000000005'},
+            {'type': 'person_exists_active', 'uuid': '0a0a0006-1078-4839-a000-000000000006'},
+            {'type': 'person_reg_end_empty', 'uuid': '0a0a0006-1078-4839-a000-000000000006'},
         ],
     },
 
@@ -160,9 +227,14 @@ EXPECTATIONS = {
 
     '1- new 1 instnr no hoofdambt': {
         'description': (
-            'Nieuwe employee in 011007 zonder hoofd_ambt. Persoon wordt '
-            'aangemaakt en is actief; PersonDetails voor 011007 actief; '
-            'pending_since blijft leeg (assignments zijn aanwezig).'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: nieuwe employee bij inst 011007, hoofdAmbt=null, '
+            'assignments-file leeg. '
+            'Verwacht: persoon wordt aangemaakt en is actief; '
+            'PersonDetails voor 011007 actief; geen actieve proprelations '
+            '(zonder hoofdAmbt komt er geen PPSBR); '
+            'pending_since blijft leeg — een vers geïmporteerde '
+            'employee zonder voorgeschiedenis is dormant, niet in suspend.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -172,12 +244,18 @@ EXPECTATIONS = {
             {'type': 'person_details_inst',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
              'inst_nr': '011007'},
+            {'type': 'person_no_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '2-new 2de instnr geen hoofdambt': {
         'description': (
-            'Tweede instnr 143651 wordt toegevoegd (zonder hoofd_ambt). '
-            'PersonDetails voor 011007 én 143651 staan actief.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: tweede inst 143651 toegevoegd, ook zonder hoofdAmbt, '
+            'assignments-file leeg. '
+            'Verwacht: PersonDetails voor 011007 én 143651 actief; '
+            'persoon nog steeds dormant (geen proprelations, geen '
+            'voorgeschiedenis); pending_since blijft leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -190,13 +268,20 @@ EXPECTATIONS = {
             {'type': 'person_details_inst',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc',
              'inst_nr': '143651'},
+            {'type': 'person_no_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '3>-1ste+ 2de  instnr +hoofdambt': {
         'description': (
-            'Beide instnrs krijgen een hoofd_ambt: 011007=00000255 '
-            '(ict-coordinator), 143651=00000007 (Leraar). Persoon actief '
-            'met active proprelations.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: hoofdAmbt + assignments worden geleverd voor beide '
+            'instnrs — 011007 = 00000255 (ict-coordinator), '
+            '143651 = 00000007 (Leraar). '
+            'Verwacht: PersonDetails per instnr toont de nieuwe '
+            'hoofdAmbt-code; Phase 2 maakt PPSBR-proprelations aan; '
+            'persoon actief met minstens één actieve proprelation; '
+            'pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -209,13 +294,19 @@ EXPECTATIONS = {
              'inst_nr': '143651', 'code': '00000007'},
             {'type': 'person_pending_since_empty',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '4-2de instnr +hoofdambt wijzigt': {
         'description': (
-            'inst 143651 hoofd_ambt verandert van 00000007 (Leraar) naar '
-            '00000255 (ict-coordinator). Nieuwe actieve PersonDetails-versie '
-            'voor 143651 met de nieuwe code.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: inst 143651 hoofdAmbt wijzigt 00000007 (Leraar) → '
+            '00000255 (ict-coordinator); 011007 ongewijzigd. '
+            'Verwacht: nieuwe actieve PersonDetails-versie voor 143651 '
+            'met de nieuwe code; vorige versie wordt gedeactiveerd '
+            '(versionering); persoon actief, proprelations actief, '
+            'pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -225,48 +316,71 @@ EXPECTATIONS = {
              'inst_nr': '143651', 'code': '00000255'},
             {'type': 'person_pending_since_empty',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '5-change extradata': {
         'description': (
-            'Wijziging van bank/iban/adres-extradata zonder impact op '
-            'lifecycle. Persoon blijft actief, geen suspend.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: wijziging van bank/iban en adres-extradata '
+            '(geen impact op rol/assignments). '
+            'Verwacht: PersonDetails-versie wordt vernieuwd voor de '
+            'gewijzigde instnr(s); persoon blijft actief; geen '
+            'lifecycle-impact (geen suspend-clock).'
         ),
         'checks': [
             {'type': 'person_exists_active',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
             {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '6-change Persondata': {
         'description': (
-            'Wijziging van persoonsdata (initialen, geboortedatum, hoofdAmbt '
-            'naam …). Persoon blijft actief; PersonDetails-versies vernieuwd.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: wijziging van persoonsdata (initialen, geboortedatum, '
+            'hoofdAmbt-naam, …) zonder dat de hoofdAmbt-code zelf wijzigt. '
+            'Verwacht: PersonDetails-versies vernieuwd; persoon blijft '
+            'actief; proprelations actief; pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
             {'type': 'person_pending_since_empty',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '7-change Persondata + persondata': {
         'description': (
-            'Combineerde wijziging persoonsdata + iban. Persoon blijft '
-            'actief en buiten de suspend-pipeline.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: gecombineerde wijziging persoonsdata + IBAN. '
+            'Verwacht: PersonDetails opnieuw verseerd; persoon actief, '
+            'proprelations actief, pending_since leeg — geen impact '
+            'op de suspend-pipeline.'
         ),
         'checks': [
             {'type': 'person_exists_active',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
             {'type': 'person_pending_since_empty',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '8-change inst1 hoofdambt': {
         'description': (
-            'inst 011007 hoofd_ambt verandert naar 00000007 (Leraar). '
-            'Persoon actief, PersonDetails voor 011007 toont nieuwe code.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: inst 011007 hoofdAmbt wijzigt 00000255 → 00000007 '
+            '(Leraar); 143651 ongewijzigd. '
+            'Verwacht: nieuwe actieve PersonDetails-versie voor 011007 '
+            'met de nieuwe code; oude versie inactief; PPSBR-proprelation '
+            'voor 011007 wordt door Phase 2 herzien; persoon actief, '
+            'proprelations actief, pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -276,14 +390,20 @@ EXPECTATIONS = {
              'inst_nr': '011007', 'code': '00000007'},
             {'type': 'person_pending_since_empty',
              'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
+            {'type': 'person_has_active_proprelations',
+             'uuid': '2dc5c533-5a7a-4b2f-9020-7372345a53bc'},
         ],
     },
     '9-inst1 assignment weg': {
         'description': (
-            'inst 011007 verliest zijn assignment (lege assignmentsfile). '
-            'inst 143651 heeft nog wel assignments → cross-instnr check ziet '
-            'actieve assignments → pending_since blijft leeg, persoon actief, '
-            'minstens 1 actieve proprelation.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: inst 011007 levert lege assignments-file; '
+            'inst 143651 heeft nog steeds assignments. '
+            'Verwacht: PPSBR voor 011007 wordt door Phase 2 '
+            'gedeactiveerd (geen assignment meer); PPSBR voor 143651 '
+            'blijft actief; cross-instnr check ziet nog assignments → '
+            'persoon actief, minstens één actieve proprelation, '
+            'pending_since blijft leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -296,9 +416,14 @@ EXPECTATIONS = {
     },
     '10-inst2 assignment weg': {
         'description': (
-            'Nu vallen ook de inst 143651 assignments weg → géén actieve '
-            'assignments meer. pending_since=today, alle proprelations '
-            'inactief, maar account zelf blijft actief (suspend-grace).'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: ook inst 143651 levert nu een lege assignments-file '
+            '(011007 nog steeds leeg uit stap 9). '
+            'Verwacht: alle PPSBRs gedeactiveerd; geen actieve '
+            'proprelations meer; voorgeschiedenis bestaat (DEACT\'d '
+            'proprelations) → post-sync sweep zet pending_since=today; '
+            'account blijft actief tot na EmployeeSuspendPeriod '
+            '(suspend-grace).'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -311,8 +436,12 @@ EXPECTATIONS = {
     },
     '11-inst1 + inst2 assignment terug': {
         'description': (
-            'Beide instnrs hebben opnieuw assignments → suspend-clock stopt '
-            '(pending_since geleegd). Phase 2 herstelt PPSBR-proprelations.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: beide instnrs leveren weer assignments. '
+            'Verwacht: Phase 2 maakt opnieuw PPSBR-proprelations aan; '
+            'post-sync sweep ziet actieve proprelations en wist '
+            'pending_since (recovery, suspend-clock stopt); persoon '
+            'actief, proprelations actief.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -325,11 +454,14 @@ EXPECTATIONS = {
     },
     '12-inst1 + inst2 pensioendatum niet in toekomst': {
         'description': (
-            'Beide instnrs krijgen een pensioendatum in het verleden '
-            '(2024-12-01). should_deactivate_instnr triggert per inst → '
-            'PROPRELATION/DEACT tasks. Na de post-sync sweep zit de persoon '
-            'in de suspend-pipeline (account nog actief, alle proprelations '
-            'inactief, pending_since gezet).'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: beide instnrs krijgen een pensioendatum in het '
+            'verleden (2024-12-01); assignments blijven aanwezig. '
+            'Verwacht: should_deactivate_instnr triggert per instnr → '
+            'PROPRELATION/DEACT-tasks deactiveren alle PPSBRs; PersonDetails '
+            'wordt niet herversioneerd (continue-pad); na post-sync sweep '
+            'staat de persoon in de suspend-pipeline (alle proprelations '
+            'inactief, pending_since=today, account zelf nog actief).'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -342,10 +474,13 @@ EXPECTATIONS = {
     },
     '13 -  inst1 + 2 pensioendatum weg': {
         'description': (
-            'Pensioendatum gewist op beide instnrs. Persoon is nooit '
-            'gedeactiveerd geweest (zat enkel in suspend), should_deactivate '
-            'triggert niet meer; pending_since wordt gewist; Phase 2 herstelt '
-            'PPSBR-proprelations vanuit de assignments.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: pensioendatum gewist op beide instnrs; assignments '
+            'aanwezig. '
+            'Verwacht: should_deactivate_instnr triggert niet meer; '
+            'Phase 2 herstelt PPSBR-proprelations vanuit de assignments; '
+            'post-sync sweep wist pending_since (recovery); persoon '
+            'actief, proprelations actief, pending_since leeg.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -358,10 +493,14 @@ EXPECTATIONS = {
     },
     '14 -  inst1 + 2 isactive false': {
         'description': (
-            'Beide instnrs krijgen isActive=false. should_deactivate_instnr '
-            'triggert → PROPRELATION/DEACT tasks. Post-sync sweep zet de '
-            'suspend-clock; account zelf blijft actief tot de cron na '
-            'EmployeeSuspendPeriod.'
+            'Personeelslid: Mark Demeyer (2dc5c533…). '
+            'Input: beide instnrs leveren isActive=false (assignments '
+            'aanwezig, pensioendatum niet relevant). '
+            'Verwacht: should_deactivate_instnr triggert per instnr → '
+            'PROPRELATION/DEACT-tasks deactiveren alle PPSBRs; post-sync '
+            'sweep zet pending_since=today; account zelf blijft actief '
+            'tot de lifecycle-cron na EmployeeSuspendPeriod is_active=False '
+            'zet en LDAP/USER/DEL queueet.'
         ),
         'checks': [
             {'type': 'person_exists_active',
@@ -445,6 +584,14 @@ class SyncTestSession(models.Model):
         help='When checked, LDAP/AD tasks generated by the sync are marked as '
              'skipped (completed_ok, no action). Useful to test purely against '
              'the local database without an LDAP server configured.',
+    )
+
+    skip_cloud_processing = fields.Boolean(
+        string='Skip Cloud processing', default=True,
+        help='When checked, CLOUD tasks (Google Workspace) generated by the sync '
+             'are marked as skipped (completed_ok, no action). Useful when no '
+             'Workspace tenant is configured, or to keep test runs from making '
+             'real Google API calls.',
     )
 
     step_ids = fields.One2many('myschool.sync.test.step', 'session_id', string='Steps')
@@ -646,12 +793,23 @@ class SyncTestSession(models.Model):
             'success')
 
     def action_force_reload_from_disk(self):
-        """Re-read every step file from disk into the DB, regardless of
-        the per-file ``user_edited`` flag. Use after editing testset
-        files outside the UI (e.g. shell-based bulk update) — otherwise
-        ``_flush_files_to_disk`` would overwrite your disk changes with
-        the (now-stale) DB content on the next run."""
+        """Full sync between disk and DB:
+        1. Rescan testset folders → create new step records, delete
+           records whose folder vanished (delegates to
+           ``action_refresh_steps``).
+        2. For every remaining step, re-read every file from disk into
+           the DB regardless of the per-file ``user_edited`` flag.
+
+        Use after editing testset files / folders outside the UI (e.g.
+        shell-based bulk update or moving folders around). Without the
+        rescan step you'd only see content updates on already-known
+        steps; new/removed folders would be invisible until the next
+        ``action_refresh_steps`` run.
+        """
         self.ensure_one()
+        # Step 1: pick up folder add/remove first.
+        self.action_refresh_steps()
+        # Step 2: force every file's content to match disk.
         reloaded = skipped = 0
         for step in self.step_ids:
             for frec in step.file_ids:
@@ -678,9 +836,13 @@ class SyncTestSession(models.Model):
             'tag': 'display_notification',
             'params': {
                 'title': 'Force reload from disk',
-                'message': f'Reloaded {reloaded} file(s), skipped {skipped} unreadable.',
+                'message': (
+                    f'Folder-rescan + content reload: {reloaded} file(s) '
+                    f'updated, {skipped} unreadable. '
+                    f'{len(self.step_ids)} step(s) on disk.'),
                 'type': 'success' if reloaded or not skipped else 'warning',
                 'sticky': False,
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
             },
         }
 
@@ -1130,7 +1292,6 @@ class SyncTestSession(models.Model):
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
         OrgType = self.env['myschool.org.type']
-        ConfigItem = self.env['myschool.config.item']
         processor = self.env['myschool.betask.processor']
 
         ppsbr_type = PropRelationType.search([('name', '=', 'PPSBR')], limit=1)
@@ -1727,6 +1888,11 @@ class SyncTestSession(models.Model):
             person = Person.search(
                 [('sap_person_uuid', '=', self.test_person_uuid)], limit=1)
             if person:
+                # First: undo any real LDAP/Cloud provisioning. Must
+                # run BEFORE the DB unlink because the service methods
+                # need the live person record to resolve DN / email.
+                self._cleanup_ldap_cloud_for_targets(
+                    log, persons=person, orgs=person.browse())
                 # Detach Odoo user/employee links first to avoid write-protect.
                 person.write({'odoo_user_id': False, 'odoo_employee_id': False})
                 _purge_proprelations_for(person, person.browse(), person.browse())
@@ -1798,6 +1964,10 @@ class SyncTestSession(models.Model):
             if full_names:
                 roles = Role.search([('name', 'in', full_names)])
 
+        # First: undo real LDAP/Cloud provisioning. Same rationale as
+        # the employees branch — must precede DB unlinks.
+        self._cleanup_ldap_cloud_for_targets(log, persons=persons, orgs=orgs)
+
         # Detach persons from Odoo links before unlink.
         if persons:
             persons.write({'odoo_user_id': False, 'odoo_employee_id': False})
@@ -1821,8 +1991,145 @@ class SyncTestSession(models.Model):
                 related.unlink()
                 log.append(f'BETASK: removed {n} reference(s) to {pid}')
 
+        # Sweep up persongroup orgs auto-created by the student sync.
+        # Same rationale as in the employees-mode branch above: PG orgs
+        # are not tracked per session, so once the test persons and
+        # classgroups are gone the PERSONGROUPs left behind are orphans
+        # and must be removed for the next run to start clean.
+        self._cleanup_orphan_persongroups(log, ctx, _purge_proprelations_for, _try_unlink)
+
         self._save_cleanup_log(log)
         return log
+
+    def _cleanup_ldap_cloud_for_targets(self, log, persons, orgs):
+        """Undo real LDAP and Cloud changes for the tracked targets.
+
+        Runs **before** the DB unlinks in ``_cleanup_tracked_entities``
+        because the service methods (``ldap_service.delete_user``,
+        ``google_directory_service.delete_user``) read live record
+        attributes (CN/DN, primaryEmail) to find the right backend
+        object.
+
+        Best-effort per item: a failure on one user/group/OU does not
+        abort the whole cleanup. Reasons we skip silently:
+          * No active LDAP server config → no AD provisioning to undo
+          * No active Workspace config → no Cloud provisioning to undo
+          * Service methods are idempotent on 404 already (delete on a
+            ghost = success), so re-running this is safe.
+
+        Resolves which orgs need group-level cleanup vs OU-level
+        cleanup based on ``org_type_id.name``:
+          - ``PERSONGROUP`` → AD com_group + sec_group, Workspace group
+          - everything else → Workspace OU (LDAP service has no
+            ``delete_ou`` so AD-side OU cleanup is left as a leftover;
+            empty OUs don't block subsequent test runs).
+        """
+        LdapConfig = self.env['myschool.ldap.server.config']
+        WsConfig = self.env['myschool.google.workspace.config']
+
+        ldap_cfg = LdapConfig.search(
+            [('active', '=', True)], limit=1, order='sequence')
+        ws_cfg = WsConfig.search(
+            [('active', '=', True)], limit=1, order='sequence')
+
+        if not ldap_cfg and not ws_cfg:
+            log.append(
+                'LDAP/CLOUD cleanup: skipped (no active LDAP / Workspace config)')
+            return
+
+        # ----- Persons -----
+        for person in persons:
+            if ldap_cfg:
+                self._safe_call(
+                    log, f'LDAP/USER/DEL {person.name}',
+                    lambda p=person: self.env['myschool.ldap.service']
+                        .delete_user(ldap_cfg, p))
+            if ws_cfg:
+                # Resolve org for primaryEmail computation.
+                processor = self.env['myschool.betask.processor']
+                tree_org = None
+                try:
+                    tree_org = processor._resolve_current_person_tree_org(person)
+                except Exception:
+                    pass
+                self._safe_call(
+                    log, f'CLOUD/USER/DEL {person.name}',
+                    lambda p=person, o=tree_org:
+                        self.env['myschool.google.directory.service']
+                            .delete_user(ws_cfg, p, org=o))
+
+        # ----- Orgs -----
+        for org in orgs:
+            org_type_name = (org.org_type_id.name or '').upper() if org.org_type_id else ''
+            if org_type_name == 'PERSONGROUP':
+                # LDAP groups
+                if ldap_cfg:
+                    for fqdn_field in ('com_group_fqdn_internal',
+                                        'sec_group_fqdn_internal'):
+                        dn = (getattr(org, fqdn_field, '') or '').strip()
+                        if not dn:
+                            continue
+                        self._safe_call(
+                            log, f'LDAP/GROUP/DEL {dn}',
+                            lambda d=dn: self.env['myschool.ldap.service']
+                                .delete_group(ldap_cfg, d))
+                # Cloud group (mail-enabled side only)
+                if ws_cfg:
+                    grp_email = (org.com_group_email or '').strip()
+                    if grp_email:
+                        self._safe_call(
+                            log, f'CLOUD/GROUP/DEL {grp_email}',
+                            lambda e=grp_email: self.env['myschool.google.directory.service']
+                                .delete_group(ws_cfg, e))
+            else:
+                # Cloud OU — only meaningful for non-PERSONGROUP orgs.
+                if ws_cfg:
+                    self._safe_call(
+                        log, f'CLOUD/ORG/DEL {org.name}',
+                        lambda o=org: self.env['myschool.google.directory.service']
+                            .delete_orgunit(ws_cfg, o))
+                # LDAP service has no delete_ou; leave AD OUs alone.
+
+        # ----- Drop pending LDAP/CLOUD betasks for the tracked targets -----
+        # Reduces noise in the next run: tasks that would have acted on
+        # the just-deleted entities can be safely dropped.
+        BeTask = self.env['myschool.betask']
+        target_ids = list(persons.ids) + list(orgs.ids)
+        if target_ids:
+            stale = BeTask.search([
+                ('status', '=', 'new'),
+                ('target', 'in', ('LDAP', 'AD', 'CLOUD')),
+            ])
+            # Filter to those that reference our ids in their JSON data.
+            stale_for_targets = stale.filtered(
+                lambda t: any(
+                    f'": {tid}' in (t.data or '') or
+                    f'": {tid},' in (t.data or '')
+                    for tid in target_ids))
+            if stale_for_targets:
+                stale_for_targets.write({
+                    'status': 'completed_ok',
+                    'changes': 'Cancelled by sync test runner cleanup '
+                               '(target entity removed)',
+                })
+                log.append(
+                    f'BETASK: cancelled {len(stale_for_targets)} stale '
+                    f'LDAP/CLOUD task(s) for cleaned-up targets')
+
+    @staticmethod
+    def _safe_call(log, label, fn):
+        """Run ``fn``; append the outcome to ``log``. Per-item try/except
+        keeps the cleanup from aborting on one bad row."""
+        try:
+            result = fn()
+            if isinstance(result, dict):
+                ok = result.get('success', True)
+                msg = result.get('message') or 'ok'
+                log.append(f'{label}: {"ok" if ok else "FAILED"} — {msg}')
+            else:
+                log.append(f'{label}: ok')
+        except Exception as e:
+            log.append(f'{label}: FAILED — {e}')
 
     def _save_cleanup_log(self, log):
         """Render the cleanup log as HTML into the session field."""
@@ -2005,10 +2312,29 @@ class SyncTestStep(models.Model):
                     for t in skipped:
                         debug_lines.append(f'  ⏭ [{t.target}] {t.name}')
 
+            if session.skip_cloud_processing:
+                skipped_cloud = self._skip_cloud_tasks()
+                if skipped_cloud:
+                    debug_lines.append(
+                        f'--- Skipped {len(skipped_cloud)} CLOUD task(s) ---')
+                    for t in skipped_cloud:
+                        debug_lines.append(f'  ⏭ [{t.target}] {t.name}')
+
             debug_lines.append('--- Processing pending tasks ---')
             pending = BeTask.search([('status', '=', 'new')])
             if pending:
-                processor = self.env['myschool.betask.processor']
+                # Pass the skip-flags via context so they apply to
+                # tasks created mid-processing too (e.g. CLOUD/* tasks
+                # that the LDAP cascade queues during a GROUPMEMBER/ADD
+                # handler). The context-check in process_single_task
+                # short-circuits these without hitting the backend.
+                proc_ctx = {}
+                if session.skip_ldap_processing:
+                    proc_ctx['skip_ldap_processing'] = True
+                if session.skip_cloud_processing:
+                    proc_ctx['skip_cloud_processing'] = True
+                processor = self.env['myschool.betask.processor'].with_context(
+                    **proc_ctx)
                 try:
                     proc_result = processor.process_all_pending()
                     debug_lines.append(f'process_all_pending: {proc_result}')
@@ -2150,6 +2476,28 @@ class SyncTestStep(models.Model):
             'changes': 'Skipped by sync test runner (skip_ldap_processing=True)',
         })
         return ldap_tasks
+
+    def _skip_cloud_tasks(self):
+        """Mirror of ``_skip_ldap_tasks`` for CLOUD/* betasks.
+
+        Used during sync tests when no Workspace tenant is configured
+        or when the test should not hit Google APIs. Marks every
+        pending CLOUD task — across all objects (USER/GROUP/ORG/
+        DEVICE/DRIVE/COURSE/LICENSE) and actions — as completed_ok
+        with a clear "skipped by runner" trail in ``changes``.
+        """
+        BeTask = self.env['myschool.betask']
+        cloud_tasks = BeTask.search([
+            ('status', '=', 'new'),
+            ('target', '=', 'CLOUD'),
+        ])
+        if not cloud_tasks:
+            return cloud_tasks
+        cloud_tasks.write({
+            'status': 'completed_ok',
+            'changes': 'Skipped by sync test runner (skip_cloud_processing=True)',
+        })
+        return cloud_tasks
 
     def _collect_new_tasks(self, before_count):
         BeTask = self.env['myschool.betask']

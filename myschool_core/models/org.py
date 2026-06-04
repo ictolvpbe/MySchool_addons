@@ -1,4 +1,5 @@
-from odoo import models, fields, api
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError
 import json
 import logging
 
@@ -22,6 +23,13 @@ class Org(models.Model):
 
     name = fields.Char(string='Naam', required=True)
     name_short = fields.Char(string='Korte Naam', required=True)
+    logo = fields.Binary(
+        string='Logo',
+        attachment=True,
+        help='Org logo (typical use: school logo). Embedded into '
+             'rendered PDFs via the {{ image_url(...) }} helper in '
+             'letter templates. Stored as ir.attachment, not in the '
+             'main org table — large images don\'t bloat row size.')
     displayname = fields.Char(
         string='Weergavenaam',
         help='Naam zoals getoond in de UI. Valt terug op ``name`` '
@@ -93,6 +101,71 @@ class Org(models.Model):
         string='Odoo Groups',
         help='Odoo res.groups that members of this org get added to. '
              'Only consulted when has_odoo_group is True.')
+
+    # SI-rework — directe per-org Settings Values voor deze org.
+    # Geërfde en globale waarden zitten hier niet in; gebruik
+    # SettingsItem.get(key, org=this_org) voor de effectieve waarde.
+    settings_value_ids = fields.One2many(
+        'myschool.settings.value', 'org_id',
+        string='Settings Values',
+        help='Per-org Settings Values die direct op deze org gezet zijn '
+             '(geen geërfde waarden). Voor de effectieve waarde inclusief '
+             'fall-back, gebruik SettingsItem.get(key, org=this).')
+
+    show_inherited_settings = fields.Boolean(
+        string='Toon ook geërfde waarden',
+        store=False, default=False,
+        help='Wanneer aangevinkt toont de Settings-tab niet alleen de '
+             "eigen per-org waarden maar ook de waarden die deze org "
+             'erft van ouder-orgs in de ORG-TREE (via '
+             'inherit_to_children=True op de ancestor-waarde).')
+
+    effective_settings_value_ids = fields.Many2many(
+        'myschool.settings.value',
+        compute='_compute_effective_settings_value_ids',
+        string='Effectieve Settings Values',
+        store=False,
+        help='Eigen waarden + geërfde waarden uit ORG-TREE ancestors. '
+             'Voor org-rijen wier org_id ≠ this is dit een geërfde waarde.')
+
+    @api.depends('settings_value_ids', 'settings_value_ids.is_active',
+                 'show_inherited_settings')
+    def _compute_effective_settings_value_ids(self):
+        """Verzamel eigen waarden + geërfde waarden via ORG-TREE walk.
+
+        Een SI waarvoor de org zelf een actieve waarde heeft, neemt
+        geen geërfde waarde meer over (eigen waarde wint). Voor de
+        anderen wandelt deze methode upward en pakt de eerste
+        ``inherit_to_children=True`` waarde die hij tegenkomt.
+        """
+        SettingsItem = self.env['myschool.settings.item']
+        Value = self.env['myschool.settings.value']
+        for rec in self:
+            own_active = rec.settings_value_ids.filtered('is_active')
+            if not rec.show_inherited_settings:
+                rec.effective_settings_value_ids = own_active
+                continue
+
+            covered_si_ids = {
+                v.settings_item_id.id for v in own_active}
+            collected_ids = set(own_active.ids)
+            is_self = True
+            for ancestor in SettingsItem._walk_org_ancestors(rec):
+                if is_self:
+                    is_self = False
+                    continue
+                ancestor_values = Value.search([
+                    ('org_id', '=', ancestor.id),
+                    ('is_active', '=', True),
+                    ('inherit_to_children', '=', True),
+                ])
+                for av in ancestor_values:
+                    si_id = av.settings_item_id.id
+                    if si_id and si_id not in covered_si_ids:
+                        covered_si_ids.add(si_id)
+                        collected_ids.add(av.id)
+            rec.effective_settings_value_ids = Value.browse(
+                list(collected_ids))
     ou_fqdn_internal = fields.Char(string='OU FQDN Intern')
     ou_fqdn_external = fields.Char(string='OU FQDN Extern')
     com_group_fqdn_internal = fields.Char(string='Com Groep FQDN Intern')
@@ -102,6 +175,17 @@ class Org(models.Model):
     com_group_name = fields.Char(string='Com Groep Naam')
     com_group_email = fields.Char(string='Com Groep Email', size=200)
     sec_group_name = fields.Char(string='Sec Groep Naam')
+
+    # Odoo Company link (managed by sync_companies — see bottom of class)
+    company_id = fields.Many2one(
+        'res.company',
+        string='Odoo Company',
+        readonly=True,
+        copy=False,
+        help='Odoo res.company / branch dat door de bedrijfssync aan '
+             'deze org gekoppeld is. SCHOOLBOARD-orgs krijgen een '
+             'top-level company, SCHOOL-orgs een branch onder de '
+             'SCHOOLBOARD-company. Beheerd via myschool.org.sync_companies.')
 
     # Redundant
     orggroup_working_period = fields.Char(string='Werktijd Periode', size=30)
@@ -264,6 +348,185 @@ class Org(models.Model):
     # =========================================================================
     # Audit Trail - Create backend tasks for manual changes
     # =========================================================================
+
+    def action_sync_this_school(self):
+        """Run an Informat sync **for this school only**.
+
+        Useful for debugging in isolation: the regular sync iterates
+        every school with ``sap_provider=INFORMAT`` (typically 5+),
+        which makes log output hard to follow. This button restricts
+        the run to ``self.inst_nr`` so logs and any task-cascade
+        effects are scoped to one school.
+
+        Available on org records that:
+          • have ``sap_provider=INFORMAT`` (= '1')
+          • have an ``inst_nr`` set
+        """
+        self.ensure_one()
+        if self.sap_provider != '1':
+            raise UserError(_(
+                'Org %s has no INFORMAT sap_provider — nothing to sync.'
+            ) % self.name)
+        if not self.inst_nr:
+            raise UserError(_(
+                'Org %s has no inst_nr set; cannot scope the Informat '
+                'sync to a single school without it.') % self.name)
+        service = self.env['myschool.informat.service']
+        result = service.execute_sync(inst_nrs=[self.inst_nr])
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Informat sync — %s') % self.name,
+                'message': (_('Sync completed.') if result
+                            else _('Sync ended with errors. '
+                                   'Check the log for details.')),
+                'type': 'success' if result else 'warning',
+                'sticky': not result,
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+            },
+        }
+
+    def action_verify_groups(self):
+        """Verify + create AD/Cloud groups for the selected org(s).
+
+        Per-org button (form view) and bulk-list action. For each org:
+          * If org is PERSONGROUP: ensure the AD COM/SEC groups exist
+            (using ``com_group_fqdn_internal`` / ``sec_group_fqdn_internal``)
+            and the matching Workspace group (`com_group_email`).
+          * If org is anything else (SCHOOL / DEPARTMENT / CLASSGROUP /
+            ...): ensure the Workspace OU exists. AD-side OUs are not
+            verified here — the LDAP service has no ``delete_ou`` /
+            ``create_ou`` extender (yet); existing AD OU code is in
+            ``process_ldap_org_add``.
+
+        Idempotent: existing groups/OUs are detected by
+        ``create_group_at_dn`` / ``create_orgunit`` which short-circuit
+        to "already exists" success.
+
+        Returns a notification with the count of created vs already-OK.
+        """
+        LdapConfig = self.env['myschool.ldap.server.config']
+        WsConfig = self.env['myschool.google.workspace.config']
+        ldap_cfg = LdapConfig.search(
+            [('active', '=', True)], limit=1, order='sequence')
+        ws_cfg = WsConfig.search(
+            [('active', '=', True)], limit=1, order='sequence')
+        if not ldap_cfg and not ws_cfg:
+            return self._verify_notify(
+                'No backend configured',
+                'Configure an LDAP server and/or a Workspace tenant first.',
+                'warning')
+
+        ldap_svc = self.env['myschool.ldap.service'] if ldap_cfg else None
+        gd_svc = self.env['myschool.google.directory.service'] \
+            if ws_cfg else None
+
+        created = 0
+        existed = 0
+        errors = []
+
+        for org in self:
+            org_type = (org.org_type_id.name or '').upper() \
+                if org.org_type_id else ''
+            try:
+                if org_type == 'PERSONGROUP':
+                    # AD COM / SEC groups
+                    if ldap_svc:
+                        for fqdn_field, name_field, kind in (
+                                ('com_group_fqdn_internal',
+                                 'com_group_name', 'COM'),
+                                ('sec_group_fqdn_internal',
+                                 'sec_group_name', 'SEC')):
+                            dn = (getattr(org, fqdn_field, '') or '').strip()
+                            if not dn:
+                                continue
+                            grp_name = (getattr(org, name_field, '')
+                                        or org.name_short).strip()
+                            mail = (org.com_group_email or None) \
+                                if kind == 'COM' else None
+                            res = ldap_svc.create_group_at_dn(
+                                ldap_cfg, dn=dn, group_name=grp_name,
+                                description=org.name, mail=mail,
+                                security=(kind != 'COM'))
+                            if res.get('success'):
+                                if 'already' in (res.get('message') or '').lower():
+                                    existed += 1
+                                else:
+                                    created += 1
+                            else:
+                                errors.append(
+                                    f'{org.name} {kind}: {res.get("message")}')
+                    # Cloud group (mail-enabled side only)
+                    if gd_svc:
+                        grp_email = (org.com_group_email or '').strip()
+                        if grp_email:
+                            res = gd_svc.create_group(
+                                ws_cfg, grp_email,
+                                group_name=org.com_group_name or org.name_short,
+                                description=org.name)
+                            if res.get('success'):
+                                if 'already' in (res.get('message') or '').lower():
+                                    existed += 1
+                                else:
+                                    created += 1
+                            else:
+                                errors.append(
+                                    f'{org.name} CLOUD-GROUP: {res.get("message")}')
+                else:
+                    # Cloud OU for non-PERSONGROUP orgs
+                    if gd_svc:
+                        res = gd_svc.create_orgunit(ws_cfg, org)
+                        if res.get('success'):
+                            if 'already' in (res.get('message') or '').lower() \
+                                    or 'ensured' in (res.get('message') or '').lower():
+                                existed += 1
+                            else:
+                                created += 1
+                        else:
+                            errors.append(
+                                f'{org.name} CLOUD-OU: {res.get("message")}')
+            except Exception as e:
+                errors.append(f'{org.name}: {e}')
+
+        body = (
+            f'Created: {created}, already present: {existed}, '
+            f'errors: {len(errors)}'
+        )
+        if errors:
+            body += '\n\n' + '\n'.join(errors[:10])
+            if len(errors) > 10:
+                body += f'\n… (+{len(errors) - 10} more)'
+        return self._verify_notify(
+            'Group verification',
+            body,
+            'success' if not errors else 'warning')
+
+    @staticmethod
+    def _verify_notify(title, message, level):
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': title, 'message': message,
+                'type': level, 'sticky': bool(level == 'warning'),
+            },
+        }
+
+    @api.model
+    def action_verify_all_groups(self):
+        """Sweep every PERSONGROUP + every non-administrative SCHOOL
+        and run ``action_verify_groups`` on them. Useful after a fresh
+        setup or as a quick audit."""
+        OrgType = self.env['myschool.org.type']
+        pg_type = OrgType.search([('name', '=', 'PERSONGROUP')], limit=1)
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
+        type_ids = [t.id for t in (pg_type, school_type) if t]
+        candidates = self.search([
+            ('is_active', '=', True),
+            ('org_type_id', 'in', type_ids),
+        ]) if type_ids else self.browse()
+        return candidates.action_verify_groups()
 
     @api.model
     def sync_all_persongroups(self):
@@ -648,7 +911,7 @@ class Org(models.Model):
         self.ensure_one()
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
 
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
         if not org_tree_type:
@@ -693,9 +956,12 @@ class Org(models.Model):
 
         group_name = prefix + '-'.join(name_parts)
 
-        # Resolve OuForGroups for FQDN computation
-        ou_for_groups = ConfigItem.get_ci_value_by_org_and_name(
-            school_org.name_short, 'OuForGroups') if school_org else None
+        # Resolve OuForGroups for FQDN computation. SI-lookup gebruikt
+        # ORG-TREE inheritance — een waarde op de SCHOOLBOARD-ancestor
+        # erft automatisch naar deze school als die zelf geen override
+        # heeft.
+        ou_for_groups = SettingsItem.get(
+            'OuForGroups', org=school_org) if school_org else None
         ou_for_groups_lower = (ou_for_groups or '').lower()
 
         # The OU that holds groups sits *immediately under the SCHOOL*,
@@ -847,7 +1113,7 @@ class Org(models.Model):
         OrgType = self.env['myschool.org.type']
         PropRelation = self.env['myschool.proprelation']
         PropRelationType = self.env['myschool.proprelation.type']
-        ConfigItem = self.env['myschool.config.item']
+        SettingsItem = self.env['myschool.settings.item']
 
         # Get ORG-TREE type
         org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
@@ -941,8 +1207,14 @@ class Org(models.Model):
                 elif school_type and school_org.org_type_id.id != school_type.id:
                     _logger.warning(f'[CG-UPDATE]   school_org {school_org.name_short} is not of type SCHOOL')
 
-                # Step 3: Look up OuForClasses CI
-                ou_value = ConfigItem.get_ci_value_by_org_and_name(ci_lookup_org.name_short, 'OuForClasses')
+                # Step 3: Look up OuForClasses SI. Walk-from-school
+                # (step 2) blijft nodig omdat step 4 ci_lookup_org als
+                # parent gebruikt om child-orgs te zoeken — dat is een
+                # echte tree-traversal, geen SI-lookup. De SI-lookup
+                # zelf heeft die handmatige walk niet meer nodig: een
+                # OuForClasses-waarde op de SCHOOLBOARD-ancestor wordt
+                # automatisch overgeërfd door SettingsItem.get().
+                ou_value = SettingsItem.get('OuForClasses', org=ci_lookup_org)
                 _logger.info(f'[CG-UPDATE]   OuForClasses on {ci_lookup_org.name_short} -> {ou_value!r}')
 
                 # Step 4: Find the org with that name_short as a direct child of ci_lookup_org
@@ -994,9 +1266,258 @@ class Org(models.Model):
             changes = []
             processor._populate_classgroup_ad_fields(
                 cg, parent_org, ci_lookup_org,
-                org_tree_type, ConfigItem, changes)
+                org_tree_type, changes)
             ad_updated += 1
 
         _logger.info(f'[CG-UPDATE] DONE: removed={removed}, created={success}, ad_updated={ad_updated}, skipped={skipped}')
         return {'removed': removed, 'created': success, 'skipped': skipped,
                 'ad_updated': ad_updated, 'total': len(classgroups), 'errors': errors}
+
+    # =========================================================================
+    # Odoo Company / Branch sync
+    # SCHOOLBOARD orgs → top-level res.company.
+    # SCHOOL orgs      → branch (child res.company with parent_id set) of
+    #                    their SCHOOLBOARD ancestor's company.
+    # Triggered manually (action_sync_companies) or via cron
+    # (_cron_sync_companies). Idempotent — safe to run repeatedly.
+    # =========================================================================
+
+    @api.model
+    def _cron_sync_companies(self):
+        """Cron entry point. Returns the stats dict from sync_companies."""
+        return self.sync_companies()
+
+    @api.model
+    def sync_companies(self):
+        """Synchronise res.company records from active SCHOOLBOARD/SCHOOL
+        orgs.
+
+        Resolution order per org:
+          1. Already linked via ``org.company_id``? → keep that company.
+          2. Reverse linked via ``res.company.school_id``? → adopt it.
+          3. Existing company by name (+ parent_id for branches)? → match
+             — picks up manually-created companies.
+          4. Otherwise create.
+
+        Active state of the org follows through to the company
+        (org.is_active=False archives the company; reactivation
+        unarchives). SCHOOL orgs without a SCHOOLBOARD ancestor via
+        ORG-TREE are skipped with a SYNC.COMPANY.ORPHAN_SCHOOL sysevent.
+
+        @return: dict with counters
+        """
+        OrgType = self.env['myschool.org.type']
+        Company = self.env['res.company'].sudo()
+        PropRelationType = self.env['myschool.proprelation.type']
+        SysEventService = self.env.get('myschool.sys.event.service')
+
+        schoolboard_type = OrgType.search([('name', '=', 'SCHOOLBOARD')], limit=1)
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1)
+        org_tree_type = PropRelationType.search([('name', '=', 'ORG-TREE')], limit=1)
+
+        stats = {'created': 0, 'matched': 0, 'updated': 0,
+                 'archived': 0, 'reactivated': 0, 'orphan_skipped': 0}
+
+        if not schoolboard_type or not school_type:
+            _logger.warning(
+                '[COMPANY-SYNC] SCHOOLBOARD or SCHOOL OrgType missing — abort')
+            stats['error'] = 'org-types-missing'
+            return stats
+
+        Country = self.env['res.country'].sudo()
+
+        def _resolve_country(org_country):
+            if not org_country:
+                return False
+            value = org_country.strip()
+            if not value:
+                return False
+            country = Country.search(
+                ['|', ('name', '=ilike', value), ('code', '=ilike', value)],
+                limit=1)
+            return country.id if country else False
+
+        def _build_address_vals(org):
+            street = ' '.join(p for p in (org.street, org.street_nr) if p) or False
+            return {
+                'street': street,
+                'zip': org.postal_code or False,
+                'city': org.community or False,
+                'country_id': _resolve_country(org.country),
+                'email_domain': org.domain_external or False,
+            }
+
+        def _ensure_company(org, parent_company=None):
+            target_name = (org.displayname or org.name or '').strip()
+            if not target_name:
+                return None
+
+            company = org.company_id
+            if not company:
+                company = Company.with_context(active_test=False).search(
+                    [('school_id', '=', org.id)], limit=1)
+
+            if not company:
+                domain = [('name', '=', target_name)]
+                if parent_company:
+                    domain.append(('parent_id', '=', parent_company.id))
+                else:
+                    domain.append(('parent_id', '=', False))
+                company = Company.with_context(active_test=False).search(
+                    domain, limit=1)
+                if company:
+                    stats['matched'] += 1
+
+            if not company:
+                create_vals = {'name': target_name, 'school_id': org.id}
+                if parent_company:
+                    create_vals['parent_id'] = parent_company.id
+                create_vals.update(_build_address_vals(org))
+                company = Company.with_context(
+                    skip_school_rename_guard=True).create(create_vals)
+                stats['created'] += 1
+
+            sync_vals = {}
+            if company.name != target_name:
+                sync_vals['name'] = target_name
+            if company.school_id != org:
+                sync_vals['school_id'] = org.id
+            if parent_company and company.parent_id != parent_company:
+                sync_vals['parent_id'] = parent_company.id
+
+            address_vals = _build_address_vals(org)
+            for f, v in address_vals.items():
+                current = getattr(company, f)
+                # country_id comparison: relation vs id
+                if f == 'country_id':
+                    current = current.id if current else False
+                if current != v:
+                    sync_vals[f] = v
+
+            if org.is_active and not company.active:
+                sync_vals['active'] = True
+                stats['reactivated'] += 1
+            elif not org.is_active and company.active:
+                sync_vals['active'] = False
+                stats['archived'] += 1
+            if sync_vals:
+                company.with_context(
+                    skip_school_rename_guard=True).write(sync_vals)
+                if any(k in sync_vals for k in ('name', 'parent_id', 'school_id')):
+                    stats['updated'] += 1
+
+            if org.company_id != company:
+                org.with_context(skip_manual_audit=True).write(
+                    {'company_id': company.id})
+
+            return company
+
+        schoolboards = self.with_context(active_test=False).search([
+            ('org_type_id', '=', schoolboard_type.id),
+        ])
+        sb_to_company = {}
+        for sb in schoolboards:
+            company = _ensure_company(sb, parent_company=None)
+            if company:
+                sb_to_company[sb.id] = company
+
+        # Administrative schools must not have a branch company. If a
+        # previous run created one (or the flag was flipped after the
+        # fact), archive the company so it stops appearing in pickers.
+        admin_schools_with_company = self.with_context(active_test=False).search([
+            ('org_type_id', '=', school_type.id),
+            ('is_administrative', '=', True),
+            ('company_id', '!=', False),
+        ])
+        for adm in admin_schools_with_company:
+            comp = adm.company_id
+            if comp and comp.active:
+                comp.with_context(
+                    skip_school_rename_guard=True).write({'active': False})
+                stats['archived'] += 1
+
+        schools = self.with_context(active_test=False).search([
+            ('org_type_id', '=', school_type.id),
+            ('is_administrative', '=', False),
+        ])
+        for sch in schools:
+            sb_org = self._resolve_schoolboard_via_orgtree(
+                sch, schoolboard_type, org_tree_type)
+            if not sb_org:
+                stats['orphan_skipped'] += 1
+                if SysEventService:
+                    SysEventService.create_sys_error(
+                        'SYNC.COMPANY.ORPHAN_SCHOOL',
+                        (f'School "{sch.displayname or sch.name}" '
+                         f'(id={sch.id}, inst_nr={sch.inst_nr}) has no '
+                         f'SCHOOLBOARD ancestor via ORG-TREE — skipping '
+                         f'res.company creation.'),
+                        'ERROR-NONBLOCKING', True)
+                continue
+            parent_company = sb_to_company.get(sb_org.id)
+            if not parent_company:
+                stats['orphan_skipped'] += 1
+                continue
+            _ensure_company(sch, parent_company=parent_company)
+
+        _logger.info('[COMPANY-SYNC] %s', stats)
+        return stats
+
+    def _resolve_schoolboard_via_orgtree(self, school_org,
+                                        schoolboard_type, org_tree_type):
+        """Walk ORG-TREE upward from ``school_org`` to find a
+        SCHOOLBOARD-typed ancestor. Returns the SCHOOLBOARD org or None.
+
+        Note: starts from the immediate parent — a SCHOOL that is itself
+        of type SCHOOLBOARD is invalid input (SCHOOLBOARDs are handled
+        in the first pass)."""
+        if not org_tree_type or not schoolboard_type:
+            return None
+        PropRelation = self.env['myschool.proprelation']
+        current = school_org
+        visited = set()
+        while current and current.id not in visited:
+            visited.add(current.id)
+            rel = PropRelation.search([
+                ('proprelation_type_id', '=', org_tree_type.id),
+                ('id_org', '=', current.id),
+                ('id_org_parent', '!=', False),
+                ('is_active', '=', True),
+            ], limit=1)
+            if not rel or not rel.id_org_parent:
+                return None
+            current = rel.id_org_parent
+            if current.org_type_id and current.org_type_id.id == schoolboard_type.id:
+                return current
+        return None
+
+    def action_sync_companies(self):
+        """Manual button entry point for the company sync."""
+        stats = self.sync_companies()
+        if stats.get('error'):
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Company sync',
+                    'message': f"Error: {stats['error']}",
+                    'type': 'danger',
+                    'sticky': True,
+                },
+            }
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Company sync',
+                'message': (
+                    f"Created: {stats.get('created', 0)}, "
+                    f"matched: {stats.get('matched', 0)}, "
+                    f"updated: {stats.get('updated', 0)}, "
+                    f"archived: {stats.get('archived', 0)}, "
+                    f"reactivated: {stats.get('reactivated', 0)}, "
+                    f"orphan-skipped: {stats.get('orphan_skipped', 0)}"
+                ),
+                'type': 'success' if not stats.get('orphan_skipped') else 'warning',
+            },
+        }

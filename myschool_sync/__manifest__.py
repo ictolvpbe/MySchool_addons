@@ -33,6 +33,7 @@
         # Views
         'views/sync_target_views.xml',
         'views/sync_log_views.xml',
+        'views/res_config_settings_views.xml',
         'views/menu_views.xml',
     ],
     'installable': True,

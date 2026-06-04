@@ -12,7 +12,11 @@
     ],
     'post_init_hook': 'post_init_hook',
     'data': [
-        'views/res_config_settings_views.xml',
+        # Theme settings UI lives in myschool_admin (see
+        # res_config_settings_views.xml there). The fields and methods
+        # stay defined in this module's models/res_config_settings.py,
+        # so myschool_admin's XML can reference them whenever theme is
+        # installed.
     ],
     'assets': {
         'web._assets_primary_variables': [

@@ -9,5 +9,12 @@
             <field name="padding">5</field>
             <field name="company_id" eval="False"/>
         </record>
+        <record id="seq_sap_sync_run" model="ir.sequence">
+            <field name="name">SAP Sync Run Sequence</field>
+            <field name="code">myschool.sap.sync.run</field>
+            <field name="prefix">SYN</field>
+            <field name="padding">6</field>
+            <field name="company_id" eval="False"/>
+        </record>
     </data>
 </odoo>

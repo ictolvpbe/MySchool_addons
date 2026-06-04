@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!--
+            Geen aparte event-types nodig — MCP-calls hangen onder de
+            bestaande EVENT / ERROR-types via sys_event_service. Dit
+            bestand is een placeholder voor toekomstige codes; voor v1
+            volstaat de bestaande infrastructuur.
+        -->
+    </data>
+</odoo>

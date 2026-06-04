@@ -53,7 +53,14 @@ class InformatService(models.AbstractModel):
     
     # API URLs
     IDENTITY_SERVER_URL = 'https://www.identityserver.be/connect/token'
-    STUDENTS_API_URL = 'https://leerlingenapi.informatsoftware.be/1/students'
+    LEERLINGEN_API_BASE = 'https://leerlingenapi.informatsoftware.be/1'
+    # Per Leerlingen WEB API Implementation Guide v1.23:
+    #   GET /1/registrations?schoolYear=...&changedSince=...
+    #   GET /1/students[?schoolYear=...&refdate=...&changedSince=...]
+    # The previous `STUDENTS_API_URL` had "/students" baked in, which led
+    # to `/1/students/registrations` — a 404 path that doesn't exist.
+    REGISTRATIONS_API_URL = f'{LEERLINGEN_API_BASE}/registrations'
+    STUDENTS_API_URL = f'{LEERLINGEN_API_BASE}/students'
     EMPLOYEES_API_URL = 'https://personeelsapi.informatsoftware.be/employees'
     EMPLOYEE_ASSIGNMENTS_API_URL = 'https://personeelsapi.informatsoftware.be/employees/assignments'
 
@@ -253,38 +260,105 @@ class InformatService(models.AbstractModel):
     # =========================================================================
 
     @api.model
-    def execute_sync(self, dev_mode: bool = None) -> bool:
+    def execute_sync(self, dev_mode: bool = None,
+                     inst_nrs: Optional[List[str]] = None,
+                     phases: Optional[Dict[str, bool]] = None,
+                     trigger: str = 'cron',
+                     require_review: bool = False,
+                     auto_commit_on_no_breach: bool = True) -> Any:
         """
         Main synchronization method - retrieves data from SAP, analyzes it,
         and creates the required tasks.
 
-        This method is designed to be called by a scheduled cron job.
-        Equivalent to Java: executeSync()
+        Vanaf v0.7 splitst dit in twee fasen: ANALYSE (via deze methode)
+        en COMMIT (via ``myschool.sap.sync.service.commit_run``). Tijdens
+        de analyse worden geplande mutaties weggeschreven naar
+        ``myschool.sap.sync.change``-records in plaats van rechtstreeks
+        naar betasks. Als de drempel niet overschreden is en
+        ``auto_commit_on_no_breach=True``, gebeurt de commit automatisch
+        aan het einde van deze methode — dan blijft het netto-effect
+        gelijk aan de oude flow.
 
-        @param dev_mode: If provided, overrides config setting. Otherwise reads from config.
-        @return: True if successful, False if errors occurred
+        @param dev_mode: If provided, overrides config setting.
+        @param inst_nrs: When given, restrict the sync to schools whose
+            ``inst_nr`` is in the list. ``None`` = all SAP-provider schools.
+        @param phases: When given, override the per-phase config flags.
+        @param trigger: 'cron' of 'manual' — gebruikt in run-record.
+        @param require_review: Manueel vinkje uit de wizard — forceert
+            de review-UI ongeacht drempel.
+        @param auto_commit_on_no_breach: Default True. Op False zet je
+            uitsluitend de planned-changes klaar zonder commit (handig
+            voor tests/dry-run).
+        @return: De sync.run-record (bij analyse-succes) of False bij fout.
         """
         # Load configuration
         config = self.env['myschool.informat.service.config'].get_config()
         if dev_mode is None:
             dev_mode = config.dev_mode
 
-        _logger.info("SAPSYNC-001: Starting Informat sync process (dev_mode=%s)", dev_mode)
+        # Per-phase override resolution. ``config`` is shadowed by an
+        # in-memory namespace exposing the same attribute names so the
+        # downstream code reads ``config.sync_*`` unchanged.
+        if phases:
+            class _PhaseOverride:
+                pass
+            ov = _PhaseOverride()
+            ov.dev_mode = config.dev_mode
+            for attr in ('sync_roles', 'sync_employees',
+                         'sync_classes', 'sync_students'):
+                ov_val = phases.get(attr) if attr in phases else getattr(
+                    config, attr)
+                setattr(ov, attr, bool(ov_val))
+            config = ov
+
+        scope_msg = ''
+        if inst_nrs:
+            scope_msg += f', inst_nrs={inst_nrs}'
+        if phases:
+            scope_msg += f', phases={phases}'
+        _logger.info(
+            "SAPSYNC-001: Starting Informat sync process (dev_mode=%s%s)",
+            dev_mode, scope_msg)
+        # Stash the filter on the recordset's context so the
+        # underlying ``_get_*_from_informat`` helpers can read it
+        # without changing every signature individually.
+        self = self.with_context(informat_inst_nrs=tuple(inst_nrs)
+                                  if inst_nrs else None)
 
         SysEvent = self.env.get('myschool.sys.event.service')
         SysEvent.create_sys_event("SAPSYNC-001", "Start Syncing information", True)
 
+        # Blocking-check eerst — vóór start_run, want start_run zou
+        # bestaande awaiting_approval-runs als 'cancelled' kunnen
+        # markeren via de supersede-logica.
+        # ``sap_sync_trigger`` zegt aan _check_blocking_tasks of we via
+        # cron of manueel draaien.
+        self = self.with_context(sap_sync_trigger=trigger)
+        if self._check_blocking_tasks():
+            return False
+
+        # Open een sync.run en hou hem mee op de context — _create_betask
+        # leest die en routeert zijn output naar de safeguard-pijplijn
+        # (sync.change) in plaats van rechtstreeks naar betask.
+        sap_service = self.env['myschool.sap.sync.service']
+        run = sap_service.start_run(
+            trigger=trigger,
+            inst_nrs=inst_nrs,
+            phases=phases,
+            require_review=require_review,
+        )
+        self = self.with_context(sap_sync_run_id=run.id)
+
         try:
             # Ensure storage directories exist
             if not self._ensure_storage_directories(dev_mode):
+                run.write({'state': 'failed',
+                           'finished_at': fields.Datetime.now(),
+                           'error_description': 'storage dirs niet ok'})
                 return False
 
             # Calculate timestamp for last sync (15 days ago)
             timestamp_latest_sync = (datetime.now() - timedelta(days=15)).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-
-            # Check for blocking tasks
-            if self._check_blocking_tasks():
-                return False
 
             # =====================================================
             # PHASE 1a: Role Processing
@@ -303,8 +377,8 @@ class InformatService(models.AbstractModel):
 
             if config.sync_roles and all_imported_employee_assignments is not None:
                 self._analyze_employee_assignments_and_create_roles(all_imported_employee_assignments)
-                self._process_betasks('DB', 'ROLE', 'ADD')
-                self._process_betasks('DB', 'ROLE', 'UPD')
+                # Geen tussen-commit meer: commit gebeurt collectief
+                # aan het einde via sap_sync_service.finalise_analysis.
 
             # =====================================================
             # PHASE 1b: Employee Processing
@@ -315,14 +389,31 @@ class InformatService(models.AbstractModel):
 
                 if all_imported_employees is None:
                     self._create_sys_error("SAPSYNC-900", "Error in getEmployeesFromInformat")
-                    return False
+                    # Niet meer hard return: laat de andere fasen en de
+                    # finalise-stap nog draaien zodat de run zichtbaar
+                    # blijft in het overzicht (state=failed met details).
+                    run.write({
+                        'state': 'failed',
+                        'finished_at': fields.Datetime.now(),
+                        'error_description': (run.error_description or '')
+                            + 'Phase Employees: API-fetch faalde — '
+                              'controleer SI CurrentSchoolYear + '
+                              'SapInformatJSONApiId/Password.\n',
+                    })
+                    return run
 
                 if not self._sync_employees(
                     all_imported_employees,
                     all_imported_employee_assignments
                 ):
                     self._create_sys_error("SAPSYNC-900", "Error in _sync_employees")
-                    return False
+                    run.write({
+                        'state': 'failed',
+                        'finished_at': fields.Datetime.now(),
+                        'error_description': (run.error_description or '')
+                            + 'Phase Employees: _sync_employees faalde.\n',
+                    })
+                    return run
 
             # =====================================================
             # PHASE 2a: Class (Org) Processing
@@ -337,12 +428,18 @@ class InformatService(models.AbstractModel):
 
                 if all_imported_registrations is None:
                     self._create_sys_error("SAPSYNC-900", "Error in getRegistrationsFromInformat")
-                    return False
+                    run.write({
+                        'state': 'failed',
+                        'finished_at': fields.Datetime.now(),
+                        'error_description': (run.error_description or '')
+                            + 'Phase Classes/Students: registrations-fetch '
+                              'faalde — controleer SI CurrentSchoolYear.\n',
+                    })
+                    return run
 
             if config.sync_classes and all_imported_registrations is not None:
                 self._analyze_student_data_and_create_org_tasks(all_imported_registrations)
-                self._process_betasks('DB', 'ORG', 'ADD')
-                self._process_betasks('DB', 'ORG', 'UPD')
+                # Geen tussen-commit meer.
 
             # =====================================================
             # PHASE 2b: Student Processing
@@ -353,28 +450,54 @@ class InformatService(models.AbstractModel):
 
                 if all_imported_students is None:
                     self._create_sys_error("SAPSYNC-900", "Error in getStudentsFromInformat")
-                    return False
+                    run.write({
+                        'state': 'failed',
+                        'finished_at': fields.Datetime.now(),
+                        'error_description': (run.error_description or '')
+                            + 'Phase Students: students-fetch faalde.\n',
+                    })
+                    return run
 
                 # Process Students (needs registrations too)
                 if all_imported_registrations is not None:
                     self._analyze_data_and_create_student_tasks(all_imported_registrations, all_imported_students)
-                    self._process_betasks('DB', 'PERSON', 'ADD')
-                    self._process_betasks('DB', 'PERSON', 'UPD')
-
-
+                    # Tussen-commits per fase zijn vervallen — alles
+                    # passeert via sync.change-records en wordt aan het
+                    # einde collectief gecommit (of opgeschort op de
+                    # drempel-check).
 
                 # Process Relations
-                # self._analyze_data_and_create_relation_tasks(all_imported_students)   TODO: reactivate when parents need to be able to login
-                # self._process_betasks('DB', 'RELATION', 'ADD')
-                # self._process_betasks('DB', 'RELATION', 'UPD')
+                # self._analyze_data_and_create_relation_tasks(all_imported_students)
+                # ^ TODO: reactivate when parents need to be able to login
 
+            # Sluit de analyse-fase af. Drempel-check + (eventueel) auto-
+            # commit gebeurt hier; betask-cascade (LDAP/CLOUD/...) wordt
+            # opgepikt door commit_run zelf via process_all_pending.
+            try:
+                result = sap_service.finalise_analysis(
+                    run, auto_commit_on_no_breach=auto_commit_on_no_breach)
+            except Exception:
+                _logger.exception('SAPSYNC: finalise_analysis faalde')
+                run.write({'state': 'failed',
+                           'finished_at': fields.Datetime.now(),
+                           'error_description': traceback.format_exc()})
+                self._create_sys_error("SAPSYNC-900",
+                    f"Finalise error: {traceback.format_exc()}")
+                return False
 
+            self._create_sys_event(
+                "SAPSYNC",
+                f"Analyse klaar — state={result.get('state')}, "
+                f"breach={result.get('breach')}, "
+                f"committed={result.get('committed')}")
+            return run
 
-            self._create_sys_event("SAPSYNC", "All tasks processed without errors")
-            return True
-            
         except Exception as e:
             self._create_sys_error("SAPSYNC-900", f"Executesync error: {traceback.format_exc()}")
+            if run.exists():
+                run.write({'state': 'failed',
+                           'finished_at': fields.Datetime.now(),
+                           'error_description': traceback.format_exc()})
             return False
 
     @api.model
@@ -392,25 +515,22 @@ class InformatService(models.AbstractModel):
         
         try:
             timestamp_sync_start = datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-            
-            # Get timestamp of latest sync from config
-            ConfigItem = self.env['myschool.config.item']
-            timestamp_config = ConfigItem.search([
-                ('name', '=', 'SapSyncLastTimestamp')
-            ], limit=1)
-            
-            timestamp_latest_sync = ''
-            if timestamp_config:
-                timestamp_latest_sync = timestamp_config.string_value or ''
-            
+
+            # SapSyncLastTimestamp is mutable state (de timestamp van de
+            # vorige differentiële sync), geen instelling — past niet bij
+            # Settings Items. We bewaren 'm in ir.config_parameter onder
+            # de gepreffixte key zodat hij niet botst met andere modules.
+            ICP = self.env['ir.config_parameter'].sudo()
+            CONFIG_KEY = 'myschool.informat.sap_sync_last_timestamp'
+            timestamp_latest_sync = ICP.get_param(CONFIG_KEY, default='')
+
             # Perform the sync operations
             self._get_registrations_from_informat(timestamp_latest_sync, dev_mode)
             self._get_students_from_informat(timestamp_latest_sync, '', dev_mode)
-            
+
             # Update the timestamp
-            if timestamp_config:
-                timestamp_config.string_value = timestamp_sync_start
-            
+            ICP.set_param(CONFIG_KEY, timestamp_sync_start)
+
             self._create_sys_event("SAPSYNC", "Differential sync completed")
             return True
             
@@ -422,7 +542,44 @@ class InformatService(models.AbstractModel):
     # Data Retrieval Methods
     # =========================================================================
 
-    def _get_bearer_token(self, org_short_name: str = 'olvp') -> Optional[str]:
+    def _informat_schools(self, Org):
+        """Return the schools to sync.
+
+        Default: every active org with ``sap_provider='1'`` (= INFORMAT).
+        When ``execute_sync`` was called with an ``inst_nrs`` filter,
+        the resulting recordset is narrowed to that subset — used by
+        the per-school sync button to debug a single institute in
+        isolation.
+        """
+        domain = [('sap_provider', '=', '1')]
+        inst_nrs = self.env.context.get('informat_inst_nrs')
+        if inst_nrs:
+            domain.append(('inst_nr', 'in', list(inst_nrs)))
+        return Org.search(domain)
+
+    def _build_informat_headers(self, bearer_token: str,
+                                  institute_no: str) -> dict:
+        """Build the mandatory header set for Leerlingen WEB API calls.
+
+        Per the v1.23 implementation guide every request must carry:
+          - Authorization: BEARER <token>     (uppercase keyword)
+          - InstituteNo:   <numeric institute>
+          - Timestamp:     <UTC datetime ISO-8601>
+          - Accept:        application/json
+        The Timestamp header was previously missing — older versions
+        of the API tolerated this, the current one rejects it (or
+        returns 404 on the wrong URL plus 401 on auth, equally bad).
+        """
+        return {
+            'Authorization': f'BEARER {bearer_token}',
+            'InstituteNo': institute_no,
+            'Timestamp': datetime.utcnow().strftime(
+                '%Y-%m-%dT%H:%M:%S.000'),
+            'Accept': 'application/json',
+        }
+
+    def _get_bearer_token(self, org_short_name: str = 'olvp',
+                          scopes: Optional[List[str]] = None) -> Optional[str]:
         """
         Retrieve OAuth2 Bearer token from identity server.
         
@@ -430,32 +587,59 @@ class InformatService(models.AbstractModel):
         @return: Bearer token string or None if failed
         """
         try:
-            ConfigItem = self.env['myschool.config.item']
-            
-            api_id = ConfigItem.get_ci_value_by_org_and_name(org_short_name, 'SapInformatJSONApiId')
-            api_password = ConfigItem.get_ci_value_by_org_and_name(org_short_name, 'SapInformatJSONApiPassword')
-            
+            SettingsItem = self.env['myschool.settings.item']
+            Org = self.env['myschool.org']
+            org = Org.search(
+                [('name_short', '=', org_short_name)], limit=1)
+            if not org:
+                _logger.error(
+                    "Org with name_short=%r not found", org_short_name)
+                return None
+
+            api_id = SettingsItem.get('SapInformatJSONApiId', org=org)
+            api_password = SettingsItem.get(
+                'SapInformatJSONApiPassword', org=org)
+
             if not api_id or not api_password:
-                _logger.error("API credentials not found in config items")
+                _logger.error(
+                    "API credentials niet gevonden voor org=%s",
+                    org_short_name)
                 return None
             
+            data = {
+                'client_id': api_id,
+                'client_secret': api_password,
+                'grant_type': 'client_credentials',
+            }
+            # Per spec, the token must carry the scopes for the
+            # institutes the caller intends to query — multiple scopes
+            # are space-separated. Without a scope param the
+            # identityserver returns a token without permissions for
+            # the leerlingen API, so subsequent calls 401/404.
+            if scopes:
+                data['scope'] = ' '.join(scopes) if isinstance(
+                    scopes, (list, tuple)) else scopes
             response = requests.post(
                 self.IDENTITY_SERVER_URL,
                 headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                data={
-                    'client_id': api_id,
-                    'client_secret': api_password,
-                    'grant_type': 'client_credentials'
-                },
+                data=data,
                 timeout=30
             )
-            
+
             if response.status_code != 200:
-                _logger.error(f"Problem retrieving Bearer token: {response.status_code}")
+                body = (response.text or '')[:500]
+                _logger.error(
+                    'Problem retrieving Bearer token: HTTP %s on %s — body: %s',
+                    response.status_code, self.IDENTITY_SERVER_URL, body)
                 return None
-            
+
             token_data = response.json()
-            return token_data.get('access_token')
+            access_token = token_data.get('access_token')
+            if not access_token:
+                _logger.error(
+                    'Bearer token response missing access_token. '
+                    'Keys: %s', list(token_data.keys()))
+            return access_token
             
         except Exception as e:
             _logger.error(f"Error getting bearer token: {e}")
@@ -477,22 +661,45 @@ class InformatService(models.AbstractModel):
         self._create_sys_event("SAPSYNC-001", "Start importing Registration information")
         
         try:
-            ConfigItem = self.env['myschool.config.item']
-            current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
-            
+            current_school_year = self.env['myschool.settings.item'].get(
+                'CurrentSchoolYear')
+            _logger.info(
+                'SAPSYNC-001: CurrentSchoolYear=%r, dev_mode=%s',
+                current_school_year, dev_mode)
+            if not current_school_year:
+                self._create_sys_error(
+                    "BETASK-900",
+                    f"{procedure_name}: SI 'CurrentSchoolYear' (global) "
+                    f"is empty — registrations API call cannot be built")
+
             timestamp_string = f"&changedSince={timestamp}" if timestamp else ""
-            
-            # Get bearer token if not in dev mode
+
+            # Get all schools with INFORMAT as SAP provider — needed
+            # *before* the token request so we can compose the right
+            # multi-scope token in one round-trip instead of one token
+            # per school.
+            Org = self.env['myschool.org']
+            schools = self._informat_schools(Org)
+            _logger.info(
+                'SAPSYNC-001: %d school(s) with sap_provider=INFORMAT',
+                len(schools))
+
+            # Get bearer token with all required scopes
             bearer_token = None
             if not dev_mode:
-                bearer_token = self._get_bearer_token()
+                scopes = [
+                    f'api_informat_sas_leerlingen.leerlingen.{s.inst_nr}'
+                    for s in schools if s.inst_nr]
+                bearer_token = self._get_bearer_token(scopes=scopes)
                 if not bearer_token:
+                    self._create_sys_error(
+                        "BETASK-900",
+                        f"{procedure_name}: bearer token request returned None")
                     return None
-            
-            # Get all schools with INFORMAT as SAP provider
-            Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])
-            
+                _logger.info(
+                    'SAPSYNC-001: bearer token acquired (length=%d, scopes=%d)',
+                    len(bearer_token), len(scopes))
+
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing data for {school.inst_nr}")
                 
@@ -522,27 +729,66 @@ class InformatService(models.AbstractModel):
                         dev_mode=False
                     )
                     
+                    url = (f"{self.REGISTRATIONS_API_URL}"
+                           f"?schoolYear={current_school_year}"
+                           f"{timestamp_string}")
+                    _logger.debug(
+                        'SAPSYNC-001: GET %s (InstituteNo=%s)',
+                        url, institution_number)
                     response = requests.get(
-                        f"{self.STUDENTS_API_URL}/registrations?schoolYear={current_school_year}{timestamp_string}",
-                        headers={
-                            'Authorization': f'Bearer {bearer_token}',
-                            'InstituteNo': institution_number,
-                            'Accept': 'application/json'
-                        },
+                        url,
+                        headers=self._build_informat_headers(
+                            bearer_token, institution_number),
                         timeout=60
                     )
-                    
+
                     if response.status_code != 200:
-                        self._create_sys_error("BETASK-900", f"{procedure_name}: Problem retrieving Registration Data")
+                        body = (response.text or '')[:500]
+                        self._create_sys_error(
+                            "BETASK-900",
+                            f"{procedure_name}: HTTP {response.status_code} "
+                            f"on {url} (InstituteNo={institution_number}, "
+                            f"schoolYear={current_school_year}). "
+                            f"Body: {body}")
+                        _logger.warning(
+                            '[INFORMAT] registrations call FAILED — '
+                            'inst_nr=%s status=%s url=%s body=%s',
+                            institution_number, response.status_code,
+                            url, body)
                         continue
-                    
+
                     if response.text and response.text != '[]':
                         # Write to file
                         self._write_json_file(json_file_path, response.text)
-                        
-                        # Parse and add to results
-                        registrations_data = response.json()
+
+                        # Parse and add to results.
+                        #
+                        # Per the v1.23 spec the response is wrapped:
+                        #     {"registrations": [{...}, {...}]}
+                        # Earlier code expected a bare top-level array
+                        # (matching the dev-mode JSON files in
+                        # ``storage/sapimport/dev - full/``), which is
+                        # why production responses crashed with
+                        # ``'str' object has no attribute 'get'``
+                        # when the loop iterated dict keys instead of
+                        # the registrations array. Tolerate both
+                        # shapes so dev-files keep working.
+                        payload = response.json()
+                        if isinstance(payload, dict):
+                            registrations_data = (
+                                payload.get('registrations')
+                                or payload.get('data') or [])
+                        else:
+                            registrations_data = payload or []
+                        _logger.info(
+                            'SAPSYNC-001: %d registration(s) for InstituteNo=%s',
+                            len(registrations_data), institution_number)
                         for registration in registrations_data:
+                            if not isinstance(registration, dict):
+                                _logger.warning(
+                                    'SAPSYNC-001: skipping non-dict '
+                                    'registration entry: %r', registration)
+                                continue
                             persoon_id = registration.get('persoonId')
                             if persoon_id:
                                 all_registrations[persoon_id] = json.dumps(registration)
@@ -573,20 +819,23 @@ class InformatService(models.AbstractModel):
         try:
             timestamp_string = f"&changedSince={timestamp}" if timestamp else ""
             student_id_string = f"/{student_id}" if student_id else ""
-            
-            # Get bearer token if not in dev mode
-            bearer_token = None
-            if not dev_mode:
-                bearer_token = self._get_bearer_token()
-                if not bearer_token:
-                    return None
-            
-            ConfigItem = self.env['myschool.config.item']
-            current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
-            
+
+            current_school_year = self.env['myschool.settings.item'].get(
+                'CurrentSchoolYear')
+
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])
+            schools = self._informat_schools(Org)
+
+            # Get bearer token with all required scopes
+            bearer_token = None
+            if not dev_mode:
+                scopes = [
+                    f'api_informat_sas_leerlingen.leerlingen.{s.inst_nr}'
+                    for s in schools if s.inst_nr]
+                bearer_token = self._get_bearer_token(scopes=scopes)
+                if not bearer_token:
+                    return None
             
             for school in schools:
                 _logger.info(f"Start importing student data for {school.inst_nr}")
@@ -621,11 +870,8 @@ class InformatService(models.AbstractModel):
                     
                     response = requests.get(
                         f"{self.STUDENTS_API_URL}{student_id_string}?schoolYear={current_school_year}{timestamp_string}",
-                        headers={
-                            'Authorization': f'Bearer {bearer_token}',
-                            'InstituteNo': institution_number,
-                            'Accept': 'application/json'
-                        },
+                        headers=self._build_informat_headers(
+                            bearer_token, institution_number),
                         timeout=60
                     )
                     
@@ -669,11 +915,11 @@ class InformatService(models.AbstractModel):
         self._create_sys_event("SAPSYNC-001", "Start importing Employee information")
         
         try:
-            ConfigItem = self.env['myschool.config.item']
-            current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
-            
+            current_school_year = self.env['myschool.settings.item'].get(
+                'CurrentSchoolYear')
+
             timestamp_string = f"&changedSince={timestamp}" if timestamp else ""
-            
+
             # Get bearer token if not in dev mode
             bearer_token = None
             if not dev_mode:
@@ -683,7 +929,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])  #todo: was INFORMAT - how to use string iso index
+            schools = self._informat_schools(Org)  #todo: was INFORMAT - how to use string iso index
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing employee data for {school.inst_nr}")
@@ -762,9 +1008,9 @@ class InformatService(models.AbstractModel):
         self._create_sys_event("SAPSYNC-001", "Start importing Employee Assignment information")
         
         try:
-            ConfigItem = self.env['myschool.config.item']
-            current_school_year = ConfigItem.get_ci_value_by_org_and_name('olvp', 'CurrentSchoolYear')
-            
+            current_school_year = self.env['myschool.settings.item'].get(
+                'CurrentSchoolYear')
+
             # Get bearer token if not in dev mode
             bearer_token = None
             if not dev_mode:
@@ -774,7 +1020,7 @@ class InformatService(models.AbstractModel):
             
             # Get all schools with INFORMAT as SAP provider
             Org = self.env['myschool.org']
-            schools = Org.search([('sap_provider', '=', '1')])
+            schools = self._informat_schools(Org)
             
             for school in schools:
                 self._create_sys_event("SAPSYNC-001", f"Start importing assignment data for {school.inst_nr}")
@@ -914,7 +1160,9 @@ class InformatService(models.AbstractModel):
             # =====================================================
             self._create_sys_event("BETASK-001", "Phase 2: Syncing PPSBR PropRelation objects")
 
-            if not self._sync_employee_proprelations(all_imported_employee_assignments):
+            if not self._sync_employee_proprelations(
+                    all_imported_employee_assignments,
+                    all_imported_employee_data):
                 self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 2 (PPSBR sync)")
                 return False
 
@@ -941,6 +1189,43 @@ class InformatService(models.AbstractModel):
             # Process ODOO-GROUPMEMBER tasks (adds/removes users from groups)
             self._process_betasks('ODOO', 'GROUPMEMBER', 'ADD')
             self._process_betasks('ODOO', 'GROUPMEMBER', 'REMOVE')
+
+            # =====================================================
+            # PHASE 3: Sync Active Directory / LDAP
+            # =====================================================
+            # The DB-PROPRELATION-ADD cascade queues LDAP tasks
+            # (USER/ADD, GROUP/ADD, GROUPMEMBER/ADD) but does not
+            # run them inline — see ``_emit_ldap_user_add_for_person``
+            # for the why (PPSBR settles after multiple ADDs; user
+            # must be created at the highest-priority role's OU). We
+            # therefore drain the LDAP queue here, in dependency
+            # order:
+            #   3a. ORG  → create OUs first so user/group DNs resolve.
+            #   3b. USER → ADD/UPD before DEACT/DEL so a same-cycle
+            #       create+modify still results in a present account.
+            #   3c. GROUP→ create/update before adding members.
+            #   3d. GROUPMEMBER → finally add/remove members.
+            self._create_sys_event(
+                "BETASK-001", "Phase 3: Syncing Active Directory")
+
+            # 3a — OUs
+            self._process_betasks('LDAP', 'ORG', 'ADD')
+
+            # 3b — Users
+            self._process_betasks('LDAP', 'USER', 'ADD')
+            self._process_betasks('LDAP', 'USER', 'UPD')
+            self._process_betasks('LDAP', 'USER', 'DEACT')
+            self._process_betasks('LDAP', 'USER', 'DEL')
+
+            # 3c — Groups
+            self._process_betasks('LDAP', 'GROUP', 'ADD')
+            self._process_betasks('LDAP', 'GROUP', 'UPD')
+            self._process_betasks('LDAP', 'GROUP', 'DEACT')
+            self._process_betasks('LDAP', 'GROUP', 'DEL')
+
+            # 3d — Group memberships
+            self._process_betasks('LDAP', 'GROUPMEMBER', 'ADD')
+            self._process_betasks('LDAP', 'GROUPMEMBER', 'REMOVE')
 
             self._create_sys_event("BETASK-001", f"{procedure_name} completed successfully")
             return True
@@ -1263,39 +1548,102 @@ class InformatService(models.AbstractModel):
         return current_org
 
     def _post_sync_flag_pending_employees(self):
-        """Sweep at end of employee-sync: every active sap-managed
-        employee with no remaining active proprelations starts the
-        suspend-clock (``deactivation_pending_since``). Idempotent —
-        skips employees that are already pending or that still hold
-        active relations.
+        """Sweep at end of employee-sync. Reconciles the suspend-clock
+        with the final post-Phase-2 state, in both directions.
+
+        Definition of "actively employed" (must match the per-task
+        decision in ``_update_person_from_employee_json``): the
+        employee has at least one **active assignment in
+        PersonDetails** *or* at least one **active proprelation**.
+        Either signal is enough — a brand-new employee imported
+        without ``hoofd_ambt`` has assignments but no PPSBR yet, and
+        must not be dropped into suspend just because the role-derived
+        proprelation is still missing.
+
+        * **Enter suspend** — active sap-managed employee with neither
+          active assignments nor active proprelations and
+          ``deactivation_pending_since=False`` starts the
+          suspend-clock (set to today).
+        * **Leave suspend** — active sap-managed employee with
+          assignments or proprelations restored, but still carrying a
+          stale ``deactivation_pending_since`` — gets the field
+          cleared so the lifecycle cron does not eventually deactivate
+          a person whose state has already returned to "active".
+
+        Idempotent in both directions.
         """
         Person = self.env['myschool.person'].with_context(skip_manual_audit=True)
-        PropRelation = self.env['myschool.proprelation']
+        PropRelation = self.env['myschool.proprelation'].with_context(active_test=False)
 
-        candidates = Person.search([
-            ('is_active', '=', True),
-            ('automatic_sync', '=', True),
-            ('person_type_id.name', '=', 'EMPLOYEE'),
-            ('deactivation_pending_since', '=', False),
-        ])
-        today = fields.Date.context_today(self)
-        flagged = 0
-        for person in candidates:
-            has_active = PropRelation.search_count([
+        def _has_active_proprel(person):
+            return bool(PropRelation.search_count([
                 '|', '|',
                 ('id_person', '=', person.id),
                 ('id_person_parent', '=', person.id),
                 ('id_person_child', '=', person.id),
                 ('is_active', '=', True),
-            ])
-            if not has_active:
-                person.write({'deactivation_pending_since': today})
-                flagged += 1
+            ]))
+
+        def _ever_had_proprel(person):
+            """True iff any proprelation ever existed for this person
+            (active or deactivated). Distinguishes a brand-new import
+            (never linked to a school → "dormant") from a real
+            transition active→inactive (DEACT'd proprelations remain
+            as history → "in suspend"). Only the latter should start
+            the suspend-clock."""
+            return bool(PropRelation.search_count([
+                '|', '|',
+                ('id_person', '=', person.id),
+                ('id_person_parent', '=', person.id),
+                ('id_person_child', '=', person.id),
+            ]))
+
+        today = fields.Date.context_today(self)
+
+        # Direction 1 — enter suspend. Only flag persons whose
+        # proprelation history shows they were once linked to a school
+        # (active or DEACT'd). A brand-new import without any
+        # proprelations is dormant, not in suspend.
+        to_flag = Person.search([
+            ('is_active', '=', True),
+            ('automatic_sync', '=', True),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+            ('deactivation_pending_since', '=', False),
+        ])
+        flagged = 0
+        for person in to_flag:
+            if _has_active_proprel(person):
+                continue
+            if not _ever_had_proprel(person):
+                continue
+            person.write({'deactivation_pending_since': today})
+            flagged += 1
         if flagged:
             self._create_sys_event(
                 "BETASK-001",
                 f"Post-sync sweep: {flagged} employee(s) entered suspend "
                 f"pipeline (deactivation_pending_since={today}).")
+
+        # Direction 2 — leave suspend (recovery). When an active
+        # proprelation reappears (Phase 2 restored a PPSBR, or a
+        # manual relation was added), the suspend-clock is stale.
+        to_clear = Person.search([
+            ('is_active', '=', True),
+            ('automatic_sync', '=', True),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+            ('deactivation_pending_since', '!=', False),
+        ])
+        cleared = 0
+        for person in to_clear:
+            if _has_active_proprel(person):
+                person.write({'deactivation_pending_since': False})
+                cleared += 1
+        if cleared:
+            self._create_sys_event(
+                "BETASK-001",
+                f"Post-sync sweep: {cleared} employee(s) left suspend "
+                f"pipeline (active assignments restored — "
+                f"deactivation_pending_since cleared).")
 
     def _deactivate_employee_for_instnr(self, person, inst_nr: str, employee_json: dict = None):
         """
@@ -1338,31 +1686,10 @@ class InformatService(models.AbstractModel):
         if not proprelations:
             self._create_sys_event("BETASK-001",
                 f"No active proprelations found for {person.name} at instNr {inst_nr}")
-            # Check if person has any remaining active proprelations
-            remaining = PropRelation.search([
-                ('id_person', '=', person.id),
-                ('is_active', '=', True)
-            ], limit=1)
-            if not remaining and person.is_active:
-                # No active proprelations anywhere — start the suspend-
-                # clock instead of deactivating immediately. The lifecycle
-                # cron flips is_active and queues LDAP/USER/DEL once the
-                # EmployeeSuspendPeriod has elapsed.
-                if not person.deactivation_pending_since:
-                    person.with_context(skip_manual_audit=True).write({
-                        'deactivation_pending_since': fields.Date.context_today(self),
-                    })
-                    self._create_sys_event(
-                        "BETASK-001",
-                        f"No active proprelations for {person.name} — "
-                        f"deactivation_pending_since set; account suspends "
-                        f"after EmployeeSuspendPeriod.")
-                else:
-                    self._create_sys_event(
-                        "BETASK-001",
-                        f"No active proprelations for {person.name} — "
-                        f"deactivation_pending_since already set on "
-                        f"{person.deactivation_pending_since}; nothing to do.")
+            # The post-sync sweep is the single source of truth for
+            # ``deactivation_pending_since``. It runs at the end of
+            # ``_run_employee_sync`` with the final post-Phase-2 state
+            # and applies the transition-only rule.
             return
 
         # Create DEACT tasks for each proprelation
@@ -1385,7 +1712,11 @@ class InformatService(models.AbstractModel):
     # PHASE 2: PropRelation Synchronization (UPDATED)
     # =========================================================================
 
-    def _sync_employee_proprelations(self, all_imported_employee_assignments: Dict[str, str]) -> bool:
+    def _sync_employee_proprelations(
+            self,
+            all_imported_employee_assignments: Dict[str, str],
+            all_imported_employee_data: Optional[Dict[str, str]] = None,
+    ) -> bool:
         """
         Phase 2: Synchronize PropRelation objects (PPSBR) for active employees.
 
@@ -1400,7 +1731,26 @@ class InformatService(models.AbstractModel):
           - CREATE new PPSBR for new assignments
           - DEACTIVATE PPSBR for removed assignments
 
+        Per-instnr deactivation guard
+        ------------------------------
+        Phase 1 (``_sync_employee_persons``) calls
+        ``_deactivate_employee_for_instnr`` for every (person_uuid, inst_nr)
+        where ``should_deactivate_instnr`` is True (pension > 1 month past,
+        ``isActive=false``, or ``isOverleden``). Those queue
+        PROPRELATION/DEACT tasks. Without the guard below, Phase 2 would
+        — using the very same assignments — queue PROPRELATION/ADD tasks
+        that get processed *before* the DEACT tasks (line 930 vs 932 in
+        ``_sync_employees``). The DEACT'd PPSBRs would silently be
+        replaced by fresh ones and the suspend pipeline never engages.
+
+        We therefore precompute the set of ``(person_uuid, inst_nr)``
+        tuples that Phase 1 flagged and skip them here.
+
         @param all_imported_employee_assignments: Dict with personId&instNr as key, assignment JSON as value
+        @param all_imported_employee_data: Dict with personId&instNr as key, employee JSON as value.
+            Used to recompute the per-instnr deactivation flag so Phase 2
+            does not re-create PPSBRs that Phase 1 has just queued for
+            DEACT.
         @return: True if successful
         """
         procedure_name = '_sync_employee_proprelations'
@@ -1421,6 +1771,35 @@ class InformatService(models.AbstractModel):
             today = datetime.now().date()
             one_month_ago = today - relativedelta(months=1)
             one_week_ago = today - relativedelta(weeks=1)
+
+            # Collect (person_uuid, inst_nr) pairs Phase 1 flagged for
+            # deactivation. We re-derive this here from the same
+            # employee_data instead of threading state through Phase 1
+            # — keeps the two phases independent and the rule visible
+            # in one place.
+            deactivated_keys = set()
+            if all_imported_employee_data:
+                for emp_key, emp_value in all_imported_employee_data.items():
+                    parts = emp_key.split('&')
+                    if len(parts) != 2:
+                        continue
+                    p_uuid, p_inst = parts[0], parts[1]
+                    try:
+                        emp_json = json.loads(emp_value)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    is_active_import = emp_json.get('isActive', True)
+                    is_overleden = emp_json.get('isOverleden', False)
+                    pension_date = self._parse_date_safe(emp_json.get('pensioendatum'))
+                    if ((not is_active_import)
+                            or is_overleden
+                            or (pension_date and pension_date < one_month_ago)):
+                        deactivated_keys.add((p_uuid, p_inst))
+            if deactivated_keys:
+                self._create_sys_event(
+                    "BETASK-001",
+                    f"Phase 2 will skip {len(deactivated_keys)} (person, "
+                    f"inst_nr) pair(s) flagged for deactivation in Phase 1.")
 
             # -----------------------------------------------------------------
             # Get PropRelation types
@@ -1534,6 +1913,16 @@ class InformatService(models.AbstractModel):
                         f"Person {person.name}: NO imported assignments found")
 
                 for inst_nr, assignments in imported_assignments.items():
+                    # Skip inst_nrs Phase 1 already flagged for
+                    # deactivation — see the docstring's "Per-instnr
+                    # deactivation guard" section.
+                    if (person_uuid, inst_nr) in deactivated_keys:
+                        self._create_sys_event(
+                            "BETASK-DEBUG",
+                            f"Person {person.name} @ inst_nr {inst_nr}: "
+                            f"skipped in Phase 2 (Phase 1 queued DEACT).")
+                        continue
+
                     # Find the school org for this instNr
                     school_org = Org.search([
                         ('inst_nr', '=', inst_nr),
@@ -1716,6 +2105,58 @@ class InformatService(models.AbstractModel):
                         self._create_sys_event("BETASK-001",
                             f"PPSBR DEACT task for {person.name}, ppsbr_id: {ppsbr.id}, org: {ppsbr.id_org.name if ppsbr.id_org else 'N/A'}")
 
+                # -----------------------------------------------------
+                # Master PPSBR lifecycle check
+                # The main existing_ppsbr loop above filters
+                # automatic_sync=True and so never sees master records
+                # (is_master=True forces automatic_sync=False — see
+                # proprelation.py). A master must still be deactivated
+                # when its underlying Informat assignment disappears,
+                # otherwise the master keeps overriding PERSON-TREE
+                # placement for a role the person no longer holds.
+                # The PROPRELATION/DEACT cascade re-runs
+                # _update_person_tree_position so priority-based
+                # selection takes over automatically.
+                # -----------------------------------------------------
+                master_ppsbrs = PropRelation.search([
+                    ('id_person', '=', person.id),
+                    ('proprelation_type_id', '=', ppsbr_type.id),
+                    ('is_active', '=', True),
+                    ('is_master', '=', True),
+                ])
+                for master in master_ppsbrs:
+                    master_role_id = master.id_role.id if master.id_role else None
+                    if master_role_id and master_role_id == employee_role_id:
+                        continue
+                    master_key = (
+                        f"{master.id_person.id}_"
+                        f"{master.id_org.id if master.id_org else ''}_"
+                        f"{master_role_id or ''}"
+                    )
+                    if master_key in processed_ppsbr_keys:
+                        continue
+                    deact_data = {
+                        'proprelation_id': master.id,
+                        'personId': person_uuid,
+                        'reason': 'Master assignment removed from import',
+                    }
+                    self._create_betask(
+                        'DB', 'PROPRELATION', 'DEACT',
+                        json.dumps(deact_data),
+                        None,
+                    )
+                    role_label = master.id_role.name if master.id_role else 'unknown'
+                    org_label = master.id_org.name if master.id_org else 'unknown'
+                    self._create_sys_error(
+                        "SYNC.MASTER.LOST",
+                        f"Master PPSBR for {person.name} "
+                        f"(role={role_label}, org={org_label}, "
+                        f"ppsbr_id={master.id}) has no matching Informat "
+                        f"assignment — deactivating. Person tree position "
+                        f"will revert to priority-based selection.",
+                        'ERROR-NONBLOCKING',
+                    )
+
             self._create_sys_event("BETASK-001", f"{procedure_name} completed")
             return True
 
@@ -1897,7 +2338,12 @@ class InformatService(models.AbstractModel):
                 school_short = _resolve_school_shortname(inst_nr)
 
                 for klas in inschr_klassen:
-                    klas_code = klas.get('klasCode', '')
+                    # Strip whitespace defensively: Informat occasionally
+                    # returns klasCode with stray trailing/leading spaces
+                    # (e.g. "l5a "). Untrimmed it leaks into name_short →
+                    # ou_fqdn_internal → AD as a ghost OU "OU=l5a\ ,..."
+                    # invisible in ADUC but real on the LDAP wire.
+                    klas_code = (klas.get('klasCode', '') or '').strip()
                     classgroup_fullname = f"{klas_code}-{school_short}" if school_short else f"{klas_code}-{inst_nr}"
 
                     # Skip if already checked
@@ -2075,9 +2521,17 @@ class InformatService(models.AbstractModel):
                     # Check for deactivation (new end date appeared)
                     if reg_end_date and not person_in_db.reg_end_date:
                         task_data = {
+                            # Both keys included so the downstream
+                            # processor (process_db_student_deact, which
+                            # reads 'persoonId' / 'personId') can find
+                            # the person. The legacy 'uuid' key was the
+                            # original spelling and is kept for tasks
+                            # that may already be in-flight.
                             'uuid': person_in_db.sap_person_uuid,
+                            'persoonId': person_in_db.sap_person_uuid,
                             'regEndDate': reg_end_date,
                             'einddatum': reg_end_date,
+                            'instelnr': registration.get('instelnr', ''),
                             'person_type': 'STUDENT',
                         }
                         self._create_betask('DB', 'PERSON', 'DEACT', json.dumps(task_data), '')
@@ -2213,7 +2667,7 @@ class InformatService(models.AbstractModel):
     def _analyze_employee_assignments_and_create_roles(self, all_assignments: Dict[str, str]) -> bool:
         """
         Analyze employee assignments and create new roles if needed.
-        
+
         For informat: just create the SapRoles via a DB-ADD-ROLE Task. When a new role is added, create a sysevent
         informing the admin that a new SAPROLE is create and that is should be linked to a BackendRole
 
@@ -2222,10 +2676,16 @@ class InformatService(models.AbstractModel):
         @return: True if successful
         """
         procedure_name = '_analyze_employee_assignments_and_create_roles'
-        
+
+        # An empty assignments dict is a valid input — it just means
+        # there are no SAP roles to discover this run (e.g. employees
+        # exist but none have an assignment yet, like step 1 of the
+        # employee testset). Log it as info, not as an error.
         if not all_assignments:
-            self._create_sys_error("BETASK-900", f"{procedure_name}: parameter is empty")
-            return False
+            self._create_sys_event(
+                "BETASK-001",
+                f"{procedure_name}: no assignments in import — nothing to analyze.")
+            return True
         
         try:
             Role = self.env['myschool.role']
@@ -2383,31 +2843,42 @@ class InformatService(models.AbstractModel):
     # =========================================================================
 
     def _check_blocking_tasks(self) -> bool:
-        """Check for system blocking tasks."""
+        """Check for system blocking tasks of openstaande safeguard-runs."""
         BeTask = self.env.get(self.BETASK_MODEL)
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
-        
+
         if not self.BETASK_MODEL or self.BETASK_TYPE_MODEL in self.env:
             _logger.warning(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
             return False
 
+        # Stap 1: SYSTEM/BLOCKINGMESSAGE betasks (oude check).
         blocking_task_type = BeTaskType.search([
             (self.BETASKTYPE_TARGET_FIELD, '=', 'SYSTEM'),
             (self.BETASKTYPE_OBJECT_FIELD, '=', 'BLOCKINGMESSAGE'),
             (self.BETASKTYPE_ACTION_FIELD, '=', 'MANUAL')
         ], limit=1)
-        
+
         if blocking_task_type:
             blocking_tasks = BeTask.search([
                 (self.BETASK_TYPE_FIELD, '=', blocking_task_type.id),
                 (self.BETASK_STATUS_FIELD, '=', self.STATUS_NEW)
             ])
-            
+
             if blocking_tasks:
-                self._create_sys_error("SAPSYNC-900", 
+                self._create_sys_error("SAPSYNC-900",
                     "A System Blocking Task is found. Please check, correct and set status to COMPLETED_OK")
                 return True
-        
+
+        # Stap 2: safeguard — geen nieuwe cron-run als er nog een vorige
+        # run wacht op goedkeuring (manueel-getriggerde runs mogen wel
+        # door, want de beheerder is aan zet).
+        if self.env.context.get('sap_sync_trigger') == 'cron' and \
+                self.env['myschool.sap.sync.service'].has_pending_approval_runs():
+            self._create_sys_error("SAPSYNC-901",
+                "Vorige SAP-sync wacht nog op goedkeuring — automatische "
+                "run wordt overgeslagen. Keur de openstaande run eerst goed.")
+            return True
+
         return False
 
     def _check_manual_role_tasks(self) -> bool:
@@ -2459,41 +2930,65 @@ class InformatService(models.AbstractModel):
 
     def _create_betask(self, target: str, obj: str, action: str, data: str, data2: str) -> Any:
         """
-        Create a BeTask record.
-        
-        @param target: Task target
-        @param obj: Task object
-        @param action: Task action
-        @param data: JSON data for the task
-        @param data2: Additional JSON data
-        @return: Created BeTask record
+        Plan een mutatie of (bij gebrek aan actieve sync.run) maak meteen
+        een BeTask aan.
+
+        In de nieuwe analyse-fase wordt deze methode aangeroepen vanuit
+        de _analyze_*-helpers. Als er een actieve ``sap_sync_run_id`` op
+        de context staat, slaan we de mutatie op als
+        ``myschool.sap.sync.change`` zodat de safeguard-/review-flow
+        beslist wanneer ze effectief een betask wordt. Zonder run-context
+        valt de methode terug op het oude pad (rechtstreekse betask) —
+        dit pad is enkel relevant voor losse aanroepen buiten een sync
+        (bv. unit-tests of legacy-code) en mag stilaan verdwijnen.
         """
-        # BeTaskService = self.env.get('myschool.betask.service')
-        # if BeTaskService and hasattr(BeTaskService, 'create_betask'):
-        #     return BeTaskService.create_betask(target, obj, action, data, data2)
-        #
-        # # Fallback: create directly
+        run_id = self.env.context.get('sap_sync_run_id')
+        if run_id:
+            try:
+                source_key, display_name = self._extract_change_identity(
+                    obj, data)
+                # ORG-records met type PERSONGROUP zijn semantisch een
+                # eigen objectklasse (klasgroepen) — splitsen helpt de
+                # review-UI om aparte drempels te tonen.
+                object_type = obj
+                if obj == 'ORG':
+                    try:
+                        jd = json.loads(data) if isinstance(data, str) else (
+                            data or {})
+                        if (jd.get('org_type') or '').upper() == 'PERSONGROUP':
+                            object_type = 'ORGGROUP'
+                    except Exception:
+                        pass
+                return self.env['myschool.sap.sync.service'] \
+                    .record_planned_change(
+                        run=self.env['myschool.sap.sync.run'].browse(run_id),
+                        object_type=object_type,
+                        action=action,
+                        source_key=source_key,
+                        display_name=display_name,
+                        payload_new=data,
+                        betask_target=target,
+                        betask_data2=data2 or None,
+                    )
+            except Exception:
+                _logger.exception(
+                    'SAP-SYNC: kon planned change niet registreren — '
+                    'fallback op directe betask')
+                # vallen door naar het legacy-pad
+
+        # ---- Legacy-pad: directe betask-creatie ----
         BeTask = self.env.get(self.BETASK_MODEL)
         BeTaskType = self.env.get(self.BETASK_TYPE_MODEL)
-        #
-        # if not BeTask or not BeTaskType:
-        #     _logger.error(f"BeTask model '{self.BETASK_MODEL}' or BeTaskType model '{self.BETASK_TYPE_MODEL}' not found")
-        #     return None
-        #
         task_type = BeTaskType.search([
             (self.BETASKTYPE_TARGET_FIELD, '=', target),
             (self.BETASKTYPE_OBJECT_FIELD, '=', obj),
             (self.BETASKTYPE_ACTION_FIELD, '=', action)
         ], limit=1)
-        
+
         if task_type:
             try:
-
                 json_data = json.loads(data)
-
-                # Default taskname
                 taskname = f"{action} {obj}"
-
                 pt = json_data.get('person_type', task_type.object).upper()
                 if pt in ('EMPLOYEE', 'STUDENT', 'PERSON'):
                     taskname = action + " " + pt + ": " + json_data.get("sortName", json_data.get("personId", json_data.get("uuid", json_data.get("persoonId", "unknown"))))
@@ -2502,7 +2997,6 @@ class InformatService(models.AbstractModel):
                 elif task_type.object == "ORG":
                     taskname = action + " " + obj + ": " + json_data.get("name", json_data.get("orgId", "unknown"))
                 elif task_type.object == "PROPRELATION":
-                    # Handle both ADD (has person_db_id) and DEACT (has proprelation_id) data structures
                     if "person_db_id" in json_data:
                         taskname = action + " " + obj + ": person_id=" + str(json_data["person_db_id"])
                     elif "proprelation_id" in json_data:
@@ -2515,20 +3009,58 @@ class InformatService(models.AbstractModel):
                     self.BETASK_STATUS_FIELD: self.STATUS_NEW,
                     self.BETASK_NAME_FIELD: taskname
                 }
-                # Only add data fields if they exist in the model
                 if self.BETASK_DATA_FIELD in BeTask._fields:
                     vals[self.BETASK_DATA_FIELD] = data
                 if data2 and self.BETASK_DATA2_FIELD in BeTask._fields:
                     vals[self.BETASK_DATA2_FIELD] = data2
-                    
+
                 return BeTask.create(vals)
             except Exception as e:
                 _logger.error(f"Error creating BeTask: {e}")
                 return None
         else:
             _logger.warning(f"BeTaskType not found for: {target}-{obj}-{action}")
-        
+
         return None
+
+    def _extract_change_identity(self, obj: str, data: str):
+        """Haal source_key + display_name uit een payload (best-effort)."""
+        try:
+            json_data = json.loads(data) if isinstance(data, str) else (
+                data or {})
+        except Exception:
+            return '', ''
+
+        pt = (json_data.get('person_type') or obj or '').upper()
+        if pt in ('EMPLOYEE', 'STUDENT', 'PERSON'):
+            return (
+                str(json_data.get('persoonId')
+                    or json_data.get('personId')
+                    or json_data.get('uuid')
+                    or ''),
+                json_data.get('sortName')
+                or json_data.get('name', '') or '',
+            )
+        if obj == 'ROLE':
+            return json_data.get('name', '') or '', json_data.get(
+                'name', '') or ''
+        if obj == 'ORG':
+            return (
+                str(json_data.get('orgId') or json_data.get('inst_nr') or ''),
+                json_data.get('name', '') or '',
+            )
+        if obj == 'PROPRELATION':
+            person_id = (
+                json_data.get('person_db_id')
+                or json_data.get('personId')
+                or '')
+            proprel_id = json_data.get('proprelation_id') or ''
+            return (
+                f'person:{person_id}' if person_id
+                else (f'proprel:{proprel_id}' if proprel_id else ''),
+                json_data.get('person_sortName', '') or '',
+            )
+        return '', ''
 
     def _create_sys_event(self, code: str, message: str) -> None:
         """Create a system event log entry."""

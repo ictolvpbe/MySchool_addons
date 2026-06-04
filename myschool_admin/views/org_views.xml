@@ -43,6 +43,16 @@
                 <header>
                     <button name="action_update_name_tree" type="object"
                             string="Update Name Tree" class="btn-secondary" icon="fa-refresh"/>
+                    <button name="action_verify_groups" type="object"
+                            string="Verify AD/Cloud groups"
+                            class="btn-secondary" icon="fa-shield"
+                            title="Ensure the AD groups + Workspace group / OU exist for this org. Idempotent."/>
+                    <button name="action_sync_this_school" type="object"
+                            string="Sync this school"
+                            class="btn-primary" icon="fa-cloud-download"
+                            invisible="sap_provider != '1' or not inst_nr"
+                            confirm="Een Informat sync uitvoeren voor enkel deze school? Dit raadpleegt de live Informat API en queueet betasks op basis van de respons."
+                            title="Run an Informat sync scoped to this school's inst_nr only — useful for debugging without touching the other schools."/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -166,6 +176,60 @@
                             </group>
                         </page>
 
+                        <!-- Tab: Settings Items — per-org waarden.
+                             Default: alleen directe waarden voor deze org.
+                             Met checkbox "Toon ook geërfde waarden" worden
+                             waarden van ORG-TREE ancestors meegetoond (waar
+                             inherit_to_children=True). Bewerken kan enkel
+                             op directe waarden — geërfde rijen tonen de
+                             ouder-org in de kolom 'Org'. -->
+                        <page string="Settings" name="settings">
+                            <div class="alert alert-light border d-flex align-items-center" role="alert">
+                                <i class="fa fa-info-circle fa-lg me-2 text-info" title="Info" role="img"/>
+                                <div>
+                                    Toont per-org SI-waarden. Zet
+                                    <em>Toon ook geërfde waarden</em> aan om
+                                    waarden te zien die deze org overerft
+                                    via de ORG-TREE; die zijn read-only —
+                                    bewerken doe je op de bron-org.
+                                </div>
+                            </div>
+                            <group>
+                                <field name="show_inherited_settings"
+                                       widget="boolean_toggle"/>
+                            </group>
+                            <field name="settings_value_ids"
+                                   invisible="show_inherited_settings"
+                                   context="{'default_org_id': id}">
+                                <list decoration-muted="not is_active">
+                                    <field name="settings_item_id"
+                                           options="{'no_create': True}"
+                                           string="Settings Item"/>
+                                    <field name="settings_key" optional="hide"/>
+                                    <field name="value_type" widget="badge" optional="show"/>
+                                    <field name="value_display" string="Waarde"/>
+                                    <field name="inherit_to_children" widget="boolean_toggle"/>
+                                    <field name="is_active" widget="boolean_toggle"/>
+                                </list>
+                            </field>
+                            <field name="effective_settings_value_ids"
+                                   invisible="not show_inherited_settings"
+                                   readonly="1">
+                                <list create="false" delete="false" edit="false"
+                                      decoration-muted="not is_active"
+                                      decoration-info="org_id and org_id != parent.id">
+                                    <field name="settings_item_id"
+                                           string="Settings Item"/>
+                                    <field name="settings_key" optional="hide"/>
+                                    <field name="value_type" widget="badge" optional="show"/>
+                                    <field name="value_display" string="Waarde"/>
+                                    <field name="org_id" string="Bron-org"/>
+                                    <field name="inherit_to_children" widget="boolean" optional="show"/>
+                                    <field name="is_active" widget="boolean"/>
+                                </list>
+                            </field>
+                        </page>
+
                         <!-- Tab: Members (only for PERSONGROUP) -->
                         <page string="Members" name="members"
                               invisible="org_type_id.name != 'PERSONGROUP'">
@@ -189,6 +253,8 @@
                                     <field name="id_person" optional="show"/>
                                     <field name="id_role" optional="show"/>
                                     <field name="id_org_parent" optional="show"/>
+                                    <field name="start_date" optional="hide"/>
+                                    <field name="end_date" optional="show"/>
                                     <field name="is_active" widget="boolean"/>
                                     <field name="is_master" widget="boolean" optional="show"/>
                                     <field name="automatic_sync" widget="boolean" optional="show"/>
@@ -271,6 +337,24 @@ if result and isinstance(result, dict):
         </field>
     </record>
 
+    <!-- Sync Odoo Companies from SCHOOLBOARD/SCHOOL orgs -->
+    <record id="action_sync_companies" model="ir.actions.server">
+        <field name="name">Sync Odoo Companies (from orgs)</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="state">code</field>
+        <field name="code">action = env['myschool.org'].action_sync_companies()</field>
+    </record>
+
+    <!-- Verify all AD/Cloud groups (menu action). Idempotent sweep
+         that ensures every PERSONGROUP and SCHOOL has its backend
+         groups / OUs in place. Useful after a fresh setup or as audit. -->
+    <record id="action_verify_all_groups" model="ir.actions.server">
+        <field name="name">Verify all AD/Cloud groups</field>
+        <field name="model_id" ref="myschool_core.model_myschool_org"/>
+        <field name="state">code</field>
+        <field name="code">action = env['myschool.org'].action_verify_all_groups()</field>
+    </record>
+
     <!-- Sync persongroups from org settings (menu action) -->
     <record id="action_sync_all_persongroups" model="ir.actions.server">
         <field name="name">Sync persongroups (org settings)</field>
@@ -325,6 +409,7 @@ action = {
             <list create="0" delete="0" editable="bottom">
                 <field name="role_label" string="Role" readonly="1"/>
                 <field name="role_name" string="System Name" readonly="1" optional="hide"/>
+                <field name="school_name" string="School" readonly="1"/>
                 <field name="is_active" string="Active" readonly="1" widget="boolean"/>
                 <field name="is_master" string="Master" widget="boolean_toggle"/>
                 <field name="automatic_sync" string="Auto Sync" widget="boolean_toggle"/>
@@ -342,14 +427,21 @@ action = {
                 <group>
                     <field name="org_id" invisible="1"/>
                     <field name="org_name" string="Organization"/>
-                    <field name="school_id" string="School" options="{'no_create': True}"/>
                 </group>
                 <separator string="Current Roles (BRSO)"/>
                 <field name="line_ids" nolabel="1" widget="one2many"/>
-                <separator string="Add New Role"/>
-                <group>
-                    <field name="new_role_id" string="Role" options="{'no_create': True, 'no_create_edit': True}"/>
-                    <button name="action_add_role" type="object" string="Add Role" class="btn-primary" icon="fa-plus"/>
+                <separator string="Add New Role — selecteer school én rol, klik dan Add"/>
+                <group string="Nieuwe BRSO" col="2">
+                    <field name="school_id" string="School"
+                           options="{'no_create': True}"
+                           placeholder="Kies de school waaronder de rol valt"/>
+                    <field name="new_role_id" string="Role"
+                           options="{'no_create': True, 'no_create_edit': True}"
+                           placeholder="Kies de rol om toe te voegen"/>
+                    <button name="action_add_role" type="object"
+                            string="Add Role" class="btn-primary"
+                            icon="fa-plus" colspan="2"
+                            invisible="not school_id or not new_role_id"/>
                 </group>
                 <p class="text-muted">
                     <small>Group flags live on the target org. Open the

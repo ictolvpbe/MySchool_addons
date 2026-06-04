@@ -111,6 +111,16 @@
             <field name="priority">30</field>
         </record>
 
+        <record id="betask_type_ldap_org_del" model="myschool.betask.type">
+            <field name="name">LDAP_ORG_DEL</field>
+            <field name="target">LDAP</field>
+            <field name="object">ORG</field>
+            <field name="action">DEL</field>
+            <field name="description">Delete OU (organisational unit) from LDAP/Active Directory</field>
+            <field name="processor_method">process_ldap_ou_del</field>
+            <field name="priority">90</field>
+        </record>
+
         <record id="betask_type_ldap_student_add" model="myschool.betask.type">
             <field name="name">LDAP_STUDENT_ADD</field>
             <field name="target">LDAP</field>

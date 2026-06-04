@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- ===== List view ===== -->
+    <record id="view_sap_sync_run_list" model="ir.ui.view">
+        <field name="name">myschool.sap.sync.run.list</field>
+        <field name="model">myschool.sap.sync.run</field>
+        <field name="arch" type="xml">
+            <list string="SAP-sync runs"
+                  decoration-warning="state == 'awaiting_approval'"
+                  decoration-info="state == 'awaiting_review'"
+                  decoration-success="state == 'applied'"
+                  decoration-muted="state in ('cancelled', 'superseded')"
+                  decoration-danger="state == 'failed'">
+                <field name="name"/>
+                <field name="trigger"/>
+                <field name="state"/>
+                <field name="user_id"/>
+                <field name="started_at"/>
+                <field name="finished_at"/>
+                <field name="change_count"/>
+                <field name="threshold_breach" widget="boolean_toggle"/>
+                <field name="inst_nrs"/>
+                <button name="action_open_review"
+                        type="object"
+                        string="Open review"
+                        icon="fa-search"
+                        invisible="state in ('cancelled', 'failed')"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ===== Form view ===== -->
+    <record id="view_sap_sync_run_form" model="ir.ui.view">
+        <field name="name">myschool.sap.sync.run.form</field>
+        <field name="model">myschool.sap.sync.run</field>
+        <field name="arch" type="xml">
+            <form string="SAP-sync run">
+                <header>
+                    <button name="action_open_review"
+                            type="object"
+                            string="Open review-UI"
+                            class="btn-primary"
+                            icon="fa-search"
+                            invisible="state in ('cancelled', 'failed')"/>
+                    <button name="action_apply"
+                            type="object"
+                            string="Pas goedgekeurde wijzigingen toe"
+                            class="btn-success"
+                            icon="fa-check"
+                            invisible="state in ('applied', 'cancelled', 'failed')"
+                            confirm="Goedgekeurde wijzigingen toepassen?"/>
+                    <button name="action_cancel"
+                            type="object"
+                            string="Annuleer batch"
+                            class="btn-warning"
+                            icon="fa-times"
+                            invisible="state in ('applied', 'cancelled', 'failed')"
+                            confirm="Volledige sync-batch annuleren?"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="analysing,awaiting_approval,awaiting_review,applying,applied"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Run">
+                            <field name="trigger" readonly="1"/>
+                            <field name="user_id" readonly="1"/>
+                            <field name="started_at" readonly="1"/>
+                            <field name="finished_at" readonly="1"/>
+                            <field name="require_review" readonly="1"/>
+                        </group>
+                        <group string="Scope">
+                            <field name="inst_nrs" readonly="1"/>
+                            <field name="phases_json" readonly="1"/>
+                            <field name="change_count" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Drempel" invisible="not threshold_breach">
+                        <field name="threshold_breach" readonly="1"/>
+                        <field name="threshold_breach_details" readonly="1" nolabel="1"/>
+                    </group>
+                    <group string="Resultaat">
+                        <field name="counts_json" readonly="1" nolabel="1"/>
+                        <field name="summary" readonly="1" nolabel="1"/>
+                        <field name="error_description" readonly="1" nolabel="1"
+                               invisible="not error_description"/>
+                    </group>
+                    <notebook>
+                        <page string="Geplande wijzigingen">
+                            <field name="change_ids" readonly="1">
+                                <list decoration-success="state == 'applied'"
+                                      decoration-warning="state == 'to_review_later'"
+                                      decoration-danger="state in ('blocked', 'failed')"
+                                      decoration-muted="state in ('superseded', 'cancelled')">
+                                    <field name="object_type"/>
+                                    <field name="action"/>
+                                    <field name="source_key"/>
+                                    <field name="display_name"/>
+                                    <field name="diff_summary"/>
+                                    <field name="state"/>
+                                    <field name="state_reason"/>
+                                    <field name="reviewer_id"/>
+                                    <field name="reviewed_at"/>
+                                    <field name="betask_id"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ===== Search ===== -->
+    <record id="view_sap_sync_run_search" model="ir.ui.view">
+        <field name="name">myschool.sap.sync.run.search</field>
+        <field name="model">myschool.sap.sync.run</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="user_id"/>
+                <field name="inst_nrs"/>
+                <separator/>
+                <filter name="filter_attention" string="Wacht op actie"
+                        domain="[('state', 'in', ('awaiting_approval', 'awaiting_review'))]"/>
+                <filter name="filter_breach" string="Drempel overschreden"
+                        domain="[('threshold_breach', '=', True)]"/>
+                <filter name="filter_done" string="Toegepast"
+                        domain="[('state', '=', 'applied')]"/>
+                <filter name="filter_cron" string="Cron"
+                        domain="[('trigger', '=', 'cron')]"/>
+                <filter name="filter_manual" string="Manueel"
+                        domain="[('trigger', '=', 'manual')]"/>
+                <separator/>
+                <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                <filter name="group_trigger" string="Trigger" context="{'group_by': 'trigger'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ===== Action ===== -->
+    <record id="action_sap_sync_run_list" model="ir.actions.act_window">
+        <field name="name">SAP-sync overzicht</field>
+        <field name="res_model">myschool.sap.sync.run</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_filter_attention': 1}</field>
+        <field name="search_view_id" ref="view_sap_sync_run_search"/>
+    </record>
+
+</odoo>

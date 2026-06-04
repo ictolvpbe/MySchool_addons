@@ -57,6 +57,31 @@ class MyschoolAsset(models.Model):
     model_name = fields.Char(
         string='Model',
     )
+    cloud_device_id = fields.Char(
+        string='Google Device ID',
+        help='Opaque deviceId from Google Workspace (set by the ChromeOS '
+             'inventory sync). Used by CLOUD/DEVICE/MOVE betasks to '
+             'translate asset_ids → API call.',
+        copy=False,
+        index=True,
+    )
+    cloud_serial = fields.Char(
+        string='Google Serial Number',
+        help='Serial number as reported by Google. May differ in case '
+             'or formatting from the on-device sticker — keep both for '
+             'reliable matching during sync.',
+        copy=False,
+    )
+    cloud_org_unit_path = fields.Char(
+        string='Google OU Path',
+        help='Last-known orgUnitPath (e.g. /olvp/baple/Klas-3A). '
+             'Mirrored from Google by the inventory sync, not authoritative.',
+        readonly=True,
+    )
+    cloud_last_sync = fields.Datetime(
+        string='Cloud Sync — Last Run',
+        readonly=True,
+    )
     manufacturer = fields.Char(
         string='Manufacturer',
     )

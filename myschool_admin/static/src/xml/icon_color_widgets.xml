@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- ============================================================
+         Colour palette popover
+         ============================================================ -->
+    <t t-name="myschool_admin.MsColorPalette" owl="1">
+        <div class="ms-color-popover">
+            <div class="ms-color-grid">
+                <t t-foreach="palette" t-as="hex" t-key="hex">
+                    <button class="ms-color-swatch"
+                            t-att-class="{ 'ms-color-swatch-current': isCurrent(hex) }"
+                            t-att-style="'background:' + hex"
+                            t-att-title="hex"
+                            t-on-click="() => this.pick(hex)">
+                        <t t-if="isCurrent(hex)">
+                            <i class="fa fa-check"/>
+                        </t>
+                    </button>
+                </t>
+            </div>
+            <div class="ms-color-custom">
+                <label class="ms-popover-label">Eigen kleur</label>
+                <div class="ms-color-custom-row">
+                    <input type="color"
+                           class="ms-color-native"
+                           t-att-value="state.customHex || '#000000'"
+                           t-on-input="(ev) => state.customHex = ev.target.value"/>
+                    <input type="text"
+                           class="ms-color-hex-input"
+                           placeholder="#rrggbb"
+                           t-att-value="state.customHex"
+                           t-on-input="onCustomInput"
+                           t-on-keydown="onCustomKeydown"/>
+                    <button class="ms-popover-btn" t-on-click="applyCustom">OK</button>
+                </div>
+            </div>
+            <div class="ms-popover-actions">
+                <button class="ms-popover-btn ms-popover-btn-link" t-on-click="clearValue">
+                    <i class="fa fa-times"/> Geen kleur
+                </button>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Icon palette popover
+         ============================================================ -->
+    <t t-name="myschool_admin.MsIconPalette" owl="1">
+        <div class="ms-icon-popover">
+            <div class="ms-icon-filter">
+                <i class="fa fa-search"/>
+                <input type="text"
+                       placeholder="Zoek icoon…"
+                       t-att-value="state.filter"
+                       t-on-input="onFilterInput"/>
+            </div>
+            <div class="ms-icon-grid">
+                <t t-foreach="filteredIcons" t-as="icon" t-key="icon">
+                    <button class="ms-icon-tile"
+                            t-att-class="{ 'ms-icon-tile-current': isCurrent(icon) }"
+                            t-att-title="icon"
+                            t-on-click="() => this.pick(icon)">
+                        <i t-att-class="icon" t-att-style="iconStyle(icon)"/>
+                    </button>
+                </t>
+                <t t-if="filteredIcons.length === 0">
+                    <div class="ms-icon-empty">
+                        Geen iconen voor "<t t-esc="state.filter"/>"
+                    </div>
+                </t>
+            </div>
+            <div class="ms-popover-actions">
+                <button class="ms-popover-btn ms-popover-btn-link" t-on-click="clearValue">
+                    <i class="fa fa-times"/> Geen icoon
+                </button>
+            </div>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Colour swatch field — preview + inline hex input
+         ============================================================ -->
+    <t t-name="myschool_admin.MsColorSwatchField" owl="1">
+        <div class="ms-color-field" t-ref="anchor">
+            <button class="ms-color-field-swatch"
+                    t-att-disabled="props.readonly"
+                    t-att-style="value and isValidHex ? ('background:' + value) : ''"
+                    t-att-class="{ 'ms-color-field-empty': !value, 'ms-color-field-invalid': value and !isValidHex }"
+                    t-on-click="onClickSwatch"
+                    t-att-title="value or 'Kies een kleur'">
+                <t t-if="!value">
+                    <i class="fa fa-eyedropper"/>
+                </t>
+                <t t-elif="!isValidHex">
+                    <i class="fa fa-exclamation-triangle"/>
+                </t>
+            </button>
+            <input type="text"
+                   class="ms-color-field-input"
+                   t-att-value="value"
+                   t-att-readonly="props.readonly"
+                   placeholder="#rrggbb"
+                   t-on-input="onInput"
+                   t-on-blur="onBlur"/>
+        </div>
+    </t>
+
+    <!-- ============================================================
+         Icon picker field — preview + inline class input
+         ============================================================ -->
+    <t t-name="myschool_admin.MsIconPickerField" owl="1">
+        <div class="ms-icon-field" t-ref="anchor">
+            <button class="ms-icon-field-preview"
+                    t-att-disabled="props.readonly"
+                    t-att-class="{ 'ms-icon-field-empty': !value }"
+                    t-att-style="color ? ('color:' + color) : ''"
+                    t-on-click="onClickPreview"
+                    t-att-title="value or 'Kies een icoon'">
+                <t t-if="value">
+                    <i t-att-class="value"/>
+                </t>
+                <t t-else="">
+                    <i class="fa fa-image"/>
+                </t>
+            </button>
+            <input type="text"
+                   class="ms-icon-field-input"
+                   t-att-value="value"
+                   t-att-readonly="props.readonly"
+                   placeholder="fa fa-…"
+                   t-on-input="onInput"
+                   t-on-blur="onBlur"/>
+        </div>
+    </t>
+
+</templates>

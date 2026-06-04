@@ -23,6 +23,13 @@
         <field name="model">myschool.field.template</field>
         <field name="arch" type="xml">
             <form string="Field Template">
+                <header>
+                    <button name="action_apply_to_persons"
+                            string="Toepassen op personen"
+                            type="object"
+                            class="btn-primary"
+                            confirm="Past dit template toe op alle bestaande persons binnen de scope (schools + person_types). Updatet email_cloud, person_fqdn_internal en person_fqdn_external in de DB. Geen LDAP/Workspace cascade."/>
+                </header>
                 <sheet>
                     <widget name="web_ribbon" title="Archived"
                             bg_color="text-bg-danger" invisible="active"/>

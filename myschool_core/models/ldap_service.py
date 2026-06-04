@@ -25,15 +25,26 @@ from contextlib import contextmanager
 _logger = logging.getLogger(__name__)
 
 try:
-    from ldap3 import (
-        Server, Connection, ALL, NONE as LDAP_INFO_NONE, NTLM, SIMPLE,
-        SUBTREE, MODIFY_ADD, MODIFY_DELETE, MODIFY_REPLACE,
-        ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES, Tls
-    )
-    from ldap3.core.exceptions import (
-        LDAPException, LDAPBindError, LDAPSocketOpenError,
-        LDAPEntryAlreadyExistsResult,
-    )
+    # ldap3 ≤ 2.9.1 imports tagMap/typeMap from pyasn1, which were
+    # renamed to TAG_MAP/TYPE_MAP in pyasn1 0.6.x. The old aliases
+    # still work but emit DeprecationWarning on every Odoo startup.
+    # Suppress only that specific warning during the ldap3 import —
+    # narrow scope so genuine deprecation warnings elsewhere keep
+    # showing up.
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            'ignore', category=DeprecationWarning,
+            module=r'pyasn1\.codec\.ber\.encoder')
+        from ldap3 import (
+            Server, Connection, ALL, NONE as LDAP_INFO_NONE, NTLM, SIMPLE,
+            SUBTREE, MODIFY_ADD, MODIFY_DELETE, MODIFY_REPLACE,
+            ALL_ATTRIBUTES, ALL_OPERATIONAL_ATTRIBUTES, Tls
+        )
+        from ldap3.core.exceptions import (
+            LDAPException, LDAPBindError, LDAPSocketOpenError,
+            LDAPEntryAlreadyExistsResult,
+        )
     import ssl
     LDAP3_AVAILABLE = True
 except ImportError:
@@ -389,33 +400,73 @@ class LdapService(models.AbstractModel):
 
     @api.model
     def build_group_dn(self, cn, org, config):
-        """
-        Build a group DN based on organization.
+        """Build a group DN based on organization.
 
-        Args:
-            cn: Common Name for the group
-            org: myschool.org record (optional)
-            config: ldap.server.config record
+        Resolution priority:
+          1. **School + OuForGroups** — walk up the org-tree to the
+             nearest non-administrative SCHOOL ancestor, look up its
+             ``OuForGroups`` CI (typically ``"grp"``), and build:
+                 ``CN=<cn>,OU=<OuForGroups>,<school.ou_fqdn_internal>``
+             This is the canonical layout used by the
+             ``_update_com_group_fqdns`` wizard at create-time.
+             Both COM and SEC groups end up in the SAME OU here,
+             which is what the user expects.
 
-        Returns:
-            Full DN string
+          2. **Legacy fallback** — if no school / OuForGroups is
+             resolvable, fall back to the older heuristic that
+             concatenates the org's ``name_tree`` (department's own
+             OU). Kept for backward compat with installs that don't
+             use the OuForGroups CI.
         """
+        school_dn = self._school_group_dn(cn, org, config)
+        if school_dn:
+            return school_dn
+
+        # Legacy fallback path
         dn_parts = [f"CN={cn}"]
-
-        # Add OU path from org tree
         if org and org.name_tree:
             ou_path = self.build_ou_path_from_name_tree(org.name_tree, config)
             if ou_path:
                 dn_parts.append(ou_path)
-
-        # Add default group container if configured
         if config.default_group_container:
             dn_parts.append(config.default_group_container)
-
-        # Add base DN
         dn_parts.append(config.get_effective_group_base_dn())
-
         return ','.join(dn_parts)
+
+    def _school_group_dn(self, cn, org, config):
+        """Return ``CN=<cn>,OU=<OuForGroups>,<school.ou_fqdn_internal>``
+        when the org chain has both pieces, else ``None``.
+
+        Mirrors the wizard's persongroup-creation logic so groups
+        spawned by sync (with empty FQDN fields on the persongroup
+        org) land in the same OU as wizard-created persongroups.
+        """
+        if not org:
+            return None
+        processor = self.env.get('myschool.betask.processor')
+        if processor is None or not hasattr(
+                processor, '_resolve_parent_school_from_org'):
+            return None
+        try:
+            school = processor._resolve_parent_school_from_org(org)
+        except Exception:
+            return None
+        if not school or not getattr(school, 'ou_fqdn_internal', ''):
+            return None
+
+        SettingsItem = self.env.get('myschool.settings.item')
+        if SettingsItem is None:
+            return None
+        ou_for_groups = SettingsItem.get('OuForGroups', org=school)
+        if not ou_for_groups:
+            return None
+
+        # Match the wizard's case-handling: lower-case OU label, keep
+        # school.ou_fqdn_internal as stored (typically already lower
+        # but tolerate both).
+        return (f"CN={cn},"
+                f"OU={ou_for_groups.lower()},"
+                f"{school.ou_fqdn_internal}")
 
     @api.model
     def escape_dn_chars(self, value):
@@ -490,6 +541,29 @@ class LdapService(models.AbstractModel):
                 'dn': dn,
                 'attributes': attributes,
                 'message': 'Dry run - user would be created',
+            }
+
+        # Pre-check: does this person already have an AD account under
+        # *any* DN (matched by sAMAccountName / employeeID / cn)? If so
+        # we skip the create entirely — never touching the password,
+        # which is the contract for sync-driven re-runs against an
+        # already-provisioned account. This catches the case where the
+        # user lives under a different OU than the freshly computed
+        # ``dn`` (e.g. moved to a new class/department) — without this
+        # pre-check ``conn.add`` would raise an error that's not
+        # always ``LDAPEntryAlreadyExistsResult`` (AD returns various
+        # codes depending on which collision attribute trips first),
+        # and we'd lose the idempotency guarantee.
+        existing_dn = self._find_user_dn(config, person)
+        if existing_dn:
+            _logger.info(
+                'LDAP user already exists at %s — skipping create '
+                '(no password rotation)', existing_dn)
+            return {
+                'success': True,
+                'dn': existing_dn,
+                'message': (f'User already existed in AD: {existing_dn} '
+                            f'(no change, password preserved)'),
             }
 
         try:
@@ -896,18 +970,41 @@ class LdapService(models.AbstractModel):
                 # OU-creation path uses.
                 self._ensure_ou_path(conn, dn)
 
-                # Idempotency: if the DN already resolves, we're done.
+                # Idempotency check: search by EXACT DN. We use SUBTREE
+                # scope from the parent (not BASE) so we can verify the
+                # entry is actually at this DN. Why not the previous
+                # ``BASE``-search trick? After ``_ensure_ou_path`` ran,
+                # ``conn.entries`` holds entries from the LAST OU search
+                # (the deepest existing OU). If the BASE search on a
+                # missing leaf raises noSuchObject, the ``except: pass``
+                # would swallow the exception — but then the next
+                # ``if found and conn.entries:`` would FALSELY succeed
+                # against the stale OU entry, producing a misleading
+                # "Group already exists" return. Use a fresh
+                # ``search_users``-style filter on the parent OU instead.
+                parent_dn = dn.split(',', 1)[1] if ',' in dn else None
                 try:
-                    found = conn.search(
-                        search_base=dn, search_filter='(objectClass=*)',
-                        search_scope='BASE', attributes=['distinguishedName'])
-                    if found and conn.entries:
-                        return {
-                            'success': True,
-                            'dn': dn,
-                            'message': f'Group already exists: {dn}',
-                        }
+                    leaf_filter = (
+                        '(&(objectClass=group)'
+                        '(distinguishedName=' + dn + '))')
+                    if parent_dn:
+                        conn.search(
+                            search_base=parent_dn,
+                            search_filter=leaf_filter,
+                            search_scope='SUBTREE',
+                            attributes=['distinguishedName'])
+                        if conn.entries and any(
+                                e.entry_dn.lower() == dn.lower()
+                                for e in conn.entries):
+                            return {
+                                'success': True,
+                                'dn': dn,
+                                'message': f'Group already exists: {dn}',
+                            }
                 except Exception:
+                    # Search failed (parent missing, etc) — fall through
+                    # to the actual ``conn.add`` which will tell us the
+                    # real story.
                     pass
 
                 ok = conn.add(dn, ['group', 'top'], attributes)
@@ -917,27 +1014,29 @@ class LdapService(models.AbstractModel):
                         'dn': dn,
                         'message': f'Group created: {dn}',
                     }
-                # ldap3 surfaces "already exists" both via exception
-                # (LDAPEntryAlreadyExistsResult) and via conn.result —
-                # treat both as success.
+                # ldap3 sometimes returns False with code 68
+                # (entryAlreadyExists) instead of raising. Same
+                # collision-resolution as the exception path.
                 code = (conn.result or {}).get('result')
-                if code == 68:  # entryAlreadyExists
-                    return {
-                        'success': True,
-                        'dn': dn,
-                        'message': f'Group already exists: {dn}',
-                    }
+                if code == 68:
+                    return self._handle_group_collision(
+                        config, dn, group_name)
                 return {
                     'success': False,
                     'dn': dn,
                     'message': f'Failed to create group: {conn.result}',
                 }
         except LDAPEntryAlreadyExistsResult:
-            return {
-                'success': True,
-                'dn': dn,
-                'message': f'Group already exists: {dn}',
-            }
+            # AD's "entryAlreadyExists" can mean two different things:
+            #   1. There is an entry at exactly this DN already.
+            #   2. The sAMAccountName collides with another group
+            #      somewhere else in the domain.
+            # Case 2 is the one that previously broke us — we'd return
+            # success while the ACTUAL group lives at a different DN,
+            # so the subsequent membership-add then failed with
+            # noSuchObject on the requested-but-non-existent DN. Now
+            # we resolve which case this is and surface the real DN.
+            return self._handle_group_collision(config, dn, group_name)
         except Exception as e:
             _logger.exception(f'create_group_at_dn failed for {dn}')
             return {
@@ -945,6 +1044,68 @@ class LdapService(models.AbstractModel):
                 'dn': dn,
                 'message': str(e),
             }
+
+    def _handle_group_collision(self, config, requested_dn, group_name):
+        """Resolve an ``entryAlreadyExists`` outcome from group create.
+
+        AD returns this status code in two cases:
+          1. The exact DN already exists (idempotent re-run).
+          2. The sAMAccountName collides with another group elsewhere
+             in the domain — usually a leftover from a pre-fix sync
+             run that put the group at the department's own OU rather
+             than the school's ``OuForGroups``.
+
+        Resolution:
+          - Find the existing group by sAMAccountName globally.
+          - If it lives at the requested DN → idempotent success.
+          - If it lives at a DIFFERENT DN → **auto-move** to the
+            requested DN via ``modify_dn``. Sync runs converge to the
+            spec without manual cleanup. On move failure, return the
+            existing DN so the caller at least has a working pointer.
+        """
+        real_dn = self.find_group_by_samaccountname(config, group_name)
+        if not real_dn:
+            # No group found by name — the caller's DN must be the one
+            # that exists (we wouldn't have hit "already exists"
+            # otherwise). Idempotent success.
+            return {
+                'success': True,
+                'dn': requested_dn,
+                'message': f'Group already exists: {requested_dn}',
+            }
+        if real_dn.lower() == requested_dn.lower():
+            return {
+                'success': True,
+                'dn': requested_dn,
+                'message': f'Group already exists: {requested_dn}',
+            }
+        _logger.warning(
+            'sAMAccountName collision: group %s lives at %s, '
+            'requested %s — auto-moving',
+            group_name, real_dn, requested_dn)
+        move_result = self.move_group_to_dn(config, real_dn, requested_dn)
+        if move_result.get('success'):
+            return {
+                'success': True,
+                'dn': requested_dn,
+                'moved_from': real_dn,
+                'message': (f'Group moved {real_dn} → {requested_dn} '
+                            f'(was at wrong OU, now corrected)'),
+            }
+        # Move failed — return the existing DN so the caller can at
+        # least hit the right entry, with a clear warning in the
+        # message.
+        _logger.error(
+            'Auto-move %s → %s failed: %s. Returning existing DN.',
+            real_dn, requested_dn, move_result.get('message'))
+        return {
+            'success': True,
+            'dn': real_dn,
+            'requested_dn': requested_dn,
+            'message': (f'Group exists at {real_dn} but move to '
+                        f'{requested_dn} failed: '
+                        f'{move_result.get("message")}'),
+        }
 
     @api.model
     def create_group(self, config, group_name, org=None, description=None, dry_run=False):
@@ -1066,6 +1227,75 @@ class LdapService(models.AbstractModel):
             }
 
     @api.model
+    def delete_ou(self, config, ou_dn, dry_run=False):
+        """Recursively delete an Organizational Unit and all of its
+        contents using the AD-specific tree-delete control
+        (1.2.840.113556.1.4.805). One round-trip; AD walks the subtree
+        server-side.
+
+        Use with care: the entire branch goes. Intended for the
+        Reset Auto-Sync Data wizard, which discards CLASSGROUP-OUs whose
+        DB rows are also being unlinked.
+
+        Args:
+            config: ldap.server.config record
+            ou_dn: DN of the OU
+            dry_run: If True, only simulate the operation
+
+        Returns:
+            dict with operation result.
+        """
+        self._check_ldap3_available()
+
+        _logger.info(f'Deleting LDAP OU (subtree): {ou_dn}')
+
+        if dry_run:
+            return {
+                'success': True,
+                'dn': ou_dn,
+                'message': 'Dry run - OU subtree would be deleted',
+            }
+
+        try:
+            with self._get_connection(config) as conn:
+                # AD tree-delete control — value=None, criticality=True so
+                # the server refuses if it can't honour subtree-delete.
+                controls = [('1.2.840.113556.1.4.805', True, None)]
+                result = conn.delete(ou_dn, controls=controls)
+                if result:
+                    return {
+                        'success': True,
+                        'dn': ou_dn,
+                        'message': f'OU deleted (subtree): {ou_dn}',
+                    }
+                # Idempotent skip for already-gone DNs.
+                desc = (conn.result or {}).get('description', '')
+                if 'noSuchObject' in desc or 'no such object' in desc.lower():
+                    return {
+                        'success': True,
+                        'dn': ou_dn,
+                        'message': f'OU already absent: {ou_dn}',
+                    }
+                return {
+                    'success': False,
+                    'dn': ou_dn,
+                    'message': f'Failed to delete OU: {conn.result}',
+                }
+        except Exception as e:
+            msg = str(e)
+            _logger.exception(f'Failed to delete LDAP OU: {ou_dn}')
+            if 'noSuchObject' in msg or 'no such object' in msg.lower():
+                return {
+                    'success': True,
+                    'dn': ou_dn,
+                    'message': f'OU already absent: {ou_dn}',
+                }
+            return {
+                'success': False,
+                'dn': ou_dn,
+                'message': msg,
+            }
+
     def delete_group(self, config, group_dn, dry_run=False):
         """
         Delete a group from Active Directory.
@@ -1113,6 +1343,79 @@ class LdapService(models.AbstractModel):
                 'dn': group_dn,
                 'message': str(e),
             }
+
+    @api.model
+    def move_group_to_dn(self, config, current_dn, target_dn, dry_run=False):
+        """Relocate a group from ``current_dn`` to ``target_dn``.
+
+        Used to converge AD state when a group exists at a wrong
+        location — typically a leftover from earlier (pre-fix) sync
+        runs that built DNs from ``name_tree`` instead of the
+        SCHOOL's ``OuForGroups``. Idempotent: when current and
+        target are the same DN, no-ops.
+
+        Implementation: ldap3's ``conn.modify_dn`` does both rename
+        (CN= changes) and reparent (the rest of the path changes).
+        We supply both ``new_relative_dn`` (new leaf RDN) and
+        ``new_superior`` (new parent DN) so we can hop AD containers
+        in one operation.
+
+        Returns dict with ``success`` and ``dn`` (= the new DN if
+        moved, else current_dn unchanged).
+        """
+        self._check_ldap3_available()
+        if not current_dn or not target_dn:
+            return {
+                'success': False, 'dn': current_dn,
+                'message': 'move_group_to_dn requires both current_dn and target_dn'}
+        if current_dn.lower() == target_dn.lower():
+            return {
+                'success': True, 'dn': target_dn,
+                'message': 'Group already at target DN — no-op'}
+
+        # Make sure the target parent OU chain exists. Otherwise the
+        # modify_dn would fail with noSuchObject on the new_superior.
+        new_relative_dn = target_dn.split(',', 1)[0]
+        new_superior = target_dn.split(',', 1)[1] if ',' in target_dn else None
+        if not new_superior:
+            return {
+                'success': False, 'dn': current_dn,
+                'message': f'Cannot derive new_superior from {target_dn}'}
+
+        if dry_run:
+            return {
+                'success': True, 'dn': target_dn,
+                'message': (f'Dry run — would move {current_dn} '
+                            f'→ {target_dn}')}
+
+        try:
+            with self._get_connection(config) as conn:
+                # Pre-flight: ensure the target's parent path exists.
+                # Pass a dummy leaf so _ensure_ou_path's parent-walk
+                # treats new_superior as the parent we need.
+                self._ensure_ou_path(conn, target_dn)
+                ok = conn.modify_dn(
+                    current_dn,
+                    relative_dn=new_relative_dn,
+                    new_superior=new_superior,
+                )
+                if ok:
+                    _logger.info(
+                        '[LDAP-MOVE] group %s → %s', current_dn, target_dn)
+                    return {
+                        'success': True, 'dn': target_dn,
+                        'message': (f'Group moved: {current_dn} '
+                                    f'→ {target_dn}')}
+                return {
+                    'success': False, 'dn': current_dn,
+                    'message': (f'modify_dn failed: '
+                                f'{getattr(conn, "result", None)}')}
+        except Exception as e:
+            _logger.exception(
+                'move_group_to_dn failed: %s → %s', current_dn, target_dn)
+            return {
+                'success': False, 'dn': current_dn,
+                'message': str(e)}
 
     # =========================================================================
     # Group Membership Operations
@@ -1172,6 +1475,22 @@ class LdapService(models.AbstractModel):
                         'message': f'Failed to add member: {conn.result}',
                     }
 
+        except LDAPEntryAlreadyExistsResult:
+            # raise_exceptions=True turns the "member already present"
+            # response into this exception, which would otherwise fall
+            # through to the generic except below and be reported as a
+            # failure. Treating it as success keeps re-runs of the same
+            # GROUPMEMBER/ADD task idempotent — the canonical pattern
+            # we already use in ``create_user``.
+            _logger.info(
+                'LDAP membership already present, treating as success: '
+                '%s in %s', member_dn, group_dn)
+            return {
+                'success': True,
+                'group_dn': group_dn,
+                'member_dn': member_dn,
+                'message': 'Member already in group',
+            }
         except Exception as e:
             _logger.exception(f'Failed to add group member')
             return {
@@ -1236,6 +1555,23 @@ class LdapService(models.AbstractModel):
                     }
 
         except Exception as e:
+            # Already-not-a-member: AD returns "Will not perform" /
+            # "unwillingToPerform" or noSuchAttribute on the member
+            # link. Both are idempotent-success for our purposes.
+            msg = str(e).lower()
+            if any(k in msg for k in (
+                    'unwilling', 'no such attribute', 'nosuchattribute',
+                    'no such object', 'nosuchobject',
+                    'not a member', 'not in group')):
+                _logger.info(
+                    'LDAP membership already absent, treating as success: '
+                    '%s in %s', member_dn, group_dn)
+                return {
+                    'success': True,
+                    'group_dn': group_dn,
+                    'member_dn': member_dn,
+                    'message': 'Member was not in group',
+                }
             _logger.exception(f'Failed to remove group member')
             return {
                 'success': False,
@@ -1361,6 +1697,35 @@ class LdapService(models.AbstractModel):
         results = self.search_users(config, search_filter)
         return results[0] if results else None
 
+    @api.model
+    def find_group_by_samaccountname(self, config, sam):
+        """Find a group anywhere in the domain by sAMAccountName.
+
+        AD enforces sAMAccountName uniqueness per domain — when a
+        ``group create`` returns ``entryAlreadyExists``, the existing
+        group might live at a completely different DN. This helper
+        does a SUBTREE search from the configured group base DN and
+        returns the actual DN, or ``None`` if no group has that name.
+
+        Args:
+            config: ldap.server.config record
+            sam: sAMAccountName value to search for (= the group_name
+                used when building the proposed DN).
+
+        Returns:
+            DN string of the existing group, or ``None``.
+        """
+        if not sam:
+            return None
+        results = self.search_groups(
+            config,
+            search_filter=f'(&(objectClass=group)(sAMAccountName={sam}))',
+            attributes=['distinguishedName'],
+            base_dn=config.base_dn)
+        if results:
+            return results[0]['dn']
+        return None
+
     # =========================================================================
     # Helper Methods
     # =========================================================================
@@ -1369,14 +1734,18 @@ class LdapService(models.AbstractModel):
         """Build the CN (= account name) for a person.
 
         Resolution order:
-        1. ``myschool.field.template`` matching ``field_name='cn'`` and the
-           given (school, person_type). Configured from the UI under
-           Integrations → Field Templates.
-        2. Per-school ``anonymous_account_template`` CI (legacy path,
-           limited to person types in ``anonymous_account_template_for_types``,
-           default ``STUDENT``).
-        3. Default ``<first_name>.<last_name>`` lower-cased, diacritics
+        1. ``myschool.field.template`` matching ``field_name='cn'`` and
+           the given (school, person_type). Configured from the UI under
+           Integrations → Field Templates. This is the **single source
+           of truth** for anonymised / school-specific account naming —
+           manual create and sync both go through this path.
+        2. Default ``<first_name>.<last_name>`` lower-cased, diacritics
            stripped, no spaces.
+
+        Schools that need a non-default format (e.g. ``b<sap_ref>+1631``
+        for basisschool students) must have a ``field.template`` record
+        with ``field_name='cn'``, scoped to the school and the relevant
+        person_type.
         """
         FieldTemplate = self.env['myschool.field.template']
         tpl = FieldTemplate.find_for('cn', person, org)
@@ -1384,16 +1753,6 @@ class LdapService(models.AbstractModel):
             cn_from_tpl = tpl.evaluate(person, org)
             if cn_from_tpl:
                 return self.escape_dn_chars(cn_from_tpl)
-
-        if self._should_use_anonymous_template(person, org):
-            school = self._resolve_user_cn_school(org)
-            ConfigItem = self.env['myschool.config.item']
-            template = ConfigItem.get_ci_value_by_org_and_name(
-                school.name_short, 'anonymous_account_template')
-            if template:
-                cn_from_template = self._evaluate_account_template(template, person)
-                if cn_from_template:
-                    return self.escape_dn_chars(cn_from_template)
 
         # Default: firstname.lastname (cleaned)
         first = self._cn_clean(person.first_name or '')
@@ -1407,40 +1766,10 @@ class LdapService(models.AbstractModel):
         # Final fallback when neither name part is usable
         return self.escape_dn_chars(person.abbreviation or str(person.id))
 
-    def _should_use_anonymous_template(self, person, org):
-        """Return True when the anonymous-template CN should be used for
-        this person.
-
-        Looks at two CIs on the parent school (both optional):
-        - ``anonymous_account_template``           : the template string
-        - ``anonymous_account_template_for_types`` : comma-separated list
-          of person-type names that the template applies to. Defaults to
-          ``STUDENT`` when not set, to preserve backwards-compatible
-          behaviour without ever silently anonymising employees.
-        """
-        if not person or not person.person_type_id:
-            return False
-        school = self._resolve_user_cn_school(org)
-        if not school:
-            return False
-        ConfigItem = self.env['myschool.config.item']
-        # If no template is set, no point checking the types.
-        template = ConfigItem.get_ci_value_by_org_and_name(
-            school.name_short, 'anonymous_account_template')
-        if not template:
-            return False
-        types_value = ConfigItem.get_ci_value_by_org_and_name(
-            school.name_short, 'anonymous_account_template_for_types')
-        if types_value:
-            allowed = {t.strip().upper() for t in types_value.split(',') if t.strip()}
-        else:
-            allowed = {'STUDENT'}
-        return (person.person_type_id.name or '').upper() in allowed
-
     def _resolve_user_cn_school(self, org):
         """Walk up the ORG-TREE from `org` to find the first non-admin
-        SCHOOL — that is the org whose CI ``anonymous_account_template``
-        we look up."""
+        SCHOOL — exposed for callers (e.g. wizards) that need the same
+        school-resolution rules as the CN/email builders."""
         if not org:
             return None
         # Re-use the betask_processor helper if available — same logic.
@@ -1483,58 +1812,6 @@ class LdapService(models.AbstractModel):
         if ',' in person.name:
             return person.name.split(',', 1)[0].strip()
         return person.name.strip()
-
-    def _evaluate_account_template(self, template, person):
-        """Tiny DSL for per-school account templates.
-
-        Grammar (loose, & is the only operator between terms):
-          expr := term ('&' term)*
-          term := "'" literal "'"            (literal text, single-quoted)
-                | "<" field ">" (op num)?    (field value, optional +/- N)
-          op   := "+" | "-"
-
-        Examples:
-          ``'t'&<sap_ref>+1631``  →  ``t<sap_ref+1631>``
-          ``<first_name>&'_'&<sap_ref>``  →  ``Mark_69``
-
-        Non-numeric arithmetic operands are silently ignored (the field
-        value falls through unchanged).
-        """
-        import re
-        result_parts = []
-        for raw_part in template.split('&'):
-            part = raw_part.strip()
-            if not part:
-                continue
-            # Literal: 'xxx'
-            m = re.match(r"^'([^']*)'$", part)
-            if m:
-                result_parts.append(m.group(1))
-                continue
-            # Field with optional arithmetic: <field> [+/-N]
-            m = re.match(r'^<(\w+)>\s*([+-])\s*(\d+)$', part)
-            if m:
-                field, op, num = m.group(1), m.group(2), int(m.group(3))
-                value = getattr(person, field, '')
-                try:
-                    value = int(str(value).strip())
-                    value = value + num if op == '+' else value - num
-                except (ValueError, TypeError):
-                    _logger.warning(
-                        '[CN-TEMPLATE] %s.%s is not numeric, '
-                        'skipping arithmetic %s%d', person._name, field, op, num)
-                result_parts.append(str(value))
-                continue
-            # Plain field: <field>
-            m = re.match(r'^<(\w+)>$', part)
-            if m:
-                value = getattr(person, m.group(1), '')
-                result_parts.append('' if value is None else str(value))
-                continue
-            _logger.warning(
-                '[CN-TEMPLATE] Unrecognized template segment %r in %r',
-                part, template)
-        return ''.join(result_parts)
 
     def _iter_org_ancestors(self, org):
         """Yield org plus its ORG-TREE parents until the root."""
@@ -1590,8 +1867,17 @@ class LdapService(models.AbstractModel):
                 suffix = '@' + suffix
             attributes['userPrincipalName'] = f"{cn}{suffix}"
 
-        if hasattr(person, 'email') and person.email:
-            attributes['mail'] = person.email
+        # mail = the cloud-mailbox address (myschool.person.email_cloud).
+        # `person.email` doesn't exist on this model — it was a stale
+        # reference that silently produced an empty mail attribute.
+        if person.email_cloud:
+            attributes['mail'] = person.email_cloud
+
+        # employeeID = SAP reference. Acts as the stable cross-system
+        # link to the upstream HR system; useful for downstream tooling
+        # (e.g. provisioning checks, audits) that join on this attribute.
+        if person.sap_ref:
+            attributes['employeeID'] = str(person.sap_ref)
 
         return attributes
 
@@ -1620,8 +1906,11 @@ class LdapService(models.AbstractModel):
         if person.name:
             changes['sn'] = [(MODIFY_REPLACE, [person.name])]
 
-        if hasattr(person, 'email') and person.email:
-            changes['mail'] = [(MODIFY_REPLACE, [person.email])]
+        if person.email_cloud:
+            changes['mail'] = [(MODIFY_REPLACE, [person.email_cloud])]
+
+        if person.sap_ref:
+            changes['employeeID'] = [(MODIFY_REPLACE, [str(person.sap_ref)])]
 
         return changes
 
@@ -1633,7 +1922,13 @@ class LdapService(models.AbstractModel):
             if result:
                 return result['dn']
 
-        # Try by employee ID
+        # Try by employeeID. The CREATE/UPD paths write sap_ref into AD's
+        # `employeeID`, so prefer that. stam_boek_nr is a fallback for
+        # legacy AD entries provisioned before this alignment.
+        if person.sap_ref:
+            result = self.find_user_by_attribute(config, 'employeeID', str(person.sap_ref))
+            if result:
+                return result['dn']
         if person.stam_boek_nr:
             result = self.find_user_by_attribute(config, 'employeeID', person.stam_boek_nr)
             if result:
