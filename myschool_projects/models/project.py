@@ -60,6 +60,13 @@ class MyschoolProject(models.Model):
     child_count = fields.Integer(compute='_compute_child_count', string='Sub-project Count')
     descendant_count = fields.Integer(compute='_compute_descendant_count', string='Descendant Count')
 
+    # --- Tasks (WBS leaf-level work) ---
+    task_ids = fields.One2many(
+        'myschool.project.task', 'project_id', string='Tasks')
+    task_count = fields.Integer(compute='_compute_task_counts', string='Task Count')
+    open_task_count = fields.Integer(compute='_compute_task_counts', string='Open Tasks')
+    done_task_count = fields.Integer(compute='_compute_task_counts', string='Done Tasks')
+
     # --- Milestones ---
     milestone_ids = fields.One2many(
         'myschool.project.milestone', 'project_id', string='Milestones')
@@ -79,21 +86,38 @@ class MyschoolProject(models.Model):
 
     _code_unique = models.Constraint('UNIQUE(code)', 'Project code must be unique.')
 
-    @api.depends('child_ids.progress', 'progress_own')
+    @api.depends('child_ids.progress', 'progress_own', 'task_ids.state')
     def _compute_progress(self):
+        """Drie-traps rollup:
+        1. heeft sub-projecten → gewogen (gelijk) gemiddelde van hun progress;
+        2. anders, heeft taken → % afgewerkte taken (cancelled niet meegeteld);
+        3. anders → handmatige ``progress_own``.
+        """
         for project in self:
             children = project.child_ids
             if children:
-                # v1: gelijk gewogen gemiddelde van directe sub-projecten.
-                # Later eventueel wegen op effort/story_points.
                 project.progress = sum(children.mapped('progress')) / len(children)
             else:
-                project.progress = project.progress_own
+                tasks = project.task_ids.filtered(lambda t: t.state != 'cancelled')
+                if tasks:
+                    done = len(tasks.filtered(lambda t: t.state == 'done'))
+                    project.progress = done / len(tasks) * 100
+                else:
+                    project.progress = project.progress_own
 
     @api.depends('child_ids')
     def _compute_child_count(self):
         for project in self:
             project.child_count = len(project.child_ids)
+
+    @api.depends('task_ids', 'task_ids.state')
+    def _compute_task_counts(self):
+        for project in self:
+            tasks = project.task_ids
+            project.task_count = len(tasks)
+            project.done_task_count = len(tasks.filtered(lambda t: t.state == 'done'))
+            project.open_task_count = len(
+                tasks.filtered(lambda t: t.state not in ('done', 'cancelled')))
 
     @api.depends('milestone_ids')
     def _compute_milestone_count(self):
