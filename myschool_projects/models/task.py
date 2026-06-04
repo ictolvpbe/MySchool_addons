@@ -59,6 +59,19 @@ class MyschoolProjectTask(models.Model):
     parent_path = fields.Char(index=True)
     child_count = fields.Integer(compute='_compute_child_count', string='Sub-item Count')
 
+    # --- Milestone anchor (organize work toward a milestone) ---
+    milestone_id = fields.Many2one(
+        'myschool.project.task', string='Milestone',
+        domain="[('item_type', '=', 'milestone'), ('project_id', '=', project_id)]",
+        index=True,
+        help='Target milestone this item works toward (same project).',
+    )
+    milestone_item_ids = fields.One2many(
+        'myschool.project.task', 'milestone_id', string='Items for this milestone')
+    milestone_progress = fields.Float(
+        compute='_compute_milestone_progress', string='Milestone Progress',
+        help='For a milestone: % of its linked leaf items that are done.')
+
     # --- Dependencies (predecessors) ---
     depends_on_ids = fields.Many2many(
         'myschool.project.task', 'myschool_project_task_dep_rel',
@@ -75,6 +88,22 @@ class MyschoolProjectTask(models.Model):
         for item in self:
             item.child_count = len(item.child_ids)
 
+    @api.depends('item_type', 'milestone_item_ids.state',
+                 'milestone_item_ids.item_type', 'milestone_item_ids.child_ids')
+    def _compute_milestone_progress(self):
+        for item in self:
+            if item.item_type != 'milestone':
+                item.milestone_progress = 0.0
+                continue
+            leaves = item.milestone_item_ids.filtered(
+                lambda t: t.item_type != 'milestone'
+                and t.state != 'cancelled' and not t.child_ids)
+            if leaves:
+                done = len(leaves.filtered(lambda t: t.state == 'done'))
+                item.milestone_progress = done / len(leaves) * 100
+            else:
+                item.milestone_progress = 0.0
+
     @api.constrains('depends_on_ids')
     def _check_no_self_dependency(self):
         for item in self:
@@ -90,3 +119,16 @@ class MyschoolProjectTask(models.Model):
                 raise ValidationError(
                     "Parent en item moeten in hetzelfde project zitten."
                 )
+
+    @api.constrains('milestone_id')
+    def _check_milestone(self):
+        for item in self:
+            m = item.milestone_id
+            if not m:
+                continue
+            if m.id == item.id:
+                raise ValidationError("Een item kan niet zijn eigen milestone zijn.")
+            if m.item_type != 'milestone':
+                raise ValidationError("Het doel moet van type 'milestone' zijn.")
+            if m.project_id != item.project_id:
+                raise ValidationError("Doel-milestone moet in hetzelfde project zitten.")

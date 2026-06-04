@@ -132,6 +132,23 @@ export class WorkPackageTable extends Component {
 
     toggle(id) { this.state.expanded[id] = !this.state.expanded[id]; }
 
+    /** Rolled-up % of done leaf items under a summary node (milestones and
+     *  cancelled items excluded), MS-Project style. */
+    summaryPct(node) {
+        let done = 0;
+        let total = 0;
+        const walk = (n) => {
+            if (n.children.length) {
+                n.children.forEach(walk);
+            } else if (n.item_type !== "milestone" && n.state !== "cancelled") {
+                total += 1;
+                if (n.state === "done") done += 1;
+            }
+        };
+        node.children.forEach(walk);
+        return total ? Math.round((done / total) * 100) : 0;
+    }
+
     openItem(id) {
         this.action.doAction(
             {

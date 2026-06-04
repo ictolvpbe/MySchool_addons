@@ -47,7 +47,8 @@
                 </thead>
                 <tbody>
                     <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
-                        <tr class="o_msp_wp_row">
+                        <tr class="o_msp_wp_row"
+                            t-att-class="{ 'o_msp_summary': row.hasChildren, 'o_msp_milestone_row': row.item.item_type === 'milestone' }">
                             <td>
                                 <span class="o_msp_type_badge"
                                       t-attf-class="o_msp_type_{{ row.item.item_type }}"
@@ -65,6 +66,10 @@
                                            t-att-class="state.expanded[row.item.id] ? 'fa-caret-down' : 'fa-caret-right'"/>
                                     </span>
                                     <span class="o_msp_caret_spacer" t-else=""/>
+                                    <span class="o_msp_diamond"
+                                          t-if="row.item.item_type === 'milestone'">◆</span>
+                                    <i class="fa fa-folder o_msp_summary_icon"
+                                       t-elif="row.hasChildren"/>
                                     <t t-if="state.editingId === row.item.id">
                                         <input class="o_msp_inline_input" t-ref="renameInput"
                                                t-model="state.editingName"
@@ -73,6 +78,7 @@
                                     </t>
                                     <t t-else="">
                                         <span class="o_msp_subject_text o_msp_link"
+                                              t-att-class="{ 'o_msp_summary_text': row.hasChildren }"
                                               t-on-click="() => this.openItem(row.item.id)"
                                               t-esc="row.item.name"/>
                                         <button class="o_msp_rowbtn" title="Rename"
@@ -87,7 +93,18 @@
                                 </span>
                             </td>
                             <td>
-                                <t t-if="state.statusOpenId === row.item.id">
+                                <!-- Summary rows show rolled-up progress instead of a status. -->
+                                <t t-if="row.hasChildren">
+                                    <div class="o_msp_rollup">
+                                        <div class="o_msp_rollup_bar">
+                                            <div class="o_msp_rollup_fill"
+                                                 t-attf-style="width: {{ summaryPct(row.item) }}%;"/>
+                                        </div>
+                                        <span class="o_msp_rollup_pct"
+                                              t-esc="summaryPct(row.item) + '%'"/>
+                                    </div>
+                                </t>
+                                <t t-elif="state.statusOpenId === row.item.id">
                                     <select class="o_msp_status_select"
                                             t-on-change="(ev) => this.setStatus(row.item, ev.target.value)"
                                             t-on-blur="() => this.closeStatus()">
