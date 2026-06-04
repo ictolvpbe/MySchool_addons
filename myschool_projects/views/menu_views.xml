@@ -23,4 +23,16 @@
         action="myschool_project_milestone_action"
         sequence="20"/>
 
+    <menuitem id="myschool_projects_menu_config"
+        name="Configuration"
+        parent="myschool_projects_menu_root"
+        groups="myschool_projects.group_projects_manager"
+        sequence="90"/>
+
+    <menuitem id="myschool_projects_menu_tags"
+        name="Tags"
+        parent="myschool_projects_menu_config"
+        action="myschool_project_tag_action"
+        sequence="10"/>
+
 </odoo>

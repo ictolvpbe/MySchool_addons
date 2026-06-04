@@ -48,6 +48,7 @@ class MyschoolProjectTask(models.Model):
     date_start = fields.Date(string='Start Date')
     date_deadline = fields.Date(string='Deadline')
     planned_hours = fields.Float(string='Planned Hours')
+    tag_ids = fields.Many2many('myschool.project.tag', string='Tags')
 
     # --- Hierarchy (WBS among work items) ---
     parent_id = fields.Many2one(
