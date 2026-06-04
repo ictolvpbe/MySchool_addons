@@ -32,29 +32,45 @@
                 <button class="btn btn-sm btn-primary" t-on-click="createItem">
                     <i class="fa fa-plus me-1"/>Create
                 </button>
+                <div class="o_msp_colcfg ms-auto">
+                    <button class="btn btn-sm btn-light" t-on-click="toggleColMenu" title="Columns">
+                        <i class="fa fa-cog"/>
+                    </button>
+                    <div class="o_msp_colmenu" t-if="state.colMenuOpen">
+                        <t t-foreach="columnDefs" t-as="c" t-key="c.key">
+                            <label class="o_msp_colmenu_item">
+                                <input type="checkbox" t-att-checked="state.cols[c.key]"
+                                       t-on-change="() => this.toggleCol(c.key)"/>
+                                <span t-esc="c.label"/>
+                            </label>
+                        </t>
+                    </div>
+                </div>
             </div>
             <table class="o_msp_wp_table">
                 <thead>
                     <tr>
-                        <th class="o_msp_wp_type">Type</th>
-                        <th class="o_msp_wp_id">ID</th>
+                        <th class="o_msp_wp_type" t-if="state.cols.type">Type</th>
+                        <th class="o_msp_wp_id" t-if="state.cols.id">ID</th>
                         <th class="o_msp_wp_subject">Subject</th>
-                        <th>Status</th>
-                        <th>Assignee</th>
-                        <th>Start</th>
-                        <th>Deadline</th>
+                        <th t-if="state.cols.status">Status</th>
+                        <th t-if="state.cols.milestone">Milestone</th>
+                        <th t-if="state.cols.assignee">Assignee</th>
+                        <th t-if="state.cols.priority">Priority</th>
+                        <th t-if="state.cols.start">Start</th>
+                        <th t-if="state.cols.deadline">Deadline</th>
                     </tr>
                 </thead>
                 <tbody>
                     <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
                         <tr class="o_msp_wp_row"
                             t-att-class="{ 'o_msp_summary': row.hasChildren, 'o_msp_milestone_row': row.item.item_type === 'milestone' }">
-                            <td>
+                            <td t-if="state.cols.type">
                                 <span class="o_msp_type_badge"
                                       t-attf-class="o_msp_type_{{ row.item.item_type }}"
                                       t-esc="typeLabels[row.item.item_type] || row.item.item_type"/>
                             </td>
-                            <td class="o_msp_wp_id o_msp_link text-muted"
+                            <td t-if="state.cols.id" class="o_msp_wp_id o_msp_link text-muted"
                                 t-on-click="() => this.openItem(row.item.id)"
                                 t-esc="row.item.id"/>
                             <td>
@@ -92,7 +108,7 @@
                                     </t>
                                 </span>
                             </td>
-                            <td>
+                            <td t-if="state.cols.status">
                                 <!-- Summary rows show rolled-up progress instead of a status. -->
                                 <t t-if="row.hasChildren">
                                     <div class="o_msp_rollup">
@@ -121,13 +137,20 @@
                                           t-esc="stateLabels[row.item.state] || row.item.state"/>
                                 </t>
                             </td>
-                            <td t-esc="row.item.assigned_id ? row.item.assigned_id[1] : ''"/>
-                            <td t-esc="row.item.date_start or ''"/>
-                            <td t-esc="row.item.date_deadline or ''"/>
+                            <td t-if="state.cols.milestone"
+                                t-esc="row.item.milestone_id ? row.item.milestone_id[1] : ''"/>
+                            <td t-if="state.cols.assignee"
+                                t-esc="row.item.assigned_id ? row.item.assigned_id[1] : ''"/>
+                            <td t-if="state.cols.priority">
+                                <span t-attf-class="o_msp_prio o_msp_prio_{{ row.item.priority }}"
+                                      t-esc="priorityLabels[row.item.priority] || ''"/>
+                            </td>
+                            <td t-if="state.cols.start" t-esc="row.item.date_start or ''"/>
+                            <td t-if="state.cols.deadline" t-esc="row.item.date_deadline or ''"/>
                         </tr>
                     </t>
                     <tr t-if="!visibleRows.length and !state.loading">
-                        <td colspan="7" class="text-muted p-3">
+                        <td t-att-colspan="colCount" class="text-muted p-3">
                             Nog geen work items. Klik op + Create.
                         </td>
                     </tr>

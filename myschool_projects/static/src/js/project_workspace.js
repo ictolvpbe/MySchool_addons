@@ -57,6 +57,24 @@ const STATE_LABELS = {
     todo: "To Do", in_progress: "In Progress", blocked: "Blocked",
     done: "Done", cancelled: "Cancelled",
 };
+const PRIORITY_LABELS = { "0": "Low", "1": "Normal", "2": "High", "3": "Critical" };
+
+// Toggleable table columns (Subject is always shown). Order = display order.
+const COLUMN_DEFS = [
+    { key: "type", label: "Type" },
+    { key: "id", label: "ID" },
+    { key: "status", label: "Status" },
+    { key: "milestone", label: "Milestone" },
+    { key: "assignee", label: "Assignee" },
+    { key: "priority", label: "Priority" },
+    { key: "start", label: "Start" },
+    { key: "deadline", label: "Deadline" },
+];
+const DEFAULT_COLS = {
+    type: true, id: true, status: true, milestone: false,
+    assignee: true, priority: false, start: false, deadline: true,
+};
+const COLS_STORAGE_KEY = "myschool_projects.workspace.wpCols";
 
 /**
  * Hierarchical work-packages table (OpenProject-style): a flat-but-nested
@@ -72,12 +90,20 @@ export class WorkPackageTable extends Component {
         this.action = useService("action");
         this.typeLabels = TYPE_LABELS;
         this.stateLabels = STATE_LABELS;
+        this.priorityLabels = PRIORITY_LABELS;
+        this.columnDefs = COLUMN_DEFS;
         this.stateOptionList = Object.entries(STATE_LABELS).map(
             ([key, label]) => ({ key, label }));
         this.renameInput = useRef("renameInput");
+        let cols = { ...DEFAULT_COLS };
+        try {
+            const saved = JSON.parse(window.localStorage.getItem(COLS_STORAGE_KEY) || "null");
+            if (saved) cols = { ...cols, ...saved };
+        } catch (e) { /* ignore */ }
         this.state = useState({
             byId: {}, roots: [], expanded: {}, loading: true,
             editingId: false, editingName: "", statusOpenId: false,
+            cols, colMenuOpen: false,
         });
         onWillStart(async () => { await this.load(); });
         // Focus + select the rename input when it appears.
@@ -98,7 +124,7 @@ export class WorkPackageTable extends Component {
             "myschool.project.task",
             [["project_id", "=", this.props.projectId]],
             ["name", "item_type", "state", "assigned_id", "date_start",
-             "date_deadline", "priority", "parent_id", "child_count"],
+             "date_deadline", "priority", "parent_id", "child_count", "milestone_id"],
             { order: "sequence, id" },
         );
         const byId = {};
@@ -131,6 +157,19 @@ export class WorkPackageTable extends Component {
     }
 
     toggle(id) { this.state.expanded[id] = !this.state.expanded[id]; }
+
+    get colCount() {
+        // visible toggleable columns + the always-on Subject column
+        return Object.values(this.state.cols).filter(Boolean).length + 1;
+    }
+
+    // ---- column config ----
+    toggleColMenu() { this.state.colMenuOpen = !this.state.colMenuOpen; }
+    toggleCol(key) {
+        this.state.cols[key] = !this.state.cols[key];
+        window.localStorage.setItem(
+            COLS_STORAGE_KEY, JSON.stringify(this.state.cols));
+    }
 
     /** Rolled-up % of done leaf items under a summary node (milestones and
      *  cancelled items excluded), MS-Project style. */
