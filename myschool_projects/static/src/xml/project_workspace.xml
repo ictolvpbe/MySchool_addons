@@ -191,7 +191,7 @@
             </table>
 
             <WsContextMenu t-if="state.ctx" x="state.ctx.x" y="state.ctx.y"
-                           title="Work item" items="ctxItems"
+                           title="'Work item'" items="ctxItems"
                            onAction.bind="onCtxAction" onClose.bind="closeCtx"/>
         </div>
     </t>
@@ -329,7 +329,7 @@
             </div>
 
             <WsContextMenu t-if="state.ctx" x="state.ctx.x" y="state.ctx.y"
-                           title="Project" items="ctxItems"
+                           title="'Project'" items="ctxItems"
                            onAction.bind="onCtxAction" onClose.bind="closeCtx"/>
         </div>
     </t>
