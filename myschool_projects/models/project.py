@@ -30,7 +30,7 @@ class MyschoolProject(models.Model):
         ondelete='restrict', index=True, tracking=True,
     )
     child_ids = fields.One2many('myschool.project', 'parent_id', string='Sub-projects')
-    parent_path = fields.Char(index=True, unaccent=False)
+    parent_path = fields.Char(index=True)
 
     # --- People & planning ---
     responsible_id = fields.Many2one('res.users', string='Responsible', tracking=True)
@@ -133,6 +133,43 @@ class MyschoolProject(models.Model):
                 ])
             else:
                 project.descendant_count = 0
+
+    # ------------------------------------------------------------------
+    # Smart-button actions — open scoped views (project as a hub)
+    # ------------------------------------------------------------------
+
+    def action_open_tasks(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'{self.name} — Tasks',
+            'res_model': 'myschool.project.task',
+            'view_mode': 'kanban,list,calendar,form',
+            'domain': [('project_id', '=', self.id)],
+            'context': {'default_project_id': self.id},
+        }
+
+    def action_open_subprojects(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'{self.name} — Sub-projects',
+            'res_model': 'myschool.project',
+            'view_mode': 'kanban,list,form',
+            'domain': [('parent_id', '=', self.id)],
+            'context': {'default_parent_id': self.id},
+        }
+
+    def action_open_milestones(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'{self.name} — Milestones',
+            'res_model': 'myschool.project.milestone',
+            'view_mode': 'calendar,list,form',
+            'domain': [('project_id', '=', self.id)],
+            'context': {'default_project_id': self.id},
+        }
 
     @api.constrains('parent_id')
     def _check_parent_id(self):

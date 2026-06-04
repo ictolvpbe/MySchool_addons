@@ -104,6 +104,19 @@
         </field>
     </record>
 
+    <!-- ============ CALENDAR (deadline-tijdlijn) ============ -->
+    <record id="myschool_project_task_view_calendar" model="ir.ui.view">
+        <field name="name">myschool.project.task.calendar</field>
+        <field name="model">myschool.project.task</field>
+        <field name="arch" type="xml">
+            <calendar string="Tasks" date_start="date_deadline" color="project_id" mode="month">
+                <field name="project_id" filters="1"/>
+                <field name="assigned_id"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
     <!-- ============ SEARCH ============ -->
     <record id="myschool_project_task_view_search" model="ir.ui.view">
         <field name="name">myschool.project.task.search</field>
@@ -133,7 +146,7 @@
     <record id="myschool_project_task_action" model="ir.actions.act_window">
         <field name="name">Tasks</field>
         <field name="res_model">myschool.project.task</field>
-        <field name="view_mode">kanban,list,form</field>
+        <field name="view_mode">kanban,list,calendar,form</field>
         <field name="search_view_id" ref="myschool_project_task_view_search"/>
         <field name="context">{'search_default_open': 1}</field>
     </record>
