@@ -1,0 +1,303 @@
+.o_msp_workspace {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--ms-bg, #f8f9fa);
+}
+
+/* ---------- Sidebar ---------- */
+.o_msp_sidebar {
+    flex: 0 0 auto;
+    min-width: 200px;
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--ms-border, #dee2e6);
+    background: var(--ms-surface-1, #fff);
+    overflow: hidden;
+}
+.o_msp_sidebar_head {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--ms-border, #dee2e6);
+}
+.o_msp_sidebar_title {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: var(--ms-text-muted, #6c757d);
+}
+.o_msp_tree {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 4px 0;
+}
+.o_msp_node_row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 8px 5px 0;
+    cursor: pointer;
+    border-radius: 4px;
+    user-select: none;
+}
+.o_msp_node_row:hover { background: var(--ms-surface-3, #f1f3f5); }
+.o_msp_node_selected,
+.o_msp_node_selected:hover {
+    background: var(--ms-brand-1, #007d8c);
+    color: #fff;
+}
+.o_msp_caret, .o_msp_caret_spacer {
+    width: 16px;
+    flex: 0 0 16px;
+    text-align: center;
+}
+.o_msp_caret { cursor: pointer; }
+.o_msp_node_name {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.o_msp_node_pct {
+    flex: 0 0 auto;
+    font-size: 11px;
+    opacity: .7;
+    padding-right: 8px;
+}
+
+/* ---------- Splitter ---------- */
+.o_msp_splitter {
+    flex: 0 0 5px;
+    cursor: col-resize;
+    background: transparent;
+}
+.o_msp_splitter:hover { background: var(--ms-brand-2, #00c4d9); }
+
+/* ---------- Main ---------- */
+.o_msp_main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.o_msp_empty { padding: 32px; }
+.o_msp_topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ms-border, #dee2e6);
+    background: var(--ms-surface-1, #fff);
+}
+.o_msp_proj_name { font-weight: 600; font-size: 16px; }
+.o_msp_proj_code { color: var(--ms-text-muted, #6c757d); margin-left: 6px; }
+.o_msp_openform { margin-left: auto; }
+
+.o_msp_content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+}
+/* The embedded native view fills the content area. */
+.o_msp_content > .o_view_controller {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* ---------- Overview ---------- */
+.o_msp_overview {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 960px;
+}
+.o_msp_cols {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.o_msp_cols > .o_msp_card { flex: 1 1 280px; }
+.o_msp_card {
+    background: var(--ms-surface-1, #fff);
+    border: 1px solid var(--ms-border, #dee2e6);
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+.o_msp_card_head {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.o_msp_row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    border-top: 1px solid var(--ms-border, #f1f3f5);
+}
+.o_msp_clickable { cursor: pointer; }
+.o_msp_clickable:hover { background: var(--ms-surface-3, #f1f3f5); }
+
+/* ---------- Work-packages table ---------- */
+.o_msp_wp {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+}
+.o_msp_wp_toolbar {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ms-border, #dee2e6);
+}
+.o_msp_colcfg { position: relative; }
+.o_msp_colmenu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 4px;
+    z-index: 10;
+    min-width: 160px;
+    background: var(--ms-surface-1, #fff);
+    border: 1px solid var(--ms-border, #dee2e6);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    padding: 6px;
+}
+.o_msp_colmenu_item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 0;
+    font-weight: normal;
+}
+.o_msp_colmenu_item:hover { background: var(--ms-surface-3, #f1f3f5); }
+
+/* Priority labels */
+.o_msp_prio { font-size: 11px; font-weight: 600; }
+.o_msp_prio_0 { color: #adb5bd; }
+.o_msp_prio_1 { color: #495057; }
+.o_msp_prio_2 { color: #d97706; }
+.o_msp_prio_3 { color: #dc2626; }
+.o_msp_wp_table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.o_msp_wp_table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--ms-surface-1, #fff);
+    text-align: left;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--ms-text-muted, #6c757d);
+    padding: 8px 10px;
+    border-bottom: 2px solid var(--ms-border, #dee2e6);
+    z-index: 1;
+}
+.o_msp_wp_table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--ms-border, #f1f3f5);
+    white-space: nowrap;
+}
+.o_msp_wp_row { cursor: pointer; }
+.o_msp_wp_row:hover { background: var(--ms-surface-3, #f6f8fa); }
+.o_msp_wp_type { width: 90px; }
+.o_msp_wp_id { width: 56px; }
+.o_msp_wp_subject { width: 40%; }
+
+.o_msp_subject_cell { display: inline-flex; align-items: center; gap: 4px; }
+.o_msp_subject_text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.o_msp_caret, .o_msp_caret_spacer { width: 14px; flex: 0 0 14px; text-align: center; }
+.o_msp_caret { cursor: pointer; }
+
+/* Type badges */
+.o_msp_type_badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: #fff;
+}
+.o_msp_type_task { background: #6c757d; }
+.o_msp_type_milestone { background: #0d9488; }
+.o_msp_type_phase { background: #7c3aed; }
+.o_msp_type_epic { background: #2563eb; }
+.o_msp_type_bug { background: #dc2626; }
+
+/* Status badges */
+.o_msp_status_badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+.o_msp_status_todo { background: #f1f3f5; color: #495057; border-color: #dee2e6; }
+.o_msp_status_in_progress { background: #dbeafe; color: #1e40af; }
+.o_msp_status_blocked { background: #ffedd5; color: #9a3412; }
+.o_msp_status_done { background: #dcfce7; color: #166534; }
+.o_msp_status_cancelled { background: #f1f3f5; color: #adb5bd; text-decoration: line-through; }
+
+/* Inline editing */
+.o_msp_link { cursor: pointer; }
+.o_msp_subject_text.o_msp_link:hover { text-decoration: underline; }
+.o_msp_inline_input {
+    flex: 1 1 auto;
+    min-width: 120px;
+    border: 1px solid var(--ms-brand-1, #007d8c);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font: inherit;
+}
+.o_msp_status_select {
+    border: 1px solid var(--ms-brand-1, #007d8c);
+    border-radius: 4px;
+    padding: 1px 4px;
+    font: inherit;
+}
+.o_msp_rowbtn {
+    border: none;
+    background: transparent;
+    color: var(--ms-text-muted, #6c757d);
+    padding: 0 4px;
+    cursor: pointer;
+    visibility: hidden;
+}
+.o_msp_rowbtn:hover { color: var(--ms-brand-1, #007d8c); }
+.o_msp_wp_row:hover .o_msp_rowbtn { visibility: visible; }
+
+/* Summary rows (item with children) — MS-Project style */
+.o_msp_summary { background: var(--ms-surface-3, #f4f6f8); }
+.o_msp_summary_text { font-weight: 700; }
+.o_msp_summary_icon { color: #868e96; margin-right: 4px; }
+.o_msp_rollup { display: flex; align-items: center; gap: 6px; }
+.o_msp_rollup_bar {
+    width: 80px; height: 6px;
+    background: #e9ecef; border-radius: 3px; overflow: hidden;
+}
+.o_msp_rollup_fill { height: 100%; background: var(--ms-brand-1, #0d9488); }
+.o_msp_rollup_pct { font-size: 11px; color: var(--ms-text-muted, #6c757d); }
+
+/* Milestone rows */
+.o_msp_milestone_row { background: rgba(13, 148, 136, 0.06); }
+.o_msp_milestone_row td { border-bottom-color: rgba(13, 148, 136, 0.25); }
+.o_msp_diamond { color: #0d9488; margin-right: 4px; font-size: 11px; }

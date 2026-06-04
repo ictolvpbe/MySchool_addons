@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ KANBAN ============ -->
+    <record id="myschool_project_task_view_kanban" model="ir.ui.view">
+        <field name="name">myschool.project.task.kanban</field>
+        <field name="model">myschool.project.task</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" class="o_kanban_small_column">
+                <field name="state"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="o_kanban_record_top">
+                            <strong class="o_kanban_record_title">
+                                <field name="name"/>
+                            </strong>
+                            <field name="item_type" widget="badge"
+                                   decoration-info="item_type == 'milestone'"
+                                   decoration-warning="item_type == 'bug'"
+                                   decoration-primary="item_type == 'epic'"/>
+                        </div>
+                        <div class="o_kanban_record_body">
+                            <field name="project_id"/>
+                            <div t-if="record.date_deadline.raw_value" class="text-muted">
+                                <i class="fa fa-clock-o" role="img" aria-label="Deadline"/>
+                                <field name="date_deadline"/>
+                            </div>
+                        </div>
+                        <div class="o_kanban_record_bottom">
+                            <div class="oe_kanban_bottom_left">
+                                <field name="priority" widget="priority"/>
+                            </div>
+                            <div class="oe_kanban_bottom_right">
+                                <field name="assigned_id" widget="many2one_avatar_user"/>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- ============ LIST ============ -->
+    <record id="myschool_project_task_view_list" model="ir.ui.view">
+        <field name="name">myschool.project.task.list</field>
+        <field name="model">myschool.project.task</field>
+        <field name="arch" type="xml">
+            <list string="Work Items">
+                <field name="sequence" widget="handle"/>
+                <field name="item_type" widget="badge"
+                       decoration-info="item_type == 'milestone'"
+                       decoration-warning="item_type == 'bug'"
+                       decoration-primary="item_type == 'epic'"/>
+                <field name="name"/>
+                <field name="parent_id" optional="hide"/>
+                <field name="milestone_id" optional="show"/>
+                <field name="project_id"/>
+                <field name="assigned_id" widget="many2one_avatar_user"/>
+                <field name="priority" widget="priority"/>
+                <field name="date_deadline"/>
+                <field name="planned_hours" sum="Planned"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'todo'"
+                       decoration-primary="state == 'in_progress'"
+                       decoration-warning="state == 'blocked'"
+                       decoration-success="state == 'done'"
+                       decoration-muted="state == 'cancelled'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============ FORM ============ -->
+    <record id="myschool_project_task_view_form" model="ir.ui.view">
+        <field name="name">myschool.project.task.form</field>
+        <field name="model">myschool.project.task</field>
+        <field name="arch" type="xml">
+            <form string="Task">
+                <header>
+                    <field name="state" widget="statusbar"
+                           options="{'clickable': '1'}"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="Task name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="item_type"/>
+                            <field name="project_id"/>
+                            <field name="parent_id"/>
+                            <field name="milestone_id"
+                                   invisible="item_type == 'milestone'"/>
+                            <field name="assigned_id"/>
+                            <field name="priority" widget="priority"
+                                   invisible="item_type == 'milestone'"/>
+                        </group>
+                        <group>
+                            <field name="date_start"/>
+                            <field name="date_deadline"/>
+                            <field name="planned_hours"
+                                   invisible="item_type == 'milestone'"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Milestone items" name="milestone_items"
+                              invisible="item_type != 'milestone'">
+                            <label for="milestone_progress"/>
+                            <field name="milestone_progress" widget="progressbar"/>
+                            <field name="milestone_item_ids" readonly="1">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="assigned_id" widget="many2one_avatar_user"/>
+                                    <field name="date_deadline"/>
+                                    <field name="state" widget="badge"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Description" name="description">
+                            <field name="description" placeholder="Description..."/>
+                        </page>
+                        <page string="Dependencies" name="dependencies">
+                            <group>
+                                <field name="depends_on_ids" widget="many2many_tags"
+                                       domain="[('id', '!=', id)]"/>
+                                <field name="dependent_ids" widget="many2many_tags" readonly="1"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ CALENDAR (deadline-tijdlijn) ============ -->
+    <record id="myschool_project_task_view_calendar" model="ir.ui.view">
+        <field name="name">myschool.project.task.calendar</field>
+        <field name="model">myschool.project.task</field>
+        <field name="arch" type="xml">
+            <calendar string="Tasks" date_start="date_deadline" color="project_id" mode="month">
+                <field name="project_id" filters="1"/>
+                <field name="assigned_id"/>
+                <field name="state"/>
+            </calendar>
+        </field>
+    </record>
+
+    <!-- ============ SEARCH ============ -->
+    <record id="myschool_project_task_view_search" model="ir.ui.view">
+        <field name="name">myschool.project.task.search</field>
+        <field name="model">myschool.project.task</field>
+        <field name="arch" type="xml">
+            <search string="Tasks">
+                <field name="name"/>
+                <field name="project_id"/>
+                <field name="assigned_id"/>
+                <field name="item_type"/>
+                <field name="parent_id"/>
+                <field name="milestone_id"/>
+                <filter name="my_tasks" string="My Tasks"
+                        domain="[('assigned_id', '=', uid)]"/>
+                <filter name="open" string="Open"
+                        domain="[('state', 'not in', ('done', 'cancelled'))]"/>
+                <separator/>
+                <filter name="tasks" string="Tasks" domain="[('item_type', '=', 'task')]"/>
+                <filter name="milestones" string="Milestones" domain="[('item_type', '=', 'milestone')]"/>
+                <separator/>
+                <filter name="todo" string="To Do" domain="[('state', '=', 'todo')]"/>
+                <filter name="in_progress" string="In Progress" domain="[('state', '=', 'in_progress')]"/>
+                <filter name="blocked" string="Blocked" domain="[('state', '=', 'blocked')]"/>
+                <separator/>
+                <filter name="group_type" string="Type" context="{'group_by': 'item_type'}"/>
+                <filter name="group_milestone" string="Milestone" context="{'group_by': 'milestone_id'}"/>
+                <filter name="group_parent" string="Parent" context="{'group_by': 'parent_id'}"/>
+                <filter name="group_project" string="Project" context="{'group_by': 'project_id'}"/>
+                <filter name="group_assignee" string="Assigned To" context="{'group_by': 'assigned_id'}"/>
+                <filter name="group_state" string="State" context="{'group_by': 'state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ============ ACTION ============ -->
+    <record id="myschool_project_task_action" model="ir.actions.act_window">
+        <field name="name">Work Items</field>
+        <field name="res_model">myschool.project.task</field>
+        <field name="view_mode">kanban,list,calendar,form</field>
+        <field name="search_view_id" ref="myschool_project_task_view_search"/>
+        <field name="context">{'search_default_open': 1}</field>
+    </record>
+
+    <!-- Milestones = work items van type 'milestone' (zelfde xmlid als vroeger,
+         zodat het bestaande menu blijft werken). -->
+    <record id="myschool_project_milestone_action" model="ir.actions.act_window">
+        <field name="name">Milestones</field>
+        <field name="res_model">myschool.project.task</field>
+        <field name="view_mode">calendar,list,form</field>
+        <field name="domain">[('item_type', '=', 'milestone')]</field>
+        <field name="search_view_id" ref="myschool_project_task_view_search"/>
+        <field name="context">{'default_item_type': 'milestone', 'search_default_group_project': 1}</field>
+    </record>
+
+</odoo>

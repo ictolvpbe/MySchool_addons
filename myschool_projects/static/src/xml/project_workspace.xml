@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_projects.WbsNode">
+        <div class="o_msp_node">
+            <div class="o_msp_node_row"
+                 t-att-class="{ 'o_msp_node_selected': isSelected }"
+                 t-attf-style="padding-left: {{ level * 14 + 6 }}px;"
+                 t-on-click="onRowClick">
+                <span class="o_msp_caret" t-if="hasChildren" t-on-click="onCaretClick">
+                    <i class="fa" t-att-class="isExpanded ? 'fa-caret-down' : 'fa-caret-right'"/>
+                </span>
+                <span class="o_msp_caret_spacer" t-else=""/>
+                <span class="o_msp_node_name" t-esc="props.node.name"/>
+                <span class="o_msp_node_pct" t-esc="pct + '%'"/>
+            </div>
+            <div class="o_msp_children" t-if="hasChildren and isExpanded">
+                <t t-foreach="props.node.children" t-as="child" t-key="child.id">
+                    <WbsNode node="child" level="childLevel"
+                             selectedId="props.selectedId"
+                             expanded="props.expanded"
+                             onSelect="props.onSelect"
+                             onToggle="props.onToggle"/>
+                </t>
+            </div>
+        </div>
+    </t>
+
+    <t t-name="myschool_projects.WorkPackageTable">
+        <div class="o_msp_wp">
+            <div class="o_msp_wp_toolbar">
+                <button class="btn btn-sm btn-primary" t-on-click="createItem">
+                    <i class="fa fa-plus me-1"/>Create
+                </button>
+                <div class="o_msp_colcfg ms-auto">
+                    <button class="btn btn-sm btn-light" t-on-click="toggleColMenu" title="Columns">
+                        <i class="fa fa-cog"/>
+                    </button>
+                    <div class="o_msp_colmenu" t-if="state.colMenuOpen">
+                        <t t-foreach="columnDefs" t-as="c" t-key="c.key">
+                            <label class="o_msp_colmenu_item">
+                                <input type="checkbox" t-att-checked="state.cols[c.key]"
+                                       t-on-change="() => this.toggleCol(c.key)"/>
+                                <span t-esc="c.label"/>
+                            </label>
+                        </t>
+                    </div>
+                </div>
+            </div>
+            <table class="o_msp_wp_table">
+                <thead>
+                    <tr>
+                        <th class="o_msp_wp_type" t-if="state.cols.type">Type</th>
+                        <th class="o_msp_wp_id" t-if="state.cols.id">ID</th>
+                        <th class="o_msp_wp_subject">Subject</th>
+                        <th t-if="state.cols.status">Status</th>
+                        <th t-if="state.cols.milestone">Milestone</th>
+                        <th t-if="state.cols.assignee">Assignee</th>
+                        <th t-if="state.cols.priority">Priority</th>
+                        <th t-if="state.cols.start">Start</th>
+                        <th t-if="state.cols.deadline">Deadline</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
+                        <tr class="o_msp_wp_row"
+                            t-att-class="{ 'o_msp_summary': row.hasChildren, 'o_msp_milestone_row': row.item.item_type === 'milestone' }">
+                            <td t-if="state.cols.type">
+                                <span class="o_msp_type_badge"
+                                      t-attf-class="o_msp_type_{{ row.item.item_type }}"
+                                      t-esc="typeLabels[row.item.item_type] || row.item.item_type"/>
+                            </td>
+                            <td t-if="state.cols.id" class="o_msp_wp_id o_msp_link text-muted"
+                                t-on-click="() => this.openItem(row.item.id)"
+                                t-esc="row.item.id"/>
+                            <td>
+                                <span class="o_msp_subject_cell"
+                                      t-attf-style="padding-left: {{ row.depth * 18 }}px;">
+                                    <span class="o_msp_caret" t-if="row.hasChildren"
+                                          t-on-click.stop="() => this.toggle(row.item.id)">
+                                        <i class="fa"
+                                           t-att-class="state.expanded[row.item.id] ? 'fa-caret-down' : 'fa-caret-right'"/>
+                                    </span>
+                                    <span class="o_msp_caret_spacer" t-else=""/>
+                                    <span class="o_msp_diamond"
+                                          t-if="row.item.item_type === 'milestone'">◆</span>
+                                    <i class="fa fa-folder o_msp_summary_icon"
+                                       t-elif="row.hasChildren"/>
+                                    <t t-if="state.editingId === row.item.id">
+                                        <input class="o_msp_inline_input" t-ref="renameInput"
+                                               t-model="state.editingName"
+                                               t-on-keydown="(ev) => this.onRenameKeydown(ev, row.item)"
+                                               t-on-blur="() => this.saveRename(row.item)"/>
+                                    </t>
+                                    <t t-else="">
+                                        <span class="o_msp_subject_text o_msp_link"
+                                              t-att-class="{ 'o_msp_summary_text': row.hasChildren }"
+                                              t-on-click="() => this.openItem(row.item.id)"
+                                              t-esc="row.item.name"/>
+                                        <button class="o_msp_rowbtn" title="Rename"
+                                                t-on-click.stop="() => this.startRename(row.item)">
+                                            <i class="fa fa-pencil"/>
+                                        </button>
+                                        <button class="o_msp_rowbtn" title="Add sub-item"
+                                                t-on-click.stop="() => this.addChild(row.item)">
+                                            <i class="fa fa-plus"/>
+                                        </button>
+                                    </t>
+                                </span>
+                            </td>
+                            <td t-if="state.cols.status">
+                                <!-- Summary rows show rolled-up progress instead of a status. -->
+                                <t t-if="row.hasChildren">
+                                    <div class="o_msp_rollup">
+                                        <div class="o_msp_rollup_bar">
+                                            <div class="o_msp_rollup_fill"
+                                                 t-attf-style="width: {{ summaryPct(row.item) }}%;"/>
+                                        </div>
+                                        <span class="o_msp_rollup_pct"
+                                              t-esc="summaryPct(row.item) + '%'"/>
+                                    </div>
+                                </t>
+                                <t t-elif="state.statusOpenId === row.item.id">
+                                    <select class="o_msp_status_select"
+                                            t-on-change="(ev) => this.setStatus(row.item, ev.target.value)"
+                                            t-on-blur="() => this.closeStatus()">
+                                        <option t-foreach="stateOptionList" t-as="s" t-key="s.key"
+                                                t-att-value="s.key"
+                                                t-att-selected="s.key === row.item.state"
+                                                t-esc="s.label"/>
+                                    </select>
+                                </t>
+                                <t t-else="">
+                                    <span class="o_msp_status_badge o_msp_link"
+                                          t-attf-class="o_msp_status_{{ row.item.state }}"
+                                          t-on-click="() => this.openStatus(row.item.id)"
+                                          t-esc="stateLabels[row.item.state] || row.item.state"/>
+                                </t>
+                            </td>
+                            <td t-if="state.cols.milestone"
+                                t-esc="row.item.milestone_id ? row.item.milestone_id[1] : ''"/>
+                            <td t-if="state.cols.assignee"
+                                t-esc="row.item.assigned_id ? row.item.assigned_id[1] : ''"/>
+                            <td t-if="state.cols.priority">
+                                <span t-attf-class="o_msp_prio o_msp_prio_{{ row.item.priority }}"
+                                      t-esc="priorityLabels[row.item.priority] || ''"/>
+                            </td>
+                            <td t-if="state.cols.start" t-esc="row.item.date_start or ''"/>
+                            <td t-if="state.cols.deadline" t-esc="row.item.date_deadline or ''"/>
+                        </tr>
+                    </t>
+                    <tr t-if="!visibleRows.length and !state.loading">
+                        <td t-att-colspan="colCount" class="text-muted p-3">
+                            Nog geen work items. Klik op + Create.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </t>
+
+    <t t-name="myschool_projects.Workspace">
+        <div class="o_msp_workspace">
+            <!-- ====== SIDEBAR: WBS ====== -->
+            <div class="o_msp_sidebar" t-attf-style="width: {{ state.sidebarWidth }}px;">
+                <div class="o_msp_sidebar_head">
+                    <span class="o_msp_sidebar_title">Projects</span>
+                </div>
+                <div class="o_msp_tree">
+                    <t t-if="state.loading">
+                        <div class="text-muted p-2">Laden…</div>
+                    </t>
+                    <t t-elif="!state.roots.length">
+                        <div class="text-muted p-2">Geen projecten</div>
+                    </t>
+                    <t t-else="">
+                        <t t-foreach="state.roots" t-as="node" t-key="node.id">
+                            <WbsNode node="node" level="0"
+                                     selectedId="state.selectedId"
+                                     expanded="state.expanded"
+                                     onSelect.bind="selectProject"
+                                     onToggle.bind="onToggle"/>
+                        </t>
+                    </t>
+                </div>
+            </div>
+
+            <!-- ====== SPLITTER ====== -->
+            <div class="o_msp_splitter" t-on-mousedown="onSplitterDown"/>
+
+            <!-- ====== MAIN ====== -->
+            <div class="o_msp_main">
+                <t t-if="!selected">
+                    <div class="o_msp_empty text-muted">Selecteer een project links.</div>
+                </t>
+                <t t-else="">
+                    <div class="o_msp_topbar">
+                        <div class="o_msp_title">
+                            <span class="o_msp_proj_name" t-esc="selected.name"/>
+                            <span t-if="selected.code" class="o_msp_proj_code" t-esc="selected.code"/>
+                        </div>
+                        <div class="o_msp_switch btn-group">
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'table' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('table')">Table</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'overview' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('overview')">Overview</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'kanban' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('kanban')">Board</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'list' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('list')">List</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'calendar' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('calendar')">Calendar</button>
+                        </div>
+                        <button class="btn btn-sm btn-light o_msp_openform"
+                                t-on-click="openProjectForm">Open form</button>
+                    </div>
+
+                    <div class="o_msp_content">
+                        <!-- TABLE (custom hierarchical work-packages) -->
+                        <t t-if="state.view === 'table'">
+                            <WorkPackageTable t-key="state.selectedId"
+                                              projectId="state.selectedId"/>
+                        </t>
+                        <!-- OVERVIEW -->
+                        <t t-elif="state.view === 'overview'">
+                            <div class="o_msp_overview">
+                                <div class="o_msp_card">
+                                    <div class="o_msp_card_head">
+                                        <span>Voortgang</span>
+                                        <span t-esc="Math.round(selected.progress) + '%'"/>
+                                    </div>
+                                    <div class="progress">
+                                        <div class="progress-bar"
+                                             t-attf-style="width: {{ selected.progress }}%;"/>
+                                    </div>
+                                </div>
+                                <div class="o_msp_cols">
+                                    <div class="o_msp_card">
+                                        <div class="o_msp_card_head">
+                                            <span>Taken</span>
+                                            <span t-if="state.overview" class="text-muted"
+                                                  t-esc="state.overview.taskTotal"/>
+                                        </div>
+                                        <t t-if="state.overview">
+                                            <div t-foreach="taskStates" t-as="ts" t-key="ts.key"
+                                                 class="o_msp_row">
+                                                <span t-esc="ts.label"/>
+                                                <span class="badge bg-secondary"
+                                                      t-esc="state.overview.taskCounts[ts.key] || 0"/>
+                                            </div>
+                                        </t>
+                                    </div>
+                                    <div class="o_msp_card">
+                                        <div class="o_msp_card_head"><span>Milestones</span></div>
+                                        <t t-if="state.overview">
+                                            <t t-if="state.overview.milestones.length">
+                                                <div t-foreach="state.overview.milestones" t-as="m"
+                                                     t-key="m.id" class="o_msp_row">
+                                                    <span t-esc="m.name"/>
+                                                    <span class="text-muted" t-esc="m.date_deadline or '—'"/>
+                                                </div>
+                                            </t>
+                                            <div t-else="" class="text-muted">Geen milestones</div>
+                                        </t>
+                                    </div>
+                                </div>
+                                <div class="o_msp_card"
+                                     t-if="state.overview and state.overview.children.length">
+                                    <div class="o_msp_card_head"><span>Sub-projecten</span></div>
+                                    <div t-foreach="state.overview.children" t-as="c" t-key="c.id"
+                                         class="o_msp_row o_msp_clickable"
+                                         t-on-click="() => this.selectProject(c.id)">
+                                        <span t-esc="c.name"/>
+                                        <span class="text-muted" t-esc="Math.round(c.progress) + '%'"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </t>
+                        <!-- BOARD / LIST / CALENDAR -->
+                        <t t-else="">
+                            <View t-key="state.selectedId + '-' + state.view"
+                                  t-props="taskViewProps"/>
+                        </t>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+
+</templates>

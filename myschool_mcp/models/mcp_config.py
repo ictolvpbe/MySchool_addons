@@ -35,6 +35,13 @@ class McpConfigSettings(models.TransientModel):
         help='Schakel uit om alle appfoundry_* tools tijdelijk te '
              'verbergen voor de MCP-clients.',
     )
+    mcp_provider_projects = fields.Boolean(
+        string='Projects provider',
+        default=True,
+        config_parameter='myschool_mcp.provider_projects',
+        help='Schakel uit om alle projects_* tools tijdelijk te '
+             'verbergen voor de MCP-clients.',
+    )
 
     def set_values(self):
         super().set_values()
