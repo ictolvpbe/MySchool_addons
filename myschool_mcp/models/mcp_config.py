@@ -36,7 +36,6 @@ class McpConfigSettings(models.TransientModel):
              'verbergen voor de MCP-clients.',
     )
 
-    @api.model
     def set_values(self):
         super().set_values()
         # Configureer de in-memory rate-limiter zodat wijzigingen

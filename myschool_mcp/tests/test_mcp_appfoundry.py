@@ -25,7 +25,7 @@ class TestMcpAppfoundry(HttpCase):
             'name': 'MCP Test User',
             'login': 'mcp_test_user',
             'email': 'mcp@test.local',
-            'groups_id': [(4, cls.env.ref(
+            'group_ids': [(4, cls.env.ref(
                 'myschool_appfoundry.group_appfoundry_manager').id),
                 (4, cls.env.ref('myschool_mcp.group_mcp_user').id)],
         })
@@ -181,8 +181,10 @@ class TestMcpAppfoundry(HttpCase):
         item.invalidate_recordset()
         self.assertEqual(item.stage_id.name, 'In Review')
         # Stage-tracking moet een chatter-entry hebben gemaakt
+        # tracking_value_ids is admin-only (Odoo 19) → lees via sudo;
+        # test_user heeft enkel appfoundry-rechten, geen system-admin.
         messages = item.message_ids.filtered(
-            lambda m: m.tracking_value_ids.filtered(
+            lambda m: m.sudo().tracking_value_ids.filtered(
                 lambda t: t.field_id.name == 'stage_id'))
         self.assertTrue(messages, 'expected a stage-change tracking message')
 

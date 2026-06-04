@@ -56,7 +56,7 @@ class McpController(http.Controller):
     # ------------------------------------------------------------------
 
     @http.route('/mcp', type='http', auth='none', methods=['POST'],
-                csrf=False, save_session=False)
+                csrf=False, save_session=False, readonly=False)
     def mcp(self, **kw):
         """Streamable HTTP MCP endpoint — JSON-RPC 2.0 over POST."""
         # Init rate-limit op de eerste call (kan niet bij module-laad

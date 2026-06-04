@@ -53,7 +53,7 @@
             <field name="name">MCP Server Settings</field>
             <field name="res_model">myschool.mcp.config</field>
             <field name="view_mode">form</field>
-            <field name="target">inline</field>
+            <field name="target">current</field>
         </record>
 
     </data>
