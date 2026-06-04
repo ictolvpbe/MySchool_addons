@@ -93,6 +93,56 @@ def _tree(project):
     }
 
 
+def _resolve_item(env, ref):
+    """int-id of str-van-int → myschool.project.task (1 record)."""
+    if isinstance(ref, int) or (isinstance(ref, str) and str(ref).isdigit()):
+        item = env['myschool.project.task'].browse(int(ref)).exists()
+        if not item:
+            raise McpToolError(f'Work item id={ref} not found', code=-32004)
+        return item
+    raise McpToolError(
+        f'Invalid work item reference: {ref!r} (use the numeric id)', code=-32602)
+
+
+def _resolve_milestone(env, project, ref):
+    """Milestone op id of (case-insensitive) naam binnen het project."""
+    Task = env['myschool.project.task']
+    if isinstance(ref, int) or (isinstance(ref, str) and str(ref).isdigit()):
+        m = Task.browse(int(ref)).exists()
+    else:
+        m = Task.search([
+            ('project_id', '=', project.id),
+            ('item_type', '=', 'milestone'),
+            ('name', '=ilike', str(ref).strip()),
+        ], limit=1)
+    if not m or m.item_type != 'milestone':
+        raise McpToolError(f'Milestone {ref!r} not found in project', code=-32004)
+    return m
+
+
+def _serialize_item(item):
+    return {
+        'id': item.id,
+        'name': item.name,
+        'item_type': item.item_type,
+        'project_id': item.project_id.id,
+        'project_code': item.project_id.code or '',
+        'parent_id': item.parent_id.id or False,
+        'parent_name': item.parent_id.name or '',
+        'state': item.state,
+        'priority': item.priority,
+        'assigned_login': item.assigned_id.login or '',
+        'assigned_name': item.assigned_id.name or '',
+        'date_start': item.date_start.isoformat() if item.date_start else None,
+        'date_deadline': item.date_deadline.isoformat() if item.date_deadline else None,
+        'planned_hours': item.planned_hours,
+        'milestone_id': item.milestone_id.id or False,
+        'milestone_name': item.milestone_id.name or '',
+        'child_count': item.child_count,
+        'depends_on': [{'id': d.id, 'name': d.name} for d in item.depends_on_ids],
+    }
+
+
 # ======================================================================
 # READ TOOLS
 # ======================================================================
@@ -320,3 +370,172 @@ def set_dependency(env, project, depends_on, remove=False):
             for d in p.depends_on_ids
         ],
     }
+
+
+# ======================================================================
+# WORK ITEM TOOLS (tasks / milestones / phases / …)
+# ======================================================================
+
+@McpRegistry.tool(
+    name='projects_list_items',
+    description=(
+        'List work items of a project, optionally filtered by type, state or '
+        'assignee. Returns flat list (use parent_id for hierarchy).'
+    ),
+    input_schema={
+        'type': 'object',
+        'required': ['project'],
+        'properties': {
+            'project': {'description': 'Project id or code',
+                        'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+            'item_type': {'type': 'string',
+                          'enum': ['task', 'milestone', 'phase', 'epic', 'bug']},
+            'state': {'type': 'string',
+                      'enum': ['todo', 'in_progress', 'blocked', 'done', 'cancelled']},
+            'assignee': {'description': 'User login, id, or "me"',
+                         'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+            'open_only': {'type': 'boolean', 'default': False},
+            'limit': {'type': 'integer', 'default': 200, 'maximum': 1000},
+        },
+    },
+    required_group=READ_GROUP,
+)
+def list_items(env, project, item_type=None, state=None, assignee=None,
+               open_only=False, limit=200):
+    p = _resolve_project(env, project)
+    domain = [('project_id', '=', p.id)]
+    if item_type:
+        domain.append(('item_type', '=', item_type))
+    if state:
+        domain.append(('state', '=', state))
+    if open_only:
+        domain.append(('state', 'not in', ('done', 'cancelled')))
+    if assignee:
+        domain.append(('assigned_id', '=', base.resolve_user(env, assignee).id))
+    items = env['myschool.project.task'].search(
+        domain, limit=min(int(limit or 200), 1000), order='sequence, id')
+    return [_serialize_item(i) for i in items]
+
+
+@McpRegistry.tool(
+    name='projects_create_item',
+    description=(
+        'Create a work item (task/milestone/phase/epic/bug) in a project. '
+        'Optionally nest under a parent item and/or link to a milestone.'
+    ),
+    input_schema={
+        'type': 'object',
+        'required': ['project', 'name'],
+        'properties': {
+            'project': {'description': 'Project id or code',
+                        'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+            'name': {'type': 'string'},
+            'item_type': {'type': 'string',
+                          'enum': ['task', 'milestone', 'phase', 'epic', 'bug'],
+                          'default': 'task'},
+            'parent': {'type': 'integer',
+                       'description': 'Parent work item id (same project)'},
+            'assignee': {'description': 'User login, id, or "me"',
+                         'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+            'state': {'type': 'string',
+                      'enum': ['todo', 'in_progress', 'blocked', 'done', 'cancelled'],
+                      'default': 'todo'},
+            'priority': {'type': 'string', 'enum': ['0', '1', '2', '3'], 'default': '1'},
+            'date_start': {'type': 'string', 'description': 'YYYY-MM-DD'},
+            'date_deadline': {'type': 'string', 'description': 'YYYY-MM-DD'},
+            'planned_hours': {'type': 'number'},
+            'milestone': {'description': 'Target milestone id or name (same project)',
+                          'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+            'description': {'type': 'string'},
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def create_item(env, project, name, item_type='task', parent=None, assignee=None,
+                state='todo', priority='1', date_start=None, date_deadline=None,
+                planned_hours=None, milestone=None, description=None):
+    p = _resolve_project(env, project)
+    vals = {
+        'project_id': p.id, 'name': name,
+        'item_type': item_type, 'state': state, 'priority': priority,
+    }
+    if parent is not None:
+        parent_item = _resolve_item(env, parent)
+        if parent_item.project_id.id != p.id:
+            raise McpToolError('Parent item moet in hetzelfde project zitten.', code=-32602)
+        vals['parent_id'] = parent_item.id
+    if assignee is not None:
+        vals['assigned_id'] = base.resolve_user(env, assignee).id
+    if date_start:
+        vals['date_start'] = date_start
+    if date_deadline:
+        vals['date_deadline'] = date_deadline
+    if planned_hours is not None:
+        vals['planned_hours'] = planned_hours
+    if milestone is not None:
+        vals['milestone_id'] = _resolve_milestone(env, p, milestone).id
+    if description:
+        vals['description'] = description
+    item = env['myschool.project.task'].create(vals)
+    return _serialize_item(item)
+
+
+@McpRegistry.tool(
+    name='projects_update_item',
+    description=(
+        'Update fields of a work item. Pass only the fields to change. For '
+        'parent/milestone pass an id (or name for milestone); pass false/0 to '
+        'clear (un-nest / unlink milestone).'
+    ),
+    input_schema={
+        'type': 'object',
+        'required': ['item'],
+        'properties': {
+            'item': {'type': 'integer', 'description': 'Work item id'},
+            'name': {'type': 'string'},
+            'item_type': {'type': 'string',
+                          'enum': ['task', 'milestone', 'phase', 'epic', 'bug']},
+            'parent': {'description': 'New parent item id; 0/false to clear',
+                       'oneOf': [{'type': 'integer'}, {'type': 'boolean'}]},
+            'assignee': {'description': 'User login/id/"me"; 0/false to clear',
+                         'oneOf': [{'type': 'integer'}, {'type': 'string'}, {'type': 'boolean'}]},
+            'state': {'type': 'string',
+                      'enum': ['todo', 'in_progress', 'blocked', 'done', 'cancelled']},
+            'priority': {'type': 'string', 'enum': ['0', '1', '2', '3']},
+            'date_start': {'type': 'string'},
+            'date_deadline': {'type': 'string'},
+            'planned_hours': {'type': 'number'},
+            'milestone': {'description': 'Target milestone id/name; 0/false to clear',
+                          'oneOf': [{'type': 'integer'}, {'type': 'string'}, {'type': 'boolean'}]},
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def update_item(env, item, **kwargs):
+    rec = _resolve_item(env, item)
+    vals = {}
+    for f in ('name', 'item_type', 'state', 'priority', 'planned_hours'):
+        if f in kwargs:
+            vals[f] = kwargs[f]
+    for f in ('date_start', 'date_deadline'):
+        if f in kwargs:
+            vals[f] = kwargs[f] or False
+    if 'assignee' in kwargs:
+        a = kwargs['assignee']
+        vals['assigned_id'] = base.resolve_user(env, a).id if a else False
+    if 'parent' in kwargs:
+        pv = kwargs['parent']
+        if pv:
+            par = _resolve_item(env, pv)
+            if par.project_id.id != rec.project_id.id:
+                raise McpToolError('Parent item moet in hetzelfde project zitten.', code=-32602)
+            vals['parent_id'] = par.id
+        else:
+            vals['parent_id'] = False
+    if 'milestone' in kwargs:
+        mv = kwargs['milestone']
+        vals['milestone_id'] = _resolve_milestone(env, rec.project_id, mv).id if mv else False
+    if not vals:
+        raise McpToolError('No updatable fields provided', code=-32602)
+    rec.write(vals)
+    return _serialize_item(rec)
