@@ -12,7 +12,7 @@ class MyschoolProjectTask(models.Model):
 
     _name = 'myschool.project.task'
     _description = 'Project Work Item'
-    _inherit = ['mail.thread']
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _parent_store = True
     _parent_name = 'parent_id'
     _order = 'sequence, id'
@@ -48,6 +48,7 @@ class MyschoolProjectTask(models.Model):
     date_start = fields.Date(string='Start Date')
     date_deadline = fields.Date(string='Deadline')
     planned_hours = fields.Float(string='Planned Hours')
+    tag_ids = fields.Many2many('myschool.project.tag', string='Tags')
 
     # --- Hierarchy (WBS among work items) ---
     parent_id = fields.Many2one(

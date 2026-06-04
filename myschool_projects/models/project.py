@@ -12,7 +12,7 @@ class MyschoolProject(models.Model):
 
     _name = 'myschool.project'
     _description = 'MySchool Project'
-    _inherit = ['mail.thread']
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _parent_store = True
     _parent_name = 'parent_id'
     _order = 'name'
