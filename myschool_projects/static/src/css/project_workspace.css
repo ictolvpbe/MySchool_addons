@@ -1,0 +1,145 @@
+.o_msp_workspace {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--ms-bg, #f8f9fa);
+}
+
+/* ---------- Sidebar ---------- */
+.o_msp_sidebar {
+    flex: 0 0 auto;
+    min-width: 200px;
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--ms-border, #dee2e6);
+    background: var(--ms-surface-1, #fff);
+    overflow: hidden;
+}
+.o_msp_sidebar_head {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--ms-border, #dee2e6);
+}
+.o_msp_sidebar_title {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: var(--ms-text-muted, #6c757d);
+}
+.o_msp_tree {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 4px 0;
+}
+.o_msp_node_row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 8px 5px 0;
+    cursor: pointer;
+    border-radius: 4px;
+    user-select: none;
+}
+.o_msp_node_row:hover { background: var(--ms-surface-3, #f1f3f5); }
+.o_msp_node_selected,
+.o_msp_node_selected:hover {
+    background: var(--ms-brand-1, #007d8c);
+    color: #fff;
+}
+.o_msp_caret, .o_msp_caret_spacer {
+    width: 16px;
+    flex: 0 0 16px;
+    text-align: center;
+}
+.o_msp_caret { cursor: pointer; }
+.o_msp_node_name {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.o_msp_node_pct {
+    flex: 0 0 auto;
+    font-size: 11px;
+    opacity: .7;
+    padding-right: 8px;
+}
+
+/* ---------- Splitter ---------- */
+.o_msp_splitter {
+    flex: 0 0 5px;
+    cursor: col-resize;
+    background: transparent;
+}
+.o_msp_splitter:hover { background: var(--ms-brand-2, #00c4d9); }
+
+/* ---------- Main ---------- */
+.o_msp_main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.o_msp_empty { padding: 32px; }
+.o_msp_topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ms-border, #dee2e6);
+    background: var(--ms-surface-1, #fff);
+}
+.o_msp_proj_name { font-weight: 600; font-size: 16px; }
+.o_msp_proj_code { color: var(--ms-text-muted, #6c757d); margin-left: 6px; }
+.o_msp_openform { margin-left: auto; }
+
+.o_msp_content {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+}
+/* The embedded native view fills the content area. */
+.o_msp_content > .o_view_controller {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* ---------- Overview ---------- */
+.o_msp_overview {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 960px;
+}
+.o_msp_cols {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.o_msp_cols > .o_msp_card { flex: 1 1 280px; }
+.o_msp_card {
+    background: var(--ms-surface-1, #fff);
+    border: 1px solid var(--ms-border, #dee2e6);
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+.o_msp_card_head {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.o_msp_row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    border-top: 1px solid var(--ms-border, #f1f3f5);
+}
+.o_msp_clickable { cursor: pointer; }
+.o_msp_clickable:hover { background: var(--ms-surface-3, #f1f3f5); }

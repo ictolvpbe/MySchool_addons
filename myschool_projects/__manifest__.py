@@ -28,7 +28,15 @@
         'views/task_views.xml',
         'views/milestone_views.xml',
         'views/menu_views.xml',
+        'views/workspace_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'myschool_projects/static/src/css/project_workspace.css',
+            'myschool_projects/static/src/js/project_workspace.js',
+            'myschool_projects/static/src/xml/project_workspace.xml',
+        ],
+    },
     'demo': [],
     'installable': True,
     'application': True,

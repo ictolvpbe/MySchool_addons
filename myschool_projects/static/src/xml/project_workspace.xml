@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_projects.WbsNode">
+        <div class="o_msp_node">
+            <div class="o_msp_node_row"
+                 t-att-class="{ 'o_msp_node_selected': isSelected }"
+                 t-attf-style="padding-left: {{ level * 14 + 6 }}px;"
+                 t-on-click="onRowClick">
+                <span class="o_msp_caret" t-if="hasChildren" t-on-click="onCaretClick">
+                    <i class="fa" t-att-class="isExpanded ? 'fa-caret-down' : 'fa-caret-right'"/>
+                </span>
+                <span class="o_msp_caret_spacer" t-else=""/>
+                <span class="o_msp_node_name" t-esc="props.node.name"/>
+                <span class="o_msp_node_pct" t-esc="pct + '%'"/>
+            </div>
+            <div class="o_msp_children" t-if="hasChildren and isExpanded">
+                <t t-foreach="props.node.children" t-as="child" t-key="child.id">
+                    <WbsNode node="child" level="childLevel"
+                             selectedId="props.selectedId"
+                             expanded="props.expanded"
+                             onSelect="props.onSelect"
+                             onToggle="props.onToggle"/>
+                </t>
+            </div>
+        </div>
+    </t>
+
+    <t t-name="myschool_projects.Workspace">
+        <div class="o_msp_workspace">
+            <!-- ====== SIDEBAR: WBS ====== -->
+            <div class="o_msp_sidebar" t-attf-style="width: {{ state.sidebarWidth }}px;">
+                <div class="o_msp_sidebar_head">
+                    <span class="o_msp_sidebar_title">Projects</span>
+                </div>
+                <div class="o_msp_tree">
+                    <t t-if="state.loading">
+                        <div class="text-muted p-2">Laden…</div>
+                    </t>
+                    <t t-elif="!state.roots.length">
+                        <div class="text-muted p-2">Geen projecten</div>
+                    </t>
+                    <t t-else="">
+                        <t t-foreach="state.roots" t-as="node" t-key="node.id">
+                            <WbsNode node="node" level="0"
+                                     selectedId="state.selectedId"
+                                     expanded="state.expanded"
+                                     onSelect.bind="selectProject"
+                                     onToggle.bind="onToggle"/>
+                        </t>
+                    </t>
+                </div>
+            </div>
+
+            <!-- ====== SPLITTER ====== -->
+            <div class="o_msp_splitter" t-on-mousedown="onSplitterDown"/>
+
+            <!-- ====== MAIN ====== -->
+            <div class="o_msp_main">
+                <t t-if="!selected">
+                    <div class="o_msp_empty text-muted">Selecteer een project links.</div>
+                </t>
+                <t t-else="">
+                    <div class="o_msp_topbar">
+                        <div class="o_msp_title">
+                            <span class="o_msp_proj_name" t-esc="selected.name"/>
+                            <span t-if="selected.code" class="o_msp_proj_code" t-esc="selected.code"/>
+                        </div>
+                        <div class="o_msp_switch btn-group">
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'overview' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('overview')">Overview</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'kanban' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('kanban')">Board</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'list' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('list')">List</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'calendar' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('calendar')">Calendar</button>
+                        </div>
+                        <button class="btn btn-sm btn-light o_msp_openform"
+                                t-on-click="openProjectForm">Open form</button>
+                    </div>
+
+                    <div class="o_msp_content">
+                        <!-- OVERVIEW -->
+                        <t t-if="state.view === 'overview'">
+                            <div class="o_msp_overview">
+                                <div class="o_msp_card">
+                                    <div class="o_msp_card_head">
+                                        <span>Voortgang</span>
+                                        <span t-esc="Math.round(selected.progress) + '%'"/>
+                                    </div>
+                                    <div class="progress">
+                                        <div class="progress-bar"
+                                             t-attf-style="width: {{ selected.progress }}%;"/>
+                                    </div>
+                                </div>
+                                <div class="o_msp_cols">
+                                    <div class="o_msp_card">
+                                        <div class="o_msp_card_head">
+                                            <span>Taken</span>
+                                            <span t-if="state.overview" class="text-muted"
+                                                  t-esc="state.overview.taskTotal"/>
+                                        </div>
+                                        <t t-if="state.overview">
+                                            <div t-foreach="taskStates" t-as="ts" t-key="ts.key"
+                                                 class="o_msp_row">
+                                                <span t-esc="ts.label"/>
+                                                <span class="badge bg-secondary"
+                                                      t-esc="state.overview.taskCounts[ts.key] || 0"/>
+                                            </div>
+                                        </t>
+                                    </div>
+                                    <div class="o_msp_card">
+                                        <div class="o_msp_card_head"><span>Milestones</span></div>
+                                        <t t-if="state.overview">
+                                            <t t-if="state.overview.milestones.length">
+                                                <div t-foreach="state.overview.milestones" t-as="m"
+                                                     t-key="m.id" class="o_msp_row">
+                                                    <span t-esc="m.name"/>
+                                                    <span class="text-muted" t-esc="m.date or '—'"/>
+                                                </div>
+                                            </t>
+                                            <div t-else="" class="text-muted">Geen milestones</div>
+                                        </t>
+                                    </div>
+                                </div>
+                                <div class="o_msp_card"
+                                     t-if="state.overview and state.overview.children.length">
+                                    <div class="o_msp_card_head"><span>Sub-projecten</span></div>
+                                    <div t-foreach="state.overview.children" t-as="c" t-key="c.id"
+                                         class="o_msp_row o_msp_clickable"
+                                         t-on-click="() => this.selectProject(c.id)">
+                                        <span t-esc="c.name"/>
+                                        <span class="text-muted" t-esc="Math.round(c.progress) + '%'"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </t>
+                        <!-- BOARD / LIST / CALENDAR -->
+                        <t t-else="">
+                            <View t-key="state.selectedId + '-' + state.view"
+                                  t-props="taskViewProps"/>
+                        </t>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+
+</templates>
