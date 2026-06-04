@@ -88,6 +88,7 @@ export class WorkPackageTable extends Component {
     setup() {
         this.orm = useService("orm");
         this.action = useService("action");
+        this.notification = useService("notification");
         this.typeLabels = TYPE_LABELS;
         this.stateLabels = STATE_LABELS;
         this.priorityLabels = PRIORITY_LABELS;
@@ -104,6 +105,7 @@ export class WorkPackageTable extends Component {
             byId: {}, roots: [], expanded: {}, loading: true,
             editingId: false, editingName: "", statusOpenId: false,
             cols, colMenuOpen: false,
+            dragId: false, dragOverId: false,
         });
         onWillStart(async () => { await this.load(); });
         // Focus + select the rename input when it appears.
@@ -246,6 +248,54 @@ export class WorkPackageTable extends Component {
     onRenameKeydown(ev, item) {
         if (ev.key === "Enter") { ev.preventDefault(); this.saveRename(item); }
         else if (ev.key === "Escape") { this.state.editingId = false; }
+    }
+
+    // ---- drag to re-parent ----
+    onDragStart(ev, item) {
+        this.state.dragId = item.id;
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", String(item.id));
+    }
+    onDragEnd() {
+        this.state.dragId = false;
+        this.state.dragOverId = false;
+    }
+    _isInSubtree(rootId, nodeId) {
+        const root = this.state.byId[rootId];
+        if (!root) return false;
+        let found = false;
+        const walk = (n) => { if (n.id === nodeId) found = true; n.children.forEach(walk); };
+        root.children.forEach(walk);
+        return found;
+    }
+    canDrop(targetId) {
+        const id = this.state.dragId;
+        // Niet op zichzelf, niet op een eigen nakomeling (zou cycle maken).
+        if (!id || id === targetId) return false;
+        return !this._isInSubtree(id, targetId);
+    }
+    onDragOver(ev, item) {
+        if (this.canDrop(item.id)) {
+            ev.preventDefault();
+            this.state.dragOverId = item.id;
+        }
+    }
+    onDragLeave(item) {
+        if (this.state.dragOverId === item.id) this.state.dragOverId = false;
+    }
+    async onDrop(ev, item) {
+        ev.preventDefault();
+        const id = this.state.dragId;
+        const ok = this.canDrop(item.id);
+        this.state.dragOverId = false;
+        this.state.dragId = false;
+        if (!id || !ok) return;
+        try {
+            await this.orm.write("myschool.project.task", [id], { parent_id: item.id });
+        } catch (e) {
+            this.notification.add("Kon item niet verplaatsen.", { type: "danger" });
+        }
+        await this.load();
     }
 
     // ---- inline status ----

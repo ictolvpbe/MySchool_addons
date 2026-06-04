@@ -221,6 +221,17 @@
 .o_msp_wp_subject { width: 40%; }
 
 .o_msp_subject_cell { display: inline-flex; align-items: center; gap: 4px; }
+.o_msp_drag {
+    cursor: grab;
+    color: #ced4da;
+    visibility: hidden;
+    user-select: none;
+    flex: 0 0 auto;
+}
+.o_msp_drag:active { cursor: grabbing; }
+.o_msp_wp_row:hover .o_msp_drag { visibility: visible; }
+.o_msp_dragover { outline: 2px dashed var(--ms-brand-1, #0d9488); outline-offset: -2px; }
+.o_msp_dragover td { background: rgba(13, 148, 136, 0.08); }
 .o_msp_subject_text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .o_msp_caret, .o_msp_caret_spacer { width: 14px; flex: 0 0 14px; text-align: center; }
 .o_msp_caret { cursor: pointer; }

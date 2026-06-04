@@ -64,7 +64,10 @@
                 <tbody>
                     <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
                         <tr class="o_msp_wp_row"
-                            t-att-class="{ 'o_msp_summary': row.hasChildren, 'o_msp_milestone_row': row.item.item_type === 'milestone' }">
+                            t-att-class="{ 'o_msp_summary': row.hasChildren, 'o_msp_milestone_row': row.item.item_type === 'milestone', 'o_msp_dragover': state.dragOverId === row.item.id }"
+                            t-on-dragover="(ev) => this.onDragOver(ev, row.item)"
+                            t-on-dragleave="() => this.onDragLeave(row.item)"
+                            t-on-drop="(ev) => this.onDrop(ev, row.item)">
                             <td t-if="state.cols.type">
                                 <span class="o_msp_type_badge"
                                       t-attf-class="o_msp_type_{{ row.item.item_type }}"
@@ -76,6 +79,10 @@
                             <td>
                                 <span class="o_msp_subject_cell"
                                       t-attf-style="padding-left: {{ row.depth * 18 }}px;">
+                                    <span class="o_msp_drag" draggable="true"
+                                          t-on-dragstart="(ev) => this.onDragStart(ev, row.item)"
+                                          t-on-dragend="() => this.onDragEnd()"
+                                          title="Sleep om onder een ander item te hangen">⠿</span>
                                     <span class="o_msp_caret" t-if="row.hasChildren"
                                           t-on-click.stop="() => this.toggle(row.item.id)">
                                         <i class="fa"
