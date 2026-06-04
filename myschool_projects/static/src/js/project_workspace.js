@@ -66,6 +66,7 @@ export class WbsNode extends Component {
         if (this.props.onToggle) this.props.onToggle(this.props.node.id);
     }
     onContextMenu(ev) {
+        ev.stopPropagation();
         if (this.props.onContextMenu) this.props.onContextMenu(ev, this.props.node.id);
     }
 }
@@ -358,10 +359,18 @@ export class WorkPackageTable extends Component {
     // ---- right-click context menu ----
     onRowContextMenu(ev, item) {
         ev.preventDefault();
+        ev.stopPropagation();
         this.state.ctx = { x: ev.clientX, y: ev.clientY, item };
+    }
+    onEmptyContextMenu(ev) {
+        ev.preventDefault();
+        this.state.ctx = { x: ev.clientX, y: ev.clientY, item: false };
     }
     closeCtx() { this.state.ctx = null; }
     get ctxItems() {
+        if (!this.state.ctx || !this.state.ctx.item) {
+            return [{ action: "add", label: "Add", icon: "fa fa-plus" }];
+        }
         return [
             { action: "add", label: "Add", icon: "fa fa-plus" },
             { action: "add_sub", label: "Add sub-item", icon: "fa fa-level-down" },
@@ -373,6 +382,7 @@ export class WorkPackageTable extends Component {
         ];
     }
     onCtxAction(action) {
+        if (action === "add") { this.createItem(); return; }
         const item = this.state.ctx && this.state.ctx.item;
         if (!item) return;
         switch (action) {
@@ -467,8 +477,17 @@ export class ProjectWorkspace extends Component {
         ev.preventDefault();
         this.state.ctx = { x: ev.clientX, y: ev.clientY, id };
     }
+    onEmptyContextMenu(ev) {
+        ev.preventDefault();
+        this.state.ctx = { x: ev.clientX, y: ev.clientY, id: false };
+    }
     closeCtx() { this.state.ctx = null; }
     get ctxItems() {
+        if (!this.state.ctx || !this.state.ctx.id) {
+            return [
+                { action: "add_project", label: "Add Project", icon: "fa fa-folder-o" },
+            ];
+        }
         return [
             { action: "add_project", label: "Add Project", icon: "fa fa-folder-o" },
             { action: "add_sub", label: "Add sub-project", icon: "fa fa-sitemap" },

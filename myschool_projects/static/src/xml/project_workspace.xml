@@ -47,7 +47,7 @@
     </t>
 
     <t t-name="myschool_projects.WorkPackageTable">
-        <div class="o_msp_wp">
+        <div class="o_msp_wp" t-on-contextmenu="onEmptyContextMenu">
             <div class="o_msp_wp_toolbar">
                 <button class="btn btn-sm btn-primary" t-on-click="createItem">
                     <i class="fa fa-plus me-1"/>Create
@@ -203,7 +203,7 @@
                 <div class="o_msp_sidebar_head">
                     <span class="o_msp_sidebar_title">Projects</span>
                 </div>
-                <div class="o_msp_tree">
+                <div class="o_msp_tree" t-on-contextmenu="onEmptyContextMenu">
                     <t t-if="state.loading">
                         <div class="text-muted p-2">Laden…</div>
                     </t>
