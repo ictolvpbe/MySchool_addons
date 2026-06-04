@@ -2,3 +2,4 @@
 # Volgorde maakt niet uit; elk provider-bestand registreert zichzelf.
 from . import base
 from . import appfoundry
+from . import projects

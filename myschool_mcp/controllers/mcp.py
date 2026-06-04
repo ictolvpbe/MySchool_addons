@@ -234,6 +234,9 @@ class McpController(http.Controller):
         if ICP.get_param('myschool_mcp.provider_appfoundry', 'True') in (
                 'True', 'true', '1', True, 1):
             out.add('appfoundry')
+        if ICP.get_param('myschool_mcp.provider_projects', 'True') in (
+                'True', 'true', '1', True, 1):
+            out.add('projects')
         return out
 
     # ------------------------------------------------------------------
