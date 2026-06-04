@@ -25,6 +25,7 @@
         'security/myschool_projects_security.xml',
         'security/ir.model.access.csv',
         'views/project_views.xml',
+        'views/milestone_views.xml',
         'views/menu_views.xml',
     ],
     'demo': [],

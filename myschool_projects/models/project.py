@@ -60,6 +60,23 @@ class MyschoolProject(models.Model):
     child_count = fields.Integer(compute='_compute_child_count', string='Sub-project Count')
     descendant_count = fields.Integer(compute='_compute_descendant_count', string='Descendant Count')
 
+    # --- Milestones ---
+    milestone_ids = fields.One2many(
+        'myschool.project.milestone', 'project_id', string='Milestones')
+    milestone_count = fields.Integer(compute='_compute_milestone_count', string='Milestone Count')
+
+    # --- Dependencies (project-level) ---
+    depends_on_ids = fields.Many2many(
+        'myschool.project', 'myschool_project_dependency_rel',
+        'project_id', 'depends_on_id', string='Depends On',
+        help='Projects that must progress before this one (predecessors).',
+    )
+    dependent_ids = fields.Many2many(
+        'myschool.project', 'myschool_project_dependency_rel',
+        'depends_on_id', 'project_id', string='Blocks',
+        help='Projects waiting on this one (successors).',
+    )
+
     _code_unique = models.Constraint('UNIQUE(code)', 'Project code must be unique.')
 
     @api.depends('child_ids.progress', 'progress_own')
@@ -78,6 +95,11 @@ class MyschoolProject(models.Model):
         for project in self:
             project.child_count = len(project.child_ids)
 
+    @api.depends('milestone_ids')
+    def _compute_milestone_count(self):
+        for project in self:
+            project.milestone_count = len(project.milestone_ids)
+
     def _compute_descendant_count(self):
         for project in self:
             if project.parent_path:
@@ -95,3 +117,11 @@ class MyschoolProject(models.Model):
                 "Een project kan niet zijn eigen voorouder zijn "
                 "(geen recursieve sub-projecten)."
             )
+
+    @api.constrains('depends_on_ids')
+    def _check_no_self_dependency(self):
+        for project in self:
+            if project in project.depends_on_ids:
+                raise ValidationError(
+                    "Een project kan niet van zichzelf afhangen."
+                )

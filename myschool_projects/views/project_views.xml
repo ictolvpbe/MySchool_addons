@@ -70,6 +70,27 @@
                                 </list>
                             </field>
                         </page>
+                        <page string="Milestones" name="milestones">
+                            <field name="milestone_ids" context="{'default_project_id': id}">
+                                <list editable="bottom" default_order="date">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="date"/>
+                                    <field name="name"/>
+                                    <field name="state" widget="badge"
+                                           decoration-info="state == 'pending'"
+                                           decoration-success="state == 'reached'"
+                                           decoration-danger="state == 'missed'"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Dependencies" name="dependencies">
+                            <group>
+                                <field name="depends_on_ids" widget="many2many_tags"
+                                       options="{'no_create': True}"
+                                       domain="[('id', '!=', id)]"/>
+                                <field name="dependent_ids" widget="many2many_tags" readonly="1"/>
+                            </group>
+                        </page>
                         <page string="Description" name="description">
                             <field name="description"/>
                         </page>

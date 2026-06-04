@@ -11,4 +11,10 @@
         action="myschool_project_action"
         sequence="10"/>
 
+    <menuitem id="myschool_projects_menu_milestones"
+        name="Milestones"
+        parent="myschool_projects_menu_root"
+        action="myschool_project_milestone_action"
+        sequence="20"/>
+
 </odoo>
