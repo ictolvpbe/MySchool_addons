@@ -31,6 +31,15 @@
               web_icon="school,static/description/icon.png"
               groups="myschool_core.group_myschool_core_admin"/>
 
+    <!-- Instellingen — action staat in res_config_settings_views.xml
+         (laadt eerder); menu hier zodat menu_myschool_root al bestaat. -->
+    <menuitem id="menu_myschool_settings"
+              name="Instellingen"
+              parent="menu_myschool_root"
+              action="action_myschool_settings"
+              sequence="60"
+              groups="myschool_core.group_myschool_core_admin"/>
+
     <!-- Organisation Manager: geen eigen menu-item — bereikbaar via
          klik op de "MySchool Admin"-app-tegel zelf. -->
 

@@ -44,7 +44,7 @@
         </field>
     </record>
 
-    <!-- ==========  ACTION + MENU  ============================= -->
+    <!-- ==========  ACTION  ==================================== -->
 
     <record id="action_myschool_settings" model="ir.actions.act_window">
         <field name="name">MySchool Instellingen</field>
@@ -54,12 +54,10 @@
         <field name="target">current</field>
     </record>
 
-    <menuitem id="menu_myschool_settings"
-              name="Instellingen"
-              parent="menu_myschool_root"
-              action="action_myschool_settings"
-              sequence="60"
-              groups="myschool_core.group_myschool_core_admin"/>
+    <!-- Het menu 'Instellingen' (menu_myschool_settings) staat in
+         menu_views.xml, dat NA dit bestand laadt. Anders bestaat
+         menu_myschool_root nog niet bij een verse install (en faalt
+         de parent-referentie). -->
 
     <!-- ==========  TAB: MYSCHOOL CORE  ======================== -->
     <!-- Cloud + AD + Informat + Config items. Velden in core, methoden
