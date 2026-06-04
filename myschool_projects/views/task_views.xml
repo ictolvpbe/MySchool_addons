@@ -61,6 +61,7 @@
                 <field name="planned_hours" sum="Planned"/>
                 <field name="tag_ids" widget="many2many_tags"
                        options="{'color_field': 'color'}" optional="show"/>
+                <field name="activity_ids" widget="list_activity" optional="show"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'todo'"
                        decoration-primary="state == 'in_progress'"
