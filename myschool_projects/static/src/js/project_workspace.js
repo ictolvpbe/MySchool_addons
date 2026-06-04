@@ -50,6 +50,99 @@ export class WbsNode extends Component {
     }
 }
 
+const TYPE_LABELS = {
+    task: "Task", milestone: "Milestone", phase: "Phase", epic: "Epic", bug: "Bug",
+};
+const STATE_LABELS = {
+    todo: "To Do", in_progress: "In Progress", blocked: "Blocked",
+    done: "Done", cancelled: "Cancelled",
+};
+
+/**
+ * Hierarchical work-packages table (OpenProject-style): a flat-but-nested
+ * table of work items with indent + expand carets in the subject column,
+ * type/status badges, assignee and dates. Rows open the item form dialog.
+ */
+export class WorkPackageTable extends Component {
+    static template = "myschool_projects.WorkPackageTable";
+    static props = ["*"];
+
+    setup() {
+        this.orm = useService("orm");
+        this.action = useService("action");
+        this.typeLabels = TYPE_LABELS;
+        this.stateLabels = STATE_LABELS;
+        this.state = useState({ byId: {}, roots: [], expanded: {}, loading: true });
+        onWillStart(async () => { await this.load(); });
+    }
+
+    async load() {
+        this.state.loading = true;
+        const recs = await this.orm.searchRead(
+            "myschool.project.task",
+            [["project_id", "=", this.props.projectId]],
+            ["name", "item_type", "state", "assigned_id", "date_start",
+             "date_deadline", "priority", "parent_id", "child_count"],
+            { order: "sequence, id" },
+        );
+        const byId = {};
+        recs.forEach((r) => { byId[r.id] = { ...r, children: [] }; });
+        const roots = [];
+        recs.forEach((r) => {
+            const node = byId[r.id];
+            const pid = r.parent_id ? r.parent_id[0] : false;
+            if (pid && byId[pid]) byId[pid].children.push(node);
+            else roots.push(node);
+        });
+        const expanded = {};
+        recs.forEach((r) => { if (byId[r.id].children.length) expanded[r.id] = true; });
+        this.state.byId = byId;
+        this.state.roots = roots;
+        this.state.expanded = expanded;
+        this.state.loading = false;
+    }
+
+    get visibleRows() {
+        const out = [];
+        const walk = (node, depth) => {
+            out.push({ item: node, depth, hasChildren: node.children.length > 0 });
+            if (node.children.length && this.state.expanded[node.id]) {
+                node.children.forEach((c) => walk(c, depth + 1));
+            }
+        };
+        this.state.roots.forEach((r) => walk(r, 0));
+        return out;
+    }
+
+    toggle(id) { this.state.expanded[id] = !this.state.expanded[id]; }
+
+    openItem(id) {
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "myschool.project.task",
+                res_id: id,
+                views: [[false, "form"]],
+                target: "new",
+            },
+            { onClose: () => this.load() },
+        );
+    }
+
+    createItem() {
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "myschool.project.task",
+                views: [[false, "form"]],
+                target: "new",
+                context: { default_project_id: this.props.projectId },
+            },
+            { onClose: () => this.load() },
+        );
+    }
+}
+
 /**
  * Project Workspace — a modern PM shell: WBS sidebar + view-switcher
  * (Overview / Board / List / Calendar). Board/List/Calendar embed the
@@ -58,7 +151,7 @@ export class WbsNode extends Component {
  */
 export class ProjectWorkspace extends Component {
     static template = "myschool_projects.Workspace";
-    static components = { View, WbsNode };
+    static components = { View, WbsNode, WorkPackageTable };
     static props = ["*"];
 
     setup() {
@@ -70,7 +163,7 @@ export class ProjectWorkspace extends Component {
             roots: [],
             byId: {},
             selectedId: false,
-            view: "overview",
+            view: "table",
             expanded: {},
             overview: null,
             sidebarWidth: Number.isNaN(savedW) ? 300 : savedW,

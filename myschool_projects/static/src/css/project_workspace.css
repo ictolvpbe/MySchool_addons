@@ -143,3 +143,82 @@
 }
 .o_msp_clickable { cursor: pointer; }
 .o_msp_clickable:hover { background: var(--ms-surface-3, #f1f3f5); }
+
+/* ---------- Work-packages table ---------- */
+.o_msp_wp {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+}
+.o_msp_wp_toolbar {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ms-border, #dee2e6);
+}
+.o_msp_wp_table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.o_msp_wp_table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--ms-surface-1, #fff);
+    text-align: left;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--ms-text-muted, #6c757d);
+    padding: 8px 10px;
+    border-bottom: 2px solid var(--ms-border, #dee2e6);
+    z-index: 1;
+}
+.o_msp_wp_table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--ms-border, #f1f3f5);
+    white-space: nowrap;
+}
+.o_msp_wp_row { cursor: pointer; }
+.o_msp_wp_row:hover { background: var(--ms-surface-3, #f6f8fa); }
+.o_msp_wp_type { width: 90px; }
+.o_msp_wp_id { width: 56px; }
+.o_msp_wp_subject { width: 40%; }
+
+.o_msp_subject_cell { display: inline-flex; align-items: center; gap: 4px; }
+.o_msp_subject_text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.o_msp_caret, .o_msp_caret_spacer { width: 14px; flex: 0 0 14px; text-align: center; }
+.o_msp_caret { cursor: pointer; }
+
+/* Type badges */
+.o_msp_type_badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: #fff;
+}
+.o_msp_type_task { background: #6c757d; }
+.o_msp_type_milestone { background: #0d9488; }
+.o_msp_type_phase { background: #7c3aed; }
+.o_msp_type_epic { background: #2563eb; }
+.o_msp_type_bug { background: #dc2626; }
+
+/* Status badges */
+.o_msp_status_badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+.o_msp_status_todo { background: #f1f3f5; color: #495057; border-color: #dee2e6; }
+.o_msp_status_in_progress { background: #dbeafe; color: #1e40af; }
+.o_msp_status_blocked { background: #ffedd5; color: #9a3412; }
+.o_msp_status_done { background: #dcfce7; color: #166534; }
+.o_msp_status_cancelled { background: #f1f3f5; color: #adb5bd; text-decoration: line-through; }

@@ -26,6 +26,66 @@
         </div>
     </t>
 
+    <t t-name="myschool_projects.WorkPackageTable">
+        <div class="o_msp_wp">
+            <div class="o_msp_wp_toolbar">
+                <button class="btn btn-sm btn-primary" t-on-click="createItem">
+                    <i class="fa fa-plus me-1"/>Create
+                </button>
+            </div>
+            <table class="o_msp_wp_table">
+                <thead>
+                    <tr>
+                        <th class="o_msp_wp_type">Type</th>
+                        <th class="o_msp_wp_id">ID</th>
+                        <th class="o_msp_wp_subject">Subject</th>
+                        <th>Status</th>
+                        <th>Assignee</th>
+                        <th>Start</th>
+                        <th>Deadline</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
+                        <tr class="o_msp_wp_row" t-on-click="() => this.openItem(row.item.id)">
+                            <td>
+                                <span class="o_msp_type_badge"
+                                      t-attf-class="o_msp_type_{{ row.item.item_type }}"
+                                      t-esc="typeLabels[row.item.item_type] || row.item.item_type"/>
+                            </td>
+                            <td class="o_msp_wp_id text-muted" t-esc="row.item.id"/>
+                            <td>
+                                <span class="o_msp_subject_cell"
+                                      t-attf-style="padding-left: {{ row.depth * 18 }}px;">
+                                    <span class="o_msp_caret" t-if="row.hasChildren"
+                                          t-on-click.stop="() => this.toggle(row.item.id)">
+                                        <i class="fa"
+                                           t-att-class="state.expanded[row.item.id] ? 'fa-caret-down' : 'fa-caret-right'"/>
+                                    </span>
+                                    <span class="o_msp_caret_spacer" t-else=""/>
+                                    <span class="o_msp_subject_text" t-esc="row.item.name"/>
+                                </span>
+                            </td>
+                            <td>
+                                <span class="o_msp_status_badge"
+                                      t-attf-class="o_msp_status_{{ row.item.state }}"
+                                      t-esc="stateLabels[row.item.state] || row.item.state"/>
+                            </td>
+                            <td t-esc="row.item.assigned_id ? row.item.assigned_id[1] : ''"/>
+                            <td t-esc="row.item.date_start or ''"/>
+                            <td t-esc="row.item.date_deadline or ''"/>
+                        </tr>
+                    </t>
+                    <tr t-if="!visibleRows.length and !state.loading">
+                        <td colspan="7" class="text-muted p-3">
+                            Nog geen work items. Klik op + Create.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </t>
+
     <t t-name="myschool_projects.Workspace">
         <div class="o_msp_workspace">
             <!-- ====== SIDEBAR: WBS ====== -->
@@ -68,6 +128,9 @@
                         </div>
                         <div class="o_msp_switch btn-group">
                             <button class="btn btn-sm"
+                                    t-att-class="state.view === 'table' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('table')">Table</button>
+                            <button class="btn btn-sm"
                                     t-att-class="state.view === 'overview' ? 'btn-primary' : 'btn-secondary'"
                                     t-on-click="() => this.setView('overview')">Overview</button>
                             <button class="btn btn-sm"
@@ -85,8 +148,13 @@
                     </div>
 
                     <div class="o_msp_content">
+                        <!-- TABLE (custom hierarchical work-packages) -->
+                        <t t-if="state.view === 'table'">
+                            <WorkPackageTable t-key="state.selectedId"
+                                              projectId="state.selectedId"/>
+                        </t>
                         <!-- OVERVIEW -->
-                        <t t-if="state.view === 'overview'">
+                        <t t-elif="state.view === 'overview'">
                             <div class="o_msp_overview">
                                 <div class="o_msp_card">
                                     <div class="o_msp_card_head">
