@@ -35,9 +35,9 @@ def resolve_item(env, ref):
     if isinstance(ref, str):
         m = re.match(r'^([A-Za-z0-9_]+)-(\d+)\s*$', ref.strip())
         if m:
-            code, seq = m.group(1).upper(), int(m.group(2))
+            code, seq = m.group(1), int(m.group(2))
             item = env['appfoundry.item'].search([
-                ('project_id.code', '=', code),
+                ('project_id.code', '=ilike', code),
                 ('sequence', '=', seq),
             ], limit=1)
             if not item:
@@ -61,7 +61,7 @@ def resolve_project(env, ref):
         return proj
     if isinstance(ref, str):
         proj = env['appfoundry.project'].search(
-            [('code', '=', ref.strip().upper())], limit=1)
+            [('code', '=ilike', ref.strip())], limit=1)
         if not proj:
             raise McpToolError(
                 f'Project code={ref!r} not found', code=-32004)

@@ -87,7 +87,7 @@ def list_my_items(env, project_code=None, open_only=True, limit=100):
         domain += [('stage_id.is_done', '=', False),
                    ('stage_id.is_cancelled', '=', False)]
     if project_code:
-        domain.append(('project_id.code', '=', project_code.strip().upper()))
+        domain.append(('project_id.code', '=ilike', project_code.strip()))
     items = env['appfoundry.item'].search(
         domain, limit=min(int(limit or 100), 500))
     return [base.serialize_item(i, full=False) for i in items]
@@ -126,7 +126,7 @@ def list_items(env, project_code=None, stage_name=None, assignee=None,
         domain += [('stage_id.is_done', '=', False),
                    ('stage_id.is_cancelled', '=', False)]
     if project_code:
-        domain.append(('project_id.code', '=', project_code.strip().upper()))
+        domain.append(('project_id.code', '=ilike', project_code.strip()))
     if stage_name:
         stage = base.resolve_stage(env, None, stage_name)
         domain.append(('stage_id', '=', stage.id))
@@ -199,7 +199,7 @@ def list_stages(env):
 def list_active_sprints(env, project_code=None, include_items=False):
     domain = [('state', '=', 'active')]
     if project_code:
-        domain.append(('project_id.code', '=', project_code.strip().upper()))
+        domain.append(('project_id.code', '=ilike', project_code.strip()))
     sprints = env['appfoundry.sprint'].search(domain, limit=50)
     return [base.serialize_sprint(s, include_items=include_items)
             for s in sprints]
