@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <menuitem id="myschool_projects_menu_root"
+        name="Projects"
+        sequence="42"/>
+
+    <menuitem id="myschool_projects_menu_projects"
+        name="Projects"
+        parent="myschool_projects_menu_root"
+        action="myschool_project_action"
+        sequence="10"/>
+
+</odoo>

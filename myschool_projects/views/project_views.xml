@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ LIST ============ -->
+    <record id="myschool_project_view_list" model="ir.ui.view">
+        <field name="name">myschool.project.list</field>
+        <field name="model">myschool.project</field>
+        <field name="arch" type="xml">
+            <list string="Projects">
+                <field name="code" optional="show"/>
+                <field name="name"/>
+                <field name="parent_id" optional="hide"/>
+                <field name="responsible_id" optional="show"/>
+                <field name="child_count" string="Subs" optional="show"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'new'"
+                       decoration-success="state == 'active'"
+                       decoration-warning="state == 'on_hold'"
+                       decoration-muted="state in ('done', 'cancelled')"/>
+                <field name="progress" widget="progressbar"/>
+                <field name="date_start" optional="hide"/>
+                <field name="date_end" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============ FORM ============ -->
+    <record id="myschool_project_view_form" model="ir.ui.view">
+        <field name="name">myschool.project.form</field>
+        <field name="model">myschool.project</field>
+        <field name="arch" type="xml">
+            <form string="Project">
+                <header>
+                    <field name="state" widget="statusbar"
+                           options="{'clickable': '1'}"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="Project name"/>
+                        </h1>
+                        <label for="code" class="oe_inline"/>
+                        <field name="code" class="oe_inline" placeholder="e.g. OLVP-ICT"/>
+                    </div>
+                    <group>
+                        <group string="Organisation">
+                            <field name="parent_id"/>
+                            <field name="responsible_id"/>
+                            <field name="member_ids" widget="many2many_tags"/>
+                        </group>
+                        <group string="Planning &amp; Progress">
+                            <field name="date_start"/>
+                            <field name="date_end"/>
+                            <field name="progress_own" widget="progressbar"
+                                   invisible="child_count &gt; 0"/>
+                            <field name="progress" widget="progressbar"/>
+                            <field name="child_count" invisible="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Sub-projects" name="subprojects">
+                            <field name="child_ids" context="{'default_parent_id': id}">
+                                <list>
+                                    <field name="code"/>
+                                    <field name="name"/>
+                                    <field name="responsible_id"/>
+                                    <field name="state" widget="badge"/>
+                                    <field name="progress" widget="progressbar"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Description" name="description">
+                            <field name="description"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============ SEARCH ============ -->
+    <record id="myschool_project_view_search" model="ir.ui.view">
+        <field name="name">myschool.project.search</field>
+        <field name="model">myschool.project</field>
+        <field name="arch" type="xml">
+            <search string="Projects">
+                <field name="name"/>
+                <field name="code"/>
+                <field name="responsible_id"/>
+                <field name="parent_id"/>
+                <filter name="top_level" string="Top-level only"
+                        domain="[('parent_id', '=', False)]"/>
+                <separator/>
+                <filter name="active" string="Active" domain="[('state', '=', 'active')]"/>
+                <filter name="on_hold" string="On Hold" domain="[('state', '=', 'on_hold')]"/>
+                <filter name="open" string="Not Closed"
+                        domain="[('state', 'not in', ('done', 'cancelled'))]"/>
+                <separator/>
+                <filter name="my_projects" string="My Projects"
+                        domain="['|', ('responsible_id', '=', uid), ('member_ids', 'in', uid)]"/>
+                <separator/>
+                <filter name="group_parent" string="Parent Project"
+                        context="{'group_by': 'parent_id'}"/>
+                <filter name="group_responsible" string="Responsible"
+                        context="{'group_by': 'responsible_id'}"/>
+                <filter name="group_state" string="State"
+                        context="{'group_by': 'state'}"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- ============ ACTION ============ -->
+    <record id="myschool_project_action" model="ir.actions.act_window">
+        <field name="name">Projects</field>
+        <field name="res_model">myschool.project</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="myschool_project_view_search"/>
+        <field name="context">{'search_default_top_level': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Maak je eerste project aan
+            </p>
+            <p>
+                Projecten kunnen sub-projecten bevatten (WBS). De voortgang
+                van een project rolt automatisch op uit zijn sub-projecten.
+            </p>
+        </field>
+    </record>
+
+</odoo>
