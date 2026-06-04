@@ -57,9 +57,27 @@ def _serialize(project, with_children=False):
         'date_start': project.date_start.isoformat() if project.date_start else None,
         'date_end': project.date_end.isoformat() if project.date_end else None,
         'child_count': project.child_count,
+        'milestone_count': project.milestone_count,
     }
     if with_children:
         data['children'] = [_serialize(c) for c in project.child_ids]
+        data['milestones'] = [
+            {
+                'id': m.id,
+                'name': m.name,
+                'date': m.date.isoformat() if m.date else None,
+                'state': m.state,
+            }
+            for m in project.milestone_ids
+        ]
+        data['depends_on'] = [
+            {'id': d.id, 'code': d.code or '', 'name': d.name}
+            for d in project.depends_on_ids
+        ]
+        data['blocks'] = [
+            {'id': d.id, 'code': d.code or '', 'name': d.name}
+            for d in project.dependent_ids
+        ]
     return data
 
 
@@ -215,3 +233,85 @@ def create_subproject(env, name, parent=None, code=None, responsible=None,
         vals['date_end'] = date_end
     project = env['myschool.project'].create(vals)
     return _serialize(project, with_children=True)
+
+
+@McpRegistry.tool(
+    name='projects_add_milestone',
+    description='Add a milestone (dated checkpoint) to a project.',
+    input_schema={
+        'type': 'object',
+        'required': ['project', 'name'],
+        'properties': {
+            'project': {
+                'description': 'Project id or code',
+                'oneOf': [{'type': 'integer'}, {'type': 'string'}],
+            },
+            'name': {'type': 'string'},
+            'date': {'type': 'string', 'description': 'Target date YYYY-MM-DD'},
+            'state': {
+                'type': 'string',
+                'enum': ['pending', 'reached', 'missed'],
+                'default': 'pending',
+            },
+            'description': {'type': 'string'},
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def add_milestone(env, project, name, date=None, state='pending', description=None):
+    p = _resolve_project(env, project)
+    vals = {'project_id': p.id, 'name': name, 'state': state}
+    if date:
+        vals['date'] = date
+    if description:
+        vals['description'] = description
+    milestone = env['myschool.project.milestone'].create(vals)
+    return {
+        'id': milestone.id,
+        'project_id': p.id,
+        'project_name': p.name,
+        'name': milestone.name,
+        'date': milestone.date.isoformat() if milestone.date else None,
+        'state': milestone.state,
+    }
+
+
+@McpRegistry.tool(
+    name='projects_set_dependency',
+    description=(
+        'Add (or remove) a dependency: marks `project` as depending on '
+        '`depends_on` (predecessor). Use remove=true to unlink.'
+    ),
+    input_schema={
+        'type': 'object',
+        'required': ['project', 'depends_on'],
+        'properties': {
+            'project': {
+                'description': 'Project id or code',
+                'oneOf': [{'type': 'integer'}, {'type': 'string'}],
+            },
+            'depends_on': {
+                'description': 'Predecessor project id or code',
+                'oneOf': [{'type': 'integer'}, {'type': 'string'}],
+            },
+            'remove': {'type': 'boolean', 'default': False},
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def set_dependency(env, project, depends_on, remove=False):
+    p = _resolve_project(env, project)
+    pred = _resolve_project(env, depends_on)
+    if p.id == pred.id:
+        raise McpToolError('Een project kan niet van zichzelf afhangen.', code=-32602)
+    op = 3 if remove else 4  # 3=unlink, 4=link
+    p.write({'depends_on_ids': [(op, pred.id, 0)]})
+    return {
+        'project_id': p.id,
+        'depends_on_id': pred.id,
+        'removed': bool(remove),
+        'current_depends_on': [
+            {'id': d.id, 'code': d.code or '', 'name': d.name}
+            for d in p.depends_on_ids
+        ],
+    }
