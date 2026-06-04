@@ -93,10 +93,14 @@
                                 </list>
                             </field>
                         </page>
-                        <page string="Tasks" name="tasks">
+                        <page string="Work Items" name="tasks">
                             <field name="task_ids" context="{'default_project_id': id}">
                                 <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
+                                    <field name="item_type" widget="badge"
+                                           decoration-info="item_type == 'milestone'"
+                                           decoration-warning="item_type == 'bug'"
+                                           decoration-primary="item_type == 'epic'"/>
                                     <field name="name"/>
                                     <field name="assigned_id" widget="many2one_avatar_user"/>
                                     <field name="priority" widget="priority"/>
@@ -112,15 +116,16 @@
                             </field>
                         </page>
                         <page string="Milestones" name="milestones">
-                            <field name="milestone_ids" context="{'default_project_id': id}">
-                                <list editable="bottom" default_order="date">
-                                    <field name="sequence" widget="handle"/>
-                                    <field name="date"/>
+                            <field name="milestone_ids"
+                                   context="{'default_project_id': id, 'default_item_type': 'milestone'}">
+                                <list editable="bottom" default_order="date_deadline">
+                                    <field name="item_type" column_invisible="1"/>
+                                    <field name="date_deadline" string="Date"/>
                                     <field name="name"/>
                                     <field name="state" widget="badge"
-                                           decoration-info="state == 'pending'"
-                                           decoration-success="state == 'reached'"
-                                           decoration-danger="state == 'missed'"/>
+                                           decoration-info="state == 'todo'"
+                                           decoration-success="state == 'done'"
+                                           decoration-muted="state == 'cancelled'"/>
                                 </list>
                             </field>
                         </page>

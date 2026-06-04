@@ -26,7 +26,6 @@
         'security/ir.model.access.csv',
         'views/project_views.xml',
         'views/task_views.xml',
-        'views/milestone_views.xml',
         'views/menu_views.xml',
         'views/workspace_views.xml',
     ],

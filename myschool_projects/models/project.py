@@ -60,16 +60,17 @@ class MyschoolProject(models.Model):
     child_count = fields.Integer(compute='_compute_child_count', string='Sub-project Count')
     descendant_count = fields.Integer(compute='_compute_descendant_count', string='Descendant Count')
 
-    # --- Tasks (WBS leaf-level work) ---
+    # --- Work items (tasks, milestones, phases, … — one typed model) ---
     task_ids = fields.One2many(
-        'myschool.project.task', 'project_id', string='Tasks')
+        'myschool.project.task', 'project_id', string='Work Items')
     task_count = fields.Integer(compute='_compute_task_counts', string='Task Count')
     open_task_count = fields.Integer(compute='_compute_task_counts', string='Open Tasks')
     done_task_count = fields.Integer(compute='_compute_task_counts', string='Done Tasks')
 
-    # --- Milestones ---
+    # --- Milestones = work items of type 'milestone' ---
     milestone_ids = fields.One2many(
-        'myschool.project.milestone', 'project_id', string='Milestones')
+        'myschool.project.task', 'project_id', string='Milestones',
+        domain=[('item_type', '=', 'milestone')])
     milestone_count = fields.Integer(compute='_compute_milestone_count', string='Milestone Count')
 
     # --- Dependencies (project-level) ---
@@ -86,38 +87,50 @@ class MyschoolProject(models.Model):
 
     _code_unique = models.Constraint('UNIQUE(code)', 'Project code must be unique.')
 
-    @api.depends('child_ids.progress', 'progress_own', 'task_ids.state')
+    @api.depends('child_ids.progress', 'progress_own',
+                 'task_ids.state', 'task_ids.item_type', 'task_ids.child_ids')
     def _compute_progress(self):
         """Drie-traps rollup:
         1. heeft sub-projecten → gewogen (gelijk) gemiddelde van hun progress;
-        2. anders, heeft taken → % afgewerkte taken (cancelled niet meegeteld);
+        2. anders, heeft leaf-taken → % afgewerkte leaf-taken;
         3. anders → handmatige ``progress_own``.
+        Containers (phase/epic met kinderen) en milestones tellen niet mee
+        als telbaar 'werk'.
         """
         for project in self:
             children = project.child_ids
             if children:
                 project.progress = sum(children.mapped('progress')) / len(children)
             else:
-                tasks = project.task_ids.filtered(lambda t: t.state != 'cancelled')
+                tasks = project.task_ids.filtered(self._is_countable_task)
                 if tasks:
                     done = len(tasks.filtered(lambda t: t.state == 'done'))
                     project.progress = done / len(tasks) * 100
                 else:
                     project.progress = project.progress_own
 
+    @staticmethod
+    def _is_countable_task(t):
+        """Leaf werk-item dat meetelt voor voortgang/tellers."""
+        return (t.item_type != 'milestone'
+                and t.state != 'cancelled'
+                and not t.child_ids)
+
     @api.depends('child_ids')
     def _compute_child_count(self):
         for project in self:
             project.child_count = len(project.child_ids)
 
-    @api.depends('task_ids', 'task_ids.state')
+    @api.depends('task_ids', 'task_ids.state', 'task_ids.item_type', 'task_ids.child_ids')
     def _compute_task_counts(self):
         for project in self:
-            tasks = project.task_ids
+            # Telbare leaf-werkitems (milestones + containers uitgezonderd),
+            # consistent met de voortgangsberekening.
+            tasks = project.task_ids.filtered(self._is_countable_task)
             project.task_count = len(tasks)
             project.done_task_count = len(tasks.filtered(lambda t: t.state == 'done'))
             project.open_task_count = len(
-                tasks.filtered(lambda t: t.state not in ('done', 'cancelled')))
+                tasks.filtered(lambda t: t.state != 'done'))
 
     @api.depends('milestone_ids')
     def _compute_milestone_count(self):
@@ -165,10 +178,10 @@ class MyschoolProject(models.Model):
         return {
             'type': 'ir.actions.act_window',
             'name': f'{self.name} — Milestones',
-            'res_model': 'myschool.project.milestone',
+            'res_model': 'myschool.project.task',
             'view_mode': 'calendar,list,form',
-            'domain': [('project_id', '=', self.id)],
-            'context': {'default_project_id': self.id},
+            'domain': [('project_id', '=', self.id), ('item_type', '=', 'milestone')],
+            'context': {'default_project_id': self.id, 'default_item_type': 'milestone'},
         }
 
     @api.constrains('parent_id')

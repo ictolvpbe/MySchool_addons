@@ -122,12 +122,15 @@ export class ProjectWorkspace extends Component {
         const id = this.state.selectedId;
         if (!id) { this.state.overview = null; return; }
         const tasks = await this.orm.searchRead(
-            "myschool.project.task", [["project_id", "=", id]], ["state"]);
+            "myschool.project.task",
+            [["project_id", "=", id], ["item_type", "!=", "milestone"]],
+            ["state"]);
         const counts = {};
         tasks.forEach((t) => { counts[t.state] = (counts[t.state] || 0) + 1; });
         const milestones = await this.orm.searchRead(
-            "myschool.project.milestone", [["project_id", "=", id]],
-            ["name", "date", "state"], { order: "date" });
+            "myschool.project.task",
+            [["project_id", "=", id], ["item_type", "=", "milestone"]],
+            ["name", "date_deadline", "state"], { order: "date_deadline" });
         const proj = this.state.byId[id];
         this.state.overview = {
             taskCounts: counts,

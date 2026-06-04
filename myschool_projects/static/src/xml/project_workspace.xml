@@ -121,7 +121,7 @@
                                                 <div t-foreach="state.overview.milestones" t-as="m"
                                                      t-key="m.id" class="o_msp_row">
                                                     <span t-esc="m.name"/>
-                                                    <span class="text-muted" t-esc="m.date or '—'"/>
+                                                    <span class="text-muted" t-esc="m.date_deadline or '—'"/>
                                                 </div>
                                             </t>
                                             <div t-else="" class="text-muted">Geen milestones</div>
