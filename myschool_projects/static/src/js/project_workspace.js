@@ -1,5 +1,5 @@
 /** @odoo-module **/
-import { Component, useState, onWillStart } from "@odoo/owl";
+import { Component, useState, onWillStart, useEffect, useRef } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
@@ -72,8 +72,24 @@ export class WorkPackageTable extends Component {
         this.action = useService("action");
         this.typeLabels = TYPE_LABELS;
         this.stateLabels = STATE_LABELS;
-        this.state = useState({ byId: {}, roots: [], expanded: {}, loading: true });
+        this.stateOptionList = Object.entries(STATE_LABELS).map(
+            ([key, label]) => ({ key, label }));
+        this.renameInput = useRef("renameInput");
+        this.state = useState({
+            byId: {}, roots: [], expanded: {}, loading: true,
+            editingId: false, editingName: "", statusOpenId: false,
+        });
         onWillStart(async () => { await this.load(); });
+        // Focus + select the rename input when it appears.
+        useEffect(
+            () => {
+                if (this.state.editingId && this.renameInput.el) {
+                    this.renameInput.el.focus();
+                    this.renameInput.el.select();
+                }
+            },
+            () => [this.state.editingId],
+        );
     }
 
     async load() {
@@ -140,6 +156,51 @@ export class WorkPackageTable extends Component {
             },
             { onClose: () => this.load() },
         );
+    }
+
+    addChild(item) {
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "myschool.project.task",
+                views: [[false, "form"]],
+                target: "new",
+                context: {
+                    default_project_id: this.props.projectId,
+                    default_parent_id: item.id,
+                },
+            },
+            { onClose: () => this.load() },
+        );
+    }
+
+    // ---- inline rename ----
+    startRename(item) {
+        this.state.editingId = item.id;
+        this.state.editingName = item.name;
+    }
+    async saveRename(item) {
+        const name = (this.state.editingName || "").trim();
+        this.state.editingId = false;
+        if (name && name !== item.name) {
+            await this.orm.write("myschool.project.task", [item.id], { name });
+            item.name = name;
+        }
+    }
+    onRenameKeydown(ev, item) {
+        if (ev.key === "Enter") { ev.preventDefault(); this.saveRename(item); }
+        else if (ev.key === "Escape") { this.state.editingId = false; }
+    }
+
+    // ---- inline status ----
+    openStatus(id) { this.state.statusOpenId = id; }
+    closeStatus() { this.state.statusOpenId = false; }
+    async setStatus(item, value) {
+        this.state.statusOpenId = false;
+        if (value && value !== item.state) {
+            await this.orm.write("myschool.project.task", [item.id], { state: value });
+            item.state = value;
+        }
     }
 }
 

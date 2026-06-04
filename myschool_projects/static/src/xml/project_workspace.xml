@@ -47,13 +47,15 @@
                 </thead>
                 <tbody>
                     <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
-                        <tr class="o_msp_wp_row" t-on-click="() => this.openItem(row.item.id)">
+                        <tr class="o_msp_wp_row">
                             <td>
                                 <span class="o_msp_type_badge"
                                       t-attf-class="o_msp_type_{{ row.item.item_type }}"
                                       t-esc="typeLabels[row.item.item_type] || row.item.item_type"/>
                             </td>
-                            <td class="o_msp_wp_id text-muted" t-esc="row.item.id"/>
+                            <td class="o_msp_wp_id o_msp_link text-muted"
+                                t-on-click="() => this.openItem(row.item.id)"
+                                t-esc="row.item.id"/>
                             <td>
                                 <span class="o_msp_subject_cell"
                                       t-attf-style="padding-left: {{ row.depth * 18 }}px;">
@@ -63,13 +65,44 @@
                                            t-att-class="state.expanded[row.item.id] ? 'fa-caret-down' : 'fa-caret-right'"/>
                                     </span>
                                     <span class="o_msp_caret_spacer" t-else=""/>
-                                    <span class="o_msp_subject_text" t-esc="row.item.name"/>
+                                    <t t-if="state.editingId === row.item.id">
+                                        <input class="o_msp_inline_input" t-ref="renameInput"
+                                               t-model="state.editingName"
+                                               t-on-keydown="(ev) => this.onRenameKeydown(ev, row.item)"
+                                               t-on-blur="() => this.saveRename(row.item)"/>
+                                    </t>
+                                    <t t-else="">
+                                        <span class="o_msp_subject_text o_msp_link"
+                                              t-on-click="() => this.openItem(row.item.id)"
+                                              t-esc="row.item.name"/>
+                                        <button class="o_msp_rowbtn" title="Rename"
+                                                t-on-click.stop="() => this.startRename(row.item)">
+                                            <i class="fa fa-pencil"/>
+                                        </button>
+                                        <button class="o_msp_rowbtn" title="Add sub-item"
+                                                t-on-click.stop="() => this.addChild(row.item)">
+                                            <i class="fa fa-plus"/>
+                                        </button>
+                                    </t>
                                 </span>
                             </td>
                             <td>
-                                <span class="o_msp_status_badge"
-                                      t-attf-class="o_msp_status_{{ row.item.state }}"
-                                      t-esc="stateLabels[row.item.state] || row.item.state"/>
+                                <t t-if="state.statusOpenId === row.item.id">
+                                    <select class="o_msp_status_select"
+                                            t-on-change="(ev) => this.setStatus(row.item, ev.target.value)"
+                                            t-on-blur="() => this.closeStatus()">
+                                        <option t-foreach="stateOptionList" t-as="s" t-key="s.key"
+                                                t-att-value="s.key"
+                                                t-att-selected="s.key === row.item.state"
+                                                t-esc="s.label"/>
+                                    </select>
+                                </t>
+                                <t t-else="">
+                                    <span class="o_msp_status_badge o_msp_link"
+                                          t-attf-class="o_msp_status_{{ row.item.state }}"
+                                          t-on-click="() => this.openStatus(row.item.id)"
+                                          t-esc="stateLabels[row.item.state] || row.item.state"/>
+                                </t>
                             </td>
                             <td t-esc="row.item.assigned_id ? row.item.assigned_id[1] : ''"/>
                             <td t-esc="row.item.date_start or ''"/>
