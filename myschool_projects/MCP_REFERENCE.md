@@ -33,7 +33,7 @@ Acties verschijnen in de Odoo-chatter onder de key-user.
 - `assigned_id`, `state` ∈ `todo` · `in_progress` · `blocked` · `done` · `cancelled`
 - `priority` ∈ `0`(Low) · `1`(Normal) · `2`(High) · `3`(Critical)
 - `date_start`, `date_deadline` (formaat `YYYY-MM-DD`), `planned_hours`
-- `milestone_id` (→ doel-milestone), `depends_on_ids`
+- `milestone_id` (→ doel-milestone), `depends_on_ids`, `tag_ids` (labels)
 - Een **milestone** = work item met `item_type = milestone`.
 - Een item **met kinderen** geldt als "summary" (voortgang rolt op).
 
@@ -50,13 +50,15 @@ Resolutie: projecten op **id of code** (case-insensitief); work items op
 | `projects_get` | `project` → project + children + milestones + dependencies |
 | `projects_tree` | `project?` → geneste WBS-boom van projecten |
 | `projects_list_items` | `project`, `item_type?`, `state?`, `assignee?`, `open_only=false`, `limit=200` |
+| `projects_search` | `query`, `project?`, `item_type?`, `state?`, `assignee?`, `limit=50` (kruis-project zoeken op naam) |
 
 ### Write
 | Tool | Parameters |
 |---|---|
 | `projects_create_subproject` | `name`*, `parent?`, `code?`, `responsible?`, `state=new`, `date_start?`, `date_end?` |
-| `projects_create_item` | `project`*, `name`*, `item_type=task`, `parent?`, `assignee?`, `state=todo`, `priority='1'`, `date_start?`, `date_deadline?`, `planned_hours?`, `milestone?`, `description?` |
-| `projects_update_item` | `item`* (id), + elk veld om te wijzigen; `parent`/`milestone`/`assignee` = id (of naam/login); `false`/`0` wist |
+| `projects_create_item` | `project`*, `name`*, `item_type=task`, `parent?`, `assignee?`, `state=todo`, `priority='1'`, `date_start?`, `date_deadline?`, `planned_hours?`, `milestone?`, `tags?` (lijst namen), `description?` |
+| `projects_update_item` | `item`* (id), + elk veld om te wijzigen; `parent`/`milestone`/`assignee` = id (of naam/login); `tags` (vervangt); `false`/`0` wist |
+| `projects_set_status` | `item`* (id), `state`* — snelle status-shortcut |
 | `projects_add_milestone` | `project`*, `name`*, `date?`, `state=todo`, `description?` (shortcut voor create_item type=milestone) |
 | `projects_set_dependency` | `project`*, `depends_on`*, `remove=false` (project-niveau) |
 

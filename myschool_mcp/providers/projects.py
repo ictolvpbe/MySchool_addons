@@ -120,11 +120,27 @@ def _resolve_milestone(env, project, ref):
     return m
 
 
+def _resolve_or_create_tags(env, names):
+    """Lijst tag-namen → lijst tag-ids; maakt ontbrekende tags aan."""
+    Tag = env['myschool.project.tag']
+    out = []
+    for raw in (names or []):
+        nm = (raw or '').strip()
+        if not nm:
+            continue
+        tag = Tag.search([('name', '=ilike', nm)], limit=1)
+        if not tag:
+            tag = Tag.create({'name': nm})
+        out.append(tag.id)
+    return out
+
+
 def _serialize_item(item):
     return {
         'id': item.id,
         'name': item.name,
         'item_type': item.item_type,
+        'tags': item.tag_ids.mapped('name'),
         'project_id': item.project_id.id,
         'project_code': item.project_id.code or '',
         'parent_id': item.parent_id.id or False,
@@ -446,6 +462,8 @@ def list_items(env, project, item_type=None, state=None, assignee=None,
             'planned_hours': {'type': 'number'},
             'milestone': {'description': 'Target milestone id or name (same project)',
                           'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+            'tags': {'type': 'array', 'items': {'type': 'string'},
+                     'description': 'Tag names (created if missing)'},
             'description': {'type': 'string'},
         },
     },
@@ -453,7 +471,7 @@ def list_items(env, project, item_type=None, state=None, assignee=None,
 )
 def create_item(env, project, name, item_type='task', parent=None, assignee=None,
                 state='todo', priority='1', date_start=None, date_deadline=None,
-                planned_hours=None, milestone=None, description=None):
+                planned_hours=None, milestone=None, tags=None, description=None):
     p = _resolve_project(env, project)
     vals = {
         'project_id': p.id, 'name': name,
@@ -474,6 +492,8 @@ def create_item(env, project, name, item_type='task', parent=None, assignee=None
         vals['planned_hours'] = planned_hours
     if milestone is not None:
         vals['milestone_id'] = _resolve_milestone(env, p, milestone).id
+    if tags:
+        vals['tag_ids'] = [(6, 0, _resolve_or_create_tags(env, tags))]
     if description:
         vals['description'] = description
     item = env['myschool.project.task'].create(vals)
@@ -507,6 +527,8 @@ def create_item(env, project, name, item_type='task', parent=None, assignee=None
             'planned_hours': {'type': 'number'},
             'milestone': {'description': 'Target milestone id/name; 0/false to clear',
                           'oneOf': [{'type': 'integer'}, {'type': 'string'}, {'type': 'boolean'}]},
+            'tags': {'type': 'array', 'items': {'type': 'string'},
+                     'description': 'Replace tags (names; created if missing)'},
         },
     },
     required_group=WRITE_GROUP,
@@ -535,7 +557,69 @@ def update_item(env, item, **kwargs):
     if 'milestone' in kwargs:
         mv = kwargs['milestone']
         vals['milestone_id'] = _resolve_milestone(env, rec.project_id, mv).id if mv else False
+    if 'tags' in kwargs:
+        vals['tag_ids'] = [(6, 0, _resolve_or_create_tags(env, kwargs['tags'] or []))]
     if not vals:
         raise McpToolError('No updatable fields provided', code=-32602)
     rec.write(vals)
     return _serialize_item(rec)
+
+
+@McpRegistry.tool(
+    name='projects_set_status',
+    description='Quickly set the status (state) of a work item.',
+    input_schema={
+        'type': 'object',
+        'required': ['item', 'state'],
+        'properties': {
+            'item': {'type': 'integer', 'description': 'Work item id'},
+            'state': {'type': 'string',
+                      'enum': ['todo', 'in_progress', 'blocked', 'done', 'cancelled']},
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def set_status(env, item, state):
+    rec = _resolve_item(env, item)
+    rec.write({'state': state})
+    return _serialize_item(rec)
+
+
+@McpRegistry.tool(
+    name='projects_search',
+    description=(
+        'Search work items by name across all projects (or within one), '
+        'optionally filtered by type/state/assignee.'
+    ),
+    input_schema={
+        'type': 'object',
+        'required': ['query'],
+        'properties': {
+            'query': {'type': 'string', 'description': 'Text to match in the name'},
+            'project': {'description': 'Limit to one project (id or code)',
+                        'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+            'item_type': {'type': 'string',
+                          'enum': ['task', 'milestone', 'phase', 'epic', 'bug']},
+            'state': {'type': 'string',
+                      'enum': ['todo', 'in_progress', 'blocked', 'done', 'cancelled']},
+            'assignee': {'description': 'User login, id, or "me"',
+                         'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+            'limit': {'type': 'integer', 'default': 50, 'maximum': 200},
+        },
+    },
+    required_group=READ_GROUP,
+)
+def search_items(env, query, project=None, item_type=None, state=None,
+                 assignee=None, limit=50):
+    domain = [('name', 'ilike', query)]
+    if project is not None:
+        domain.append(('project_id', '=', _resolve_project(env, project).id))
+    if item_type:
+        domain.append(('item_type', '=', item_type))
+    if state:
+        domain.append(('state', '=', state))
+    if assignee:
+        domain.append(('assigned_id', '=', base.resolve_user(env, assignee).id))
+    items = env['myschool.project.task'].search(
+        domain, limit=min(int(limit or 50), 200), order='project_id, sequence, id')
+    return [_serialize_item(i) for i in items]
