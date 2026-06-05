@@ -1,8 +1,10 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_myschool_project_user,myschool.project.user,model_myschool_project,myschool_projects.group_projects_user,1,0,0,0
+access_myschool_project_user,myschool.project.user,model_myschool_project,myschool_projects.group_projects_user,1,1,1,1
 access_myschool_project_manager,myschool.project.manager,model_myschool_project,myschool_projects.group_projects_manager,1,1,1,1
-access_myschool_project_task_user,myschool.project.task.user,model_myschool_project_task,myschool_projects.group_projects_user,1,1,1,0
+access_myschool_project_task_user,myschool.project.task.user,model_myschool_project_task,myschool_projects.group_projects_user,1,1,1,1
 access_myschool_project_task_manager,myschool.project.task.manager,model_myschool_project_task,myschool_projects.group_projects_manager,1,1,1,1
+access_myschool_project_membership_user,myschool.project.membership.user,model_myschool_project_membership,myschool_projects.group_projects_user,1,1,1,1
+access_myschool_project_membership_manager,myschool.project.membership.manager,model_myschool_project_membership,myschool_projects.group_projects_manager,1,1,1,1
 access_myschool_project_tag_user,myschool.project.tag.user,model_myschool_project_tag,myschool_projects.group_projects_user,1,1,1,0
 access_myschool_project_tag_manager,myschool.project.tag.manager,model_myschool_project_tag,myschool_projects.group_projects_manager,1,1,1,1
 access_myschool_project_category_user,myschool.project.category.user,model_myschool_project_category,myschool_projects.group_projects_user,1,0,0,0

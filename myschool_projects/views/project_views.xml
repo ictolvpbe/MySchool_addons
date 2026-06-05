@@ -72,7 +72,6 @@
                             <field name="category_id"/>
                             <field name="is_template"/>
                             <field name="responsible_id"/>
-                            <field name="member_ids" widget="many2many_tags"/>
                         </group>
                         <group string="Planning &amp; Progress">
                             <field name="date_start"/>
@@ -138,6 +137,18 @@
                                            decoration-muted="state == 'cancelled'"/>
                                 </list>
                             </field>
+                        </page>
+                        <page string="Team" name="team">
+                            <field name="membership_ids">
+                                <list editable="bottom">
+                                    <field name="user_id"/>
+                                    <field name="role"/>
+                                </list>
+                            </field>
+                            <group>
+                                <field name="member_ids" widget="many2many_tags"
+                                       readonly="1" string="All with access"/>
+                            </group>
                         </page>
                         <page string="Dependencies" name="dependencies">
                             <group>

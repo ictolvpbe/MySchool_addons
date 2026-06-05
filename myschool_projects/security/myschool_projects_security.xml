@@ -14,6 +14,14 @@
         <field name="comment">Full access to MySchool Projects.</field>
     </record>
 
+    <!-- "Optie aangevinkt": wie deze groep heeft, ziet en beheert ALLE
+         projecten (overstijgt de eigen/team-record-rule). -->
+    <record id="group_projects_see_all" model="res.groups">
+        <field name="name">Projects: See all</field>
+        <field name="implied_ids" eval="[(4, ref('group_projects_manager'))]"/>
+        <field name="comment">See and manage every project, regardless of ownership/membership.</field>
+    </record>
+
     <!-- MySchool admin krijgt automatisch Projects Manager-toegang -->
     <record id="myschool_core.group_myschool_core_admin" model="res.groups">
         <field name="implied_ids" eval="[(4, ref('group_projects_manager'))]"/>

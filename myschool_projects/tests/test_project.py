@@ -1,5 +1,5 @@
 from odoo.tests.common import TransactionCase, tagged
-from odoo.exceptions import ValidationError, UserError
+from odoo.exceptions import ValidationError, UserError, AccessError
 from odoo.tools import mute_logger
 
 
@@ -217,3 +217,61 @@ class TestProjectModel(TransactionCase):
         proj = self.P.create({'name': 'Normaal'})
         with self.assertRaises(UserError):
             proj.action_create_from_template()
+
+    # ---------------- access / rollen (record rules) ----------------
+
+    @classmethod
+    def _mk_user(cls, login, group_xmlid):
+        return cls.env['res.users'].create({
+            'name': login, 'login': login,
+            'group_ids': [(6, 0, [cls.env.ref(group_xmlid).id])],
+        })
+
+    def test_access_member_roles(self):
+        owner = self._mk_user('p_owner', 'myschool_projects.group_projects_user')
+        reader = self._mk_user('p_reader', 'myschool_projects.group_projects_user')
+        outsider = self._mk_user('p_out', 'myschool_projects.group_projects_user')
+        proj = self.P.create({'name': 'Secret', 'responsible_id': owner.id})
+        self.env['myschool.project.membership'].create({
+            'project_id': proj.id, 'user_id': reader.id, 'role': 'reader'})
+
+        # responsible (owner) ziet + mag bewerken
+        self.assertEqual(proj.with_user(owner).name, 'Secret')
+        proj.with_user(owner).write({'name': 'Renamed'})
+        # reader ziet maar mag NIET bewerken
+        self.assertTrue(proj.with_user(reader).read(['name']))
+        with self.assertRaises(AccessError):
+            proj.with_user(reader).write({'name': 'Nope'})
+        # outsider ziet het project niet
+        self.assertFalse(self.P.with_user(outsider).search([('id', '=', proj.id)]))
+
+    def test_access_editor_can_write(self):
+        owner = self._mk_user('p_o2', 'myschool_projects.group_projects_user')
+        editor = self._mk_user('p_ed', 'myschool_projects.group_projects_user')
+        proj = self.P.create({'name': 'P', 'responsible_id': owner.id})
+        self.env['myschool.project.membership'].create({
+            'project_id': proj.id, 'user_id': editor.id, 'role': 'editor'})
+        proj.with_user(editor).write({'name': 'edited-by-editor'})
+        self.assertEqual(proj.name, 'edited-by-editor')
+
+    def test_access_see_all_overrides(self):
+        seer = self._mk_user('p_seeall', 'myschool_projects.group_projects_see_all')
+        other = self._mk_user('p_other', 'myschool_projects.group_projects_user')
+        proj = self.P.create({'name': 'Hidden', 'responsible_id': other.id})
+        # see-all ziet + bewerkt ondanks geen membership
+        self.assertTrue(self.P.with_user(seer).search([('id', '=', proj.id)]))
+        proj.with_user(seer).write({'name': 'seen'})
+
+    def test_access_task_follows_project(self):
+        owner = self._mk_user('p_to', 'myschool_projects.group_projects_user')
+        reader = self._mk_user('p_tr', 'myschool_projects.group_projects_user')
+        proj = self.P.create({'name': 'P', 'responsible_id': owner.id})
+        self.env['myschool.project.membership'].create({
+            'project_id': proj.id, 'user_id': reader.id, 'role': 'reader'})
+        task = self.T.create({'name': 't', 'project_id': proj.id})
+        # reader leest de taak maar mag niet bewerken
+        self.assertTrue(task.with_user(reader).read(['name']))
+        with self.assertRaises(AccessError):
+            task.with_user(reader).write({'name': 'x'})
+        # owner mag wel
+        task.with_user(owner).write({'name': 'ok'})

@@ -24,6 +24,7 @@
     'data': [
         'security/myschool_projects_security.xml',
         'security/ir.model.access.csv',
+        'security/project_rules.xml',
         'views/project_views.xml',
         'views/task_views.xml',
         'views/menu_views.xml',

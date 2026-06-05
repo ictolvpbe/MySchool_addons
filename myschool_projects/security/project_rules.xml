@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+    <!-- ============================================================
+         PROJECT — record rules
+         Read  : responsible + alle leden (member_ids)
+         Write : responsible + owner/editor-leden (editor_user_ids)
+         See-all-groep overstijgt beide.
+         ============================================================ -->
+    <record id="rule_project_member_read" model="ir.rule">
+        <field name="name">Project: read own / member</field>
+        <field name="model_id" ref="model_myschool_project"/>
+        <field name="groups" eval="[(4, ref('group_projects_user'))]"/>
+        <field name="domain_force">[('member_ids', 'in', user.id)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_project_editor_write" model="ir.rule">
+        <field name="name">Project: write as owner / editor</field>
+        <field name="model_id" ref="model_myschool_project"/>
+        <field name="groups" eval="[(4, ref('group_projects_user'))]"/>
+        <field name="domain_force">[('editor_user_ids', 'in', user.id)]</field>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <record id="rule_project_see_all" model="ir.rule">
+        <field name="name">Project: see all</field>
+        <field name="model_id" ref="model_myschool_project"/>
+        <field name="groups" eval="[(4, ref('group_projects_see_all'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+    <!-- ============================================================
+         WORK ITEMS — volgen de toegang van hun project
+         ============================================================ -->
+    <record id="rule_task_member_read" model="ir.rule">
+        <field name="name">Task: read via project</field>
+        <field name="model_id" ref="model_myschool_project_task"/>
+        <field name="groups" eval="[(4, ref('group_projects_user'))]"/>
+        <field name="domain_force">[('project_id.member_ids', 'in', user.id)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_task_editor_write" model="ir.rule">
+        <field name="name">Task: write via project editor</field>
+        <field name="model_id" ref="model_myschool_project_task"/>
+        <field name="groups" eval="[(4, ref('group_projects_user'))]"/>
+        <field name="domain_force">[('project_id.editor_user_ids', 'in', user.id)]</field>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <record id="rule_task_see_all" model="ir.rule">
+        <field name="name">Task: see all</field>
+        <field name="model_id" ref="model_myschool_project_task"/>
+        <field name="groups" eval="[(4, ref('group_projects_see_all'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+    <!-- ============================================================
+         MEMBERSHIPS — beheerbaar door editors/owners van het project
+         ============================================================ -->
+    <record id="rule_membership_read" model="ir.rule">
+        <field name="name">Membership: read via project</field>
+        <field name="model_id" ref="model_myschool_project_membership"/>
+        <field name="groups" eval="[(4, ref('group_projects_user'))]"/>
+        <field name="domain_force">[('project_id.member_ids', 'in', user.id)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="False"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="rule_membership_manage" model="ir.rule">
+        <field name="name">Membership: manage via project editor</field>
+        <field name="model_id" ref="model_myschool_project_membership"/>
+        <field name="groups" eval="[(4, ref('group_projects_user'))]"/>
+        <field name="domain_force">[('project_id.editor_user_ids', 'in', user.id)]</field>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <record id="rule_membership_see_all" model="ir.rule">
+        <field name="name">Membership: see all</field>
+        <field name="model_id" ref="model_myschool_project_membership"/>
+        <field name="groups" eval="[(4, ref('group_projects_see_all'))]"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+    </record>
+
+    </data>
+</odoo>

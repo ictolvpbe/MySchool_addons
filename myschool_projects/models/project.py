@@ -39,9 +39,22 @@ class MyschoolProject(models.Model):
     child_ids = fields.One2many('myschool.project', 'parent_id', string='Sub-projects')
     parent_path = fields.Char(index=True)
 
-    # --- People & planning ---
-    responsible_id = fields.Many2one('res.users', string='Responsible', tracking=True)
-    member_ids = fields.Many2many('res.users', string='Team Members')
+    # --- People & access (eigenaar + rol-gebaseerde memberships) ---
+    responsible_id = fields.Many2one(
+        'res.users', string='Responsible', tracking=True,
+        default=lambda self: self.env.user,
+        help='Primaire verantwoordelijke (eigenaar) van het project.')
+    membership_ids = fields.One2many(
+        'myschool.project.membership', 'project_id', string='Members',
+        help='Bijkomende leden met een rol (owner/editor/reader).')
+    member_ids = fields.Many2many(
+        'res.users', 'myschool_project_member_rel', 'project_id', 'user_id',
+        string='Team', compute='_compute_access_users', store=True,
+        help='Alle gebruikers met toegang (responsible + alle memberships).')
+    editor_user_ids = fields.Many2many(
+        'res.users', 'myschool_project_editor_rel', 'project_id', 'user_id',
+        string='Editors', compute='_compute_access_users', store=True,
+        help='Gebruikers die mogen bewerken (responsible + owner/editor-leden).')
     date_start = fields.Date(string='Start Date')
     date_end = fields.Date(string='End Date')
     state = fields.Selection([
@@ -144,6 +157,16 @@ class MyschoolProject(models.Model):
         for project in self:
             project.milestone_count = len(project.milestone_ids)
 
+    @api.depends('membership_ids.user_id', 'membership_ids.role', 'responsible_id')
+    def _compute_access_users(self):
+        for project in self:
+            members = project.membership_ids.mapped('user_id')
+            editors = project.membership_ids.filtered(
+                lambda m: m.role in ('owner', 'editor')).mapped('user_id')
+            resp = project.responsible_id
+            project.member_ids = members | resp
+            project.editor_user_ids = editors | resp
+
     def _compute_descendant_count(self):
         for project in self:
             if project.parent_path:
@@ -245,7 +268,8 @@ class MyschoolProject(models.Model):
             'is_template': as_template,
             'parent_id': parent_id,
             'responsible_id': self.responsible_id.id,
-            'member_ids': [(6, 0, self.member_ids.ids)],
+            'membership_ids': [(0, 0, {'user_id': m.user_id.id, 'role': m.role})
+                               for m in self.membership_ids],
             'state': 'new',
         })
         self._copy_tasks_to(new)
