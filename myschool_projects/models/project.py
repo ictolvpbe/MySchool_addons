@@ -1,5 +1,5 @@
-from odoo import models, fields, api
-from odoo.exceptions import ValidationError
+from odoo import models, fields, api, _
+from odoo.exceptions import ValidationError, UserError
 
 
 class MyschoolProject(models.Model):
@@ -25,6 +25,10 @@ class MyschoolProject(models.Model):
     category_id = fields.Many2one(
         'myschool.project.category', string='Category', index=True,
         help='Classify the project (e.g. ICT, Infra, Onderwijs).')
+    is_template = fields.Boolean(
+        string='Template', default=False, index=True, tracking=True,
+        help='Blueprint-project: niet operationeel, maar te instantiëren '
+             'tot een nieuw project (structuur + work items worden gekopieerd).')
     description = fields.Html()
 
     # --- Hierarchy (WBS) ---
@@ -186,6 +190,100 @@ class MyschoolProject(models.Model):
             'domain': [('project_id', '=', self.id), ('item_type', '=', 'milestone')],
             'context': {'default_project_id': self.id, 'default_item_type': 'milestone'},
         }
+
+    # ------------------------------------------------------------------
+    # Templates — een blueprint-project instantiëren tot een echt project
+    # ------------------------------------------------------------------
+
+    def action_save_as_template(self):
+        """Maak van dit project een nieuwe template (volledige kopie)."""
+        self.ensure_one()
+        tmpl = self._copy_project_tree(parent_id=False, root=True, as_template=True)
+        return {
+            'type': 'ir.actions.act_window',
+            'name': tmpl.name,
+            'res_model': 'myschool.project',
+            'res_id': tmpl.id,
+            'view_mode': 'form',
+            'views': [[False, 'form']],
+            'target': 'current',
+        }
+
+    def action_create_from_template(self):
+        """Instantieer dit template tot een nieuw, operationeel project."""
+        self.ensure_one()
+        if not self.is_template:
+            raise UserError(_("Dit project is geen template."))
+        new = self._copy_project_tree(parent_id=False, root=True, as_template=False)
+        return {
+            'type': 'ir.actions.act_window',
+            'name': new.name,
+            'res_model': 'myschool.project',
+            'res_id': new.id,
+            'view_mode': 'form',
+            'views': [[False, 'form']],
+            'target': 'current',
+        }
+
+    def _copy_project_tree(self, parent_id, root, as_template):
+        """Diepe kopie van een project (sub-projecten + work items), met
+        correcte remapping van interne verwijzingen (task-parent, milestone,
+        dependencies). Datums/voortgang worden gereset; codes niet gekopieerd
+        (uniek). ``as_template`` bepaalt de vlag van de kopie."""
+        self.ensure_one()
+        Project = self.env['myschool.project']
+        if root:
+            suffix = _(" (template)") if as_template else _(" (kopie)")
+            name = self.name + suffix
+        else:
+            name = self.name
+        new = Project.create({
+            'name': name,
+            'code': False,
+            'category_id': self.category_id.id,
+            'description': self.description,
+            'is_template': as_template,
+            'parent_id': parent_id,
+            'responsible_id': self.responsible_id.id,
+            'member_ids': [(6, 0, self.member_ids.ids)],
+            'state': 'new',
+        })
+        self._copy_tasks_to(new)
+        for child in self.child_ids:
+            child._copy_project_tree(parent_id=new.id, root=False, as_template=as_template)
+        return new
+
+    def _copy_tasks_to(self, new_project):
+        """Kopieer de work items van ``self`` naar ``new_project`` en remap
+        parent_id / milestone_id / depends_on_ids over de kopieën heen."""
+        Task = self.env['myschool.project.task']
+        old_tasks = self.task_ids
+        id_map = {}
+        for t in old_tasks.sorted('id'):
+            new_task = Task.create({
+                'name': t.name,
+                'project_id': new_project.id,
+                'item_type': t.item_type,
+                'sequence': t.sequence,
+                'priority': t.priority,
+                'planned_hours': t.planned_hours,
+                'assigned_id': t.assigned_id.id,
+                'tag_ids': [(6, 0, t.tag_ids.ids)],
+                'state': 'todo',
+            })
+            id_map[t.id] = new_task.id
+        for t in old_tasks:
+            new_task = Task.browse(id_map[t.id])
+            vals = {}
+            if t.parent_id and t.parent_id.id in id_map:
+                vals['parent_id'] = id_map[t.parent_id.id]
+            if t.milestone_id and t.milestone_id.id in id_map:
+                vals['milestone_id'] = id_map[t.milestone_id.id]
+            deps = [id_map[d.id] for d in t.depends_on_ids if d.id in id_map]
+            if deps:
+                vals['depends_on_ids'] = [(6, 0, deps)]
+            if vals:
+                new_task.write(vals)
 
     @api.constrains('parent_id')
     def _check_parent_id(self):

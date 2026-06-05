@@ -178,3 +178,42 @@ class TestProjectModel(TransactionCase):
             with self.env.cr.savepoint():
                 self.Cat.create({'name': 'ICT'})
                 self.env.flush_all()
+
+    # ---------------- templates ----------------
+
+    def test_template_instantiation(self):
+        tmpl = self.P.create({'name': 'Blueprint', 'code': 'BP', 'is_template': True})
+        phase = self.T.create({'name': 'Phase 1', 'project_id': tmpl.id, 'item_type': 'phase'})
+        ms = self.T.create({'name': 'MS', 'project_id': tmpl.id, 'item_type': 'milestone'})
+        a = self.T.create({'name': 'A', 'project_id': tmpl.id,
+                           'parent_id': phase.id, 'milestone_id': ms.id})
+        self.T.create({'name': 'B', 'project_id': tmpl.id,
+                       'parent_id': phase.id, 'depends_on_ids': [(4, a.id)]})
+        sub = self.P.create({'name': 'Sub', 'parent_id': tmpl.id, 'is_template': True})
+        self.T.create({'name': 'S1', 'project_id': sub.id})
+
+        action = tmpl.action_create_from_template()
+        new = self.P.browse(action['res_id'])
+        self.assertFalse(new.is_template)
+        self.assertFalse(new.code)                       # code niet gekopieerd (uniek)
+        self.assertEqual(new.state, 'new')
+        self.assertEqual(len(new.task_ids), 4)
+        new_a = new.task_ids.filtered(lambda t: t.name == 'A')
+        new_b = new.task_ids.filtered(lambda t: t.name == 'B')
+        new_phase = new.task_ids.filtered(lambda t: t.name == 'Phase 1')
+        new_ms = new.task_ids.filtered(lambda t: t.name == 'MS')
+        # hiërarchie + milestone + dependency geremapt binnen de kopie
+        self.assertEqual(new_a.parent_id, new_phase)
+        self.assertEqual(new_a.milestone_id, new_ms)
+        self.assertEqual(new_b.depends_on_ids, new_a)
+        # verwijst NIET naar de originele template-taken
+        self.assertNotIn(a.id, new.task_ids.ids)
+        # sub-project mee gekopieerd, niet langer een template
+        self.assertEqual(len(new.child_ids), 1)
+        self.assertFalse(new.child_ids.is_template)
+        self.assertEqual(len(new.child_ids.task_ids), 1)
+
+    def test_create_from_template_requires_template(self):
+        proj = self.P.create({'name': 'Normaal'})
+        with self.assertRaises(UserError):
+            proj.action_create_from_template()

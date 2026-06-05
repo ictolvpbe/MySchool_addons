@@ -32,10 +32,17 @@
         <field name="arch" type="xml">
             <form string="Project">
                 <header>
+                    <button name="action_create_from_template" type="object"
+                            string="Create project from template"
+                            class="btn-primary" invisible="not is_template"/>
+                    <button name="action_save_as_template" type="object"
+                            string="Save as template" invisible="is_template"/>
                     <field name="state" widget="statusbar"
                            options="{'clickable': '1'}"/>
                 </header>
                 <sheet>
+                    <widget name="web_ribbon" title="Template" bg_color="text-bg-info"
+                            invisible="not is_template"/>
                     <div class="oe_button_box" name="button_box">
                         <button type="object" name="action_open_tasks"
                                 class="oe_stat_button" icon="fa-tasks">
@@ -63,6 +70,7 @@
                         <group string="Organisation">
                             <field name="parent_id"/>
                             <field name="category_id"/>
+                            <field name="is_template"/>
                             <field name="responsible_id"/>
                             <field name="member_ids" widget="many2many_tags"/>
                         </group>
@@ -233,6 +241,7 @@
         <field name="res_model">myschool.project</field>
         <field name="view_mode">kanban,list,form</field>
         <field name="search_view_id" ref="myschool_project_view_search"/>
+        <field name="domain">[('is_template', '=', False)]</field>
         <field name="context">{'search_default_top_level': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
@@ -241,6 +250,27 @@
             <p>
                 Projecten kunnen sub-projecten bevatten (WBS). De voortgang
                 van een project rolt automatisch op uit zijn sub-projecten.
+            </p>
+        </field>
+    </record>
+
+    <!-- ============ TEMPLATES ============ -->
+    <record id="myschool_project_template_action" model="ir.actions.act_window">
+        <field name="name">Project Templates</field>
+        <field name="res_model">myschool.project</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="myschool_project_view_search"/>
+        <field name="domain">[('is_template', '=', True)]</field>
+        <field name="context">{'default_is_template': True}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Maak een project-template
+            </p>
+            <p>
+                Een template is een blueprint: bouw de structuur (sub-projecten,
+                work items, milestones, dependencies) één keer en instantieer hem
+                telkens opnieuw tot een echt project via de knop
+                <b>Create project from template</b>.
             </p>
         </field>
     </record>
