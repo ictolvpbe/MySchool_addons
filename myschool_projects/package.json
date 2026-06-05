@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Node ESM-context zodat de pure Gantt-utils (static/src/js/gantt_utils.js) met `node --test` getest kunnen worden. Niet gebruikt door Odoo zelf.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

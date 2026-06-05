@@ -34,6 +34,7 @@
     'assets': {
         'web.assets_backend': [
             'myschool_projects/static/src/css/project_workspace.css',
+            'myschool_projects/static/src/js/gantt_utils.js',
             'myschool_projects/static/src/js/project_workspace.js',
             'myschool_projects/static/src/xml/project_workspace.xml',
         ],

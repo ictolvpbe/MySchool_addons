@@ -5,6 +5,10 @@ import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
+import {
+    DAY_MS, itemStart, itemEnd, dayIndex as utilDayIndex, computeRange, spanFor,
+    barGeom, applyDragGeom, applyDragDates, computeArrows,
+} from "@myschool_projects/js/gantt_utils";
 
 /**
  * Lightweight right-click context menu (à la myschool_admin object_browser).
@@ -495,7 +499,6 @@ export class WorkPackageTable extends Component {
     }
 }
 
-const DAY_MS = 86400000;
 const GANTT_LABEL_W = 260;
 const GANTT_ROW_H = 30;
 
@@ -551,34 +554,16 @@ export class GanttTimeline extends Component {
         this.state.loading = false;
     }
 
-    _parse(s) {
-        if (!s) return null;
-        const [y, m, d] = String(s).slice(0, 10).split("-").map(Number);
-        if (!y) return null;
-        return new Date(y, m - 1, d);
-    }
-    _itemStart(n) { return this._parse(n.date_start) || this._parse(n.date_deadline); }
-    _itemEnd(n) { return this._parse(n.date_deadline) || this._parse(n.date_start); }
+    _itemStart(n) { return itemStart(n); }
+    _itemEnd(n) { return itemEnd(n); }
 
     _computeRange(recs) {
-        let min = null, max = null;
-        recs.forEach((r) => {
-            const s = this._itemStart(r), e = this._itemEnd(r);
-            if (s && (!min || s < min)) min = s;
-            if (e && (!max || e > max)) max = e;
-        });
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (!min) min = new Date(today);
-        if (!max) max = new Date(today);
-        min = new Date(min.getTime() - 3 * DAY_MS);
-        max = new Date(max.getTime() + 5 * DAY_MS);
-        min.setHours(0, 0, 0, 0);
-        this.state.rangeStart = min;
-        this.state.totalDays = Math.max(1, Math.round((max - min) / DAY_MS) + 1);
+        const { rangeStart, totalDays } = computeRange(recs, new Date());
+        this.state.rangeStart = rangeStart;
+        this.state.totalDays = totalDays;
     }
 
-    dayIndex(date) { return Math.round((date - this.state.rangeStart) / DAY_MS); }
+    dayIndex(date) { return utilDayIndex(this.state.rangeStart, date); }
 
     get visibleRows() {
         const out = [];
@@ -639,49 +624,18 @@ export class GanttTimeline extends Component {
         return idx * this.state.dayWidth;
     }
 
-    _spanFor(node) {
-        let min = null, max = null;
-        const visit = (n) => {
-            const s = this._itemStart(n), e = this._itemEnd(n);
-            if (s && (!min || s < min)) min = s;
-            if (e && (!max || e > max)) max = e;
-            n.children.forEach(visit);
-        };
-        node.children.forEach(visit);
-        return { min, max };
-    }
+    _spanFor(node) { return spanFor(node); }
 
     _baseBar(row) {
-        let start, end;
-        if (row.hasChildren) {
-            const sp = this._spanFor(row.item);
-            start = sp.min; end = sp.max;
-        } else {
-            start = this._itemStart(row.item); end = this._itemEnd(row.item);
-        }
-        if (!start || !end) return null;
-        const li = this.dayIndex(start);
-        const ri = this.dayIndex(end);
-        const dw = this.state.dayWidth;
-        return { left: li * dw, width: Math.max(dw, (ri - li + 1) * dw) };
+        return barGeom(this.state.rangeStart, this.state.dayWidth, row);
     }
 
     /** Display-geometrie incl. live drag-preview voor het gesleepte item. */
     barFor(row) {
-        const b = this._baseBar(row);
-        if (!b) return null;
+        const base = this._baseBar(row);
         const d = this.state.drag;
-        if (!d || d.id !== row.item.id) return b;
-        const dx = d.dayDelta * this.state.dayWidth;
-        if (d.mode === "move") return { left: b.left + dx, width: b.width };
-        if (d.mode === "resize-r") {
-            return { left: b.left, width: Math.max(this.state.dayWidth, b.width + dx) };
-        }
-        if (d.mode === "resize-l") {
-            const w = Math.max(this.state.dayWidth, b.width - dx);
-            return { left: b.left + (b.width - w), width: w };
-        }
-        return b;
+        const drag = d && d.id === row.item.id ? d : null;
+        return applyDragGeom(base, drag, this.state.dayWidth);
     }
 
     milestoneLeft(item) {
@@ -702,48 +656,17 @@ export class GanttTimeline extends Component {
     /** Finish-to-start dependency-pijlen tussen zichtbare balken. */
     get arrows() {
         if (!this.state.showDeps) return [];
-        const rows = this.visibleRows;
-        const map = {};
-        rows.forEach((row, idx) => {
-            let geom;
+        const geomOf = (row) => {
             if (row.item.item_type === "milestone") {
                 const x = this.milestoneLeft(row.item);
-                geom = x === null ? null : { left: x, width: 0 };
-            } else {
-                geom = this.barFor(row);
+                return x === null ? null : { left: x, width: 0 };
             }
-            map[row.item.id] = { idx, geom };
-        });
-        const out = [];
-        const H = this.rowH, L = this.labelW;
-        rows.forEach((row) => {
-            const succ = map[row.item.id];
-            if (!succ || !succ.geom) return;
-            (row.item.depends_on_ids || []).forEach((pid) => {
-                const pred = map[pid];
-                if (!pred || !pred.geom) return;
-                const x1 = L + pred.geom.left + pred.geom.width;
-                const y1 = pred.idx * H + H / 2;
-                const x2 = L + succ.geom.left;
-                const y2 = succ.idx * H + H / 2;
-                const midx = Math.max(x1 + 8, x2 - 8);
-                out.push({
-                    key: `${pid}-${row.item.id}`,
-                    d: `M ${x1} ${y1} H ${midx} V ${y2} H ${x2}`,
-                    head: `${x2 - 6},${y2 - 4} ${x2},${y2} ${x2 - 6},${y2 + 4}`,
-                });
-            });
-        });
-        return out;
+            return this.barFor(row);
+        };
+        return computeArrows(this.visibleRows, geomOf, this.labelW, this.rowH);
     }
 
     // ---- drag-to-reschedule ----
-    _addDays(date, n) { return new Date(date.getTime() + n * DAY_MS); }
-    _fmt(date) {
-        const p = (x) => String(x).padStart(2, "0");
-        return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
-    }
-
     onBarMouseDown(ev, row, mode) {
         if (row.hasChildren) return;          // summary-span is afgeleid → niet sleepbaar
         const start = this._itemStart(row.item);
@@ -779,20 +702,7 @@ export class GanttTimeline extends Component {
     }
 
     async _applyDrag(d) {
-        let ns = d.origStart, ne = d.origEnd;
-        if (d.mode === "move") {
-            ns = this._addDays(d.origStart, d.dayDelta);
-            ne = this._addDays(d.origEnd, d.dayDelta);
-        } else if (d.mode === "resize-r") {
-            ne = this._addDays(d.origEnd, d.dayDelta);
-            if (ne < ns) ne = ns;
-        } else if (d.mode === "resize-l") {
-            ns = this._addDays(d.origStart, d.dayDelta);
-            if (ns > ne) ns = ne;
-        }
-        const vals = d.isMilestone
-            ? { date_deadline: this._fmt(ne) }
-            : { date_start: this._fmt(ns), date_deadline: this._fmt(ne) };
+        const vals = applyDragDates(d);
         try {
             await this.orm.write("myschool.project.task", [d.id], vals);
         } catch (e) {
