@@ -427,14 +427,14 @@
     display: flex;
     position: sticky;
     top: 0;
-    z-index: 3;
+    z-index: 4;
     background: var(--ms-surface-1, #fff);
     border-bottom: 1px solid var(--ms-border, #dee2e6);
 }
 .o_msp_gantt_corner {
     position: sticky;
     left: 0;
-    z-index: 4;
+    z-index: 5;
     flex: 0 0 auto;
     background: var(--ms-surface-1, #fff);
     border-right: 1px solid var(--ms-border, #dee2e6);
@@ -497,7 +497,7 @@
 .o_msp_gantt_label {
     position: sticky;
     left: 0;
-    z-index: 2;
+    z-index: 3;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
@@ -527,16 +527,32 @@
     position: absolute;
     top: 6px;
     height: 18px;
+    z-index: 2;
     border-radius: 4px;
     display: flex;
     align-items: center;
     padding: 0 6px;
-    cursor: pointer;
+    cursor: grab;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
     background: #6c757d;
     overflow: hidden;
 }
 .o_msp_gantt_bar:hover { filter: brightness(1.05); }
+.o_msp_gantt_bar:active { cursor: grabbing; }
+.o_msp_gantt_bar_summary { cursor: default; }
+/* Resize-grepen aan de balkranden (zichtbaar op hover) */
+.o_msp_gantt_handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 7px;
+    cursor: ew-resize;
+    opacity: 0;
+    background: rgba(0, 0, 0, 0.25);
+}
+.o_msp_gantt_handle_l { left: 0; border-radius: 4px 0 0 4px; }
+.o_msp_gantt_handle_r { right: 0; border-radius: 0 4px 4px 0; }
+.o_msp_gantt_bar:hover .o_msp_gantt_handle { opacity: 1; }
 .o_msp_gantt_bar_label {
     font-size: 11px;
     color: #fff;
@@ -567,9 +583,27 @@
     top: 9px;
     width: 12px;
     height: 12px;
+    z-index: 2;
     margin-left: -6px;
     background: #0d9488;
     transform: rotate(45deg);
-    cursor: pointer;
+    cursor: grab;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
+.o_msp_gantt_ms:active { cursor: grabbing; }
+
+/* Dependency-pijlen (SVG-overlay) */
+.o_msp_gantt_deps {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    pointer-events: none;
+    overflow: visible;
+}
+.o_msp_gantt_dep_path {
+    fill: none;
+    stroke: #94a3b8;
+    stroke-width: 1.5;
+}
+.o_msp_gantt_dep_head { fill: #94a3b8; }

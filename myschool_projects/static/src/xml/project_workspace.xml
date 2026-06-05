@@ -213,6 +213,11 @@
         <div class="o_msp_gantt_wrap">
             <div class="o_msp_gantt_toolbar">
                 <span class="text-muted small">Timeline</span>
+                <button class="btn btn-sm ms-3"
+                        t-att-class="state.showDeps ? 'btn-primary' : 'btn-light'"
+                        t-on-click="toggleDeps" title="Toon/verberg dependency-pijlen">
+                    <i class="fa fa-link me-1"/>Dependencies
+                </button>
                 <div class="ms-auto btn-group">
                     <button class="btn btn-sm btn-light" t-on-click="() => this.zoom(-4)" title="Uitzoomen">
                         <i class="fa fa-search-minus"/>
@@ -287,7 +292,8 @@
                                                  t-if="milestoneLeft(row.item) !== null"
                                                  t-attf-style="left: {{ milestoneLeft(row.item) }}px;"
                                                  t-att-title="row.item.name"
-                                                 t-on-click="() => this.openItem(row.item.id)"/>
+                                                 t-on-mousedown="(ev) => this.onBarMouseDown(ev, row, 'move')"
+                                                 t-on-click="() => this.onBarClick(row)"/>
                                         </t>
                                         <t t-else="">
                                             <t t-set="bar" t-value="barFor(row)"/>
@@ -295,13 +301,27 @@
                                                  t-att-class="row.hasChildren ? 'o_msp_gantt_bar_summary' : ('o_msp_gantt_bar_' + row.item.item_type + ' o_msp_gantt_st_' + row.item.state)"
                                                  t-attf-style="left: {{ bar.left }}px; width: {{ bar.width }}px;"
                                                  t-att-title="row.item.name"
-                                                 t-on-click="() => this.openItem(row.item.id)">
+                                                 t-on-mousedown="(ev) => this.onBarMouseDown(ev, row, 'move')"
+                                                 t-on-click="() => this.onBarClick(row)">
+                                                <span t-if="!row.hasChildren" class="o_msp_gantt_handle o_msp_gantt_handle_l"
+                                                      t-on-mousedown.stop="(ev) => this.onBarMouseDown(ev, row, 'resize-l')"/>
                                                 <span class="o_msp_gantt_bar_label" t-esc="row.item.name"/>
+                                                <span t-if="!row.hasChildren" class="o_msp_gantt_handle o_msp_gantt_handle_r"
+                                                      t-on-mousedown.stop="(ev) => this.onBarMouseDown(ev, row, 'resize-r')"/>
                                             </div>
                                         </t>
                                     </div>
                                 </div>
                             </t>
+                            <svg class="o_msp_gantt_deps" t-if="state.showDeps and arrows.length"
+                                 t-attf-width="{{ labelW + timelineWidth }}"
+                                 t-attf-height="{{ visibleRows.length * rowH }}"
+                                 t-attf-style="height: {{ visibleRows.length * rowH }}px;">
+                                <t t-foreach="arrows" t-as="ar" t-key="ar.key">
+                                    <path t-att-d="ar.d" class="o_msp_gantt_dep_path"/>
+                                    <polygon t-att-points="ar.head" class="o_msp_gantt_dep_head"/>
+                                </t>
+                            </svg>
                         </div>
                     </div>
                 </div>

@@ -511,13 +511,16 @@ export class GanttTimeline extends Component {
     setup() {
         this.orm = useService("orm");
         this.action = useService("action");
+        this.notification = useService("notification");
         this.typeLabels = TYPE_LABELS;
         this.labelW = GANTT_LABEL_W;
         this.rowH = GANTT_ROW_H;
         this.state = useState({
             byId: {}, roots: [], expanded: {}, loading: true,
             dayWidth: 28, rangeStart: null, totalDays: 0,
+            drag: null, showDeps: true,
         });
+        this._dragged = false;
         onWillStart(async () => { await this.load(); });
     }
 
@@ -527,7 +530,7 @@ export class GanttTimeline extends Component {
             "myschool.project.task",
             [["project_id", "=", this.props.projectId]],
             ["name", "item_type", "state", "date_start", "date_deadline",
-             "parent_id", "child_count", "milestone_id"],
+             "parent_id", "child_count", "milestone_id", "depends_on_ids"],
             { order: "sequence, id" },
         );
         const byId = {};
@@ -648,7 +651,7 @@ export class GanttTimeline extends Component {
         return { min, max };
     }
 
-    barFor(row) {
+    _baseBar(row) {
         let start, end;
         if (row.hasChildren) {
             const sp = this._spanFor(row.item);
@@ -663,14 +666,139 @@ export class GanttTimeline extends Component {
         return { left: li * dw, width: Math.max(dw, (ri - li + 1) * dw) };
     }
 
+    /** Display-geometrie incl. live drag-preview voor het gesleepte item. */
+    barFor(row) {
+        const b = this._baseBar(row);
+        if (!b) return null;
+        const d = this.state.drag;
+        if (!d || d.id !== row.item.id) return b;
+        const dx = d.dayDelta * this.state.dayWidth;
+        if (d.mode === "move") return { left: b.left + dx, width: b.width };
+        if (d.mode === "resize-r") {
+            return { left: b.left, width: Math.max(this.state.dayWidth, b.width + dx) };
+        }
+        if (d.mode === "resize-l") {
+            const w = Math.max(this.state.dayWidth, b.width - dx);
+            return { left: b.left + (b.width - w), width: w };
+        }
+        return b;
+    }
+
     milestoneLeft(item) {
         const e = this._itemEnd(item);
         if (!e) return null;
-        return this.dayIndex(e) * this.state.dayWidth;
+        let idx = this.dayIndex(e);
+        const d = this.state.drag;
+        if (d && d.id === item.id && d.mode === "move") idx += d.dayDelta;
+        return idx * this.state.dayWidth;
     }
 
     zoom(delta) {
         this.state.dayWidth = Math.max(10, Math.min(60, this.state.dayWidth + delta));
+    }
+
+    toggleDeps() { this.state.showDeps = !this.state.showDeps; }
+
+    /** Finish-to-start dependency-pijlen tussen zichtbare balken. */
+    get arrows() {
+        if (!this.state.showDeps) return [];
+        const rows = this.visibleRows;
+        const map = {};
+        rows.forEach((row, idx) => {
+            let geom;
+            if (row.item.item_type === "milestone") {
+                const x = this.milestoneLeft(row.item);
+                geom = x === null ? null : { left: x, width: 0 };
+            } else {
+                geom = this.barFor(row);
+            }
+            map[row.item.id] = { idx, geom };
+        });
+        const out = [];
+        const H = this.rowH, L = this.labelW;
+        rows.forEach((row) => {
+            const succ = map[row.item.id];
+            if (!succ || !succ.geom) return;
+            (row.item.depends_on_ids || []).forEach((pid) => {
+                const pred = map[pid];
+                if (!pred || !pred.geom) return;
+                const x1 = L + pred.geom.left + pred.geom.width;
+                const y1 = pred.idx * H + H / 2;
+                const x2 = L + succ.geom.left;
+                const y2 = succ.idx * H + H / 2;
+                const midx = Math.max(x1 + 8, x2 - 8);
+                out.push({
+                    key: `${pid}-${row.item.id}`,
+                    d: `M ${x1} ${y1} H ${midx} V ${y2} H ${x2}`,
+                    head: `${x2 - 6},${y2 - 4} ${x2},${y2} ${x2 - 6},${y2 + 4}`,
+                });
+            });
+        });
+        return out;
+    }
+
+    // ---- drag-to-reschedule ----
+    _addDays(date, n) { return new Date(date.getTime() + n * DAY_MS); }
+    _fmt(date) {
+        const p = (x) => String(x).padStart(2, "0");
+        return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+    }
+
+    onBarMouseDown(ev, row, mode) {
+        if (row.hasChildren) return;          // summary-span is afgeleid → niet sleepbaar
+        const start = this._itemStart(row.item);
+        const end = this._itemEnd(row.item);
+        if (!start || !end) return;
+        ev.preventDefault();
+        this.state.drag = {
+            id: row.item.id, mode, startX: ev.clientX,
+            origStart: start, origEnd: end, dayDelta: 0,
+            isMilestone: row.item.item_type === "milestone",
+        };
+        const onMove = (e) => {
+            if (!this.state.drag) return;
+            this.state.drag.dayDelta = Math.round(
+                (e.clientX - this.state.drag.startX) / this.state.dayWidth);
+        };
+        const onUp = async () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            const d = this.state.drag;
+            this.state.drag = null;
+            if (!d || !d.dayDelta) return;
+            this._dragged = true;             // onderdruk de klik-na-sleep
+            await this._applyDrag(d);
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+    }
+
+    onBarClick(row) {
+        if (this._dragged) { this._dragged = false; return; }
+        this.openItem(row.item.id);
+    }
+
+    async _applyDrag(d) {
+        let ns = d.origStart, ne = d.origEnd;
+        if (d.mode === "move") {
+            ns = this._addDays(d.origStart, d.dayDelta);
+            ne = this._addDays(d.origEnd, d.dayDelta);
+        } else if (d.mode === "resize-r") {
+            ne = this._addDays(d.origEnd, d.dayDelta);
+            if (ne < ns) ne = ns;
+        } else if (d.mode === "resize-l") {
+            ns = this._addDays(d.origStart, d.dayDelta);
+            if (ns > ne) ns = ne;
+        }
+        const vals = d.isMilestone
+            ? { date_deadline: this._fmt(ne) }
+            : { date_start: this._fmt(ns), date_deadline: this._fmt(ne) };
+        try {
+            await this.orm.write("myschool.project.task", [d.id], vals);
+        } catch (e) {
+            this.notification.add("Kon datums niet bijwerken.", { type: "danger" });
+        }
+        await this.load();
     }
 
     openItem(id) {
