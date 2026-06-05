@@ -1,12 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
 
+    <t t-name="myschool_projects.ContextMenu">
+        <div class="o_msp_ctx_backdrop"
+             t-on-click="() => props.onClose()"
+             t-on-contextmenu.prevent="() => props.onClose()"/>
+        <div class="o_msp_ctx" t-attf-style="left: {{ props.x }}px; top: {{ props.y }}px;">
+            <div class="o_msp_ctx_header" t-esc="props.title"/>
+            <t t-foreach="props.items" t-as="it" t-key="it.action || ('d' + it_index)">
+                <div t-if="it.divider" class="o_msp_ctx_divider"/>
+                <div t-else="" class="o_msp_ctx_item"
+                     t-att-class="{ 'o_msp_ctx_danger': it.danger }"
+                     t-on-click="() => this.onItem(it.action)">
+                    <i t-att-class="it.icon"/>
+                    <span t-esc="it.label"/>
+                </div>
+            </t>
+        </div>
+    </t>
+
     <t t-name="myschool_projects.WbsNode">
         <div class="o_msp_node">
             <div class="o_msp_node_row"
                  t-att-class="{ 'o_msp_node_selected': isSelected }"
                  t-attf-style="padding-left: {{ level * 14 + 6 }}px;"
-                 t-on-click="onRowClick">
+                 t-on-click="onRowClick"
+                 t-on-contextmenu="onContextMenu">
                 <span class="o_msp_caret" t-if="hasChildren" t-on-click="onCaretClick">
                     <i class="fa" t-att-class="isExpanded ? 'fa-caret-down' : 'fa-caret-right'"/>
                 </span>
@@ -20,14 +39,15 @@
                              selectedId="props.selectedId"
                              expanded="props.expanded"
                              onSelect="props.onSelect"
-                             onToggle="props.onToggle"/>
+                             onToggle="props.onToggle"
+                             onContextMenu="props.onContextMenu"/>
                 </t>
             </div>
         </div>
     </t>
 
     <t t-name="myschool_projects.WorkPackageTable">
-        <div class="o_msp_wp">
+        <div class="o_msp_wp" t-on-contextmenu="onEmptyContextMenu">
             <div class="o_msp_wp_toolbar">
                 <button class="btn btn-sm btn-primary" t-on-click="createItem">
                     <i class="fa fa-plus me-1"/>Create
@@ -64,7 +84,16 @@
                 <tbody>
                     <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
                         <tr class="o_msp_wp_row"
-                            t-att-class="{ 'o_msp_summary': row.hasChildren, 'o_msp_milestone_row': row.item.item_type === 'milestone' }">
+                            t-att-class="{
+                                'o_msp_summary': row.hasChildren,
+                                'o_msp_milestone_row': row.item.item_type === 'milestone',
+                                'o_msp_drop_onto': state.dragOverId === row.item.id and state.dropMode === 'onto',
+                                'o_msp_drop_before': state.dragOverId === row.item.id and state.dropMode === 'before',
+                                'o_msp_drop_after': state.dragOverId === row.item.id and state.dropMode === 'after' }"
+                            t-on-dragover="(ev) => this.onDragOver(ev, row.item)"
+                            t-on-dragleave="() => this.onDragLeave(row.item)"
+                            t-on-drop="(ev) => this.onDrop(ev, row.item)"
+                            t-on-contextmenu="(ev) => this.onRowContextMenu(ev, row.item)">
                             <td t-if="state.cols.type">
                                 <span class="o_msp_type_badge"
                                       t-attf-class="o_msp_type_{{ row.item.item_type }}"
@@ -76,6 +105,10 @@
                             <td>
                                 <span class="o_msp_subject_cell"
                                       t-attf-style="padding-left: {{ row.depth * 18 }}px;">
+                                    <span class="o_msp_drag" draggable="true"
+                                          t-on-dragstart="(ev) => this.onDragStart(ev, row.item)"
+                                          t-on-dragend="() => this.onDragEnd()"
+                                          title="Sleep om onder een ander item te hangen">⠿</span>
                                     <span class="o_msp_caret" t-if="row.hasChildren"
                                           t-on-click.stop="() => this.toggle(row.item.id)">
                                         <i class="fa"
@@ -156,6 +189,10 @@
                     </tr>
                 </tbody>
             </table>
+
+            <WsContextMenu t-if="state.ctx" x="state.ctx.x" y="state.ctx.y"
+                           title="'Work item'" items="ctxItems"
+                           onAction.bind="onCtxAction" onClose.bind="closeCtx"/>
         </div>
     </t>
 
@@ -166,7 +203,7 @@
                 <div class="o_msp_sidebar_head">
                     <span class="o_msp_sidebar_title">Projects</span>
                 </div>
-                <div class="o_msp_tree">
+                <div class="o_msp_tree" t-on-contextmenu="onEmptyContextMenu">
                     <t t-if="state.loading">
                         <div class="text-muted p-2">Laden…</div>
                     </t>
@@ -179,7 +216,8 @@
                                      selectedId="state.selectedId"
                                      expanded="state.expanded"
                                      onSelect.bind="selectProject"
-                                     onToggle.bind="onToggle"/>
+                                     onToggle.bind="onToggle"
+                                     onContextMenu.bind="onNodeContextMenu"/>
                         </t>
                     </t>
                 </div>
@@ -289,6 +327,10 @@
                     </div>
                 </t>
             </div>
+
+            <WsContextMenu t-if="state.ctx" x="state.ctx.x" y="state.ctx.y"
+                           title="'Project'" items="ctxItems"
+                           onAction.bind="onCtxAction" onClose.bind="closeCtx"/>
         </div>
     </t>
 
