@@ -26,6 +26,7 @@ Alle Odoo-addons in deze repo. Per module 1-line summary en (waar bestaand) een 
 | Module | Doel | Status |
 |---|---|---|
 | [`myschool_appfoundry`](../../myschool_appfoundry/) | AppFoundry — development project management (items/sprints/releases) | stable |
+| [`myschool_projects`](../../myschool_projects/) — [docs](myschool_projects.md) | Generiek, hiërarchisch projectbeheer (WBS/sub-projecten, work-packages-workspace, MCP) | beta |
 | [`myschool_devhub`](../../myschool_devhub/) | DevHub — alternatief development-portfolio (te evalueren vs appfoundry) | beta |
 | [`myschool_itsm`](../../myschool_itsm/) | ITIL 4 compliant IT Service Management | beta |
 | [`myschool_asset`](../../myschool_asset/) | Asset-management voor school-omgevingen | beta |
@@ -57,10 +58,12 @@ graph TD
     core --> admin[myschool_admin]
     core --> dashboard[myschool_dashboard]
     core --> appfoundry[myschool_appfoundry]
+    core --> projects[myschool_projects]
     core --> activiteiten[activiteiten]
     activiteiten --> afwezigen[afwezigen]
     activiteiten --> planner[planner]
     appfoundry --> mcp[myschool_mcp]
+    projects --> mcp
     core --> itsm[myschool_itsm]
     core --> asset[myschool_asset]
     core --> sync[myschool_sync]
