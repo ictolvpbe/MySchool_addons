@@ -209,6 +209,106 @@
         </div>
     </t>
 
+    <t t-name="myschool_projects.GanttTimeline">
+        <div class="o_msp_gantt_wrap">
+            <div class="o_msp_gantt_toolbar">
+                <span class="text-muted small">Timeline</span>
+                <div class="ms-auto btn-group">
+                    <button class="btn btn-sm btn-light" t-on-click="() => this.zoom(-4)" title="Uitzoomen">
+                        <i class="fa fa-search-minus"/>
+                    </button>
+                    <button class="btn btn-sm btn-light" t-on-click="() => this.zoom(4)" title="Inzoomen">
+                        <i class="fa fa-search-plus"/>
+                    </button>
+                </div>
+            </div>
+            <t t-if="state.loading">
+                <div class="text-muted p-3">Laden…</div>
+            </t>
+            <t t-elif="!visibleRows.length">
+                <div class="text-muted p-3">Nog geen work items.</div>
+            </t>
+            <t t-else="">
+                <div class="o_msp_gantt">
+                    <div class="o_msp_gantt_inner"
+                         t-attf-style="width: {{ labelW + timelineWidth }}px;">
+                        <!-- HEADER -->
+                        <div class="o_msp_gantt_head">
+                            <div class="o_msp_gantt_corner"
+                                 t-attf-style="width: {{ labelW }}px;">Work item</div>
+                            <div class="o_msp_gantt_head_tl"
+                                 t-attf-style="width: {{ timelineWidth }}px;">
+                                <div class="o_msp_gantt_months">
+                                    <t t-foreach="months" t-as="mo" t-key="mo.key">
+                                        <div class="o_msp_gantt_month"
+                                             t-attf-style="left: {{ mo.left }}px; width: {{ mo.width }}px;"
+                                             t-esc="mo.label"/>
+                                    </t>
+                                </div>
+                                <div class="o_msp_gantt_days">
+                                    <t t-foreach="days" t-as="dy" t-key="dy.key">
+                                        <div class="o_msp_gantt_day"
+                                             t-att-class="{ 'o_msp_gantt_weekend': dy.weekend }"
+                                             t-attf-style="left: {{ dy.left }}px; width: {{ dy.width }}px;"
+                                             t-esc="dy.num"/>
+                                    </t>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- BODY -->
+                        <div class="o_msp_gantt_body">
+                            <div class="o_msp_gantt_today" t-if="todayLeft !== null"
+                                 t-attf-style="left: {{ labelW + todayLeft }}px;"/>
+                            <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
+                                <div class="o_msp_gantt_row"
+                                     t-att-class="{ 'o_msp_summary': row.hasChildren,
+                                                    'o_msp_milestone_row': row.item.item_type === 'milestone' }">
+                                    <div class="o_msp_gantt_label"
+                                         t-attf-style="width: {{ labelW }}px; padding-left: {{ row.depth * 16 + 8 }}px;">
+                                        <span class="o_msp_caret" t-if="row.hasChildren"
+                                              t-on-click.stop="() => this.toggle(row.item.id)">
+                                            <i class="fa"
+                                               t-att-class="state.expanded[row.item.id] ? 'fa-caret-down' : 'fa-caret-right'"/>
+                                        </span>
+                                        <span class="o_msp_caret_spacer" t-else=""/>
+                                        <span class="o_msp_diamond"
+                                              t-if="row.item.item_type === 'milestone'">◆</span>
+                                        <i class="fa fa-folder o_msp_summary_icon"
+                                           t-elif="row.hasChildren"/>
+                                        <span class="o_msp_gantt_label_text o_msp_link"
+                                              t-att-class="{ 'o_msp_summary_text': row.hasChildren }"
+                                              t-on-click="() => this.openItem(row.item.id)"
+                                              t-esc="row.item.name"/>
+                                    </div>
+                                    <div class="o_msp_gantt_track"
+                                         t-attf-style="width: {{ timelineWidth }}px; background-size: {{ state.dayWidth }}px 100%;">
+                                        <t t-if="row.item.item_type === 'milestone'">
+                                            <div class="o_msp_gantt_ms"
+                                                 t-if="milestoneLeft(row.item) !== null"
+                                                 t-attf-style="left: {{ milestoneLeft(row.item) }}px;"
+                                                 t-att-title="row.item.name"
+                                                 t-on-click="() => this.openItem(row.item.id)"/>
+                                        </t>
+                                        <t t-else="">
+                                            <t t-set="bar" t-value="barFor(row)"/>
+                                            <div t-if="bar" class="o_msp_gantt_bar"
+                                                 t-att-class="row.hasChildren ? 'o_msp_gantt_bar_summary' : ('o_msp_gantt_bar_' + row.item.item_type + ' o_msp_gantt_st_' + row.item.state)"
+                                                 t-attf-style="left: {{ bar.left }}px; width: {{ bar.width }}px;"
+                                                 t-att-title="row.item.name"
+                                                 t-on-click="() => this.openItem(row.item.id)">
+                                                <span class="o_msp_gantt_bar_label" t-esc="row.item.name"/>
+                                            </div>
+                                        </t>
+                                    </div>
+                                </div>
+                            </t>
+                        </div>
+                    </div>
+                </div>
+            </t>
+        </div>
+    </t>
+
     <t t-name="myschool_projects.Workspace">
         <div class="o_msp_workspace">
             <!-- ====== SIDEBAR: WBS ====== -->
@@ -259,6 +359,9 @@
                                     t-att-class="state.view === 'table' ? 'btn-primary' : 'btn-secondary'"
                                     t-on-click="() => this.setView('table')">Table</button>
                             <button class="btn btn-sm"
+                                    t-att-class="state.view === 'timeline' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('timeline')">Timeline</button>
+                            <button class="btn btn-sm"
                                     t-att-class="state.view === 'overview' ? 'btn-primary' : 'btn-secondary'"
                                     t-on-click="() => this.setView('overview')">Overview</button>
                             <button class="btn btn-sm"
@@ -280,6 +383,11 @@
                         <t t-if="state.view === 'table'">
                             <WorkPackageTable t-key="state.selectedId"
                                               projectId="state.selectedId"/>
+                        </t>
+                        <!-- TIMELINE (custom gantt) -->
+                        <t t-elif="state.view === 'timeline'">
+                            <GanttTimeline t-key="state.selectedId"
+                                           projectId="state.selectedId"/>
                         </t>
                         <!-- OVERVIEW -->
                         <t t-elif="state.view === 'overview'">

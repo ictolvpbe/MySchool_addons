@@ -495,6 +495,198 @@ export class WorkPackageTable extends Component {
     }
 }
 
+const DAY_MS = 86400000;
+const GANTT_LABEL_W = 260;
+const GANTT_ROW_H = 30;
+
+/**
+ * Custom Gantt/Timeline voor de workspace (web_gantt = Enterprise/afwezig).
+ * Read-gericht v1: balken per date_start..date_deadline, summary-spans,
+ * milestone-ruiten, maand+dag-header, vandaag-lijn en zoom. Klik = form.
+ */
+export class GanttTimeline extends Component {
+    static template = "myschool_projects.GanttTimeline";
+    static props = ["*"];
+
+    setup() {
+        this.orm = useService("orm");
+        this.action = useService("action");
+        this.typeLabels = TYPE_LABELS;
+        this.labelW = GANTT_LABEL_W;
+        this.rowH = GANTT_ROW_H;
+        this.state = useState({
+            byId: {}, roots: [], expanded: {}, loading: true,
+            dayWidth: 28, rangeStart: null, totalDays: 0,
+        });
+        onWillStart(async () => { await this.load(); });
+    }
+
+    async load() {
+        this.state.loading = true;
+        const recs = await this.orm.searchRead(
+            "myschool.project.task",
+            [["project_id", "=", this.props.projectId]],
+            ["name", "item_type", "state", "date_start", "date_deadline",
+             "parent_id", "child_count", "milestone_id"],
+            { order: "sequence, id" },
+        );
+        const byId = {};
+        recs.forEach((r) => { byId[r.id] = { ...r, children: [] }; });
+        const roots = [];
+        recs.forEach((r) => {
+            const node = byId[r.id];
+            const pid = r.parent_id ? r.parent_id[0] : false;
+            if (pid && byId[pid]) byId[pid].children.push(node);
+            else roots.push(node);
+        });
+        const expanded = {};
+        recs.forEach((r) => { if (byId[r.id].children.length) expanded[r.id] = true; });
+        this.state.byId = byId;
+        this.state.roots = roots;
+        this.state.expanded = expanded;
+        this._computeRange(recs);
+        this.state.loading = false;
+    }
+
+    _parse(s) {
+        if (!s) return null;
+        const [y, m, d] = String(s).slice(0, 10).split("-").map(Number);
+        if (!y) return null;
+        return new Date(y, m - 1, d);
+    }
+    _itemStart(n) { return this._parse(n.date_start) || this._parse(n.date_deadline); }
+    _itemEnd(n) { return this._parse(n.date_deadline) || this._parse(n.date_start); }
+
+    _computeRange(recs) {
+        let min = null, max = null;
+        recs.forEach((r) => {
+            const s = this._itemStart(r), e = this._itemEnd(r);
+            if (s && (!min || s < min)) min = s;
+            if (e && (!max || e > max)) max = e;
+        });
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (!min) min = new Date(today);
+        if (!max) max = new Date(today);
+        min = new Date(min.getTime() - 3 * DAY_MS);
+        max = new Date(max.getTime() + 5 * DAY_MS);
+        min.setHours(0, 0, 0, 0);
+        this.state.rangeStart = min;
+        this.state.totalDays = Math.max(1, Math.round((max - min) / DAY_MS) + 1);
+    }
+
+    dayIndex(date) { return Math.round((date - this.state.rangeStart) / DAY_MS); }
+
+    get visibleRows() {
+        const out = [];
+        const walk = (node, depth) => {
+            out.push({ item: node, depth, hasChildren: node.children.length > 0 });
+            if (node.children.length && this.state.expanded[node.id]) {
+                node.children.forEach((c) => walk(c, depth + 1));
+            }
+        };
+        this.state.roots.forEach((r) => walk(r, 0));
+        return out;
+    }
+
+    toggle(id) { this.state.expanded[id] = !this.state.expanded[id]; }
+
+    get timelineWidth() { return this.state.totalDays * this.state.dayWidth; }
+
+    get months() {
+        const out = [];
+        const dw = this.state.dayWidth;
+        let i = 0;
+        while (i < this.state.totalDays) {
+            const d = new Date(this.state.rangeStart.getTime() + i * DAY_MS);
+            const y = d.getFullYear(), m = d.getMonth();
+            let span = 0;
+            while (i + span < this.state.totalDays) {
+                const dd = new Date(this.state.rangeStart.getTime() + (i + span) * DAY_MS);
+                if (dd.getFullYear() !== y || dd.getMonth() !== m) break;
+                span += 1;
+            }
+            out.push({
+                key: `${y}-${m}`,
+                label: d.toLocaleDateString("nl-BE", { month: "short", year: "numeric" }),
+                left: i * dw, width: span * dw,
+            });
+            i += span;
+        }
+        return out;
+    }
+
+    get days() {
+        const out = [];
+        const dw = this.state.dayWidth;
+        for (let i = 0; i < this.state.totalDays; i++) {
+            const d = new Date(this.state.rangeStart.getTime() + i * DAY_MS);
+            const wd = d.getDay();
+            out.push({ key: i, left: i * dw, width: dw, num: d.getDate(),
+                       weekend: wd === 0 || wd === 6 });
+        }
+        return out;
+    }
+
+    get todayLeft() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const idx = this.dayIndex(today);
+        if (idx < 0 || idx >= this.state.totalDays) return null;
+        return idx * this.state.dayWidth;
+    }
+
+    _spanFor(node) {
+        let min = null, max = null;
+        const visit = (n) => {
+            const s = this._itemStart(n), e = this._itemEnd(n);
+            if (s && (!min || s < min)) min = s;
+            if (e && (!max || e > max)) max = e;
+            n.children.forEach(visit);
+        };
+        node.children.forEach(visit);
+        return { min, max };
+    }
+
+    barFor(row) {
+        let start, end;
+        if (row.hasChildren) {
+            const sp = this._spanFor(row.item);
+            start = sp.min; end = sp.max;
+        } else {
+            start = this._itemStart(row.item); end = this._itemEnd(row.item);
+        }
+        if (!start || !end) return null;
+        const li = this.dayIndex(start);
+        const ri = this.dayIndex(end);
+        const dw = this.state.dayWidth;
+        return { left: li * dw, width: Math.max(dw, (ri - li + 1) * dw) };
+    }
+
+    milestoneLeft(item) {
+        const e = this._itemEnd(item);
+        if (!e) return null;
+        return this.dayIndex(e) * this.state.dayWidth;
+    }
+
+    zoom(delta) {
+        this.state.dayWidth = Math.max(10, Math.min(60, this.state.dayWidth + delta));
+    }
+
+    openItem(id) {
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "myschool.project.task",
+                res_id: id,
+                views: [[false, "form"]],
+                target: "new",
+            },
+            { onClose: () => this.load() },
+        );
+    }
+}
+
 /**
  * Project Workspace — a modern PM shell: WBS sidebar + view-switcher
  * (Overview / Board / List / Calendar). Board/List/Calendar embed the
@@ -503,7 +695,7 @@ export class WorkPackageTable extends Component {
  */
 export class ProjectWorkspace extends Component {
     static template = "myschool_projects.Workspace";
-    static components = { View, WbsNode, WorkPackageTable, WsContextMenu };
+    static components = { View, WbsNode, WorkPackageTable, GanttTimeline, WsContextMenu };
     static props = ["*"];
 
     setup() {
