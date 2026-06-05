@@ -190,6 +190,14 @@
                 </tbody>
             </table>
 
+            <div class="o_msp_wp_dropzone"
+                 t-att-class="{ 'o_msp_dropzone_active': state.dragOverId === 'bottom' }"
+                 t-on-dragover="onDropZoneOver"
+                 t-on-dragleave="onDropZoneLeave"
+                 t-on-drop="onDropBottom">
+                <span class="o_msp_dropzone_hint">Sleep hier om onderaan te plaatsen (top-level)</span>
+            </div>
+
             <WsContextMenu t-if="state.ctx" x="state.ctx.x" y="state.ctx.y"
                            title="'Work item'" items="ctxItems"
                            onAction.bind="onCtxAction" onClose.bind="closeCtx"/>

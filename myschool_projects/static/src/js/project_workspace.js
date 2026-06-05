@@ -356,6 +356,36 @@ export class WorkPackageTable extends Component {
         }));
     }
 
+    // ---- drop zone onder de tabel: maak top-level + laatste ----
+    onDropZoneOver(ev) {
+        if (this.state.dragId) {
+            ev.preventDefault();
+            this.state.dragOverId = "bottom";
+        }
+    }
+    onDropZoneLeave() {
+        if (this.state.dragOverId === "bottom") this.state.dragOverId = false;
+    }
+    async onDropBottom(ev) {
+        ev.preventDefault();
+        const id = this.state.dragId;
+        this.state.dragOverId = false;
+        this.state.dragId = false;
+        if (!id) return;
+        try {
+            const roots = this.state.roots.filter((n) => n.id !== id);
+            roots.push(this.state.byId[id]);
+            await Promise.all(roots.map((n, i) => {
+                const vals = { sequence: i * 10 };
+                if (n.id === id) vals.parent_id = false;
+                return this.orm.write("myschool.project.task", [n.id], vals);
+            }));
+        } catch (e) {
+            this.notification.add("Kon item niet verplaatsen.", { type: "danger" });
+        }
+        await this.load();
+    }
+
     // ---- right-click context menu ----
     onRowContextMenu(ev, item) {
         ev.preventDefault();
@@ -368,18 +398,23 @@ export class WorkPackageTable extends Component {
     }
     closeCtx() { this.state.ctx = null; }
     get ctxItems() {
-        if (!this.state.ctx || !this.state.ctx.item) {
+        const item = this.state.ctx && this.state.ctx.item;
+        if (!item) {
             return [{ action: "add", label: "Add", icon: "fa fa-plus" }];
         }
-        return [
+        const items = [
             { action: "add", label: "Add", icon: "fa fa-plus" },
             { action: "add_sub", label: "Add sub-item", icon: "fa fa-level-down" },
             { action: "properties", label: "Properties", icon: "fa fa-pencil-square-o" },
             { action: "rename", label: "Rename", icon: "fa fa-i-cursor" },
             { action: "move", label: "Move…", icon: "fa fa-arrows" },
-            { divider: true },
-            { action: "delete", label: "Delete", icon: "fa fa-trash", danger: true },
         ];
+        if (item.parent_id) {
+            items.push({ action: "outdent", label: "Een niveau omhoog", icon: "fa fa-outdent" });
+        }
+        items.push({ divider: true });
+        items.push({ action: "delete", label: "Delete", icon: "fa fa-trash", danger: true });
+        return items;
     }
     onCtxAction(action) {
         if (action === "add") { this.createItem(); return; }
@@ -391,8 +426,21 @@ export class WorkPackageTable extends Component {
             case "properties": this.openItem(item.id); break;
             case "rename": this.startRename(item); break;
             case "move": this.moveItem(item); break;
+            case "outdent": this.outdentItem(item); break;
             case "delete": this.deleteItem(item); break;
         }
+    }
+    async outdentItem(item) {
+        const parentId = item.parent_id ? item.parent_id[0] : false;
+        if (!parentId) return;  // al top-level
+        const parentNode = this.state.byId[parentId];
+        const newParentId = parentNode && parentNode.parent_id ? parentNode.parent_id[0] : false;
+        try {
+            await this.orm.write("myschool.project.task", [item.id], { parent_id: newParentId });
+        } catch (e) {
+            this.notification.add("Kon item niet verplaatsen.", { type: "danger" });
+        }
+        await this.load();
     }
     moveItem(item) {
         this.dialog.add(SelectCreateDialog, {
