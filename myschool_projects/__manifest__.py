@@ -27,6 +27,7 @@
         'security/project_rules.xml',
         'views/project_views.xml',
         'views/task_views.xml',
+        'views/task_template_views.xml',
         'views/menu_views.xml',
         'views/workspace_views.xml',
     ],

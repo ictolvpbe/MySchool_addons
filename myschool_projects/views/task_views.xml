@@ -79,10 +79,16 @@
         <field name="arch" type="xml">
             <form string="Task">
                 <header>
+                    <button name="action_save_as_task_template" type="object"
+                            string="Save as task template"
+                            groups="myschool_projects.group_projects_manager"/>
                     <field name="state" widget="statusbar"
                            options="{'clickable': '1'}"/>
                 </header>
                 <sheet>
+                    <field name="active" invisible="1"/>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger"
+                            invisible="active"/>
                     <div class="oe_title">
                         <label for="name"/>
                         <h1><field name="name" placeholder="Task name"/></h1>
@@ -175,6 +181,8 @@
                 <filter name="todo" string="To Do" domain="[('state', '=', 'todo')]"/>
                 <filter name="in_progress" string="In Progress" domain="[('state', '=', 'in_progress')]"/>
                 <filter name="blocked" string="Blocked" domain="[('state', '=', 'blocked')]"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
                 <separator/>
                 <filter name="group_type" string="Type" context="{'group_by': 'item_type'}"/>
                 <filter name="group_milestone" string="Milestone" context="{'group_by': 'milestone_id'}"/>

@@ -18,6 +18,7 @@ class MyschoolProjectTask(models.Model):
     _order = 'sequence, id'
 
     name = fields.Char(required=True, tracking=True)
+    active = fields.Boolean(default=True)
     sequence = fields.Integer(default=10)
     item_type = fields.Selection([
         ('task', 'Task'),
@@ -53,7 +54,7 @@ class MyschoolProjectTask(models.Model):
     # --- Hierarchy (WBS among work items) ---
     parent_id = fields.Many2one(
         'myschool.project.task', string='Parent',
-        ondelete='set null', index=True,
+        ondelete='cascade', index=True,
         domain="[('project_id', '=', project_id), ('id', '!=', id)]",
     )
     child_ids = fields.One2many('myschool.project.task', 'parent_id', string='Sub-items')
@@ -83,6 +84,49 @@ class MyschoolProjectTask(models.Model):
         'myschool.project.task', 'myschool_project_task_dep_rel',
         'depends_on_id', 'task_id', string='Blocks',
     )
+
+    def action_save_as_task_template(self):
+        """Bewaar deze taak (+ subtree) als herbruikbare taaktemplate."""
+        self.ensure_one()
+        Template = self.env['myschool.project.task.template']
+
+        def copy_node(task, pid):
+            tmpl = Template.create({
+                'name': task.name,
+                'parent_id': pid,
+                'item_type': task.item_type,
+                'sequence': task.sequence,
+                'priority': task.priority,
+                'planned_hours': task.planned_hours,
+                'description': task.description,
+                'tag_ids': [(6, 0, task.tag_ids.ids)],
+            })
+            for child in task.child_ids:
+                copy_node(child, tmpl.id)
+            return tmpl
+
+        root = copy_node(self, False)
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Task Template',
+            'res_model': 'myschool.project.task.template',
+            'res_id': root.id,
+            'view_mode': 'form',
+            'views': [[False, 'form']],
+            'target': 'current',
+        }
+
+    def write(self, vals):
+        res = super().write(vals)
+        # Archiveren/de-archiveren cascadeert naar de sub-items.
+        if 'active' in vals:
+            active = vals['active']
+            Task = self.env['myschool.project.task'].with_context(active_test=False)
+            for item in self:
+                kids = Task.search([('parent_id', '=', item.id), ('active', '!=', active)])
+                if kids:
+                    kids.write({'active': active})
+        return res
 
     @api.depends('child_ids')
     def _compute_child_count(self):

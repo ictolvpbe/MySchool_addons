@@ -18,6 +18,7 @@ class MyschoolProject(models.Model):
     _order = 'name'
 
     name = fields.Char(required=True, tracking=True)
+    active = fields.Boolean(default=True)
     code = fields.Char(
         string='Code',
         help='Short unique code, used for display and case-insensitive MCP lookups.',
@@ -106,6 +107,26 @@ class MyschoolProject(models.Model):
     )
 
     _code_unique = models.Constraint('UNIQUE(code)', 'Project code must be unique.')
+
+    def write(self, vals):
+        res = super().write(vals)
+        # Archiveren/de-archiveren cascadeert naar work items + sub-projecten.
+        if 'active' in vals:
+            self._cascade_active(vals['active'])
+        return res
+
+    def _cascade_active(self, active):
+        Task = self.env['myschool.project.task'].with_context(active_test=False)
+        Project = self.env['myschool.project'].with_context(active_test=False)
+        for project in self:
+            tasks = Task.search([
+                ('project_id', '=', project.id), ('active', '!=', active)])
+            if tasks:
+                tasks.write({'active': active})
+            children = Project.search([
+                ('parent_id', '=', project.id), ('active', '!=', active)])
+            if children:
+                children.write({'active': active})  # recursie cascadeert dieper
 
     @api.depends('child_ids.progress', 'progress_own',
                  'task_ids.state', 'task_ids.item_type', 'task_ids.child_ids')
@@ -201,6 +222,18 @@ class MyschoolProject(models.Model):
             'view_mode': 'kanban,list,form',
             'domain': [('parent_id', '=', self.id)],
             'context': {'default_parent_id': self.id},
+        }
+
+    def action_add_task_template(self):
+        """Open de wizard om een taaktemplate in dit project te instantiëren."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Add from task template',
+            'res_model': 'myschool.project.task.template.apply',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_project_id': self.id},
         }
 
     def action_open_milestones(self):

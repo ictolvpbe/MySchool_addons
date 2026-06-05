@@ -3,3 +3,4 @@ from . import membership
 from . import project
 from . import tag
 from . import task
+from . import task_template

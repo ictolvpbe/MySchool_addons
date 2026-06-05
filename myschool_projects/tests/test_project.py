@@ -275,3 +275,68 @@ class TestProjectModel(TransactionCase):
             task.with_user(reader).write({'name': 'x'})
         # owner mag wel
         task.with_user(owner).write({'name': 'ok'})
+
+    # ---------------- delete-cascade ----------------
+
+    def test_delete_task_cascades_subtasks(self):
+        proj = self.P.create({'name': 'P'})
+        parent = self.T.create({'name': 'parent', 'project_id': proj.id, 'item_type': 'phase'})
+        child = self.T.create({'name': 'child', 'project_id': proj.id, 'parent_id': parent.id})
+        parent.unlink()
+        self.assertFalse(child.exists())
+
+    def test_delete_project_cascades_tasks(self):
+        proj = self.P.create({'name': 'P'})
+        t = self.T.create({'name': 't', 'project_id': proj.id})
+        proj.unlink()
+        self.assertFalse(t.exists())
+
+    # ---------------- archiveren ----------------
+
+    def test_archive_project_cascades(self):
+        proj = self.P.create({'name': 'P'})
+        sub = self.P.create({'name': 'Sub', 'parent_id': proj.id})
+        t = self.T.create({'name': 't', 'project_id': proj.id})
+        st = self.T.create({'name': 'st', 'project_id': sub.id})
+        proj.active = False
+        for rec in (sub, t, st):
+            rec.invalidate_recordset(['active'])
+            self.assertFalse(rec.active)
+        # de-archiveren cascadeert ook terug
+        proj.active = True
+        for rec in (sub, t, st):
+            rec.invalidate_recordset(['active'])
+            self.assertTrue(rec.active)
+
+    def test_archive_task_cascades_subtasks(self):
+        proj = self.P.create({'name': 'P'})
+        parent = self.T.create({'name': 'p', 'project_id': proj.id, 'item_type': 'phase'})
+        child = self.T.create({'name': 'c', 'project_id': proj.id, 'parent_id': parent.id})
+        parent.active = False
+        child.invalidate_recordset(['active'])
+        self.assertFalse(child.active)
+
+    # ---------------- taaktemplates ----------------
+
+    def test_task_template_apply(self):
+        Tmpl = self.env['myschool.project.task.template']
+        root = Tmpl.create({'name': 'Onboarding', 'item_type': 'phase'})
+        Tmpl.create({'name': 'Step 1', 'parent_id': root.id})
+        Tmpl.create({'name': 'Step 2', 'parent_id': root.id, 'priority': '2'})
+        proj = self.P.create({'name': 'P'})
+        task = root.instantiate(proj)
+        self.assertEqual(task.project_id, proj)
+        self.assertEqual(task.name, 'Onboarding')
+        self.assertEqual(len(task.child_ids), 2)
+        self.assertEqual(task.child_ids.mapped('project_id'), proj)
+        self.assertIn('2', task.child_ids.mapped('priority'))
+
+    def test_save_task_as_template(self):
+        proj = self.P.create({'name': 'P'})
+        parent = self.T.create({'name': 'Block', 'project_id': proj.id, 'item_type': 'phase'})
+        self.T.create({'name': 'sub', 'project_id': proj.id, 'parent_id': parent.id})
+        action = parent.action_save_as_task_template()
+        tmpl = self.env['myschool.project.task.template'].browse(action['res_id'])
+        self.assertEqual(tmpl.name, 'Block')
+        self.assertEqual(len(tmpl.child_ids), 1)
+        self.assertEqual(tmpl.child_ids.name, 'sub')

@@ -37,10 +37,15 @@
                             class="btn-primary" invisible="not is_template"/>
                     <button name="action_save_as_template" type="object"
                             string="Save as template" invisible="is_template"/>
+                    <button name="action_add_task_template" type="object"
+                            string="Add from task template" invisible="is_template"/>
                     <field name="state" widget="statusbar"
                            options="{'clickable': '1'}"/>
                 </header>
                 <sheet>
+                    <field name="active" invisible="1"/>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger"
+                            invisible="active"/>
                     <widget name="web_ribbon" title="Template" bg_color="text-bg-info"
                             invisible="not is_template"/>
                     <div class="oe_button_box" name="button_box">
@@ -189,6 +194,8 @@
                 <separator/>
                 <filter name="my_projects" string="My Projects"
                         domain="['|', ('responsible_id', '=', uid), ('member_ids', 'in', uid)]"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
                 <separator/>
                 <filter name="group_category" string="Category"
                         context="{'group_by': 'category_id'}"/>
