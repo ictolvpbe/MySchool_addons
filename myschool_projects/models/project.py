@@ -22,6 +22,9 @@ class MyschoolProject(models.Model):
         string='Code',
         help='Short unique code, used for display and case-insensitive MCP lookups.',
     )
+    category_id = fields.Many2one(
+        'myschool.project.category', string='Category', index=True,
+        help='Classify the project (e.g. ICT, Infra, Onderwijs).')
     description = fields.Html()
 
     # --- Hierarchy (WBS) ---

@@ -5,3 +5,5 @@ access_myschool_project_task_user,myschool.project.task.user,model_myschool_proj
 access_myschool_project_task_manager,myschool.project.task.manager,model_myschool_project_task,myschool_projects.group_projects_manager,1,1,1,1
 access_myschool_project_tag_user,myschool.project.tag.user,model_myschool_project_tag,myschool_projects.group_projects_user,1,1,1,0
 access_myschool_project_tag_manager,myschool.project.tag.manager,model_myschool_project_tag,myschool_projects.group_projects_manager,1,1,1,1
+access_myschool_project_category_user,myschool.project.category.user,model_myschool_project_category,myschool_projects.group_projects_user,1,0,0,0
+access_myschool_project_category_manager,myschool.project.category.manager,model_myschool_project_category,myschool_projects.group_projects_manager,1,1,1,1

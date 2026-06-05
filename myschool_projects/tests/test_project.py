@@ -15,6 +15,7 @@ class TestProjectModel(TransactionCase):
         cls.P = cls.env['myschool.project']
         cls.T = cls.env['myschool.project.task']
         cls.Tag = cls.env['myschool.project.tag']
+        cls.Cat = cls.env['myschool.project.category']
 
     # ---------------- voortgang / rollup ----------------
 
@@ -159,4 +160,21 @@ class TestProjectModel(TransactionCase):
         with self.assertRaises(Exception):
             with self.env.cr.savepoint():
                 self.Tag.create({'name': 'urgent'})
+                self.env.flush_all()
+
+    # ---------------- category ----------------
+
+    def test_category_assignment_and_count(self):
+        cat = self.Cat.create({'name': 'ICT'})
+        self.P.create({'name': 'P1', 'category_id': cat.id})
+        self.P.create({'name': 'P2', 'category_id': cat.id})
+        cat.invalidate_recordset()
+        self.assertEqual(cat.project_count, 2)
+
+    @mute_logger('odoo.sql_db')
+    def test_category_name_unique(self):
+        self.Cat.create({'name': 'ICT'})
+        with self.assertRaises(Exception):
+            with self.env.cr.savepoint():
+                self.Cat.create({'name': 'ICT'})
                 self.env.flush_all()

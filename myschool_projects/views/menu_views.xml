@@ -29,6 +29,12 @@
         groups="myschool_projects.group_projects_manager"
         sequence="90"/>
 
+    <menuitem id="myschool_projects_menu_categories"
+        name="Categories"
+        parent="myschool_projects_menu_config"
+        action="myschool_project_category_action"
+        sequence="5"/>
+
     <menuitem id="myschool_projects_menu_tags"
         name="Tags"
         parent="myschool_projects_menu_config"
