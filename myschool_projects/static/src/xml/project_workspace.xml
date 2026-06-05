@@ -365,7 +365,24 @@
 
             <!-- ====== MAIN ====== -->
             <div class="o_msp_main">
-                <t t-if="!selected">
+                <t t-if="state.loading">
+                    <div class="o_msp_empty text-muted">Laden…</div>
+                </t>
+                <t t-elif="!state.roots.length">
+                    <!-- Verse install: nog geen enkel project -->
+                    <div class="o_msp_nocontent">
+                        <i class="fa fa-folder-open-o o_msp_nocontent_icon"/>
+                        <h3>Nog geen projecten</h3>
+                        <p class="text-muted">
+                            Maak je eerste project aan om te beginnen. Projecten kunnen
+                            sub-projecten (WBS), work items, milestones en een tijdlijn bevatten.
+                        </p>
+                        <button class="btn btn-primary" t-on-click="() => this._newProject(false)">
+                            <i class="fa fa-plus me-1"/>Nieuw project
+                        </button>
+                    </div>
+                </t>
+                <t t-elif="!selected">
                     <div class="o_msp_empty text-muted">Selecteer een project links.</div>
                 </t>
                 <t t-else="">

@@ -114,6 +114,25 @@
     overflow: hidden;
 }
 .o_msp_empty { padding: 32px; }
+.o_msp_nocontent {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 32px;
+    gap: 8px;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.o_msp_nocontent_icon {
+    font-size: 56px;
+    color: var(--ms-border, #ced4da);
+    margin-bottom: 8px;
+}
+.o_msp_nocontent h3 { margin: 0; font-weight: 600; }
+.o_msp_nocontent p { margin: 0 0 8px; }
 .o_msp_topbar {
     display: flex;
     align-items: center;
