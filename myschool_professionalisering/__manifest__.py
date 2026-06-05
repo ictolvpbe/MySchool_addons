@@ -21,12 +21,14 @@
         'data/cron_data.xml',
         'data/vak_data.xml',
         'wizard/add_date_wizard_views.xml',
+        'views/professionalisering_views.xml',
+        # Root menu must exist before the import/export wizard menu-items and
+        # vak_views.xml hang items under it. professionalisering_menu.xml zelf
+        # heeft de search-views uit professionalisering_views.xml nodig, dus
+        # die volgorde: views -> menu -> wizards/vak.
+        'views/professionalisering_menu.xml',
         'wizard/import_intranet_wizard_views.xml',
         'wizard/export_wizard_views.xml',
-        'views/professionalisering_views.xml',
-        # Root menu must exist before vak_views.xml hangs Configuratie
-        # under it.
-        'views/professionalisering_menu.xml',
         'views/vak_views.xml',
     ],
     'assets': {

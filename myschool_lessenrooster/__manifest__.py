@@ -14,8 +14,8 @@
         'security/lessenrooster_rules.xml',
         'views/lessenrooster_views.xml',
         'wizard/import_wizard_views.xml',
-        'views/inhaal_views.xml',
         'views/lessenrooster_menu.xml',
+        'views/inhaal_views.xml',
     ],
     'assets': {
         'web.assets_backend': [
