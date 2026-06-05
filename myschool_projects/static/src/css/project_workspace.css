@@ -308,6 +308,7 @@
 .o_msp_type_phase { background: #7c3aed; }
 .o_msp_type_epic { background: #2563eb; }
 .o_msp_type_bug { background: #dc2626; }
+.o_msp_type_cluster { background: #475569; }
 
 /* Status badges */
 .o_msp_status_badge {

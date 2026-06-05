@@ -95,7 +95,9 @@
                             t-on-drop="(ev) => this.onDrop(ev, row.item)"
                             t-on-contextmenu="(ev) => this.onRowContextMenu(ev, row.item)">
                             <td t-if="state.cols.type">
-                                <span class="o_msp_type_badge"
+                                <span t-if="row.hasChildren"
+                                      class="o_msp_type_badge o_msp_type_cluster">Cluster</span>
+                                <span t-else="" class="o_msp_type_badge"
                                       t-attf-class="o_msp_type_{{ row.item.item_type }}"
                                       t-esc="typeLabels[row.item.item_type] || row.item.item_type"/>
                             </td>
