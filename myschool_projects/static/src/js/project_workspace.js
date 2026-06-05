@@ -127,7 +127,7 @@ export class WorkPackageTable extends Component {
         this.state = useState({
             byId: {}, roots: [], expanded: {}, loading: true,
             editingId: false, editingName: "", statusOpenId: false,
-            cols, colMenuOpen: false,
+            cols, colMenuOpen: false, search: "",
             dragId: false, dragOverId: false, dropMode: "onto",
             ctx: null,
         });
@@ -171,6 +171,13 @@ export class WorkPackageTable extends Component {
     }
 
     get visibleRows() {
+        const q = (this.state.search || "").trim().toLowerCase();
+        if (q) {
+            // Tijdens zoeken: vlakke lijst van alle matchende items (geen tree).
+            return Object.values(this.state.byId)
+                .filter((n) => (n.name || "").toLowerCase().includes(q))
+                .map((n) => ({ item: n, depth: 0, hasChildren: n.children.length > 0 }));
+        }
         const out = [];
         const walk = (node, depth) => {
             out.push({ item: node, depth, hasChildren: node.children.length > 0 });
@@ -515,6 +522,7 @@ export class ProjectWorkspace extends Component {
             overview: null,
             sidebarWidth: Number.isNaN(savedW) ? 300 : savedW,
             loading: true,
+            search: "",
             ctx: null,
         });
         onWillStart(async () => { await this.loadProjects(); });
@@ -633,6 +641,16 @@ export class ProjectWorkspace extends Component {
     }
 
     get selected() { return this.state.byId[this.state.selectedId] || null; }
+
+    /** Sidebar-tree, of een vlakke gefilterde lijst tijdens het zoeken
+     *  (match op naam of code). */
+    get filteredRoots() {
+        const q = (this.state.search || "").trim().toLowerCase();
+        if (!q) return this.state.roots;
+        return Object.values(this.state.byId)
+            .filter((n) => (`${n.name} ${n.code || ""}`).toLowerCase().includes(q))
+            .map((n) => ({ ...n, children: [] }));
+    }
 
     async selectProject(id) {
         this.state.selectedId = id;

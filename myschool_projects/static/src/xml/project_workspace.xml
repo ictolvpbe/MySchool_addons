@@ -52,6 +52,9 @@
                 <button class="btn btn-sm btn-primary" t-on-click="createItem">
                     <i class="fa fa-plus me-1"/>Create
                 </button>
+                <input type="text" class="o_msp_wp_search"
+                       placeholder="Zoek work item…"
+                       t-model="state.search"/>
                 <div class="o_msp_colcfg ms-auto">
                     <button class="btn btn-sm btn-light" t-on-click="toggleColMenu" title="Columns">
                         <i class="fa fa-cog"/>
@@ -212,16 +215,20 @@
             <div class="o_msp_sidebar" t-attf-style="width: {{ state.sidebarWidth }}px;">
                 <div class="o_msp_sidebar_head">
                     <span class="o_msp_sidebar_title">Projects</span>
+                    <input type="text" class="o_msp_search"
+                           placeholder="Zoek project…"
+                           t-model="state.search"/>
                 </div>
                 <div class="o_msp_tree" t-on-contextmenu="onEmptyContextMenu">
                     <t t-if="state.loading">
                         <div class="text-muted p-2">Laden…</div>
                     </t>
-                    <t t-elif="!state.roots.length">
-                        <div class="text-muted p-2">Geen projecten</div>
+                    <t t-elif="!filteredRoots.length">
+                        <div t-if="state.search" class="text-muted p-2">Geen resultaten</div>
+                        <div t-else="" class="text-muted p-2">Geen projecten</div>
                     </t>
                     <t t-else="">
-                        <t t-foreach="state.roots" t-as="node" t-key="node.id">
+                        <t t-foreach="filteredRoots" t-as="node" t-key="node.id">
                             <WbsNode node="node" level="0"
                                      selectedId="state.selectedId"
                                      expanded="state.expanded"

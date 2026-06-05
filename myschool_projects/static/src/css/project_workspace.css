@@ -6,6 +6,36 @@
     background: var(--ms-bg, #f8f9fa);
 }
 
+/* Theme-green primary buttons (Create + active view switch) i.p.v. paars */
+.o_msp_workspace .btn-primary {
+    background-color: var(--ms-brand-1, #0d9488);
+    border-color: var(--ms-brand-1, #0d9488);
+    color: #fff;
+}
+.o_msp_workspace .btn-primary:hover,
+.o_msp_workspace .btn-primary:focus,
+.o_msp_workspace .btn-primary:active {
+    background-color: #0b7c72;
+    border-color: #0b7c72;
+    color: #fff;
+}
+
+/* Zoekbalken (sidebar-projecten + items-tabel) */
+.o_msp_search,
+.o_msp_wp_search {
+    border: 1px solid var(--ms-border, #dee2e6);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 13px;
+}
+.o_msp_search { width: 100%; margin-top: 8px; }
+.o_msp_wp_search { min-width: 180px; margin-left: 12px; }
+.o_msp_search:focus,
+.o_msp_wp_search:focus {
+    outline: none;
+    border-color: var(--ms-brand-1, #0d9488);
+}
+
 /* ---------- Sidebar ---------- */
 .o_msp_sidebar {
     flex: 0 0 auto;
@@ -303,7 +333,7 @@
     letter-spacing: .02em;
     color: #fff;
 }
-.o_msp_type_task { background: #6c757d; }
+.o_msp_type_task { background: #fbbf24; color: #3f2d00; }
 .o_msp_type_milestone { background: #0d9488; }
 .o_msp_type_phase { background: #7c3aed; }
 .o_msp_type_epic { background: #2563eb; }
