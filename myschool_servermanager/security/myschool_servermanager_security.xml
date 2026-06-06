@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+    <!-- App-categorie + privilege zodat de groepen als één selectievak
+         "Server access" (User / Manager) onder de kop "Server Manager" in de
+         Access Rights-tab verschijnen (Odoo 19: res.groups.privilege). -->
+    <record id="module_category_servermanager" model="ir.module.category">
+        <field name="name">Server Manager</field>
+        <field name="sequence">26</field>
+    </record>
+
+    <record id="privilege_servermanager" model="res.groups.privilege">
+        <field name="name">Server access</field>
+        <field name="category_id" ref="module_category_servermanager"/>
+        <field name="sequence">26</field>
+        <field name="placeholder">No access</field>
+    </record>
+
+    <record id="group_servermanager_user" model="res.groups">
+        <field name="name">User: read servers</field>
+        <field name="privilege_id" ref="privilege_servermanager"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        <field name="comment">Read access to MySchool Server Manager.</field>
+    </record>
+
+    <record id="group_servermanager_manager" model="res.groups">
+        <field name="name">Manager</field>
+        <field name="privilege_id" ref="privilege_servermanager"/>
+        <field name="implied_ids" eval="[(4, ref('group_servermanager_user'))]"/>
+        <field name="comment">Full access to MySchool Server Manager.</field>
+    </record>
+
+    <!-- MySchool admin krijgt automatisch Server Manager-toegang -->
+    <record id="myschool_core.group_myschool_core_admin" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_servermanager_manager'))]"/>
+    </record>
+
+    </data>
+</odoo>

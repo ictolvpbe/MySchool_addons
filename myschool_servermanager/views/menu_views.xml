@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <menuitem id="myschool_servermanager_menu_root"
+        name="Server Manager"
+        sequence="43"/>
+
+    <menuitem id="myschool_servermanager_menu_servers"
+        name="Servers"
+        parent="myschool_servermanager_menu_root"
+        action="myschool_server_action"
+        sequence="10"/>
+
+    <menuitem id="myschool_servermanager_menu_config"
+        name="Configuration"
+        parent="myschool_servermanager_menu_root"
+        groups="myschool_servermanager.group_servermanager_manager"
+        sequence="90"/>
+
+    <menuitem id="myschool_servermanager_menu_roles"
+        name="Roles"
+        parent="myschool_servermanager_menu_config"
+        action="myschool_server_role_action"
+        sequence="10"/>
+
+    <menuitem id="myschool_servermanager_menu_properties"
+        name="Properties"
+        parent="myschool_servermanager_menu_config"
+        action="myschool_server_property_action"
+        sequence="20"/>
+
+</odoo>

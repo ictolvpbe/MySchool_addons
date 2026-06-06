@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_myschool_server_user,myschool.server.user,model_myschool_server,myschool_servermanager.group_servermanager_user,1,0,0,0
+access_myschool_server_manager,myschool.server.manager,model_myschool_server,myschool_servermanager.group_servermanager_manager,1,1,1,1
+access_myschool_server_role_user,myschool.server.role.user,model_myschool_server_role,myschool_servermanager.group_servermanager_user,1,0,0,0
+access_myschool_server_role_manager,myschool.server.role.manager,model_myschool_server_role,myschool_servermanager.group_servermanager_manager,1,1,1,1
+access_myschool_server_property_user,myschool.server.property.user,model_myschool_server_property,myschool_servermanager.group_servermanager_user,1,0,0,0
+access_myschool_server_property_manager,myschool.server.property.manager,model_myschool_server_property,myschool_servermanager.group_servermanager_manager,1,1,1,1
