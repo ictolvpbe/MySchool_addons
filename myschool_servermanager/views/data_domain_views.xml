@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ============ DATA DOMAIN ============ -->
+    <record id="myschool_data_domain_view_list" model="ir.ui.view">
+        <field name="name">myschool.data.domain.list</field>
+        <field name="model">myschool.data.domain</field>
+        <field name="arch" type="xml">
+            <list string="Data Domains" editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="is_pii" widget="boolean_toggle"/>
+                <field name="description" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="myschool_data_domain_view_search" model="ir.ui.view">
+        <field name="name">myschool.data.domain.search</field>
+        <field name="model">myschool.data.domain</field>
+        <field name="arch" type="xml">
+            <search string="Data Domains">
+                <field name="name"/>
+                <field name="code"/>
+                <filter name="pii" string="Contains PII" domain="[('is_pii', '=', True)]"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="myschool_data_domain_action" model="ir.actions.act_window">
+        <field name="name">Data Domains</field>
+        <field name="res_model">myschool.data.domain</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="myschool_data_domain_view_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Maak een data-domein aan
+            </p>
+            <p>
+                Data-domeinen (bv. PII, bedrijven, org-structuur) bepalen per
+                server of de data lokaal staat of via API opgehaald wordt.
+            </p>
+        </field>
+    </record>
+
+    <!-- ============ DATA LOCATION (overzicht/matrix) ============ -->
+    <record id="myschool_server_data_location_view_list" model="ir.ui.view">
+        <field name="name">myschool.server.data.location.list</field>
+        <field name="model">myschool.server.data.location</field>
+        <field name="arch" type="xml">
+            <list string="Data Locations" editable="bottom">
+                <field name="server_id"/>
+                <field name="domain_id"/>
+                <field name="is_pii" widget="boolean_toggle" readonly="1"/>
+                <field name="location" widget="badge"
+                       decoration-success="location == 'local'"
+                       decoration-warning="location == 'remote'"/>
+                <field name="source_server_id"
+                       readonly="location != 'remote'"
+                       required="location == 'remote'"/>
+                <field name="endpoint" optional="hide"/>
+                <field name="notes" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="myschool_server_data_location_view_search" model="ir.ui.view">
+        <field name="name">myschool.server.data.location.search</field>
+        <field name="model">myschool.server.data.location</field>
+        <field name="arch" type="xml">
+            <search string="Data Locations">
+                <field name="server_id"/>
+                <field name="domain_id"/>
+                <field name="source_server_id"/>
+                <filter name="remote" string="Remote via API"
+                        domain="[('location', '=', 'remote')]"/>
+                <filter name="local" string="Local"
+                        domain="[('location', '=', 'local')]"/>
+                <filter name="pii" string="PII" domain="[('is_pii', '=', True)]"/>
+                <separator/>
+                <filter name="group_server" string="Server"
+                        context="{'group_by': 'server_id'}"/>
+                <filter name="group_domain" string="Data Domain"
+                        context="{'group_by': 'domain_id'}"/>
+                <filter name="group_location" string="Location"
+                        context="{'group_by': 'location'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="myschool_server_data_location_action" model="ir.actions.act_window">
+        <field name="name">Data Locations</field>
+        <field name="res_model">myschool.server.data.location</field>
+        <field name="view_mode">list</field>
+        <field name="search_view_id" ref="myschool_server_data_location_view_search"/>
+        <field name="context">{'search_default_group_server': 1}</field>
+    </record>
+
+</odoo>

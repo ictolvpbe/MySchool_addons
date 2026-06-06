@@ -30,6 +30,7 @@
         'security/ir.model.access.csv',
         'views/server_property_views.xml',
         'views/server_role_views.xml',
+        'views/data_domain_views.xml',
         'views/server_views.xml',
         'views/menu_views.xml',
     ],

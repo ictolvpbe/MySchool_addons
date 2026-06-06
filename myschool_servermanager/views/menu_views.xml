@@ -11,6 +11,12 @@
         action="myschool_server_action"
         sequence="10"/>
 
+    <menuitem id="myschool_servermanager_menu_data_locations"
+        name="Data &amp; Privacy"
+        parent="myschool_servermanager_menu_root"
+        action="myschool_server_data_location_action"
+        sequence="20"/>
+
     <menuitem id="myschool_servermanager_menu_config"
         name="Configuration"
         parent="myschool_servermanager_menu_root"
@@ -28,5 +34,11 @@
         parent="myschool_servermanager_menu_config"
         action="myschool_server_property_action"
         sequence="20"/>
+
+    <menuitem id="myschool_servermanager_menu_data_domains"
+        name="Data Domains"
+        parent="myschool_servermanager_menu_config"
+        action="myschool_data_domain_action"
+        sequence="30"/>
 
 </odoo>

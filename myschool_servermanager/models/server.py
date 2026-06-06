@@ -56,6 +56,15 @@ class MyschoolServer(models.Model):
         compute='_compute_property_ids', store=False,
         help='Eigenschappen geërfd van de rol.')
 
+    # --- Data-locatie & privacy (SRVMGR-4) ---
+    data_location_ids = fields.One2many(
+        'myschool.server.data.location', 'server_id', string='Data Locations',
+        help='Per data-domein: lokaal of via API bij een bronserver.')
+    data_location_count = fields.Integer(
+        compute='_compute_data_location_count', string='Data Location Count')
+    remote_data_count = fields.Integer(
+        compute='_compute_data_location_count', string='Remote Domains')
+
     # --- People ---
     responsible_id = fields.Many2one(
         'res.users', string='Responsible', tracking=True,
@@ -70,6 +79,24 @@ class MyschoolServer(models.Model):
     def _compute_property_ids(self):
         for server in self:
             server.property_ids = server.role_id.property_ids
+
+    @api.depends('data_location_ids', 'data_location_ids.location')
+    def _compute_data_location_count(self):
+        for server in self:
+            server.data_location_count = len(server.data_location_ids)
+            server.remote_data_count = len(server.data_location_ids.filtered(
+                lambda d: d.location == 'remote'))
+
+    def action_open_data_locations(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'{self.name} — Data & Privacy',
+            'res_model': 'myschool.server.data.location',
+            'view_mode': 'list',
+            'domain': [('server_id', '=', self.id)],
+            'context': {'default_server_id': self.id},
+        }
 
     @api.constrains('ssh_port', 'http_port')
     def _check_ports(self):

@@ -31,6 +31,14 @@
                     <field name="active" invisible="1"/>
                     <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger"
                             invisible="active"/>
+                    <div class="oe_button_box" name="button_box">
+                        <button type="object" name="action_open_data_locations"
+                                class="oe_stat_button" icon="fa-database"
+                                invisible="data_location_count == 0">
+                            <field name="data_location_count" widget="statinfo"
+                                   string="Data Domains"/>
+                        </button>
+                    </div>
                     <div class="oe_title">
                         <label for="name"/>
                         <h1><field name="name" placeholder="bv. srvv-odoo-01"/></h1>
@@ -68,6 +76,27 @@
                             </field>
                             <p class="text-muted">
                                 Eigenschappen worden geërfd van de toegekende rol.
+                            </p>
+                        </page>
+                        <page string="Data &amp; Privacy" name="data_locations">
+                            <field name="data_location_ids"
+                                   context="{'default_server_id': id}">
+                                <list editable="bottom">
+                                    <field name="domain_id"/>
+                                    <field name="is_pii" widget="boolean_toggle" readonly="1"/>
+                                    <field name="location" widget="badge"
+                                           decoration-success="location == 'local'"
+                                           decoration-warning="location == 'remote'"/>
+                                    <field name="source_server_id"
+                                           readonly="location != 'remote'"
+                                           required="location == 'remote'"/>
+                                    <field name="endpoint" optional="hide"/>
+                                    <field name="notes" optional="show"/>
+                                </list>
+                            </field>
+                            <p class="text-muted">
+                                Per data-domein: staat de data lokaal of wordt ze
+                                via API bij een bronserver opgehaald (privacy).
                             </p>
                         </page>
                         <page string="Description" name="description">
