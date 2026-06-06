@@ -198,6 +198,9 @@ Item-referenties accepteren overal **id** (integer) of **display-code**
 | `appfoundry_update_item` | Velden aanpassen (name, description, ...) |
 | `appfoundry_link_blocked_by` | Dependency vastleggen (of weghalen) |
 | `appfoundry_create_item` | Nieuw item aanmaken |
+| `appfoundry_create_project` | Nieuw project ("app") aanmaken (+ auto-release v0.1.0, optioneel `linked_modules`) |
+| `appfoundry_create_release` | Release aanmaken |
+| `appfoundry_create_sprint` | Sprint aanmaken |
 
 ### Veelvoorkomende workflows
 

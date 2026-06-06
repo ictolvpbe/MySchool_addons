@@ -100,9 +100,17 @@ Een nieuwe provider toevoegen: drop een nieuw bestand
 | `appfoundry_update_item` | Velden aanpassen |
 | `appfoundry_link_blocked_by` | Dependency vastleggen |
 | `appfoundry_create_item` | Nieuw item aanmaken |
+| `appfoundry_create_project` | Nieuw project ("app") aanmaken; auto-release v0.1.0; optioneel `linked_modules` |
+| `appfoundry_create_release` | Release aanmaken (auto next-version-naam; optioneel current) |
+| `appfoundry_create_sprint` | Sprint aanmaken |
 
 Items kunnen overal aangeroepen worden met **id** of **display-code**
 (bv. `"MSA-42"`).
+
+> **Bootstrap-flow:** `appfoundry_create_project` (krijgt automatisch een
+> `v0.1.0`-release als current) → `appfoundry_create_item` (release valt
+> standaard terug op die current release). Optioneel eerst
+> `appfoundry_create_sprint` en items in de sprint plaatsen.
 
 ## Beheer
 
