@@ -561,3 +561,168 @@ def create_item(env, project, name, item_type='story', description=None,
 
     item = env['appfoundry.item'].create(vals)
     return base.serialize_item(item, full=True, max_messages=0)
+
+
+def _resolve_modules(env, names):
+    """Resolve een lijst module-referenties (technische naam, bv.
+    'myschool_projects') naar ir.module.module-records."""
+    modules = env['ir.module.module']
+    missing = []
+    for ref in names or []:
+        rec = False
+        if isinstance(ref, int) or (isinstance(ref, str) and str(ref).isdigit()):
+            rec = modules.browse(int(ref)).exists()
+        else:
+            rec = modules.search([('name', '=', str(ref).strip())], limit=1)
+        if not rec:
+            missing.append(ref)
+        else:
+            modules |= rec
+    if missing:
+        raise McpToolError(
+            f'Module(s) not found: {", ".join(map(str, missing))}',
+            code=-32004)
+    return modules
+
+
+@McpRegistry.tool(
+    name='appfoundry_create_project',
+    description=(
+        'Create a new AppFoundry project (an "app"). Required: name + code '
+        '(unique short prefix, e.g. "PRJ"). A v0.1.0 release is created '
+        'automatically and set as current release, so items can be added '
+        'right away. Optionally link existing Odoo modules by technical '
+        'name (e.g. "myschool_projects").'
+    ),
+    input_schema={
+        'type': 'object',
+        'required': ['name', 'code'],
+        'properties': {
+            'name': {'type': 'string'},
+            'code': {'type': 'string',
+                     'description': 'Unique short code / item prefix, e.g. "PRJ"'},
+            'description': {'type': 'string',
+                            'description': 'Markdown; rendered to HTML'},
+            'phase': {
+                'type': 'string',
+                'enum': ['idea', 'design', 'dev', 'test', 'stable', 'eol'],
+                'default': 'idea',
+            },
+            'responsible': {
+                'oneOf': [{'type': 'integer'}, {'type': 'string'}],
+                'description': 'Project lead: user login, id, or "me"',
+            },
+            'members': {
+                'type': 'array',
+                'items': {'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+                'description': 'Team members: user logins or ids',
+            },
+            'linked_modules': {
+                'type': 'array',
+                'items': {'oneOf': [{'type': 'integer'}, {'type': 'string'}]},
+                'description': 'Odoo module technical names to link, '
+                               'e.g. ["myschool_projects"]',
+            },
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def create_project(env, name, code, description=None, phase='idea',
+                   responsible=None, members=None, linked_modules=None):
+    existing = env['appfoundry.project'].search(
+        [('code', '=ilike', code.strip())], limit=1)
+    if existing:
+        raise McpToolError(
+            f'Project code {code!r} already exists (id={existing.id})',
+            code=-32602)
+    vals = {
+        'name': name,
+        'code': code.strip(),
+        'phase': phase,
+    }
+    if description:
+        vals['description'] = base.render_markdown_to_html(description)
+    if responsible:
+        vals['responsible_id'] = base.resolve_user(env, responsible).id
+    if members:
+        member_ids = [base.resolve_user(env, m).id for m in members]
+        vals['member_ids'] = [(6, 0, member_ids)]
+    if linked_modules:
+        vals['module_ids'] = [(6, 0, _resolve_modules(env, linked_modules).ids)]
+    proj = env['appfoundry.project'].create(vals)
+    return base.serialize_project(proj)
+
+
+@McpRegistry.tool(
+    name='appfoundry_create_release',
+    description=(
+        'Create a release for a project. If name is omitted the next '
+        'version name is generated automatically. Newly created releases '
+        'become the project current release.'
+    ),
+    input_schema={
+        'type': 'object',
+        'required': ['project'],
+        'properties': {
+            'project': {
+                'oneOf': [{'type': 'integer'}, {'type': 'string'}],
+                'description': 'Project id or code',
+            },
+            'name': {'type': 'string',
+                     'description': 'e.g. "v1.0.0"; auto-generated if omitted'},
+            'date_planned': {'type': 'string', 'description': 'YYYY-MM-DD'},
+            'notes': {'type': 'string', 'description': 'Markdown; rendered to HTML'},
+            'set_current': {'type': 'boolean', 'default': True},
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def create_release(env, project, name=None, date_planned=None, notes=None,
+                   set_current=True):
+    proj = base.resolve_project(env, project)
+    Release = env['appfoundry.release']
+    vals = {
+        'name': name or Release._next_version_name(proj.id),
+        'project_id': proj.id,
+    }
+    if date_planned:
+        vals['date_planned'] = date_planned
+    if notes:
+        vals['notes'] = base.render_markdown_to_html(notes)
+    release = Release.create(vals)
+    if set_current:
+        proj.current_release_id = release
+    return base.serialize_release(release)
+
+
+@McpRegistry.tool(
+    name='appfoundry_create_sprint',
+    description='Create a sprint for a project.',
+    input_schema={
+        'type': 'object',
+        'required': ['project', 'name'],
+        'properties': {
+            'project': {
+                'oneOf': [{'type': 'integer'}, {'type': 'string'}],
+                'description': 'Project id or code',
+            },
+            'name': {'type': 'string'},
+            'date_start': {'type': 'string', 'description': 'YYYY-MM-DD'},
+            'date_end': {'type': 'string', 'description': 'YYYY-MM-DD'},
+            'goal': {'type': 'string'},
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def create_sprint(env, project, name, date_start=None, date_end=None,
+                  goal=None):
+    proj = base.resolve_project(env, project)
+    vals = {'name': name, 'project_id': proj.id}
+    if date_start:
+        vals['date_start'] = date_start
+    if date_end:
+        vals['date_end'] = date_end
+    if goal:
+        vals['goal'] = goal
+    sprint = env['appfoundry.sprint'].create(vals)
+    return base.serialize_sprint(sprint, include_items=False)
