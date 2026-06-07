@@ -233,6 +233,11 @@
                                 <div class="o_afw_proj_meta">
                                     <span class="o_afw_phase" t-attf-class="o_afw_phase_{{ p.phase }}"
                                           t-esc="phaseLabel(p.phase)"/>
+                                    <span class="o_afw_todocount"
+                                          t-att-class="{ 'o_afw_todocount_zero': !p.item_count }"
+                                          t-att-title="p.item_count + ' nog af te handelen items'">
+                                        <i class="fa fa-tasks"/> <t t-esc="p.item_count"/>
+                                    </span>
                                     <span t-if="p.open_bug_count" class="o_afw_bugcount"
                                           t-att-title="p.open_bug_count + ' open bugs'">
                                         <i class="fa fa-bug"/> <t t-esc="p.open_bug_count"/>
