@@ -11,7 +11,7 @@ enrollment en provisioning toe.
 | SRVMGR-2 | Server/Instance-register | ✅ klaar (commit `88e2186`) |
 | SRVMGR-3 | Rollen samengesteld uit eigenschappen | ✅ klaar (commit `88e2186`) |
 | SRVMGR-4 | Data-locatie & privacy | ✅ klaar (commit `671498a`) |
-| SRVMGR-5 | Enrollment o.b.v. rol | ⏳ volgende (zie Roadmap) |
+| SRVMGR-5 | Enrollment o.b.v. rol | ✅ klaar (zie Enrollment) |
 | SRVMGR-6 | Provisioning base-data + default user | 🔜 backlog |
 | SRVMGR-7 | myschool_sync verhuizen uit myschool_admin | 🔜 backlog |
 
@@ -51,6 +51,30 @@ die rol — de wijziging automatisch (gedeelde m2m + computed effective properti
 leeft of via API bij een bronserver opgehaald wordt. De `is_pii`-vlag maakt de
 privacy-afweging expliciet en sluit aan op de geplande PII-classificatie.
 
+## Enrollment (SRVMGR-5)
+
+Servermanager past de standaard-instellingen van de **rol** idempotent toe op een
+remote instance via de **Odoo externe API** (`/jsonrpc`).
+
+- **Credentials** staan per server (manager-only): `login`, `api_key`, +
+  `use_https`/poort/`api_endpoint` voor de URL. **Test Connection** controleert de
+  authenticatie en zet `connection_state`.
+- **Wat wordt toegepast** (afgeleid van de rol):
+  - *Taal* — `role.enroll_lang` (bv. `nl_BE`): wordt geactiveerd indien aanwezig.
+  - *Modules* — de unie van `property.module_names` over de eigenschappen van de rol
+    (`role.enroll_module_names`). Enkel modules die nog niet geïnstalleerd zijn worden
+    geïnstalleerd → **opnieuw draaien is veilig**.
+  - *Admin-wachtwoord* — optioneel veld `target_admin_password` (set-once): wordt
+    gezet en daarna gewist.
+- Resultaat: `enrollment_state` (pending/done/error), `last_enrolled` en een
+  `enrollment_log`; elke run logt ook naar de chatter.
+- Alle netwerk-IO loopt door één methode `_jsonrpc` → in tests volledig gemockt
+  (geen echte remote nodig).
+
+> **Security-afweging:** `api_key`/`target_admin_password` zijn velden met
+> `groups=`-restrictie (manager-only) + password-widget. Een echte secrets-vault is
+> een latere verbetering.
+
 ## Menu's
 
 - **Server Manager → Servers** — kanban (per environment) / list / form.
@@ -73,19 +97,15 @@ odoo -d <testdb> -u myschool_servermanager \
      --test-enable --test-tags myschool_servermanager --stop-after-init
 ```
 
-14 unit-tests (eigenschap-overerving + propagatie, unieke codes/FQDN,
-poort-validatie, data-locatie-constraints, tellers).
+22 unit-tests (eigenschap-overerving + propagatie, unieke codes/FQDN,
+poort-validatie, data-locatie-constraints, tellers, en de enrollment-laag met
+gemockte JSON-RPC: connectie, idempotente module-install, taal, admin-pw).
 
 > Lokaal draait de dev-server op poort 8069; gebruik voor een test-run een vrije
 > poort, bv. `--http-port=8971 --gevent-port=8972`.
 
 ## Roadmap
 
-- **SRVMGR-5 — Enrollment.** Standaard-instellingen per rol toepassen (taal,
-  admin-password, apps). **Besloten uitvoeringsstrategie: Odoo JSON-RPC** —
-  servermanager praat rechtstreeks met de remote instance. Vereist nog: veilige
-  opslag van connectie-credentials per server + idempotente enroll-actie.
-  Mogelijk: enrollment-settings koppelen aan rol-eigenschappen.
 - **SRVMGR-6 — Provisioning.** Base-data (bedrijven/org/structuur) + default user
   seeden bij enrollment; herhaalbaar zonder duplicaten.
 - **SRVMGR-7 — Sync verhuizen.** `myschool_sync`-beheer migreren vanuit

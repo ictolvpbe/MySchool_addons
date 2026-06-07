@@ -34,6 +34,13 @@ class MyschoolServerProperty(models.Model):
     color = fields.Integer(string='Color')
     active = fields.Boolean(default=True)
 
+    # --- Enrollment (SRVMGR-5): wat brengt deze capability mee? ---
+    module_names = fields.Char(
+        string='Required Modules',
+        help='Komma-gescheiden technische module-namen die deze eigenschap '
+             'vereist (bv. "myschool_assets,myschool_sync"). Worden bij '
+             'enrollment op de server geïnstalleerd.')
+
     role_ids = fields.Many2many(
         'myschool.server.role',
         'myschool_server_role_property_rel', 'property_id', 'role_id',

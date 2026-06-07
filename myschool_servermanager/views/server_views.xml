@@ -16,6 +16,10 @@
                        decoration-info="environment == 'dev'"/>
                 <field name="role_id" optional="show"/>
                 <field name="db_name" optional="hide"/>
+                <field name="enrollment_state" widget="badge" optional="show"
+                       decoration-success="enrollment_state == 'done'"
+                       decoration-danger="enrollment_state == 'error'"
+                       decoration-muted="enrollment_state == 'pending'"/>
                 <field name="responsible_id" optional="show"/>
             </list>
         </field>
@@ -27,6 +31,17 @@
         <field name="model">myschool.server</field>
         <field name="arch" type="xml">
             <form string="Server">
+                <header>
+                    <button name="action_test_connection" type="object"
+                            string="Test Connection" icon="fa-plug"
+                            groups="myschool_servermanager.group_servermanager_manager"/>
+                    <button name="action_enroll" type="object"
+                            string="Enroll" class="btn-primary"
+                            confirm="Enrollment past de standaard-instellingen van de rol toe op de remote server. Doorgaan?"
+                            groups="myschool_servermanager.group_servermanager_manager"/>
+                    <field name="enrollment_state" widget="statusbar"
+                           statusbar_visible="pending,done"/>
+                </header>
                 <sheet>
                     <field name="active" invisible="1"/>
                     <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger"
@@ -60,9 +75,24 @@
                         <group string="Network &amp; Connection">
                             <field name="fqdn"/>
                             <field name="ip_address"/>
+                            <field name="use_https"/>
                             <field name="ssh_port"/>
                             <field name="http_port"/>
                             <field name="api_endpoint" widget="url"/>
+                        </group>
+                        <group string="RPC Credentials"
+                               groups="myschool_servermanager.group_servermanager_manager">
+                            <field name="login"/>
+                            <field name="api_key" password="True"/>
+                            <field name="target_admin_password" password="True"/>
+                            <field name="connection_state" widget="badge"
+                                   decoration-success="connection_state == 'ok'"
+                                   decoration-danger="connection_state == 'error'"
+                                   decoration-muted="connection_state == 'unknown'"/>
+                            <field name="connection_message" readonly="1"
+                                   invisible="not connection_message"/>
+                            <field name="last_connection_check" readonly="1"
+                                   invisible="not last_connection_check"/>
                         </group>
                     </group>
                     <notebook>
@@ -98,6 +128,24 @@
                                 Per data-domein: staat de data lokaal of wordt ze
                                 via API bij een bronserver opgehaald (privacy).
                             </p>
+                        </page>
+                        <page string="Enrollment" name="enrollment">
+                            <group>
+                                <group string="Plan (from role)">
+                                    <field name="role_id"/>
+                                    <field name="enroll_lang" readonly="1"
+                                           string="Default Language"/>
+                                    <field name="enroll_module_names" readonly="1"
+                                           string="Modules to Install"/>
+                                </group>
+                                <group string="Status">
+                                    <field name="enrollment_state"/>
+                                    <field name="last_enrolled" readonly="1"/>
+                                </group>
+                            </group>
+                            <separator string="Enrollment Log"/>
+                            <field name="enrollment_log" readonly="1" nolabel="1"
+                                   invisible="not enrollment_log"/>
                         </page>
                         <page string="Description" name="description">
                             <field name="description"/>

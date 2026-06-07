@@ -40,9 +40,15 @@
                         <field name="code" class="oe_inline" placeholder="bv. webapps"/>
                     </div>
                     <group>
-                        <field name="property_ids" widget="many2many_tags"
-                               options="{'color_field': 'color'}"
-                               string="Composed of properties"/>
+                        <group>
+                            <field name="property_ids" widget="many2many_tags"
+                                   options="{'color_field': 'color'}"
+                                   string="Composed of properties"/>
+                        </group>
+                        <group string="Enrollment defaults">
+                            <field name="enroll_lang" placeholder="bv. nl_BE"/>
+                            <field name="enroll_module_names" readonly="1"/>
+                        </group>
                     </group>
                     <notebook>
                         <page string="Properties" name="properties">

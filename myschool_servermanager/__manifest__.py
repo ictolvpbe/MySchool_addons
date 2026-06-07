@@ -14,10 +14,12 @@
         * Server-rollen samengesteld uit eigenschappen (SRVMGR-3): een rol is
           een herbruikbare bundel van capabilities (eigenschappen), niet een
           vaste enum.
+        * Data-locatie & privacy (SRVMGR-4): per server per data-domein lokaal
+          of via API bij een bronserver.
+        * Enrollment o.b.v. rol (SRVMGR-5): idempotent taal/modules/admin-pw
+          toepassen op een remote instance via de Odoo externe API (JSON-RPC).
 
         Roadmap (zie AppFoundry SRVMGR):
-        * SRVMGR-4 Data-locatie & privacy (lokaal vs. via API).
-        * SRVMGR-5 Enrollment o.b.v. rol (taal/admin-pw/apps).
         * SRVMGR-6 Provisioning base-data + default user.
         * SRVMGR-7 myschool_sync-beheer verhuizen vanuit myschool_admin.
     """,

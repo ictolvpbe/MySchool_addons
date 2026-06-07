@@ -11,6 +11,7 @@
                 <field name="name"/>
                 <field name="code"/>
                 <field name="category"/>
+                <field name="module_names" optional="show"/>
                 <field name="role_count" string="Roles"/>
                 <field name="color" widget="color_picker" optional="hide"/>
                 <field name="description" optional="show"/>
@@ -40,6 +41,8 @@
                             <field name="color" widget="color_picker"/>
                         </group>
                         <group>
+                            <field name="module_names"
+                                   placeholder="bv. myschool_assets,myschool_sync"/>
                             <field name="role_count"/>
                         </group>
                     </group>

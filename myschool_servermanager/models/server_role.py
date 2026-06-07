@@ -32,6 +32,15 @@ class MyschoolServerRole(models.Model):
     property_count = fields.Integer(
         compute='_compute_property_count', string='Property Count')
 
+    # --- Enrollment (SRVMGR-5): standaard-instellingen per rol ---
+    enroll_lang = fields.Char(
+        string='Default Language',
+        help='Taalcode die bij enrollment als standaard gezet wordt '
+             '(bv. nl_BE).')
+    enroll_module_names = fields.Char(
+        string='Modules to Install', compute='_compute_enroll_module_names',
+        help='Unie van de vereiste modules over alle eigenschappen van de rol.')
+
     server_ids = fields.One2many('myschool.server', 'role_id', string='Servers')
     server_count = fields.Integer(
         compute='_compute_server_count', string='Server Count')
@@ -42,6 +51,22 @@ class MyschoolServerRole(models.Model):
     def _compute_property_count(self):
         for role in self:
             role.property_count = len(role.property_ids)
+
+    @api.depends('property_ids', 'property_ids.module_names')
+    def _compute_enroll_module_names(self):
+        for role in self:
+            role.enroll_module_names = ','.join(role._collect_module_names())
+
+    def _collect_module_names(self):
+        """Geordende, ontdubbelde lijst van module-namen over de eigenschappen."""
+        self.ensure_one()
+        names = []
+        for prop in self.property_ids:
+            for raw in (prop.module_names or '').split(','):
+                name = raw.strip()
+                if name and name not in names:
+                    names.append(name)
+        return names
 
     @api.depends('server_ids')
     def _compute_server_count(self):
