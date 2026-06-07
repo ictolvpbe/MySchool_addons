@@ -41,6 +41,12 @@ class MyschoolServerRole(models.Model):
         string='Modules to Install', compute='_compute_enroll_module_names',
         help='Unie van de vereiste modules over alle eigenschappen van de rol.')
 
+    # --- Provisioning (SRVMGR-6): default users-sjabloon per rol ---
+    provision_user_ids = fields.One2many(
+        'myschool.server.provision.user', 'role_id', string='Default Users',
+        help='Gebruikers die bij provisioning op een verse instance met deze '
+             'rol worden aangemaakt (idempotent, op login).')
+
     server_ids = fields.One2many('myschool.server', 'role_id', string='Servers')
     server_count = fields.Integer(
         compute='_compute_server_count', string='Server Count')

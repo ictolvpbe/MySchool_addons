@@ -39,6 +39,10 @@
                             string="Enroll" class="btn-primary"
                             confirm="Enrollment past de standaard-instellingen van de rol toe op de remote server. Doorgaan?"
                             groups="myschool_servermanager.group_servermanager_manager"/>
+                    <button name="action_provision" type="object"
+                            string="Provision" icon="fa-magic"
+                            confirm="Provisioning voorziet de remote server van base-data (company) en de default-gebruikers van de rol. Doorgaan?"
+                            groups="myschool_servermanager.group_servermanager_manager"/>
                     <field name="enrollment_state" widget="statusbar"
                            statusbar_visible="pending,done"/>
                 </header>
@@ -146,6 +150,35 @@
                             <separator string="Enrollment Log"/>
                             <field name="enrollment_log" readonly="1" nolabel="1"
                                    invisible="not enrollment_log"/>
+                        </page>
+                        <page string="Provisioning" name="provisioning">
+                            <group>
+                                <group string="Base data">
+                                    <field name="provision_company_name"
+                                           placeholder="bv. OLVP Brugge"/>
+                                </group>
+                                <group string="Status">
+                                    <field name="provision_state"/>
+                                    <field name="last_provisioned" readonly="1"/>
+                                </group>
+                            </group>
+                            <separator string="Default Users (from role)"/>
+                            <field name="provision_user_ids" readonly="1">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="login"/>
+                                    <field name="email" optional="show"/>
+                                    <field name="lang" optional="hide"/>
+                                    <field name="is_admin" widget="boolean_toggle"/>
+                                </list>
+                            </field>
+                            <p class="text-muted">
+                                Default-gebruikers worden beheerd op de rol en
+                                idempotent op de remote aangemaakt (op login).
+                            </p>
+                            <separator string="Provisioning Log"/>
+                            <field name="provision_log" readonly="1" nolabel="1"
+                                   invisible="not provision_log"/>
                         </page>
                         <page string="Description" name="description">
                             <field name="description"/>

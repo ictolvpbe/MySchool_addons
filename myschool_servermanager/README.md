@@ -12,7 +12,7 @@ enrollment en provisioning toe.
 | SRVMGR-3 | Rollen samengesteld uit eigenschappen | ✅ klaar (commit `88e2186`) |
 | SRVMGR-4 | Data-locatie & privacy | ✅ klaar (commit `671498a`) |
 | SRVMGR-5 | Enrollment o.b.v. rol | ✅ klaar (zie Enrollment) |
-| SRVMGR-6 | Provisioning base-data + default user | 🔜 backlog |
+| SRVMGR-6 | Provisioning base-data + default user | ✅ klaar (zie Provisioning) |
 | SRVMGR-7 | myschool_sync verhuizen uit myschool_admin | 🔜 backlog |
 
 Backlog + tracking: AppFoundry-app **SRVMGR** (remote `myschool-ict.olvp.be`).
@@ -75,6 +75,28 @@ remote instance via de **Odoo externe API** (`/jsonrpc`).
 > `groups=`-restrictie (manager-only) + password-widget. Een echte secrets-vault is
 > een latere verbetering.
 
+## Provisioning (SRVMGR-6)
+
+Naast enrollment voorziet servermanager een (verse) instance van **base-data** en
+**default-gebruikers** — idempotent en via dezelfde `_jsonrpc`-laag. Knop
+**Provision** op de server-form.
+
+- **Company** — `provision_company_name` (per server): de hoofd-company van de
+  remote krijgt deze naam. Enkel geschreven als ze verschilt → opnieuw draaien is
+  veilig. Leeg = ongemoeid laten.
+- **Default users** — een sjabloon op de **rol** (`provision_user_ids`): per
+  gebruiker `name`/`login`/`email`/`lang`/`password` (set-once, manager-only) +
+  `is_admin`. Per login gematcht op de remote: bestaat de login al, dan wordt de
+  gebruiker **overgeslagen** (geen duplicaten, geen wachtwoord-overschrijving).
+  Nieuwe gebruikers krijgen `base.group_user`, admins ook `base.group_system`.
+- Resultaat: `provision_state` (pending/done/error), `last_provisioned` en een
+  `provision_log`; elke run logt naar de chatter.
+
+> **Scope-afbakening:** de MySchool **org/structuur**-masterdata (org-boom) wordt
+> *niet* hier gekopieerd — dat is master→slave-replicatie en hoort bij
+> `myschool_sync` (SRVMGR-7), aansluitend op de data-locatie-keuze (SRVMGR-4).
+> SRVMGR-6 voorziet de instance-identiteit (company) + toegang (default users).
+
 ## Menu's
 
 - **Server Manager → Servers** — kanban (per environment) / list / form.
@@ -97,16 +119,18 @@ odoo -d <testdb> -u myschool_servermanager \
      --test-enable --test-tags myschool_servermanager --stop-after-init
 ```
 
-22 unit-tests (eigenschap-overerving + propagatie, unieke codes/FQDN,
-poort-validatie, data-locatie-constraints, tellers, en de enrollment-laag met
-gemockte JSON-RPC: connectie, idempotente module-install, taal, admin-pw).
+30 unit-tests (eigenschap-overerving + propagatie, unieke codes/FQDN,
+poort-validatie, data-locatie-constraints, tellers, de enrollment-laag met
+gemockte JSON-RPC: connectie, idempotente module-install, taal, admin-pw, en de
+provisioning-laag: company-rename/idempotentie, default-user-creatie + groepen,
+skip bij bestaande login, herhaalbaarheid).
 
 > Lokaal draait de dev-server op poort 8069; gebruik voor een test-run een vrije
 > poort, bv. `--http-port=8971 --gevent-port=8972`.
 
 ## Roadmap
 
-- **SRVMGR-6 — Provisioning.** Base-data (bedrijven/org/structuur) + default user
-  seeden bij enrollment; herhaalbaar zonder duplicaten.
 - **SRVMGR-7 — Sync verhuizen.** `myschool_sync`-beheer migreren vanuit
   `myschool_admin` naar deze app, gekoppeld aan het server-register; databehoud.
+  Brengt ook de org/structuur-masterdata-replicatie (de "structuur" uit de
+  userstory) onder, aansluitend op de data-locatie-keuze (SRVMGR-4).

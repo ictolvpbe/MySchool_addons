@@ -60,6 +60,25 @@
                                 </list>
                             </field>
                         </page>
+                        <page string="Default Users" name="provision_users">
+                            <field name="provision_user_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="login"/>
+                                    <field name="email"/>
+                                    <field name="lang" optional="hide"
+                                           placeholder="nl_BE"/>
+                                    <field name="password" password="True"
+                                           groups="myschool_servermanager.group_servermanager_manager"/>
+                                    <field name="is_admin" widget="boolean_toggle"/>
+                                </list>
+                            </field>
+                            <p class="text-muted">
+                                Deze gebruikers worden bij provisioning op elke
+                                server met deze rol aangemaakt (idempotent, op login).
+                            </p>
+                        </page>
                         <page string="Description" name="description">
                             <field name="description"/>
                         </page>
