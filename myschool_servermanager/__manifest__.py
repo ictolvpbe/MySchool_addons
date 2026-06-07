@@ -18,9 +18,9 @@
           of via API bij een bronserver.
         * Enrollment o.b.v. rol (SRVMGR-5): idempotent taal/modules/admin-pw
           toepassen op een remote instance via de Odoo externe API (JSON-RPC).
-        * Provisioning base-data + default users (SRVMGR-6): idempotent de
-          company-naam zetten en de default-gebruikers van de rol aanmaken via
-          dezelfde JSON-RPC-laag.
+        * Provisioning base-data + default users (SRVMGR-6): idempotent een
+          company-boom (hoofd-company + sub-companies) en de default-gebruikers
+          van de rol aanmaken via dezelfde JSON-RPC-laag.
 
         Roadmap (zie AppFoundry SRVMGR):
         * SRVMGR-7 myschool_sync-beheer verhuizen vanuit myschool_admin

@@ -81,9 +81,13 @@ Naast enrollment voorziet servermanager een (verse) instance van **base-data** e
 **default-gebruikers** — idempotent en via dezelfde `_jsonrpc`-laag. Knop
 **Provision** op de server-form.
 
-- **Company** — `provision_company_name` (per server): de hoofd-company van de
-  remote krijgt deze naam. Enkel geschreven als ze verschilt → opnieuw draaien is
-  veilig. Leeg = ongemoeid laten.
+- **Companies** — een **company-boom** per server (`provision_company_ids`): één
+  knoop kan `is_main` zijn (hernoemt de bestaande hoofd-company van de remote, géén
+  nieuwe), de overige knopen zijn **sub-companies** die via `parent_id` naar een
+  andere knoop verwijzen. Bij provisioning worden parents vóór kinderen verwerkt en
+  wordt op naam gematcht: bestaat een company al, dan wordt ze overgeslagen → opnieuw
+  draaien is veilig. (Constraints: max. één hoofd-company per server, geen lus,
+  parent bij dezelfde server.)
 - **Default users** — een sjabloon op de **rol** (`provision_user_ids`): per
   gebruiker `name`/`login`/`email`/`lang`/`password` (set-once, manager-only) +
   `is_admin`. Per login gematcht op de remote: bestaat de login al, dan wordt de
@@ -119,11 +123,12 @@ odoo -d <testdb> -u myschool_servermanager \
      --test-enable --test-tags myschool_servermanager --stop-after-init
 ```
 
-30 unit-tests (eigenschap-overerving + propagatie, unieke codes/FQDN,
+33 unit-tests (eigenschap-overerving + propagatie, unieke codes/FQDN,
 poort-validatie, data-locatie-constraints, tellers, de enrollment-laag met
 gemockte JSON-RPC: connectie, idempotente module-install, taal, admin-pw, en de
-provisioning-laag: company-rename/idempotentie, default-user-creatie + groepen,
-skip bij bestaande login, herhaalbaarheid).
+provisioning-laag: hoofd-company-rename/idempotentie, sub-company-boom incl.
+diepe hiërarchie parents-eerst, skip bij bestaande company, default-user-creatie
++ groepen, skip bij bestaande login, herhaalbaarheid).
 
 > Lokaal draait de dev-server op poort 8069; gebruik voor een test-run een vrije
 > poort, bv. `--http-port=8971 --gevent-port=8972`.

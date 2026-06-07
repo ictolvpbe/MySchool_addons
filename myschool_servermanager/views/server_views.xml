@@ -153,15 +153,26 @@
                         </page>
                         <page string="Provisioning" name="provisioning">
                             <group>
-                                <group string="Base data">
-                                    <field name="provision_company_name"
-                                           placeholder="bv. OLVP Brugge"/>
-                                </group>
                                 <group string="Status">
                                     <field name="provision_state"/>
                                     <field name="last_provisioned" readonly="1"/>
                                 </group>
                             </group>
+                            <separator string="Companies (base data)"/>
+                            <field name="provision_company_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="parent_id"/>
+                                    <field name="is_main" widget="boolean_toggle"/>
+                                </list>
+                            </field>
+                            <p class="text-muted">
+                                De hoofd-company (<i>Main Company</i>) hernoemt de
+                                bestaande company van de remote; sub-companies
+                                verwijzen via <i>Parent Company</i> en worden
+                                idempotent (op naam) aangemaakt.
+                            </p>
                             <separator string="Default Users (from role)"/>
                             <field name="provision_user_ids" readonly="1">
                                 <list>

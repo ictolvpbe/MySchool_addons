@@ -12,12 +12,15 @@ _XMLIDS = {('base', 'group_user'): 1, ('base', 'group_system'): 3}
 class FakeProvisionRemote:
     """In-memory remote voor de provisioning-tests (SRVMGR-6).
 
-    Simuleert res.company, res.users en ir.model.data en legt alle execute_kw-
-    aanroepen vast in ``calls``. ``next_uid`` telt aangemaakte gebruikers door.
+    Simuleert res.company (incl. parent_id), res.users en ir.model.data en legt
+    alle execute_kw-aanroepen vast in ``calls``. De remote start met één
+    hoofd-company (id 1).
     """
 
-    def __init__(self, company_name='YourCompany', users=None, uid=7):
-        self.company_name = company_name
+    def __init__(self, company_name='YourCompany', users=None, companies=None,
+                 uid=7):
+        # id -> {'name', 'parent_id'}
+        self.companies = companies or {1: {'name': company_name, 'parent_id': False}}
         # login -> id
         self.users = dict(users or {})
         self.uid = uid
@@ -44,17 +47,30 @@ class FakeProvisionRemote:
 
     def _company(self, method, margs):
         if method == 'search':
-            return [1]
+            domain = margs[0]
+            if not domain:                       # [[]] -> hoofd-company (laagste id)
+                return [min(self.companies)] if self.companies else []
+            name = domain[0][2]                  # [['name','=',x]]
+            return [cid for cid, c in self.companies.items() if c['name'] == name]
         if method == 'read':
-            return [{'id': 1, 'name': self.company_name}]
+            ids = margs[0]
+            return [{'id': i, 'name': self.companies[i]['name']} for i in ids]
         if method == 'write':
-            self.company_name = margs[1]['name']
+            ids, vals = margs[0], margs[1]
+            for i in ids:
+                self.companies[i].update(vals)
             return True
+        if method == 'create':
+            vals = margs[0]
+            self._next_id += 1
+            self.companies[self._next_id] = {
+                'name': vals['name'], 'parent_id': vals.get('parent_id', False)}
+            return self._next_id
         raise AssertionError(method)
 
     def _users(self, method, margs):
         if method == 'search':
-            login = margs[0][0][2]  # [['login','=',x]]
+            login = margs[0][0][2]               # [['login','=',x]]
             return [self.users[login]] if login in self.users else []
         if method == 'create':
             vals = margs[0]
@@ -66,8 +82,7 @@ class FakeProvisionRemote:
     def _imd(self, method, margs):
         if method == 'search_read':
             domain = margs[0]
-            module = domain[0][2]
-            name = domain[1][2]
+            module, name = domain[0][2], domain[1][2]
             rid = _XMLIDS.get((module, name))
             return [{'res_id': rid}] if rid else []
         raise AssertionError(method)
@@ -81,48 +96,101 @@ class TestProvision(TransactionCase):
         super().setUpClass()
         cls.Server = cls.env['myschool.server']
         cls.Role = cls.env['myschool.server.role']
+        cls.Company = cls.env['myschool.server.provision.company']
 
-    def _make_server(self, users=None, company_name=None):
+    def _make_server(self, users=None, companies=None):
         role = self.Role.create({'name': 'Account', 'code': 'acc'})
         for u in (users or []):
             self.env['myschool.server.provision.user'].create(
                 dict(u, role_id=role.id))
         srv = self.Server.create({
             'name': 'acc01', 'environment': 'prod', 'fqdn': 'acc01.olvp.be',
-            'db_name': 'acc', 'login': 'svc', 'api_key': 'k', 'role_id': role.id,
-            'provision_company_name': company_name})
+            'db_name': 'acc', 'login': 'svc', 'api_key': 'k', 'role_id': role.id})
+        by_name = {}
+        for c in (companies or []):
+            vals = {'server_id': srv.id, 'name': c['name'],
+                    'is_main': c.get('is_main', False)}
+            if c.get('parent_name'):
+                vals['parent_id'] = by_name[c['parent_name']].id
+            by_name[c['name']] = self.Company.create(vals)
         return srv, role
+
+    def _creates(self, remote, model):
+        return [c for c in remote.calls if c[0] == model and c[1] == 'create']
 
     # ---------------- company ----------------
 
-    def test_provision_renames_company_when_different(self):
-        srv, _role = self._make_server(company_name='OLVP Brugge')
+    def test_provision_renames_main_company_when_different(self):
+        srv, _role = self._make_server(
+            companies=[{'name': 'OLVP Brugge', 'is_main': True}])
         remote = FakeProvisionRemote(company_name='YourCompany')
         with patch(_PATH, new=remote):
             srv.action_provision()
         self.assertEqual(srv.provision_state, 'done')
-        self.assertEqual(remote.company_name, 'OLVP Brugge')
+        self.assertEqual(remote.companies[1]['name'], 'OLVP Brugge')
         writes = [c for c in remote.calls
                   if c[0] == 'res.company' and c[1] == 'write']
         self.assertEqual(len(writes), 1)
 
-    def test_provision_company_idempotent_when_equal(self):
-        srv, _role = self._make_server(company_name='OLVP Brugge')
+    def test_provision_main_company_idempotent_when_equal(self):
+        srv, _role = self._make_server(
+            companies=[{'name': 'OLVP Brugge', 'is_main': True}])
         remote = FakeProvisionRemote(company_name='OLVP Brugge')
         with patch(_PATH, new=remote):
             srv.action_provision()
         writes = [c for c in remote.calls
                   if c[0] == 'res.company' and c[1] == 'write']
         self.assertFalse(writes)
-        self.assertIn("al 'OLVP Brugge'", srv.provision_log)
+        self.assertIn("Hoofd-company al 'OLVP Brugge'", srv.provision_log)
 
-    def test_provision_skips_company_when_no_name(self):
+    def test_provision_skips_companies_when_none(self):
         srv, _role = self._make_server()
         remote = FakeProvisionRemote()
         with patch(_PATH, new=remote):
             srv.action_provision()
         self.assertEqual(srv.provision_state, 'done')
         self.assertFalse([c for c in remote.calls if c[0] == 'res.company'])
+        self.assertIn("Geen companies", srv.provision_log)
+
+    def test_provision_creates_subcompany_under_main(self):
+        srv, _role = self._make_server(companies=[
+            {'name': 'OLVP Brugge', 'is_main': True},
+            {'name': 'OLVP SO', 'parent_name': 'OLVP Brugge'}])
+        remote = FakeProvisionRemote(company_name='YourCompany')
+        with patch(_PATH, new=remote):
+            srv.action_provision()
+        creates = self._creates(remote, 'res.company')
+        self.assertEqual(len(creates), 1)
+        vals = creates[0][2][0]
+        self.assertEqual(vals['name'], 'OLVP SO')
+        self.assertEqual(vals['parent_id'], 1)        # = hernoemde hoofd-company
+
+    def test_provision_creates_deep_hierarchy_parents_first(self):
+        srv, _role = self._make_server(companies=[
+            {'name': 'Root', 'is_main': True},
+            {'name': 'Child', 'parent_name': 'Root'},
+            {'name': 'Grandchild', 'parent_name': 'Child'}])
+        remote = FakeProvisionRemote(company_name='YourCompany')
+        with patch(_PATH, new=remote):
+            srv.action_provision()
+        creates = self._creates(remote, 'res.company')
+        names = [c[2][0]['name'] for c in creates]
+        self.assertEqual(names, ['Child', 'Grandchild'])   # parent vóór kind
+        child_vals = [c[2][0] for c in creates if c[2][0]['name'] == 'Child'][0]
+        gc_vals = [c[2][0] for c in creates if c[2][0]['name'] == 'Grandchild'][0]
+        self.assertEqual(child_vals['parent_id'], 1)       # onder hoofd-company
+        self.assertEqual(gc_vals['parent_id'], 101)        # onder Child (remote id 101)
+
+    def test_provision_skips_existing_company(self):
+        srv, _role = self._make_server(companies=[
+            {'name': 'Bestaat', 'is_main': False}])
+        remote = FakeProvisionRemote(companies={
+            1: {'name': 'Main', 'parent_id': False},
+            5: {'name': 'Bestaat', 'parent_id': False}})
+        with patch(_PATH, new=remote):
+            srv.action_provision()
+        self.assertFalse(self._creates(remote, 'res.company'))
+        self.assertIn("Company 'Bestaat' bestaat al", srv.provision_log)
 
     # ---------------- users ----------------
 
@@ -132,13 +200,11 @@ class TestProvision(TransactionCase):
         remote = FakeProvisionRemote()
         with patch(_PATH, new=remote):
             srv.action_provision()
-        creates = [c for c in remote.calls
-                   if c[0] == 'res.users' and c[1] == 'create']
+        creates = self._creates(remote, 'res.users')
         self.assertEqual(len(creates), 1)
         vals = creates[0][2][0]
         self.assertEqual(vals['login'], 'directie')
         self.assertEqual(vals['email'], 'd@olvp.be')
-        # base.group_user (res_id 1), geen admin
         self.assertEqual(vals['group_ids'], [(6, 0, [1])])
 
     def test_provision_admin_user_gets_admin_group(self):
@@ -147,8 +213,7 @@ class TestProvision(TransactionCase):
         remote = FakeProvisionRemote()
         with patch(_PATH, new=remote):
             srv.action_provision()
-        vals = [c for c in remote.calls
-                if c[0] == 'res.users' and c[1] == 'create'][0][2][0]
+        vals = self._creates(remote, 'res.users')[0][2][0]
         self.assertEqual(vals['group_ids'], [(6, 0, [1, 3])])
         self.assertIn('administrator', srv.provision_log)
 
@@ -158,24 +223,26 @@ class TestProvision(TransactionCase):
         remote = FakeProvisionRemote(users={'directie': 42})
         with patch(_PATH, new=remote):
             srv.action_provision()
-        creates = [c for c in remote.calls
-                   if c[0] == 'res.users' and c[1] == 'create']
-        self.assertFalse(creates)
+        self.assertFalse(self._creates(remote, 'res.users'))
         self.assertIn("bestaat al", srv.provision_log)
+
+    # ---------------- combinatie ----------------
 
     def test_provision_is_idempotent(self):
         srv, _role = self._make_server(
-            company_name='OLVP Brugge',
+            companies=[{'name': 'OLVP Brugge', 'is_main': True},
+                       {'name': 'OLVP SO', 'parent_name': 'OLVP Brugge'}],
             users=[{'name': 'Directie', 'login': 'directie'}])
         remote = FakeProvisionRemote(company_name='YourCompany')
         with patch(_PATH, new=remote):
-            srv.action_provision()          # maakt company-write + user
+            srv.action_provision()          # write main + create sub + create user
             remote.calls.clear()
             srv.action_provision()          # tweede run: niets meer te doen
         self.assertFalse([c for c in remote.calls if c[1] in ('write', 'create')])
 
     def test_provision_error_persists_log(self):
-        srv, _role = self._make_server(company_name='X')
+        srv, _role = self._make_server(
+            companies=[{'name': 'X', 'is_main': True}])
         with patch(_PATH, new=FakeProvisionRemote(uid=False)):
             srv.action_provision()
         self.assertEqual(srv.provision_state, 'error')
