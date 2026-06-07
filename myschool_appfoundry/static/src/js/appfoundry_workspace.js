@@ -566,8 +566,24 @@ export class AppfoundryWorkspace extends Component {
             : (sprints.length ? sprints[0].id : false);
     }
 
-    setView(v) { this.state.view = v; }
+    setView(v) {
+        const prev = this.state.view;
+        this.state.view = v;
+        // Leaving a native board → the counters may have changed via drag.
+        if (prev === "board" || prev === "sprintboard") {
+            this.refreshProjectCounts(this.state.selectedId);
+        }
+    }
     setSprintBoard(id) { this.state.sprintBoardId = parseInt(id, 10) || false; }
+
+    /** A kanban card drop in the embedded board ends with a pointerup. Debounce
+     *  a counter refresh so a drag results in one read once the write settled. */
+    onBoardPointerUp() {
+        if (this._boardRefreshTimer) clearTimeout(this._boardRefreshTimer);
+        this._boardRefreshTimer = setTimeout(() => {
+            this.refreshProjectCounts(this.state.selectedId);
+        }, 600);
+    }
 
     get sprintBoard() {
         return this.state.sprints.find((s) => s.id === this.state.sprintBoardId) || null;

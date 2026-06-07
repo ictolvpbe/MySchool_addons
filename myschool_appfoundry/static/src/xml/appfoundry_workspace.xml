@@ -362,7 +362,7 @@
                                 </t>
                             </div>
                             <t t-if="state.sprintBoardId">
-                                <div class="o_afw_embed">
+                                <div class="o_afw_embed" t-on-pointerup="onBoardPointerUp">
                                     <View t-key="'sb-' + state.sprintBoardId" t-props="sprintBoardProps"/>
                                 </div>
                             </t>
@@ -432,7 +432,7 @@
 
                         <!-- BOARD -->
                         <t t-elif="state.view === 'board'">
-                            <div class="o_afw_embed">
+                            <div class="o_afw_embed" t-on-pointerup="onBoardPointerUp">
                                 <View t-key="state.selectedId + '-board'" t-props="boardProps"/>
                             </div>
                         </t>
