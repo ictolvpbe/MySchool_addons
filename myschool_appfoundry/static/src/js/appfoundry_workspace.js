@@ -115,6 +115,13 @@ export class BacklogTable extends Component {
         this.state.roots = roots;
         this.state.expanded = expanded;
         this.state.loading = false;
+        this._notifyChanged();
+    }
+
+    /** Tell the workspace that the open-item set changed so it can refresh the
+     *  sidebar counters. */
+    _notifyChanged() {
+        if (this.props.onItemsChanged) this.props.onItemsChanged();
     }
 
     get stageById() { return this.props.stageById || {}; }
@@ -264,6 +271,8 @@ export class BacklogTable extends Component {
             await this.orm.write("appfoundry.item", [item.id], { stage_id: id });
             const meta = this.stageById[id];
             item.stage_id = [id, meta ? meta.name : ""];
+            // A move into/out of a done/cancelled stage changes the open count.
+            this._notifyChanged();
         }
     }
     // ---- inline sprint ----
@@ -527,6 +536,21 @@ export class AppfoundryWorkspace extends Component {
             ? proj.current_release_id[1] : "";
         await this._loadSprints(id);
     }
+
+    /** Re-read the open-item / open-bug counters of an app after backlog
+     *  mutations. The sidebar object is shared by reference with state.byId,
+     *  so patching it refreshes the badge. */
+    async refreshProjectCounts(projectId) {
+        const id = projectId || this.state.selectedId;
+        if (!id) return;
+        const [rec] = await this.orm.read(
+            "appfoundry.project", [id], ["item_count", "open_bug_count"]);
+        if (rec && this.state.byId[id]) {
+            this.state.byId[id].item_count = rec.item_count;
+            this.state.byId[id].open_bug_count = rec.open_bug_count;
+        }
+    }
+    onBacklogChanged() { return this.refreshProjectCounts(this.state.selectedId); }
 
     async _loadSprints(projectId) {
         const sprints = await this.orm.searchRead(

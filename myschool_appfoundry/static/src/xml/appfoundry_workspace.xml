@@ -315,7 +315,8 @@
                                           currentReleaseId="state.currentReleaseId"
                                           sprints="state.sprints"
                                           stages="state.stages"
-                                          stageById="state.stageById"/>
+                                          stageById="state.stageById"
+                                          onItemsChanged.bind="onBacklogChanged"/>
                         </t>
 
                         <!-- SPRINT BOARD -->
