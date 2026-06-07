@@ -162,17 +162,6 @@
                             icon="fa-forward"
                             invisible="phase not in ('idea', 'design') or not has_user_story or process_map_count > 0 or process_map_skipped"/>
 
-                        <!-- Step 3: User Stories (not done) -->
-                        <button name="action_open_stories" type="object"
-                            string="User Stories" class="btn btn-secondary"
-                            icon="fa-bookmark"
-                            invisible="item_count > 0 or (phase in ('idea', 'design') and (not has_user_story or (process_map_count == 0 and not process_map_skipped)))"/>
-                        <!-- Step 3: User Stories (done) -->
-                        <button name="action_open_stories" type="object"
-                            string="User Stories" class="btn btn-outline-success"
-                            icon="fa-check"
-                            invisible="item_count == 0"/>
-
                         <!-- Prompt Generator (not done) -->
                         <button name="action_open_prompt_wizard" type="object"
                             string="Prompt Generator" class="btn btn-secondary"
@@ -195,11 +184,10 @@
                             icon="fa-check"
                             invisible="not icon_preview"/>
 
-                        <!-- All Items (always last) -->
-                        <button name="action_open_items" type="object"
-                            string="All Items" class="btn btn-secondary"
-                            icon="fa-th-list"
-                            invisible="phase in ('idea', 'design') and (not has_user_story or (process_map_count == 0 and not process_map_skipped))"/>
+                        <!-- Open the Work workspace (backlog / sprint board / sprints) -->
+                        <button name="action_open_workspace" type="object"
+                            string="Open Workspace" class="btn btn-primary"
+                            icon="fa-th-large"/>
                     </div>
                     <notebook>
                         <page string="Icon" name="icon">

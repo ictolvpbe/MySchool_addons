@@ -405,6 +405,17 @@ class AppfoundryProject(models.Model):
             'context': context,
         }
 
+    def action_open_workspace(self):
+        """Open the Work workspace (backlog / sprint board / sprints) focused
+        on this app. Keeps work management out of the properties form."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'appfoundry_workspace',
+            'name': f'{self.name} — Work',
+            'context': {'active_project_id': self.id},
+        }
+
     def action_open_items(self):
         return self._item_action(f'{self.name} — Items')
 

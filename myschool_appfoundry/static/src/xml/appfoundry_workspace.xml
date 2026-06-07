@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_appfoundry.ContextMenu">
+        <div class="o_afw_ctx_backdrop"
+             t-on-click="() => props.onClose()"
+             t-on-contextmenu.prevent="() => props.onClose()"/>
+        <div class="o_afw_ctx" t-attf-style="left: {{ props.x }}px; top: {{ props.y }}px;">
+            <div class="o_afw_ctx_header" t-esc="props.title"/>
+            <t t-foreach="props.items" t-as="it" t-key="it.action || ('d' + it_index)">
+                <div t-if="it.divider" class="o_afw_ctx_divider"/>
+                <div t-else="" class="o_afw_ctx_item"
+                     t-att-class="{ 'o_afw_ctx_danger': it.danger }"
+                     t-on-click="() => this.onItem(it.action)">
+                    <i t-att-class="it.icon"/>
+                    <span t-esc="it.label"/>
+                </div>
+            </t>
+        </div>
+    </t>
+
+    <!-- ============ BACKLOG TABLE ============ -->
+    <t t-name="myschool_appfoundry.BacklogTable">
+        <div class="o_afw_wp" t-on-contextmenu="onEmptyContextMenu">
+            <div class="o_afw_wp_toolbar">
+                <button class="btn btn-sm btn-primary" t-on-click="createItem">
+                    <i class="fa fa-plus me-1"/>Create
+                </button>
+                <div class="btn-group btn-group-sm ms-2 o_afw_typefilter">
+                    <button class="btn"
+                            t-att-class="state.typeFilter === 'all' ? 'btn-primary' : 'btn-light'"
+                            t-on-click="() => this.setTypeFilter('all')">All</button>
+                    <button class="btn"
+                            t-att-class="state.typeFilter === 'story' ? 'btn-primary' : 'btn-light'"
+                            t-on-click="() => this.setTypeFilter('story')">Stories</button>
+                    <button class="btn"
+                            t-att-class="state.typeFilter === 'bug' ? 'btn-primary' : 'btn-light'"
+                            t-on-click="() => this.setTypeFilter('bug')">Bugs</button>
+                    <button class="btn"
+                            t-att-class="state.typeFilter === 'task' ? 'btn-primary' : 'btn-light'"
+                            t-on-click="() => this.setTypeFilter('task')">Tasks</button>
+                    <button class="btn"
+                            t-att-class="state.typeFilter === 'improvement' ? 'btn-primary' : 'btn-light'"
+                            t-on-click="() => this.setTypeFilter('improvement')">Improvements</button>
+                </div>
+                <input type="text" class="o_afw_wp_search"
+                       placeholder="Zoek item…" t-model="state.search"/>
+                <div class="o_afw_colcfg ms-auto">
+                    <button class="btn btn-sm btn-light" t-on-click="toggleColMenu" title="Columns">
+                        <i class="fa fa-cog"/>
+                    </button>
+                    <div class="o_afw_colmenu" t-if="state.colMenuOpen">
+                        <t t-foreach="columnDefs" t-as="c" t-key="c.key">
+                            <label class="o_afw_colmenu_item">
+                                <input type="checkbox" t-att-checked="state.cols[c.key]"
+                                       t-on-change="() => this.toggleCol(c.key)"/>
+                                <span t-esc="c.label"/>
+                            </label>
+                        </t>
+                    </div>
+                </div>
+            </div>
+            <table class="o_afw_wp_table">
+                <thead>
+                    <tr>
+                        <th class="o_afw_wp_type" t-if="state.cols.type">Type</th>
+                        <th class="o_afw_wp_id" t-if="state.cols.id">ID</th>
+                        <th class="o_afw_wp_subject">Subject</th>
+                        <th t-if="state.cols.stage">Stage</th>
+                        <th t-if="state.cols.sprint">Sprint</th>
+                        <th t-if="state.cols.assignee">Assignee</th>
+                        <th t-if="state.cols.points" class="text-end">SP</th>
+                        <th t-if="state.cols.priority">Priority</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <t t-foreach="visibleRows" t-as="row" t-key="row.item.id">
+                        <tr class="o_afw_wp_row"
+                            t-att-class="{
+                                'o_afw_summary': row.hasChildren,
+                                'o_afw_drop_onto': state.dragOverId === row.item.id and state.dropMode === 'onto',
+                                'o_afw_drop_before': state.dragOverId === row.item.id and state.dropMode === 'before',
+                                'o_afw_drop_after': state.dragOverId === row.item.id and state.dropMode === 'after' }"
+                            t-on-dragover="(ev) => this.onDragOver(ev, row.item)"
+                            t-on-dragleave="() => this.onDragLeave(row.item)"
+                            t-on-drop="(ev) => this.onDrop(ev, row.item)"
+                            t-on-contextmenu="(ev) => this.onRowContextMenu(ev, row.item)">
+                            <td t-if="state.cols.type">
+                                <span class="o_afw_type_badge"
+                                      t-attf-class="o_afw_type_{{ row.item.item_type }}"
+                                      t-esc="typeLabels[row.item.item_type] || row.item.item_type"/>
+                            </td>
+                            <td t-if="state.cols.id" class="o_afw_wp_id o_afw_link text-muted"
+                                t-on-click="() => this.openItem(row.item.id)"
+                                t-esc="itemRef(row.item)"/>
+                            <td>
+                                <span class="o_afw_subject_cell"
+                                      t-attf-style="padding-left: {{ row.depth * 18 }}px;">
+                                    <span class="o_afw_drag" draggable="true"
+                                          t-on-dragstart="(ev) => this.onDragStart(ev, row.item)"
+                                          t-on-dragend="() => this.onDragEnd()"
+                                          title="Sleep om te herordenen / onder een ander item te hangen">⠿</span>
+                                    <span class="o_afw_caret" t-if="row.hasChildren"
+                                          t-on-click.stop="() => this.toggle(row.item.id)">
+                                        <i class="fa"
+                                           t-att-class="state.expanded[row.item.id] ? 'fa-caret-down' : 'fa-caret-right'"/>
+                                    </span>
+                                    <span class="o_afw_caret_spacer" t-else=""/>
+                                    <i class="fa fa-folder o_afw_summary_icon" t-if="row.hasChildren"/>
+                                    <t t-if="state.editingId === row.item.id">
+                                        <input class="o_afw_inline_input" t-ref="renameInput"
+                                               t-model="state.editingName"
+                                               t-on-keydown="(ev) => this.onRenameKeydown(ev, row.item)"
+                                               t-on-blur="() => this.saveRename(row.item)"/>
+                                    </t>
+                                    <t t-else="">
+                                        <span class="o_afw_subject_text o_afw_link"
+                                              t-att-class="{ 'o_afw_summary_text': row.hasChildren }"
+                                              t-on-click="() => this.openItem(row.item.id)"
+                                              t-esc="row.item.name"/>
+                                        <button class="o_afw_rowbtn" title="Rename"
+                                                t-on-click.stop="() => this.startRename(row.item)">
+                                            <i class="fa fa-pencil"/>
+                                        </button>
+                                        <button class="o_afw_rowbtn" title="Add sub-item"
+                                                t-on-click.stop="() => this.addChild(row.item)">
+                                            <i class="fa fa-plus"/>
+                                        </button>
+                                    </t>
+                                </span>
+                            </td>
+                            <!-- STAGE -->
+                            <td t-if="state.cols.stage">
+                                <t t-if="row.hasChildren">
+                                    <div class="o_afw_rollup">
+                                        <div class="o_afw_rollup_bar">
+                                            <div class="o_afw_rollup_fill"
+                                                 t-attf-style="width: {{ summaryPct(row.item) }}%;"/>
+                                        </div>
+                                        <span class="o_afw_rollup_pct" t-esc="summaryPct(row.item) + '%'"/>
+                                    </div>
+                                </t>
+                                <t t-elif="state.stageOpenId === row.item.id">
+                                    <select class="o_afw_inline_select"
+                                            t-on-change="(ev) => this.setStage(row.item, ev.target.value)"
+                                            t-on-blur="() => this.openStage(false)">
+                                        <option t-foreach="props.stages" t-as="s" t-key="s.id"
+                                                t-att-value="s.id"
+                                                t-att-selected="row.item.stage_id and s.id === row.item.stage_id[0]"
+                                                t-esc="s.name"/>
+                                    </select>
+                                </t>
+                                <t t-else="">
+                                    <span class="o_afw_stage_badge o_afw_link"
+                                          t-att-class="stageClass(row.item)"
+                                          t-on-click="() => this.openStage(row.item.id)"
+                                          t-esc="stageLabel(row.item) || '—'"/>
+                                </t>
+                            </td>
+                            <!-- SPRINT -->
+                            <td t-if="state.cols.sprint">
+                                <t t-if="state.sprintOpenId === row.item.id">
+                                    <select class="o_afw_inline_select"
+                                            t-on-change="(ev) => this.setSprint(row.item, ev.target.value)"
+                                            t-on-blur="() => this.openSprint(false)">
+                                        <option value=""
+                                                t-att-selected="!row.item.sprint_id">— Backlog —</option>
+                                        <option t-foreach="props.sprints" t-as="sp" t-key="sp.id"
+                                                t-att-value="sp.id"
+                                                t-att-selected="row.item.sprint_id and sp.id === row.item.sprint_id[0]"
+                                                t-esc="sp.name"/>
+                                    </select>
+                                </t>
+                                <t t-else="">
+                                    <span class="o_afw_sprint_cell o_afw_link"
+                                          t-att-class="{ 'text-muted': !row.item.sprint_id }"
+                                          t-on-click="() => this.openSprint(row.item.id)"
+                                          t-esc="sprintLabel(row.item)"/>
+                                </t>
+                            </td>
+                            <td t-if="state.cols.assignee"
+                                t-esc="row.item.assigned_id ? row.item.assigned_id[1] : ''"/>
+                            <td t-if="state.cols.points" class="text-end"
+                                t-esc="row.item.story_points or ''"/>
+                            <td t-if="state.cols.priority">
+                                <span t-attf-class="o_afw_prio o_afw_prio_{{ row.item.priority }}"
+                                      t-esc="priorityLabels[row.item.priority] || ''"/>
+                            </td>
+                        </tr>
+                    </t>
+                    <tr t-if="!visibleRows.length and !state.loading">
+                        <td t-att-colspan="colCount" class="text-muted p-3">
+                            Nog geen items. Klik op + Create.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <AfwContextMenu t-if="state.ctx" x="state.ctx.x" y="state.ctx.y"
+                            title="'Item'" items="ctxItems"
+                            onAction.bind="onCtxAction" onClose.bind="closeCtx"/>
+        </div>
+    </t>
+
+    <!-- ============ WORKSPACE SHELL ============ -->
+    <t t-name="myschool_appfoundry.Workspace">
+        <div class="o_afw_workspace">
+            <!-- SIDEBAR: project (app) selector -->
+            <div class="o_afw_sidebar" t-attf-style="width: {{ state.sidebarWidth }}px;">
+                <div class="o_afw_sidebar_head">
+                    <span class="o_afw_sidebar_title">Apps</span>
+                    <input type="text" class="o_afw_search"
+                           placeholder="Zoek app…" t-model="state.search"/>
+                </div>
+                <div class="o_afw_projlist" t-on-contextmenu="onEmptyContextMenu">
+                    <t t-if="state.loading">
+                        <div class="text-muted p-2">Laden…</div>
+                    </t>
+                    <t t-elif="!filteredProjects.length">
+                        <div t-if="state.search" class="text-muted p-2">Geen resultaten</div>
+                        <div t-else="" class="text-muted p-2">Geen apps</div>
+                    </t>
+                    <t t-else="">
+                        <t t-foreach="filteredProjects" t-as="p" t-key="p.id">
+                            <div class="o_afw_proj_row"
+                                 t-att-class="{ 'o_afw_proj_selected': state.selectedId === p.id }"
+                                 t-on-click="() => this.selectProject(p.id)"
+                                 t-on-contextmenu="(ev) => this.onProjectContextMenu(ev, p.id)">
+                                <div class="o_afw_proj_main">
+                                    <span class="o_afw_proj_name" t-esc="p.name"/>
+                                    <span class="o_afw_proj_code" t-esc="p.code"/>
+                                </div>
+                                <div class="o_afw_proj_meta">
+                                    <span class="o_afw_phase" t-attf-class="o_afw_phase_{{ p.phase }}"
+                                          t-esc="phaseLabel(p.phase)"/>
+                                    <span t-if="p.open_bug_count" class="o_afw_bugcount"
+                                          t-att-title="p.open_bug_count + ' open bugs'">
+                                        <i class="fa fa-bug"/> <t t-esc="p.open_bug_count"/>
+                                    </span>
+                                </div>
+                            </div>
+                        </t>
+                    </t>
+                </div>
+            </div>
+
+            <div class="o_afw_splitter" t-on-mousedown="onSplitterDown"/>
+
+            <!-- MAIN -->
+            <div class="o_afw_main">
+                <t t-if="state.loading">
+                    <div class="o_afw_empty text-muted">Laden…</div>
+                </t>
+                <t t-elif="!state.projects.length">
+                    <div class="o_afw_nocontent">
+                        <i class="fa fa-rocket o_afw_nocontent_icon"/>
+                        <h3>Nog geen apps</h3>
+                        <p class="text-muted">
+                            Maak je eerste app aan om backlog-items, sprints en releases te beheren.
+                        </p>
+                        <button class="btn btn-primary" t-on-click="_newProject">
+                            <i class="fa fa-plus me-1"/>Nieuwe app
+                        </button>
+                    </div>
+                </t>
+                <t t-elif="!selected">
+                    <div class="o_afw_empty text-muted">Selecteer een app links.</div>
+                </t>
+                <t t-else="">
+                    <div class="o_afw_topbar">
+                        <div class="o_afw_title">
+                            <span class="o_afw_proj_name" t-esc="selected.name"/>
+                            <span t-if="selected.code" class="o_afw_proj_code" t-esc="selected.code"/>
+                            <span class="o_afw_phase" t-attf-class="o_afw_phase_{{ selected.phase }}"
+                                  t-esc="phaseLabel(selected.phase)"/>
+                            <span t-if="state.currentReleaseName" class="o_afw_release"
+                                  t-att-title="'Current release'">
+                                <i class="fa fa-tag"/> <t t-esc="state.currentReleaseName"/>
+                            </span>
+                        </div>
+                        <div class="o_afw_switch btn-group">
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'backlog' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('backlog')">Backlog</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'sprintboard' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('sprintboard')">Sprint Board</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'sprints' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('sprints')">Sprints</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'board' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('board')">Board</button>
+                            <button class="btn btn-sm"
+                                    t-att-class="state.view === 'list' ? 'btn-primary' : 'btn-secondary'"
+                                    t-on-click="() => this.setView('list')">List</button>
+                        </div>
+                        <button class="btn btn-sm btn-light o_afw_openform"
+                                t-on-click="openProjectForm" title="Open de app-eigenschappen">
+                            <i class="fa fa-sliders me-1"/>Properties
+                        </button>
+                    </div>
+
+                    <div class="o_afw_content">
+                        <!-- BACKLOG -->
+                        <t t-if="state.view === 'backlog'">
+                            <BacklogTable t-key="state.selectedId + '-' + state.sprints.length"
+                                          projectId="state.selectedId"
+                                          projectCode="state.projectCode"
+                                          currentReleaseId="state.currentReleaseId"
+                                          sprints="state.sprints"
+                                          stages="state.stages"
+                                          stageById="state.stageById"/>
+                        </t>
+
+                        <!-- SPRINT BOARD -->
+                        <t t-elif="state.view === 'sprintboard'">
+                            <div class="o_afw_sprintbar">
+                                <label class="o_afw_sprintbar_lbl">Sprint:</label>
+                                <select class="o_afw_sprint_select"
+                                        t-on-change="(ev) => this.setSprintBoard(ev.target.value)">
+                                    <option t-foreach="state.sprints" t-as="sp" t-key="sp.id"
+                                            t-att-value="sp.id"
+                                            t-att-selected="sp.id === state.sprintBoardId"
+                                            t-esc="sp.name + ' (' + sp.state + ')'"/>
+                                </select>
+                                <t t-if="sprintBoard">
+                                    <span class="o_afw_sprintstat" t-if="sprintBoard.goal"
+                                          t-att-title="sprintBoard.goal">
+                                        <i class="fa fa-bullseye"/> <t t-esc="sprintBoard.goal"/>
+                                    </span>
+                                    <span class="o_afw_sprintstat">
+                                        <i class="fa fa-list"/> <t t-esc="sprintBoard.item_count"/> items
+                                    </span>
+                                    <span class="o_afw_sprintstat">
+                                        <t t-esc="sprintBoard.completed_points"/>/<t t-esc="sprintBoard.total_points"/> SP
+                                    </span>
+                                    <div class="o_afw_velo">
+                                        <div class="o_afw_velo_bar">
+                                            <div class="o_afw_velo_fill"
+                                                 t-attf-style="width: {{ sprintBoard.velocity }}%;"/>
+                                        </div>
+                                        <span class="o_afw_velo_pct"
+                                              t-esc="Math.round(sprintBoard.velocity) + '%'"/>
+                                    </div>
+                                    <button class="btn btn-sm btn-primary ms-auto"
+                                            t-if="sprintBoard.state === 'draft'"
+                                            t-on-click="() => this.startSprint(sprintBoard)">
+                                        <i class="fa fa-play me-1"/>Start
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary ms-auto"
+                                            t-if="sprintBoard.state === 'active'"
+                                            t-on-click="() => this.completeSprint(sprintBoard)">
+                                        <i class="fa fa-flag-checkered me-1"/>Complete
+                                    </button>
+                                </t>
+                            </div>
+                            <t t-if="state.sprintBoardId">
+                                <div class="o_afw_embed">
+                                    <View t-key="'sb-' + state.sprintBoardId" t-props="sprintBoardProps"/>
+                                </div>
+                            </t>
+                            <t t-else="">
+                                <div class="o_afw_empty text-muted">
+                                    Nog geen sprints. Maak er een aan via het tabblad Sprints.
+                                </div>
+                            </t>
+                        </t>
+
+                        <!-- SPRINTS -->
+                        <t t-elif="state.view === 'sprints'">
+                            <div class="o_afw_sprints">
+                                <div class="o_afw_sprints_toolbar">
+                                    <button class="btn btn-sm btn-primary" t-on-click="newSprint">
+                                        <i class="fa fa-plus me-1"/>New Sprint
+                                    </button>
+                                </div>
+                                <t t-if="!state.sprints.length">
+                                    <div class="o_afw_empty text-muted">Nog geen sprints.</div>
+                                </t>
+                                <div class="o_afw_sprint_cards">
+                                    <t t-foreach="state.sprints" t-as="sp" t-key="sp.id">
+                                        <div class="o_afw_sprint_card"
+                                             t-att-class="'o_afw_sprint_' + sp.state"
+                                             t-on-click="() => this.openSprint(sp.id)">
+                                            <div class="o_afw_sprint_card_head">
+                                                <span class="o_afw_sprint_name" t-esc="sp.name"/>
+                                                <span class="o_afw_sprint_state"
+                                                      t-attf-class="o_afw_sprintbadge_{{ sp.state }}"
+                                                      t-esc="sp.state"/>
+                                            </div>
+                                            <div class="o_afw_sprint_dates text-muted"
+                                                 t-if="sp.date_start or sp.date_end">
+                                                <t t-esc="sp.date_start || '—'"/> → <t t-esc="sp.date_end || '—'"/>
+                                            </div>
+                                            <div class="o_afw_sprint_goal" t-if="sp.goal" t-esc="sp.goal"/>
+                                            <div class="o_afw_sprint_stats">
+                                                <span><t t-esc="sp.item_count"/> items</span>
+                                                <span><t t-esc="sp.completed_points"/>/<t t-esc="sp.total_points"/> SP</span>
+                                            </div>
+                                            <div class="o_afw_velo">
+                                                <div class="o_afw_velo_bar">
+                                                    <div class="o_afw_velo_fill"
+                                                         t-attf-style="width: {{ sp.velocity }}%;"/>
+                                                </div>
+                                                <span class="o_afw_velo_pct"
+                                                      t-esc="Math.round(sp.velocity) + '%'"/>
+                                            </div>
+                                            <div class="o_afw_sprint_actions">
+                                                <button class="btn btn-sm btn-primary"
+                                                        t-if="sp.state === 'draft'"
+                                                        t-on-click.stop="() => this.startSprint(sp)">
+                                                    <i class="fa fa-play me-1"/>Start
+                                                </button>
+                                                <button class="btn btn-sm btn-secondary"
+                                                        t-if="sp.state === 'active'"
+                                                        t-on-click.stop="() => this.completeSprint(sp)">
+                                                    <i class="fa fa-flag-checkered me-1"/>Complete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- BOARD -->
+                        <t t-elif="state.view === 'board'">
+                            <div class="o_afw_embed">
+                                <View t-key="state.selectedId + '-board'" t-props="boardProps"/>
+                            </div>
+                        </t>
+
+                        <!-- LIST -->
+                        <t t-elif="state.view === 'list'">
+                            <div class="o_afw_embed">
+                                <View t-key="state.selectedId + '-list'" t-props="listProps"/>
+                            </div>
+                        </t>
+                    </div>
+                </t>
+            </div>
+
+            <AfwContextMenu t-if="state.ctx" x="state.ctx.x" y="state.ctx.y"
+                            title="'App'" items="ctxItems"
+                            onAction.bind="onCtxAction" onClose.bind="closeCtx"/>
+        </div>
+    </t>
+
+</templates>

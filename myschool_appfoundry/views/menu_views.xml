@@ -7,9 +7,16 @@
         web_icon="myschool_appfoundry,static/description/icon.png"
         sequence="40"/>
 
-    <!-- Projects (primary entry point) -->
+    <!-- Work (primary entry point: backlog + sprint board + sprints) -->
+    <menuitem id="appfoundry_menu_work"
+        name="Work"
+        parent="appfoundry_menu_root"
+        action="appfoundry_workspace_action"
+        sequence="5"/>
+
+    <!-- Projects / Apps (properties &amp; setup) -->
     <menuitem id="appfoundry_menu_projects"
-        name="Projects"
+        name="Apps"
         parent="appfoundry_menu_root"
         action="appfoundry_project_action"
         sequence="10"/>
