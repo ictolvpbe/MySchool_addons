@@ -48,6 +48,7 @@ class SysEvent(models.Model):
             ('ADSYNC', 'AD Sync'),
             ('SAPSYNC', 'SAP Sync'),
             ('API', 'API'),
+            ('MCP', 'MCP Server'),
             ('CRON', 'Scheduled Task'),
             ('USER', 'User Action'),
             ('IMPORT', 'Data Import'),
