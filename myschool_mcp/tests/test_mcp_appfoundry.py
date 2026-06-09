@@ -220,6 +220,7 @@ class TestMcpAppfoundry(HttpCase):
         run = self.env['appfoundry.test.run'].browse(result['id'])
         self.assertEqual(run.project_id, self.project)
         self.assertEqual(run.test_tag, 'myschool_account')
+        self.assertEqual(run.pass_rate, 100.0)
         # Project-rollup: smart-button-teller + laatste run + status.
         self.project.invalidate_recordset()
         self.assertEqual(self.project.test_run_count, 1)

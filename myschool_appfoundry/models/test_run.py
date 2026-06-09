@@ -28,6 +28,9 @@ class AppfoundryTestRun(models.Model):
     skipped = fields.Integer(string='Skipped')
     passed = fields.Integer(
         string='Passed', compute='_compute_passed', store=True)
+    pass_rate = fields.Float(
+        string='Pass Rate (%)', compute='_compute_pass_rate', store=True,
+        aggregator='avg')
     success = fields.Boolean(compute='_compute_success', store=True)
     duration = fields.Float(string='Duration (s)')
     branch = fields.Char()
@@ -39,6 +42,11 @@ class AppfoundryTestRun(models.Model):
         for run in self:
             run.passed = max(
                 run.total - run.failed - run.errors - run.skipped, 0)
+
+    @api.depends('passed', 'total')
+    def _compute_pass_rate(self):
+        for run in self:
+            run.pass_rate = (run.passed / run.total * 100) if run.total else 0.0
 
     @api.depends('failed', 'errors')
     def _compute_success(self):

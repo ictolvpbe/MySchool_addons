@@ -12,6 +12,7 @@
                 <field name="passed"/>
                 <field name="failed"/>
                 <field name="errors"/>
+                <field name="pass_rate" widget="percentage" optional="show"/>
                 <field name="skipped" optional="hide"/>
                 <field name="duration" optional="hide"/>
                 <field name="branch" optional="hide"/>
@@ -59,6 +60,51 @@
                     </notebook>
                 </sheet>
             </form>
+        </field>
+    </record>
+
+    <record id="appfoundry_test_run_view_graph" model="ir.ui.view">
+        <field name="name">appfoundry.test.run.graph</field>
+        <field name="model">appfoundry.test.run</field>
+        <field name="arch" type="xml">
+            <graph string="Test Runs" type="line" sample="1">
+                <field name="run_date" interval="day"/>
+                <field name="pass_rate" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="appfoundry_test_run_view_pivot" model="ir.ui.view">
+        <field name="name">appfoundry.test.run.pivot</field>
+        <field name="model">appfoundry.test.run</field>
+        <field name="arch" type="xml">
+            <pivot string="Test Runs" sample="1">
+                <field name="test_tag" type="row"/>
+                <field name="run_date" interval="week" type="col"/>
+                <field name="pass_rate" type="measure"/>
+                <field name="failed" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="appfoundry_test_run_view_search" model="ir.ui.view">
+        <field name="name">appfoundry.test.run.search</field>
+        <field name="model">appfoundry.test.run</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="test_tag"/>
+                <field name="project_id"/>
+                <field name="branch"/>
+                <filter name="passed" string="Passed" domain="[('success', '=', True)]"/>
+                <filter name="failed" string="Failed" domain="[('success', '=', False)]"/>
+                <separator/>
+                <filter name="group_project" string="Project"
+                        context="{'group_by': 'project_id'}"/>
+                <filter name="group_tag" string="Test Tag"
+                        context="{'group_by': 'test_tag'}"/>
+                <filter name="group_date" string="Run Date"
+                        context="{'group_by': 'run_date:day'}"/>
+            </search>
         </field>
     </record>
 

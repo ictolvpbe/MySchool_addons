@@ -57,7 +57,7 @@ class AppfoundryProject(models.Model):
     last_test_run_id = fields.Many2one(
         'appfoundry.test.run', compute='_compute_test_run', string='Last Test Run')
     last_test_success = fields.Boolean(
-        related='last_test_run_id.success', string='Last Tests Passed')
+        compute='_compute_test_run', string='Last Tests Passed')
     phase = fields.Selection([
         ('idea', 'Idea'),
         ('design', 'Design'),
@@ -492,12 +492,14 @@ class AppfoundryProject(models.Model):
         for project in self:
             project.process_map_count = len(project.process_map_ids)
 
-    @api.depends('test_run_ids', 'test_run_ids.run_date')
+    @api.depends('test_run_ids', 'test_run_ids.run_date', 'test_run_ids.success')
     def _compute_test_run(self):
         for project in self:
             project.test_run_count = len(project.test_run_ids)
             # test.run _order = run_date desc → eerste = meest recente.
-            project.last_test_run_id = project.test_run_ids[:1]
+            last = project.test_run_ids[:1]
+            project.last_test_run_id = last
+            project.last_test_success = bool(last) and last.success
 
     def action_open_test_runs(self):
         self.ensure_one()
@@ -505,9 +507,10 @@ class AppfoundryProject(models.Model):
             'type': 'ir.actions.act_window',
             'name': 'Test Runs',
             'res_model': 'appfoundry.test.run',
-            'view_mode': 'list,form',
+            'view_mode': 'list,graph,pivot,form',
             'domain': [('project_id', '=', self.id)],
-            'context': {'default_project_id': self.id},
+            'context': {'default_project_id': self.id,
+                        'search_default_group_tag': 1},
         }
 
     def action_save_form(self):
