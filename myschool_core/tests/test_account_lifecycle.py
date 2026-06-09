@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from odoo.tests.common import TransactionCase, tagged
@@ -228,3 +229,106 @@ class TestPersonTreePosition(TransactionCase):
         self._run(person)
         self.assertEqual(len(self._person_tree(person)), 0,
                          'Zonder actieve PPSBR mag er geen PERSON-TREE blijven')
+
+
+@tagged('post_install', '-at_install', 'myschool_account')
+class TestOdooGroupSync(TransactionCase):
+    """Account-lifecycle: Odoo-groep-synchronisatie via PPSBR→BRSO.
+
+    ``_sync_person_group_memberships`` muteert de user-groepen NIET direct,
+    maar emit ``ODOO/GROUPMEMBER/ADD|REMOVE``-betasks o.b.v. de gewenste
+    groepen (BRSO-target-org met has_odoo_group) vs. de huidige. We seeden
+    het ODOO-betasktype (niet in core-data) en asserten op de betasks.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Person = cls.env['myschool.person']
+        cls.Org = cls.env['myschool.org']
+        cls.Role = cls.env['myschool.role']
+        cls.Rel = cls.env['myschool.proprelation']
+        cls.RelType = cls.env['myschool.proprelation.type']
+        cls.BeTask = cls.env['myschool.betask']
+        cls.BeTaskType = cls.env['myschool.betask.type']
+        cls.processor = cls.env['myschool.betask.processor']
+
+        cls.ppsbr_type = cls.RelType.search([('name', '=', 'PPSBR')], limit=1) \
+            or cls.RelType.create({'name': 'PPSBR'})
+        cls.brso_type = cls.RelType.search([('name', '=', 'BRSO')], limit=1) \
+            or cls.RelType.create({'name': 'BRSO'})
+        # ODOO/GROUPMEMBER-types zijn niet geseed → zelf aanmaken.
+        cls._ensure_type('ODOO', 'GROUPMEMBER', 'ADD')
+        cls._ensure_type('ODOO', 'GROUPMEMBER', 'REMOVE')
+
+        cls.group = cls.env['res.groups'].create({'name': 'Acct Test Group'})
+        cls.org = cls.Org.create({
+            'name': 'GrpOrg', 'name_short': 'GrpOrg', 'inst_nr': '2000000001',
+            'has_odoo_group': True, 'odoo_group_ids': [(6, 0, cls.group.ids)]})
+        cls.role = cls.Role.create({'name': 'GRP_ROLE', 'priority': 1})
+
+    @classmethod
+    def _ensure_type(cls, target, obj, action):
+        existing = cls.BeTaskType.search([
+            ('target', '=', target), ('object', '=', obj), ('action', '=', action)],
+            limit=1)
+        if not existing:
+            cls.BeTaskType.create({
+                'name': f'{target}_{obj}_{action}',
+                'target': target, 'object': obj, 'action': action})
+
+    def _groupmember_tasks(self, action):
+        return self.BeTask.search([
+            ('betasktype_id.target', '=', 'ODOO'),
+            ('betasktype_id.object', '=', 'GROUPMEMBER'),
+            ('betasktype_id.action', '=', action),
+        ])
+
+    def test_group_add_task_emitted_from_brso(self):
+        person = self.Person.create({'name': 'Grp, Add'})
+        user = self.env['res.users'].create({
+            'login': 'grp_add', 'name': 'Grp Add'})
+        person.write({'odoo_user_id': user.id})
+        # PPSBR + BRSO die de rol naar de groep-org koppelt.
+        self.Rel.create({
+            'name': 'ppsbr-add', 'proprelation_type_id': self.ppsbr_type.id,
+            'id_person': person.id, 'id_role': self.role.id,
+            'id_org': self.org.id, 'is_active': True})
+        self.Rel.create({
+            'name': 'brso-add', 'proprelation_type_id': self.brso_type.id,
+            'id_role': self.role.id, 'id_org_parent': self.org.id,
+            'id_org': self.org.id, 'is_active': True})
+
+        self.processor._sync_person_group_memberships(person)
+
+        add_tasks = self._groupmember_tasks('ADD')
+        self.assertTrue(add_tasks, 'Een ODOO/GROUPMEMBER/ADD-betask verwacht')
+        payloads = [json.loads(t.data) for t in add_tasks if t.data]
+        self.assertTrue(
+            any(p.get('group_id') == self.group.id and p.get('person_id') == person.id
+                for p in payloads),
+            'ADD-betask moet de juiste group_id + person_id bevatten')
+
+    def test_group_remove_task_emitted_when_no_longer_granted(self):
+        person = self.Person.create({'name': 'Grp, Remove'})
+        user = self.env['res.users'].create({
+            'login': 'grp_remove', 'name': 'Grp Remove',
+            'group_ids': [(4, self.group.id)]})
+        person.write({'odoo_user_id': user.id})
+        # Geen PPSBR/BRSO → de (managed) groep is niet langer gewenst.
+
+        self.processor._sync_person_group_memberships(person)
+
+        remove_tasks = self._groupmember_tasks('REMOVE')
+        payloads = [json.loads(t.data) for t in remove_tasks if t.data]
+        self.assertTrue(
+            any(p.get('group_id') == self.group.id and p.get('person_id') == person.id
+                for p in payloads),
+            'REMOVE-betask moet de niet-langer-gewenste groep bevatten')
+
+    def test_group_sync_noop_without_user(self):
+        # Geen Odoo-user → methode mag niets emitten en niet falen.
+        person = self.Person.create({'name': 'Grp, NoUser'})
+        before = self._groupmember_tasks('ADD')
+        self.processor._sync_person_group_memberships(person)
+        self.assertEqual(self._groupmember_tasks('ADD'), before)
