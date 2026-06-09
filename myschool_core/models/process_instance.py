@@ -100,12 +100,8 @@ class MyschoolProcessInstance(models.Model):
             'description': description or process_map.description,
         })
 
-        task_steps = process_map.step_ids.filtered(
-            lambda s: s.step_type in ('task', 'subprocess')
-        )
-
         # Build sequence from connections (topological order)
-        step_order = self._resolve_step_order(process_map, task_steps)
+        step_order = process_map._ordered_task_steps()
 
         Task = self.env['myschool.process.task']
         for seq, step in enumerate(step_order, start=1):
@@ -128,36 +124,10 @@ class MyschoolProcessInstance(models.Model):
 
         return instance.id
 
-    def _resolve_step_order(self, process_map, task_steps):
-        """Order task steps following the connection flow."""
-        step_ids = set(task_steps.ids)
-        # Build adjacency from connections
-        next_map = {}
-        for conn in process_map.connection_ids:
-            src = conn.source_step_id.id
-            tgt = conn.target_step_id.id
-            next_map.setdefault(src, []).append(tgt)
+    def _resolve_step_order(self, process_map, task_steps=None):
+        """Order task steps following the connection flow.
 
-        # BFS from start events through all steps
-        start_steps = process_map.step_ids.filtered(lambda s: s.step_type == 'start')
-        visited = []
-        seen = set()
-        queue = list(start_steps.ids)
-
-        while queue:
-            current = queue.pop(0)
-            if current in seen:
-                continue
-            seen.add(current)
-            if current in step_ids:
-                visited.append(current)
-            for nxt in next_map.get(current, []):
-                if nxt not in seen:
-                    queue.append(nxt)
-
-        # Add any task steps not reached by BFS
-        for step in task_steps:
-            if step.id not in seen:
-                visited.append(step.id)
-
-        return self.env['myschool.process.step'].browse(visited)
+        Behouden voor backward-compatibility; de echte logica leeft nu op
+        ``myschool.process._ordered_task_steps`` (gedeeld met de "voeg proces
+        in project"-functie)."""
+        return process_map._ordered_task_steps()

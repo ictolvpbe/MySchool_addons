@@ -71,6 +71,76 @@ class MyschoolProcess(models.Model):
         }
 
     # ------------------------------------------------------------------
+    # Flow helpers — task/subprocess-stappen in volgorde + onderlinge flow
+    # (gedeeld door process-instanties en de "voeg proces in project"-functie)
+    # ------------------------------------------------------------------
+
+    def _next_map(self):
+        """Adjacency-list {source_step_id: [target_step_id, ...]} uit de
+        sequence-/flow-connecties van dit proces."""
+        self.ensure_one()
+        next_map = {}
+        for conn in self.connection_ids:
+            next_map.setdefault(conn.source_step_id.id, []).append(
+                conn.target_step_id.id)
+        return next_map
+
+    def _ordered_task_steps(self):
+        """Task/subprocess-stappen in flow-volgorde: BFS over de connecties
+        vanaf de start-stap(pen). Niet-bereikte stappen sluiten achteraan aan."""
+        self.ensure_one()
+        task_steps = self.step_ids.filtered(
+            lambda s: s.step_type in ('task', 'subprocess'))
+        step_ids = set(task_steps.ids)
+        next_map = self._next_map()
+        start_steps = self.step_ids.filtered(lambda s: s.step_type == 'start')
+        visited, seen = [], set()
+        queue = list(start_steps.ids)
+        while queue:
+            current = queue.pop(0)
+            if current in seen:
+                continue
+            seen.add(current)
+            if current in step_ids:
+                visited.append(current)
+            for nxt in next_map.get(current, []):
+                if nxt not in seen:
+                    queue.append(nxt)
+        for step in task_steps:
+            if step.id not in seen:
+                visited.append(step.id)
+        return self.env['myschool.process.step'].browse(visited)
+
+    def _task_step_flow(self):
+        """Effectieve flow-paren ``(bron_step_id, doel_step_id)`` tussen
+        task/subprocess-stappen, waarbij tussenliggende knooppunten
+        (gateways, condities, start/end) worden 'doorgeknipt'."""
+        self.ensure_one()
+        task_ids = set(self.step_ids.filtered(
+            lambda s: s.step_type in ('task', 'subprocess')).ids)
+        next_map = self._next_map()
+
+        def reachable_tasks(start_id):
+            out, seen = [], set()
+            queue = list(next_map.get(start_id, []))
+            while queue:
+                nid = queue.pop(0)
+                if nid in seen:
+                    continue
+                seen.add(nid)
+                if nid in task_ids:
+                    out.append(nid)          # stop: niet verder door een taak heen
+                else:
+                    queue.extend(next_map.get(nid, []))
+            return out
+
+        pairs = []
+        for sid in task_ids:
+            for tid in reachable_tasks(sid):
+                pairs.append((sid, tid))
+        return pairs
+
+    # ------------------------------------------------------------------
     # Model browser API (called from Field Builder)
     # ------------------------------------------------------------------
 

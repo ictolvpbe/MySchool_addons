@@ -22,10 +22,16 @@
     <t t-name="myschool_projects.WbsNode">
         <div class="o_msp_node">
             <div class="o_msp_node_row"
-                 t-att-class="{ 'o_msp_node_selected': isSelected }"
+                 draggable="true"
+                 t-att-class="{ 'o_msp_node_selected': isSelected, 'o_msp_node_drop': isDropTarget }"
                  t-attf-style="padding-left: {{ level * 14 + 6 }}px;"
                  t-on-click="onRowClick"
-                 t-on-contextmenu="onContextMenu">
+                 t-on-contextmenu="onContextMenu"
+                 t-on-dragstart="onDragStart"
+                 t-on-dragover="onDragOver"
+                 t-on-dragleave="onDragLeave"
+                 t-on-drop="onDrop"
+                 t-on-dragend="onDragEnd">
                 <span class="o_msp_caret" t-if="hasChildren" t-on-click="onCaretClick">
                     <i class="fa" t-att-class="isExpanded ? 'fa-caret-down' : 'fa-caret-right'"/>
                 </span>
@@ -38,9 +44,16 @@
                     <WbsNode node="child" level="childLevel"
                              selectedId="props.selectedId"
                              expanded="props.expanded"
+                             dragId="props.dragId"
+                             dropTargetId="props.dropTargetId"
                              onSelect="props.onSelect"
                              onToggle="props.onToggle"
-                             onContextMenu="props.onContextMenu"/>
+                             onContextMenu="props.onContextMenu"
+                             onDragStart="props.onDragStart"
+                             onDragOver="props.onDragOver"
+                             onDragLeave="props.onDragLeave"
+                             onDrop="props.onDrop"
+                             onDragEnd="props.onDragEnd"/>
                 </t>
             </div>
         </div>
@@ -352,10 +365,24 @@
                             <WbsNode node="node" level="0"
                                      selectedId="state.selectedId"
                                      expanded="state.expanded"
+                                     dragId="state.dragId"
+                                     dropTargetId="state.dropTargetId"
                                      onSelect.bind="selectProject"
                                      onToggle.bind="onToggle"
-                                     onContextMenu.bind="onNodeContextMenu"/>
+                                     onContextMenu.bind="onNodeContextMenu"
+                                     onDragStart.bind="onNodeDragStart"
+                                     onDragOver.bind="onNodeDragOver"
+                                     onDragLeave.bind="onNodeDragLeave"
+                                     onDrop.bind="onNodeDrop"
+                                     onDragEnd.bind="onNodeDragEnd"/>
                         </t>
+                        <div class="o_msp_root_dropzone"
+                             t-att-class="{ 'o_msp_dropzone_active': state.dropTargetId === 'root' }"
+                             t-on-dragover="onRootDragOver"
+                             t-on-dragleave="onRootDragLeave"
+                             t-on-drop="onRootDrop">
+                            Sleep hier voor niveau 0 (hoofdproject)
+                        </div>
                     </t>
                 </div>
             </div>
@@ -405,12 +432,14 @@
                                     t-att-class="state.view === 'kanban' ? 'btn-primary' : 'btn-secondary'"
                                     t-on-click="() => this.setView('kanban')">Board</button>
                             <button class="btn btn-sm"
-                                    t-att-class="state.view === 'list' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('list')">List</button>
-                            <button class="btn btn-sm"
                                     t-att-class="state.view === 'calendar' ? 'btn-primary' : 'btn-secondary'"
                                     t-on-click="() => this.setView('calendar')">Calendar</button>
                         </div>
+                        <button class="btn btn-sm btn-light ms-auto"
+                                t-on-click="applyProcess"
+                                title="Voeg een proces (uit de Process Composer) in als taken">
+                            <i class="fa fa-sitemap me-1"/>Voeg proces in
+                        </button>
                         <button class="btn btn-sm btn-light o_msp_openform"
                                 t-on-click="openProjectForm">Open form</button>
                     </div>
@@ -418,12 +447,12 @@
                     <div class="o_msp_content">
                         <!-- TABLE (custom hierarchical work-packages) -->
                         <t t-if="state.view === 'table'">
-                            <WorkPackageTable t-key="state.selectedId"
+                            <WorkPackageTable t-key="state.selectedId + '-' + state.taskReload"
                                               projectId="state.selectedId"/>
                         </t>
                         <!-- TIMELINE (custom gantt) -->
                         <t t-elif="state.view === 'timeline'">
-                            <GanttTimeline t-key="state.selectedId"
+                            <GanttTimeline t-key="state.selectedId + '-' + state.taskReload"
                                            projectId="state.selectedId"/>
                         </t>
                         <!-- OVERVIEW -->
@@ -483,7 +512,7 @@
                         </t>
                         <!-- BOARD / LIST / CALENDAR -->
                         <t t-else="">
-                            <View t-key="state.selectedId + '-' + state.view"
+                            <View t-key="state.selectedId + '-' + state.view + '-' + state.taskReload"
                                   t-props="taskViewProps"/>
                         </t>
                     </div>

@@ -39,6 +39,8 @@
                             string="Save as template" invisible="is_template"/>
                     <button name="action_add_task_template" type="object"
                             string="Add from task template" invisible="is_template"/>
+                    <button name="action_apply_process" type="object"
+                            string="Voeg proces in" invisible="is_template"/>
                     <field name="state" widget="statusbar"
                            options="{'clickable': '1'}"/>
                 </header>
@@ -312,6 +314,33 @@
         <field name="name">Project Categories</field>
         <field name="res_model">myschool.project.category</field>
         <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- ============ INSERT PROCESS WIZARD ============ -->
+    <record id="myschool_project_process_apply_view_form" model="ir.ui.view">
+        <field name="name">myschool.project.process.apply.form</field>
+        <field name="model">myschool.project.process.apply</field>
+        <field name="arch" type="xml">
+            <form string="Voeg proces in">
+                <group>
+                    <field name="process_id" options="{'no_create': True}"
+                           domain="[('state', '=', 'approved')] if not show_unapproved else []"/>
+                    <field name="show_unapproved"/>
+                    <field name="project_id"/>
+                    <field name="parent_id"/>
+                </group>
+                <p class="text-muted">
+                    Elke processtap wordt een work item onder een phase met de
+                    procesnaam. De flow tussen stappen wordt vertaald naar
+                    afhankelijkheden.
+                </p>
+                <footer>
+                    <button name="action_apply" type="object" string="Voeg in"
+                            class="btn-primary"/>
+                    <button string="Annuleer" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
     </record>
 
 </odoo>

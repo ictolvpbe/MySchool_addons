@@ -45,9 +45,16 @@ export class WbsNode extends Component {
         level: { type: Number, optional: true },
         selectedId: { type: [Number, Boolean], optional: true },
         expanded: { type: Object, optional: true },
+        dragId: { type: [Number, Boolean], optional: true },
+        dropTargetId: { type: [Number, String, Boolean], optional: true },
         onSelect: { type: Function, optional: true },
         onToggle: { type: Function, optional: true },
         onContextMenu: { type: Function, optional: true },
+        onDragStart: { type: Function, optional: true },
+        onDragOver: { type: Function, optional: true },
+        onDragLeave: { type: Function, optional: true },
+        onDrop: { type: Function, optional: true },
+        onDragEnd: { type: Function, optional: true },
     };
 
     get level() { return this.props.level || 0; }
@@ -59,6 +66,7 @@ export class WbsNode extends Component {
         return !!(this.props.expanded && this.props.expanded[this.props.node.id]);
     }
     get isSelected() { return this.props.selectedId === this.props.node.id; }
+    get isDropTarget() { return this.props.dropTargetId === this.props.node.id; }
     get pct() { return Math.round(this.props.node.progress || 0); }
 
     onRowClick(ev) {
@@ -72,6 +80,25 @@ export class WbsNode extends Component {
     onContextMenu(ev) {
         ev.stopPropagation();
         if (this.props.onContextMenu) this.props.onContextMenu(ev, this.props.node.id);
+    }
+
+    // ---- drag&drop: verplaats het project naar een ander niveau ----
+    onDragStart(ev) {
+        ev.stopPropagation();
+        if (this.props.onDragStart) this.props.onDragStart(ev, this.props.node.id);
+    }
+    onDragOver(ev) {
+        if (this.props.onDragOver) this.props.onDragOver(ev, this.props.node.id);
+    }
+    onDragLeave(ev) {
+        if (this.props.onDragLeave) this.props.onDragLeave(ev, this.props.node.id);
+    }
+    onDrop(ev) {
+        ev.stopPropagation();
+        if (this.props.onDrop) this.props.onDrop(ev, this.props.node.id);
+    }
+    onDragEnd(ev) {
+        if (this.props.onDragEnd) this.props.onDragEnd(ev);
     }
 }
 
@@ -267,6 +294,22 @@ export class WorkPackageTable extends Component {
         );
     }
 
+    /** Voeg een proces in als work items, optioneel onder ``parentId``. */
+    insertProcess(parentId) {
+        const context = { default_project_id: this.props.projectId };
+        if (parentId) context.default_parent_id = parentId;
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "myschool.project.process.apply",
+                views: [[false, "form"]],
+                target: "new",
+                context,
+            },
+            { onClose: () => this.load() },
+        );
+    }
+
     // ---- inline rename ----
     startRename(item) {
         this.state.editingId = item.id;
@@ -411,11 +454,15 @@ export class WorkPackageTable extends Component {
     get ctxItems() {
         const item = this.state.ctx && this.state.ctx.item;
         if (!item) {
-            return [{ action: "add", label: "Add", icon: "fa fa-plus" }];
+            return [
+                { action: "add", label: "Add", icon: "fa fa-plus" },
+                { action: "insert_process", label: "Voeg proces in", icon: "fa fa-sitemap" },
+            ];
         }
         const items = [
             { action: "add", label: "Add", icon: "fa fa-plus" },
             { action: "add_sub", label: "Add sub-item", icon: "fa fa-level-down" },
+            { action: "insert_process", label: "Voeg proces in", icon: "fa fa-sitemap" },
             { action: "properties", label: "Properties", icon: "fa fa-pencil-square-o" },
             { action: "rename", label: "Rename", icon: "fa fa-i-cursor" },
             { action: "move", label: "Move…", icon: "fa fa-arrows" },
@@ -430,6 +477,10 @@ export class WorkPackageTable extends Component {
     onCtxAction(action) {
         if (action === "add") { this.createItem(); return; }
         const item = this.state.ctx && this.state.ctx.item;
+        if (action === "insert_process") {
+            this.insertProcess(item ? item.id : false);
+            return;
+        }
         if (!item) return;
         switch (action) {
             case "add": this.createItem(); break;
@@ -754,6 +805,9 @@ export class ProjectWorkspace extends Component {
             loading: true,
             search: "",
             ctx: null,
+            dragId: false,
+            dropTargetId: false,
+            taskReload: 0,
         });
         onWillStart(async () => { await this.loadProjects(); });
     }
@@ -774,14 +828,20 @@ export class ProjectWorkspace extends Component {
                 { action: "add_project", label: "Add Project", icon: "fa fa-folder-o" },
             ];
         }
-        return [
+        const node = this.state.byId[this.state.ctx.id];
+        const items = [
             { action: "add_project", label: "Add Project", icon: "fa fa-folder-o" },
             { action: "add_sub", label: "Add sub-project", icon: "fa fa-sitemap" },
             { action: "rename", label: "Rename", icon: "fa fa-i-cursor" },
             { action: "properties", label: "Properties", icon: "fa fa-pencil-square-o" },
-            { divider: true },
-            { action: "delete", label: "Delete", icon: "fa fa-trash", danger: true },
+            { action: "move", label: "Verplaats onder…", icon: "fa fa-arrows" },
         ];
+        if (node && node.parent_id) {
+            items.push({ action: "to_root", label: "Naar niveau 0", icon: "fa fa-outdent" });
+        }
+        items.push({ divider: true });
+        items.push({ action: "delete", label: "Delete", icon: "fa fa-trash", danger: true });
+        return items;
     }
     onCtxAction(action) {
         const id = this.state.ctx && this.state.ctx.id;
@@ -790,6 +850,8 @@ export class ProjectWorkspace extends Component {
             case "add_sub": this._newProject(id); break;
             case "rename": this._renameProject(id); break;
             case "properties": this._openProjectForm(id); break;
+            case "move": this._moveProject(id); break;
+            case "to_root": this._reparentProject(id, false); break;
             case "delete": this._deleteProject(id); break;
         }
     }
@@ -843,6 +905,104 @@ export class ProjectWorkspace extends Component {
                 await this.loadProjects();
             },
         });
+    }
+
+    // ------------------------------------------------------------------
+    // Verplaats een project naar een ander niveau (drag&drop + context-menu)
+    // ------------------------------------------------------------------
+    _descendantIds(id) {
+        const root = this.state.byId[id];
+        const out = [];
+        if (!root) return out;
+        const walk = (n) => { n.children.forEach((c) => { out.push(c.id); walk(c); }); };
+        walk(root);
+        return out;
+    }
+    _isDescendant(rootId, nodeId) {
+        return this._descendantIds(rootId).includes(nodeId);
+    }
+    /** Mag het gesleepte project onder `targetId` (false = niveau 0)? */
+    _canDropProject(targetId) {
+        const id = this.state.dragId;
+        if (!id || id === targetId) return false;
+        if (targetId && this._isDescendant(id, targetId)) return false;  // geen cyclus
+        const node = this.state.byId[id];
+        const curParent = node && node.parent_id ? node.parent_id[0] : false;
+        if (curParent === targetId) return false;                        // geen no-op
+        return true;
+    }
+    async _reparentProject(id, parentId) {
+        try {
+            await this.orm.write("myschool.project", [id], { parent_id: parentId });
+        } catch (e) {
+            this.notification.add(
+                "Verplaatsen mislukt (zou een cyclus maken?).", { type: "danger" });
+            return;
+        }
+        if (parentId) this.state.expanded[parentId] = true;
+        await this.loadProjects();
+    }
+    _moveProject(id) {
+        const exclude = [id, ...this._descendantIds(id)];
+        this.dialog.add(SelectCreateDialog, {
+            resModel: "myschool.project",
+            title: "Verplaats onder…",
+            noCreate: true,
+            multiSelect: false,
+            domain: [["id", "not in", exclude]],
+            onSelected: async (resIds) => {
+                if (resIds && resIds.length) await this._reparentProject(id, resIds[0]);
+            },
+        });
+    }
+
+    // ---- drag&drop op de WBS-boom ----
+    onNodeDragStart(ev, id) {
+        this.state.dragId = id;
+        ev.dataTransfer.effectAllowed = "move";
+        ev.dataTransfer.setData("text/plain", String(id));
+    }
+    onNodeDragEnd() {
+        this.state.dragId = false;
+        this.state.dropTargetId = false;
+    }
+    onNodeDragOver(ev, id) {
+        if (this._canDropProject(id)) {
+            ev.preventDefault();
+            this.state.dropTargetId = id;
+        }
+    }
+    onNodeDragLeave(ev, id) {
+        if (this.state.dropTargetId === id) this.state.dropTargetId = false;
+    }
+    async onNodeDrop(ev, id) {
+        ev.preventDefault();
+        const dragId = this.state.dragId;
+        const ok = this._canDropProject(id);
+        this.state.dropTargetId = false;
+        this.state.dragId = false;
+        if (!dragId || !ok) return;
+        await this._reparentProject(dragId, id);
+    }
+    // root-dropzone = naar niveau 0 (hoofdproject)
+    onRootDragOver(ev) {
+        const id = this.state.dragId;
+        if (!id) return;
+        const node = this.state.byId[id];
+        if (node && !node.parent_id) return;     // al top-level → geen drop nodig
+        ev.preventDefault();
+        this.state.dropTargetId = "root";
+    }
+    onRootDragLeave() {
+        if (this.state.dropTargetId === "root") this.state.dropTargetId = false;
+    }
+    async onRootDrop(ev) {
+        ev.preventDefault();
+        const dragId = this.state.dragId;
+        this.state.dropTargetId = false;
+        this.state.dragId = false;
+        if (!dragId) return;
+        await this._reparentProject(dragId, false);
     }
 
     async loadProjects() {
@@ -916,6 +1076,24 @@ export class ProjectWorkspace extends Component {
         };
     }
 
+    /** Maak een taak aan vanuit de embedded Board/Calendar "Nieuw"-knop.
+     *  Na sluiten van het form remount de view (taskReload) zodat de nieuwe
+     *  taak meteen zichtbaar is. */
+    createTask() {
+        const id = this.state.selectedId;
+        if (!id) return;
+        return this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "myschool.project.task",
+                views: [[false, "form"]],
+                target: "new",
+                context: { default_project_id: id },
+            },
+            { onClose: () => { this.state.taskReload += 1; } },
+        );
+    }
+
     get taskViewProps() {
         const id = this.state.selectedId;
         return {
@@ -925,6 +1103,13 @@ export class ProjectWorkspace extends Component {
             context: { default_project_id: id },
             views: [[false, this.state.view]],
             display: { controlPanel: true },
+            // Verberg de "Workspace"-breadcrumb in de embedded control panel
+            // (knoppen + zoekbalk blijven).
+            noBreadcrumbs: true,
+            // Eigen create-handler: de standaard "Nieuw"-knop van de embedded
+            // Board/Calendar opent zo het task-form (werkt ook bij een leeg
+            // project, waar de Table-view nog geen rij-plusje toont).
+            createRecord: () => this.createTask(),
         };
     }
 
@@ -955,6 +1140,29 @@ export class ProjectWorkspace extends Component {
             views: [[false, "form"]],
             target: "current",
         });
+    }
+
+    /** Voeg een proces (uit de Process Composer) in het geselecteerde project
+     *  in als work items. Na sluiten herladen we de view + sidebar-tellers. */
+    applyProcess() {
+        const id = this.state.selectedId;
+        if (!id) return;
+        this.action.doAction(
+            {
+                type: "ir.actions.act_window",
+                res_model: "myschool.project.process.apply",
+                views: [[false, "form"]],
+                target: "new",
+                context: { default_project_id: id },
+            },
+            {
+                onClose: () => {
+                    this.state.taskReload += 1;
+                    this.loadProjects();
+                    if (this.state.view === "overview") this.loadOverview();
+                },
+            },
+        );
     }
 }
 

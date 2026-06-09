@@ -96,6 +96,29 @@
     opacity: .7;
     padding-right: 8px;
 }
+/* Drop-doel tijdens het verslepen van een project */
+.o_msp_node_drop,
+.o_msp_node_drop:hover {
+    outline: 2px dashed var(--ms-brand-1, #0d9488);
+    outline-offset: -2px;
+    background: rgba(13, 148, 136, 0.10);
+}
+/* Root-dropzone onder de boom = verplaats naar niveau 0 */
+.o_msp_root_dropzone {
+    margin: 8px 10px;
+    padding: 8px;
+    border: 2px dashed var(--ms-border, #dee2e6);
+    border-radius: 6px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--ms-text-muted, #adb5bd);
+    user-select: none;
+}
+.o_msp_root_dropzone.o_msp_dropzone_active {
+    border-color: var(--ms-brand-1, #0d9488);
+    background: rgba(13, 148, 136, 0.07);
+    color: var(--ms-brand-1, #0d9488);
+}
 
 /* ---------- Splitter ---------- */
 .o_msp_splitter {

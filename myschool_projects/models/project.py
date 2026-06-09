@@ -236,6 +236,62 @@ class MyschoolProject(models.Model):
             'context': {'default_project_id': self.id},
         }
 
+    def action_apply_process(self):
+        """Open de wizard om een proces (uit de Process Composer) in dit
+        project in te voegen als work items."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Voeg proces in',
+            'res_model': 'myschool.project.process.apply',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_project_id': self.id},
+        }
+
+    def apply_process(self, process, parent_id=False):
+        """Voeg een goedgekeurd proces in als work items.
+
+        Maakt één ``phase``-container met de procesnaam, met daaronder de
+        task/subprocess-stappen in flow-volgorde. De flow tussen stappen
+        (gateways doorgeknipt) wordt vertaald naar ``depends_on_ids``.
+        ``subprocess``-stappen worden een ``phase``, gewone stappen een
+        ``task``. Geeft de aangemaakte phase-container terug.
+
+        De gating op processtatus zit in de wizard (standaard enkel
+        goedgekeurde processen); deze methode voegt elk meegegeven proces in."""
+        self.ensure_one()
+        Task = self.env['myschool.project.task']
+        # 1) Container = phase met de procesnaam.
+        phase = Task.create({
+            'name': process.name,
+            'project_id': self.id,
+            'parent_id': parent_id or False,
+            'item_type': 'phase',
+            'description': process.description or False,
+            'state': 'todo',
+        })
+        # 2) Stappen als kinderen, in flow-volgorde.
+        id_map = {}
+        for seq, step in enumerate(process._ordered_task_steps(), start=1):
+            task = Task.create({
+                'name': step.name,
+                'project_id': self.id,
+                'parent_id': phase.id,
+                'item_type': 'phase' if step.step_type == 'subprocess' else 'task',
+                'sequence': seq * 10,
+                'description': step.description or False,
+                'state': 'todo',
+            })
+            id_map[step.id] = task.id
+        # 3) Flow → depends_on_ids (predecessors).
+        for src_step, tgt_step in process._task_step_flow():
+            src = id_map.get(src_step)
+            tgt = id_map.get(tgt_step)
+            if src and tgt and src != tgt:
+                Task.browse(tgt).write({'depends_on_ids': [(4, src)]})
+        return phase
+
     def action_open_milestones(self):
         self.ensure_one()
         return {

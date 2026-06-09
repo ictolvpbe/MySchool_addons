@@ -340,3 +340,78 @@ class TestProjectModel(TransactionCase):
         self.assertEqual(tmpl.name, 'Block')
         self.assertEqual(len(tmpl.child_ids), 1)
         self.assertEqual(tmpl.child_ids.name, 'sub')
+
+    # ---------------- proces invoegen ----------------
+
+    def _build_process(self, state='approved'):
+        """Bouw een proces: start → A(task) → G(gateway) → B(task) →
+        S(subprocess) → end, met de flow via connecties."""
+        Proc = self.env['myschool.process']
+        Step = self.env['myschool.process.step']
+        Conn = self.env['myschool.process.connection']
+        proc = Proc.create({'name': 'Aanwervingsproces',
+                            'description': 'demo', 'state': state})
+        s = {
+            'start': Step.create({'name': 'Start', 'step_type': 'start', 'map_id': proc.id}),
+            'A': Step.create({'name': 'Vacature opstellen', 'step_type': 'task',
+                              'description': 'opstellen', 'map_id': proc.id}),
+            'G': Step.create({'name': 'Akkoord?', 'step_type': 'gateway_exclusive',
+                              'map_id': proc.id}),
+            'B': Step.create({'name': 'Publiceren', 'step_type': 'task', 'map_id': proc.id}),
+            'S': Step.create({'name': 'Selectie', 'step_type': 'subprocess', 'map_id': proc.id}),
+            'end': Step.create({'name': 'Einde', 'step_type': 'end', 'map_id': proc.id}),
+        }
+        flow = [('start', 'A'), ('A', 'G'), ('G', 'B'), ('B', 'S'), ('S', 'end')]
+        for src, tgt in flow:
+            Conn.create({'map_id': proc.id, 'source_step_id': s[src].id,
+                         'target_step_id': s[tgt].id})
+        return proc
+
+    def test_apply_process_inserts_phase_with_steps(self):
+        proc = self._build_process()
+        proj = self.P.create({'name': 'P'})
+        phase = proj.apply_process(proc)
+        # Container = phase met de procesnaam
+        self.assertEqual(phase.item_type, 'phase')
+        self.assertEqual(phase.name, 'Aanwervingsproces')
+        self.assertEqual(phase.project_id, proj)
+        # Enkel task/subprocess-stappen worden work items (start/gateway/end niet)
+        names = phase.child_ids.mapped('name')
+        self.assertEqual(set(names), {'Vacature opstellen', 'Publiceren', 'Selectie'})
+        # subprocess → phase, gewone stap → task
+        selectie = phase.child_ids.filtered(lambda t: t.name == 'Selectie')
+        self.assertEqual(selectie.item_type, 'phase')
+        vacature = phase.child_ids.filtered(lambda t: t.name == 'Vacature opstellen')
+        self.assertEqual(vacature.item_type, 'task')
+
+    def test_apply_process_order_and_dependencies(self):
+        proc = self._build_process()
+        proj = self.P.create({'name': 'P'})
+        phase = proj.apply_process(proc)
+        ordered = phase.child_ids.sorted('sequence')
+        # Flow-volgorde: A → B → S (gateway doorgeknipt)
+        self.assertEqual(ordered.mapped('name'),
+                         ['Vacature opstellen', 'Publiceren', 'Selectie'])
+        vac, pub, sel = ordered[0], ordered[1], ordered[2]
+        # B(Publiceren) hangt af van A(Vacature) — gateway tussenin doorgeknipt
+        self.assertEqual(pub.depends_on_ids, vac)
+        # S(Selectie) hangt af van B(Publiceren)
+        self.assertEqual(sel.depends_on_ids, pub)
+        # A heeft geen voorganger (start telt niet mee)
+        self.assertFalse(vac.depends_on_ids)
+
+    def test_apply_process_under_parent(self):
+        proc = self._build_process()
+        proj = self.P.create({'name': 'P'})
+        anchor = self.T.create({'name': 'Fase 1', 'project_id': proj.id, 'item_type': 'phase'})
+        phase = proj.apply_process(proc, parent_id=anchor.id)
+        self.assertEqual(phase.parent_id, anchor)
+
+    def test_apply_process_allows_unapproved(self):
+        # De status-gating zit in de wizard (checkbox); apply_process zelf
+        # voegt elk meegegeven proces in — ook een niet-goedgekeurd.
+        proc = self._build_process(state='draft')
+        proj = self.P.create({'name': 'P'})
+        phase = proj.apply_process(proc)
+        self.assertEqual(phase.item_type, 'phase')
+        self.assertEqual(len(phase.child_ids), 3)
