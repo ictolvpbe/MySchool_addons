@@ -226,6 +226,13 @@ class TestMcpAppfoundry(HttpCase):
         self.assertEqual(self.project.test_run_count, 1)
         self.assertEqual(self.project.last_test_run_id, run)
         self.assertTrue(self.project.last_test_success)
+        # Regressie: elke MCP-call logt een sys.event met source='MCP'.
+        # Was kapot ('MCP' ontbrak in de source-selectie → ValueError, stil
+        # weggevangen door _log_call); de fix voegt 'MCP' toe.
+        mcp_events = self.env['myschool.sys.event'].sudo().search(
+            [('source', '=', 'MCP')])
+        self.assertTrue(
+            mcp_events, "MCP-call moet een sys.event met source='MCP' loggen")
 
     def test_report_test_run_marks_failure(self):
         result = self._call_tool('appfoundry_report_test_run', {
