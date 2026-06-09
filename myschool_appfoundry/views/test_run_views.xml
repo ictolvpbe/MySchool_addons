@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="appfoundry_test_run_view_list" model="ir.ui.view">
+        <field name="name">appfoundry.test.run.list</field>
+        <field name="model">appfoundry.test.run</field>
+        <field name="arch" type="xml">
+            <list decoration-success="success" decoration-danger="not success">
+                <field name="run_date"/>
+                <field name="test_tag"/>
+                <field name="total"/>
+                <field name="passed"/>
+                <field name="failed"/>
+                <field name="errors"/>
+                <field name="skipped" optional="hide"/>
+                <field name="duration" optional="hide"/>
+                <field name="branch" optional="hide"/>
+                <field name="commit" optional="hide"/>
+                <field name="success" widget="boolean_toggle" readonly="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="appfoundry_test_run_view_form" model="ir.ui.view">
+        <field name="name">appfoundry.test.run.form</field>
+        <field name="model">appfoundry.test.run</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <widget name="web_ribbon" title="Passed" bg_color="text-bg-success"
+                            invisible="not success"/>
+                    <widget name="web_ribbon" title="Failed" bg_color="text-bg-danger"
+                            invisible="success"/>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="project_id"/>
+                            <field name="release_id"/>
+                            <field name="test_tag"/>
+                            <field name="run_date"/>
+                            <field name="duration"/>
+                        </group>
+                        <group>
+                            <field name="total"/>
+                            <field name="passed"/>
+                            <field name="failed"/>
+                            <field name="errors"/>
+                            <field name="skipped"/>
+                            <field name="branch"/>
+                            <field name="commit"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Output" name="output">
+                            <field name="log"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+</odoo>

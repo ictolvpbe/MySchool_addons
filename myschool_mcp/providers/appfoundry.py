@@ -726,3 +726,81 @@ def create_sprint(env, project, name, date_start=None, date_end=None,
         vals['goal'] = goal
     sprint = env['appfoundry.sprint'].create(vals)
     return base.serialize_sprint(sprint, include_items=False)
+
+
+@McpRegistry.tool(
+    name='appfoundry_report_test_run',
+    description=(
+        'Record an automated test run for a project (e.g. from an Odoo '
+        '--test-enable run). Pass the totals; passed and success are '
+        'derived (success = no failures and no errors). Surfaces on the '
+        'project as a Test Runs smart button + a kanban badge.'
+    ),
+    input_schema={
+        'type': 'object',
+        'required': ['project', 'total'],
+        'properties': {
+            'project': {
+                'oneOf': [{'type': 'integer'}, {'type': 'string'}],
+                'description': 'Project id or code',
+            },
+            'total': {'type': 'integer', 'description': 'Total tests run'},
+            'failed': {'type': 'integer', 'default': 0},
+            'errors': {'type': 'integer', 'default': 0},
+            'skipped': {'type': 'integer', 'default': 0},
+            'test_tag': {'type': 'string',
+                         'description': 'The --test-tags value / module run'},
+            'duration': {'type': 'number', 'description': 'Seconds'},
+            'branch': {'type': 'string'},
+            'commit': {'type': 'string'},
+            'log': {'type': 'string', 'description': 'Raw output snippet'},
+            'release': {
+                'oneOf': [{'type': 'integer'}, {'type': 'string'}],
+                'description': 'Release id or name (same project)',
+            },
+        },
+    },
+    required_group=WRITE_GROUP,
+)
+def report_test_run(env, project, total, failed=0, errors=0, skipped=0,
+                    test_tag=None, duration=None, branch=None, commit=None,
+                    log=None, release=None):
+    proj = base.resolve_project(env, project)
+    vals = {
+        'project_id': proj.id,
+        'total': total,
+        'failed': failed,
+        'errors': errors,
+        'skipped': skipped,
+    }
+    if test_tag:
+        vals['test_tag'] = test_tag
+    if duration is not None:
+        vals['duration'] = duration
+    if branch:
+        vals['branch'] = branch
+    if commit:
+        vals['commit'] = commit
+    if log:
+        vals['log'] = log[:20000]
+    if release:
+        domain = [('project_id', '=', proj.id)]
+        if isinstance(release, int):
+            domain.append(('id', '=', release))
+        else:
+            domain.append(('name', '=', release))
+        rel = env['appfoundry.release'].search(domain, limit=1)
+        if rel:
+            vals['release_id'] = rel.id
+    run = env['appfoundry.test.run'].create(vals)
+    return {
+        'id': run.id,
+        'name': run.name,
+        'project': proj.code or proj.name,
+        'total': run.total,
+        'passed': run.passed,
+        'failed': run.failed,
+        'errors': run.errors,
+        'skipped': run.skipped,
+        'success': run.success,
+    }

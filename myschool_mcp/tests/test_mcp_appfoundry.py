@@ -204,3 +204,33 @@ class TestMcpAppfoundry(HttpCase):
         body_text = (msg.body or '')
         self.assertIn('<strong>Done by EOD.</strong>', body_text)
         self.assertIn('<li>step 1</li>', body_text)
+
+    # ------------------------------------------------------------------
+    # Test-run reporting (geautomatiseerde tests zichtbaar in AppFoundry)
+    # ------------------------------------------------------------------
+
+    def test_report_test_run_creates_run_and_rolls_up(self):
+        result = self._call_tool('appfoundry_report_test_run', {
+            'project': 'MCPT',
+            'total': 14, 'failed': 0, 'errors': 0,
+            'test_tag': 'myschool_account', 'duration': 12.5,
+        })
+        self.assertTrue(result['success'])
+        self.assertEqual(result['passed'], 14)
+        run = self.env['appfoundry.test.run'].browse(result['id'])
+        self.assertEqual(run.project_id, self.project)
+        self.assertEqual(run.test_tag, 'myschool_account')
+        # Project-rollup: smart-button-teller + laatste run + status.
+        self.project.invalidate_recordset()
+        self.assertEqual(self.project.test_run_count, 1)
+        self.assertEqual(self.project.last_test_run_id, run)
+        self.assertTrue(self.project.last_test_success)
+
+    def test_report_test_run_marks_failure(self):
+        result = self._call_tool('appfoundry_report_test_run', {
+            'project': 'MCPT', 'total': 10, 'failed': 2, 'errors': 1,
+        })
+        self.assertFalse(result['success'])
+        self.assertEqual(result['passed'], 7)
+        self.project.invalidate_recordset()
+        self.assertFalse(self.project.last_test_success)

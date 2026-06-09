@@ -29,6 +29,7 @@
         'views/project_views.xml',
         'views/item_views.xml',
         'views/test_item_views.xml',
+        'views/test_run_views.xml',
         'views/sprint_views.xml',
         'views/release_views.xml',
         'views/icon_config_views.xml',

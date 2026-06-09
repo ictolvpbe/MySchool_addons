@@ -15,6 +15,8 @@
                 <field name="open_bug_count"/>
                 <field name="process_map_count"/>
                 <field name="test_progress"/>
+                <field name="test_run_count"/>
+                <field name="last_test_success"/>
                 <field name="is_active"/>
                 <templates>
                     <t t-name="card">
@@ -37,6 +39,11 @@
                             </span>
                             <span title="Process Maps" t-if="record.process_map_count.raw_value > 0">
                                 <i class="fa fa-sitemap"/> <field name="process_map_count"/>
+                            </span>
+                            <span title="Automated tests" t-if="record.test_run_count.raw_value > 0"
+                                  t-att-class="record.last_test_success.raw_value ? 'text-success' : 'text-danger'">
+                                <i t-att-class="record.last_test_success.raw_value ? 'fa fa-flask' : 'fa fa-flask'"/>
+                                <t t-esc="record.last_test_success.raw_value ? 'tests OK' : 'tests FAIL'"/>
                             </span>
                         </div>
                         <div class="mt-2" t-if="record.test_progress.raw_value > 0">
@@ -114,6 +121,11 @@
                                 class="oe_stat_button" icon="fa-check-square-o"
                                 invisible="test_item_count == 0">
                             <field name="test_item_count" string="Test Items" widget="statinfo"/>
+                        </button>
+                        <button name="action_open_test_runs" type="object"
+                                class="oe_stat_button" icon="fa-flask"
+                                invisible="test_run_count == 0">
+                            <field name="test_run_count" string="Test Runs" widget="statinfo"/>
                         </button>
                     </div>
                     <div class="oe_title mb-2">

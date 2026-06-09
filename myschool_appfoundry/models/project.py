@@ -51,6 +51,13 @@ class AppfoundryProject(models.Model):
     test_item_ids = fields.One2many('appfoundry.test.item', 'project_id', string='Test Items')
     test_item_count = fields.Integer(compute='_compute_test_item_count', string='Test Item Count')
     test_progress = fields.Float(compute='_compute_test_progress', string='Test Progress')
+    # --- Geautomatiseerde test-runs (apart van de handmatige 3T-checklist) ---
+    test_run_ids = fields.One2many('appfoundry.test.run', 'project_id', string='Test Runs')
+    test_run_count = fields.Integer(compute='_compute_test_run', string='Test Run Count')
+    last_test_run_id = fields.Many2one(
+        'appfoundry.test.run', compute='_compute_test_run', string='Last Test Run')
+    last_test_success = fields.Boolean(
+        related='last_test_run_id.success', string='Last Tests Passed')
     phase = fields.Selection([
         ('idea', 'Idea'),
         ('design', 'Design'),
@@ -484,6 +491,24 @@ class AppfoundryProject(models.Model):
     def _compute_process_map_count(self):
         for project in self:
             project.process_map_count = len(project.process_map_ids)
+
+    @api.depends('test_run_ids', 'test_run_ids.run_date')
+    def _compute_test_run(self):
+        for project in self:
+            project.test_run_count = len(project.test_run_ids)
+            # test.run _order = run_date desc → eerste = meest recente.
+            project.last_test_run_id = project.test_run_ids[:1]
+
+    def action_open_test_runs(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Test Runs',
+            'res_model': 'appfoundry.test.run',
+            'view_mode': 'list,form',
+            'domain': [('project_id', '=', self.id)],
+            'context': {'default_project_id': self.id},
+        }
 
     def action_save_form(self):
         """Explicit save — the record is already saved before this method runs."""
