@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo noupdate="1">
+    <!--
+      Seed-provider voor de DEV-realm (SPEC-2026-AUTH-OIDC-ODOO §5 testplan).
+        realm   : olvp-dev   (AD olvp.test)
+        client  : odoo-myschool-dev2
+        instance: myschool-dev2  (https://myschool-dev2.olvp.be)
+
+      noupdate="1": admins mogen dit record in de UI aanpassen (vooral het
+      client-secret) zonder dat een module-upgrade het overschrijft.
+
+      VOOR GEBRUIK NOG TE DOEN (per instance, via de UI):
+        1. Plak het client_secret uit `create-oidc-client.sh` (op SRVV-ID-01).
+        2. Zet "Allowed" (enabled) aan.
+      Het secret staat bewust NIET in git.
+
+      PROD draait een ANDERE realm (olvp / id.olvp.be) en een eigen client ->
+      daar maak je een apart provider-record met de prod-endpoints.
+
+      Endpoints volgen het OIDC-discovery-patroon van Keycloak:
+        <issuer>/protocol/openid-connect/{auth,token,userinfo,certs}
+      issuer dev = https://id-test.olvp.be/realms/olvp-dev
+    -->
+    <record id="provider_keycloak_dev" model="auth.oauth.provider">
+        <field name="name">Keycloak (olvp-dev)</field>
+        <field name="flow">id_token_code</field>
+        <field name="client_id">odoo-myschool-dev2</field>
+        <!-- client_secret: per-instance in de UI invullen (niet in git) -->
+        <field name="scope">openid email profile</field>
+        <!-- enabled pas aanzetten nadat het secret ingevuld is -->
+        <field name="enabled" eval="False"/>
+        <field name="body">Inloggen met OLVP-account</field>
+        <field name="css_class">fa fa-fw fa-sign-in text-primary</field>
+        <field name="auth_endpoint"
+        >https://id-test.olvp.be/realms/olvp-dev/protocol/openid-connect/auth</field>
+        <field name="token_endpoint"
+        >https://id-test.olvp.be/realms/olvp-dev/protocol/openid-connect/token</field>
+        <field name="jwks_uri"
+        >https://id-test.olvp.be/realms/olvp-dev/protocol/openid-connect/certs</field>
+        <field name="validation_endpoint"
+        >https://id-test.olvp.be/realms/olvp-dev/protocol/openid-connect/userinfo</field>
+        <!-- data_endpoint bewust LEEG: de claims komen uit het id_token
+             (JWKS-decode); userinfo is de validation_endpoint hierboven. -->
+    </record>
+</odoo>

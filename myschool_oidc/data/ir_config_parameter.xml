@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <!--
+      auth_oauth-gotcha (SPEC-2026-AUTH-OIDC-ODOO §3B): stuur de client-
+      credentials in de Authorization-header (HTTP Basic) i.p.v. in de body.
+      Vastgesteld in de plumbing-test tegen Keycloak.
+
+      noupdate=0 zodat een module-upgrade dit weer recht zet als een admin
+      het per ongeluk uit zou zetten — het is een vaste eis, geen voorkeur.
+    -->
+    <record id="param_auth_oauth_authorization_header" model="ir.config_parameter">
+        <field name="key">auth_oauth.authorization_header</field>
+        <field name="value">True</field>
+    </record>
+</odoo>
