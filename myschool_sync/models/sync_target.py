@@ -24,6 +24,12 @@ class SyncTarget(models.Model):
     url = fields.Char(string='URL', required=True, help='Base URL of the slave instance (e.g. https://slave.example.com)')
     api_key = fields.Char(string='API Key', required=True, groups='base.group_system')
     is_active = fields.Boolean(string='Active', default=True)
+    # Koppeling naar het server-register (SRVMGR-7, lichte koppeling — review
+    # later). Optioneel & puur informatief in deze fase: de sync blijft op
+    # url/api_key draaien.
+    server_id = fields.Many2one(
+        'myschool.server', string='Server', ondelete='set null',
+        help='Optionele koppeling naar de server in het Server Manager-register.')
 
     # Per-model toggles
     sync_person = fields.Boolean(string='Sync Persons', default=True)

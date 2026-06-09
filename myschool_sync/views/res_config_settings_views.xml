@@ -2,24 +2,23 @@
 <odoo>
 
     <!-- ===========================================================
-         MySchool Sync — eigen tab in de MySchool-Settings primary view.
+         MySchool Sync — sectie in de standaard Odoo-Settings (tandwiel),
+         onder een eigen "Server Manager"-app-sectie (SRVMGR-7, D2).
 
-         Erft van myschool_admin.myschool_settings_form zodat deze
-         tab alleen verschijnt in de MySchool Instellingen-menu, niet
-         in Odoo's standaard Settings (tandwiel-icoon). myschool_sync
-         heeft myschool_admin al als dependency, dus de xmlid-ref
-         resolved zonder problemen.
+         Erft van base_setup.res_config_settings_view_form i.p.v. de
+         (verdwenen) admin-settingsform. Zo verschijnt de sync-config in
+         de gewone Instellingen-pagina, ontkoppeld van myschool_admin.
          =========================================================== -->
 
     <record id="res_config_settings_view_form_myschool_sync" model="ir.ui.view">
-        <field name="name">myschool.settings.tab.sync</field>
+        <field name="name">res.config.settings.servermanager.sync</field>
         <field name="model">res.config.settings</field>
-        <field name="inherit_id" ref="myschool_admin.myschool_settings_form"/>
+        <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
         <field name="priority">60</field>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
-                <app data-string="MySchool Sync" string="MySchool Sync"
-                     name="myschool_sync"
+                <app data-string="Server Manager" string="Server Manager"
+                     name="myschool_servermanager"
                      groups="myschool_core.group_myschool_core_admin">
 
                     <block title="Verbinding" name="ms_sync_connection">

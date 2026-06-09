@@ -19,7 +19,7 @@
     """,
     'author': 'MySchool OLVP',
     'license': 'LGPL-3',
-    'depends': ['myschool_core', 'myschool_admin'],
+    'depends': ['myschool_core', 'myschool_servermanager', 'base_setup'],
     'data': [
         # Security
         'security/myschool_sync_security.xml',
@@ -33,6 +33,7 @@
         # Views
         'views/sync_target_views.xml',
         'views/sync_log_views.xml',
+        'views/server_views.xml',
         'views/res_config_settings_views.xml',
         'views/menu_views.xml',
     ],

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Smart button "Sync Targets" op de server-form (SRVMGR-7) -->
+    <record id="view_server_form_sync" model="ir.ui.view">
+        <field name="name">myschool.server.form.sync</field>
+        <field name="model">myschool.server</field>
+        <field name="inherit_id" ref="myschool_servermanager.myschool_server_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button type="object" name="action_open_sync_targets"
+                        class="oe_stat_button" icon="fa-exchange"
+                        groups="myschool_sync.group_myschool_sync_admin"
+                        invisible="sync_target_count == 0">
+                    <field name="sync_target_count" widget="statinfo"
+                           string="Sync Targets"/>
+                </button>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
