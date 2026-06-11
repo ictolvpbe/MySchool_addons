@@ -330,19 +330,17 @@ def _fix_model_string_references(cr):
     mail_activity.res_model.
     """
     for old_pref, new_pref in MODEL_PREFIX_RENAMES.items():
-        plen = len(old_pref)
+        # ALLE updates hieronder lopen via _update_prefix_col, dat per
+        # tabel/kolom een to_regclass + information_schema-guard doet en
+        # ontbrekende tabellen/kolommen overslaat i.p.v. te crashen. Zo is het
+        # script robuust over Odoo-versies (bv. ir_property is in Odoo 17+
+        # verwijderd; mail_activity hoort niet tot base en kan in theorie
+        # ontbreken). Een platte-prefix-replace werkt voor zowel de pure
+        # model-string-kolommen als voor ir_property.res_id ('<model>,<id>')
+        # — in beide gevallen wordt enkel het prefix-deel vervangen.
 
-        # mail_activity.res_model  <- crash-oorzaak
-        cr.execute(
-            "UPDATE mail_activity "
-            "   SET res_model = %s || substring(res_model from %s) "
-            " WHERE res_model LIKE %s",
-            (new_pref, plen + 1, old_pref + '%'),
-        )
-        if cr.rowcount:
-            _logger.info(
-                '[1.0] mail_activity.res_model %s* -> %s* (%d)',
-                old_pref, new_pref, cr.rowcount)
+        # mail_activity.res_model  <- oorspronkelijke crash-oorzaak (KeyError)
+        _update_prefix_col(cr, 'mail_activity', 'res_model', old_pref, new_pref)
 
         # mail_activity_type.res_model (config; ook via XML herladen, maar
         # idempotent meenemen kan geen kwaad)
@@ -369,17 +367,12 @@ def _fix_model_string_references(cr):
         _update_prefix_col(
             cr, 'ir_model_fields', 'relation', old_pref, new_pref)
 
-        # ir_property.res_id  ==  '<model>,<id>'  (alleen prefix-deel)
-        cr.execute(
-            "UPDATE ir_property "
-            "   SET res_id = %s || substring(res_id from %s) "
-            " WHERE res_id LIKE %s",
-            (new_pref, plen + 1, old_pref + '%'),
-        )
-        if cr.rowcount:
-            _logger.info(
-                '[1.0] ir_property.res_id %s* -> %s* (%d)',
-                old_pref, new_pref, cr.rowcount)
+        # ir_property.res_id  ==  '<model>,<id>'  (alleen prefix-deel).
+        # LET OP: ir_property bestaat NIET MEER in Odoo 17+ (vervangen door
+        # company-dependent kolom-opslag). De to_regclass-guard in
+        # _update_prefix_col slaat de update over als de tabel ontbreekt,
+        # zodat dit op Odoo 19 niet langer crasht.
+        _update_prefix_col(cr, 'ir_property', 'res_id', old_pref, new_pref)
 
 
 # --------------------------------------------------------------------------
