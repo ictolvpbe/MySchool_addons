@@ -107,3 +107,57 @@ class TestRenameRegistryState(TransactionCase):
         rows = [r[0] for r in self.env.cr.fetchall()]
         self.assertFalse(
             rows, 'mail_activity verwijst nog naar oude modellen: %s' % rows)
+
+    # Alle TEKST-model-kolommen die de sweep nu dekt. Per (tabel, kolom): NA
+    # de migratie mag geen enkele waarde nog met een oude prefix beginnen.
+    # ir_model_data.model en ir_model_fields.model waren de tweede crash-
+    # oorzaak (KeyError 'professionalisering.vak' bij XML-herlaad).
+    _TEXT_MODEL_COLUMNS = [
+        ('ir_model_data', 'model'),
+        ('ir_model_fields', 'model'),
+        ('ir_model_fields', 'relation'),
+        ('ir_filters', 'model_id'),
+        ('ir_act_report_xml', 'model'),
+        ('ir_act_window', 'res_model'),
+        ('ir_act_client', 'res_model'),
+        ('ir_embedded_actions', 'parent_res_model'),
+        ('ir_ui_view', 'model'),
+        ('ir_attachment', 'res_model'),
+        ('mail_activity', 'res_model'),
+        ('mail_activity_type', 'res_model'),
+        ('mail_activity_plan', 'res_model'),
+        ('mail_message', 'model'),
+        ('mail_followers', 'res_model'),
+        ('mail_message_subtype', 'res_model'),
+        ('mail_template', 'model'),
+        ('myschool_letter_template', 'model'),
+    ]
+
+    def _column_exists(self, table, column):
+        self.env.cr.execute(
+            "SELECT 1 FROM information_schema.columns "
+            " WHERE table_schema = current_schema() "
+            "   AND table_name = %s AND column_name = %s",
+            (table, column))
+        return bool(self.env.cr.fetchone())
+
+    def test_no_text_column_points_to_legacy_model(self):
+        # Uitputtende guard: scan élke gedekte tekst-model-kolom die fysiek
+        # bestaat; geen enkele mag nog 'drukwerk.*' / 'activiteiten.*' /
+        # 'professionalisering.*' (zonder myschool_-prefix) bevatten.
+        offenders = {}
+        for table, column in self._TEXT_MODEL_COLUMNS:
+            if not self._column_exists(table, column):
+                continue  # tabel/kolom afwezig in deze (versie van de) DB
+            self.env.cr.execute(
+                'SELECT DISTINCT "%s" FROM "%s" '
+                ' WHERE "%s" LIKE %%s OR "%s" LIKE %%s OR "%s" LIKE %%s'
+                % (column, table, column, column, column),
+                ('drukwerk.%', 'activiteiten.%', 'professionalisering.%'))
+            stale = [r[0] for r in self.env.cr.fetchall()]
+            if stale:
+                offenders['%s.%s' % (table, column)] = stale
+        self.assertFalse(
+            offenders,
+            'tekst-model-kolommen wijzen nog naar oude modellen: %s'
+            % offenders)
