@@ -32,29 +32,48 @@ fresh install op een bezette tabel.
 
 Deze migratie is volledig in SQL geschreven (geen ``openupgradelib`` — die zit
 niet in de role-image en wordt nergens in de repo gebruikt). Ze repliceert wat
-``openupgrade.update_module_names`` + ``rename_models`` + ``rename_tables``
-zouden doen.
+``openupgrade.update_module_names`` + ``rename_models`` + ``rename_tables`` +
+``rename_columns`` zouden doen, INCLUSIEF de m2m-relatie-kolommen.
 
-Tweede iteratie (na partiële apply op myschool-test)
-----------------------------------------------------
-De eerste versie liep ver maar faalde bij het herladen van XML-data:
+Derde iteratie (na partiële apply op SCHONE pre-rename DB)
+---------------------------------------------------------
+De tweede versie liep de hele pre-migrate door (vak_data.xml-crash weg), maar
+het laden van de hernoemde modules crashte op de m2m relatie-tabellen:
 
-  ``KeyError: 'professionalisering.vak'`` /
-  ``ParseError ... vak_data.xml``
+  ``column "myschool_activiteiten_bus_id" referenced in foreign key constraint
+  does not exist``
 
-Oorzaak: TEKST-kolommen met een platte model-naam die NIET via een FK naar
-``ir_model.id`` meegaan, werden niet allemaal bijgewerkt. Concreet bleven
-``ir_model_data.model`` (xmlid-reconciliatie → ``env[ir_model_data.model]``)
-en ``ir_model_fields.model`` (owner-model, ~636 rijen) op de oude naam staan.
-``_fix_model_string_references`` is daarom uitgebreid tot een UITPUTTENDE
-sweep van álle base-/mail-/MySchool-tabellen met een model-naam-tekstkolom,
-geverifieerd tegen het Odoo-19-schema.
+Drie wortelproblemen, hier opgelost:
+
+  1. **m2m relatie-tabel werd hernoemd maar de KOLOMMEN erin niet.** Odoo
+     noemt m2m-kolommen ``<comodel_tabel>_id``; na het hernoemen van de
+     model-hoofdtabel moeten de kolommen in élke relatie-tabel mee. Opgelost
+     met ``_rename_m2m_columns`` (expliciete kolom-map + generieke afleiding).
+
+  2. **``carpool_rel`` werd DUBBEL.** De oude generieke tabel-rename pakte
+     ALLES wat met ``professionalisering_`` begon → hernoemde óók
+     ``professionalisering_carpool_rel`` (die in de nieuwe code zijn oude naam
+     ZONDER prefix houdt). Daarna creëerde de module-load de verse
+     ``professionalisering_carpool_rel`` → beide bestonden. Opgelost:
+     ``_rename_model_main_tables`` pakt nu UITSLUITEND de model-HOOFDtabellen
+     (één per ir_model.model, _auto=True), NOOIT relatie-tabellen. Relatie-
+     tabellen lopen 100 % via ``REL_TABLES`` met een expliciete EXCLUDE-set.
+
+  3. **Version-trap.** ``myschool_core``'s pre-migrate committe (version→1.0)
+     vóór de afhankelijke modules laadden en crashten → een herstart
+     re-triggert de 1.0-migratie niet meer (version al 1.0) én de oude
+     ``legacy_modules``-early-return short-circuitte. Opgelost: de re-run-guard
+     kijkt nu naar ELKE resterende oude-prefix-referentie (module, ir_model,
+     fysieke tabel, of m2m-kolom). Zolang er íets oud is, draait de volledige
+     idempotente migratie opnieuw. Een half-gemigreerde DB kan zo met een
+     herhaalde ``-u myschool_core`` (na version-reset) afgemaakt worden i.p.v.
+     restore-per-iteratie.
 
 Idempotent
 ----------
-Veilig her-draaien: elke stap checkt ``to_regclass`` / bestaande naam en slaat
-over wat al hernoemd is. Version blijft 1.0 zodat de migratie her-triggert
-zolang ze nog niet volledig is doorgelopen.
+Veilig her-draaien: elke stap checkt ``to_regclass`` / bestaande naam/kolom en
+slaat over wat al gemigreerd is. Version blijft 1.0 zodat de migratie
+her-triggert zolang ze nog niet volledig is doorgelopen.
 
 Auteur: Claude Opus 4.8 (1M context)
 """
@@ -82,36 +101,109 @@ MODEL_PREFIX_RENAMES = {
     'professionalisering.': 'myschool_professionalisering.',
 }
 
+# Tabel-prefix-vorm van bovenstaande (punt -> underscore). Gebruikt om m2m-
+# kolomnamen <comodel_tabel>_id af te leiden en hoofdtabel-namen te matchen.
+TABLE_PREFIX_RENAMES = {
+    old.replace('.', '_'): new.replace('.', '_')
+    for old, new in MODEL_PREFIX_RENAMES.items()
+}  # {'drukwerk_': 'myschool_drukwerk_', ...}
+
 # --------------------------------------------------------------------------
-# 2. Tabel-renames die NIET zuiver de model-tabelnaam volgen.
-#    De model-hoofdtabellen worden generiek hernoemd (zie _rename_tables);
-#    hier staan enkel de m2m relatie-tabellen waarvan de naam in de code
-#    expliciet gezet is en die mee-hernoemd werden in 8fced02.
+# 2. m2m RELATIE-tabellen — 100 % EXPLICIET.
 #
-#    LET OP: ``professionalisering_carpool_rel`` had in zowel oud als nieuw
-#    een EXPLICIETE relation-naam ZONDER prefix → blijft ongewijzigd, staat
-#    hier bewust NIET bij.
+#    De model-HOOFDtabellen worden generiek hernoemd o.b.v. ir_model
+#    (_rename_model_main_tables, _auto=True). Relatie-tabellen NIET: hun naam
+#    en kolommen volgen geen herleidbare 1-op-1 prefix-regel en de generieke
+#    sweep zou per ongeluk carpool_rel (zie EXCLUDE) meepakken. Daarom staat
+#    elke relatie-tabel hier expliciet, met:
+#       'new'  : nieuwe tabelnaam (None  -> tabel HOUDT zijn oude naam)
+#       'cols' : { oude_kolomnaam : nieuwe_kolomnaam }  (m2m <comodel>_id's)
+#
+#    LET OP de drie subtiele gevallen uit de live-inventaris:
+#      * activiteiten_bus_myschool_org_rel : TABELNAAM blijft (begint niet met
+#        een te-hernoemen model-prefix), maar KOLOM activiteiten_bus_id moet
+#        myschool_activiteiten_bus_id worden.
+#      * ir_attachment_professionalisering_record_rel : TABELNAAM begint met
+#        'ir_attachment_' → werd door de oude generieke sweep gemist; KOLOM
+#        professionalisering_record_id moet mee.
+#      * professionalisering_carpool_rel : staat in EXCLUDE (tabel HOUDT oude
+#        naam, want de nieuwe code hardcodeert die ZONDER prefix), MAAR de
+#        KOLOM professionalisering_id -> myschool_professionalisering_id moet
+#        WÉL hernoemd worden.
 # --------------------------------------------------------------------------
-M2M_TABLE_RENAMES = {
-    # activiteiten.record
-    'activiteiten_record_klas_rel': 'myschool_activiteiten_record_klas_rel',
-    'activiteiten_record_leerkracht_rel':
-        'myschool_activiteiten_record_leerkracht_rel',
+REL_TABLES = {
+    # --- activiteiten.record ---------------------------------------------
+    'activiteiten_record_klas_rel': {
+        'new': 'myschool_activiteiten_record_klas_rel',
+        'cols': {'activiteiten_record_id': 'myschool_activiteiten_record_id'},
+    },
+    'activiteiten_record_leerkracht_rel': {
+        'new': 'myschool_activiteiten_record_leerkracht_rel',
+        'cols': {'activiteiten_record_id': 'myschool_activiteiten_record_id'},
+    },
     # activiteiten.record.document_ids (auto-named: <table>_ir_attachment_rel)
-    'activiteiten_record_ir_attachment_rel':
-        'myschool_activiteiten_record_ir_attachment_rel',
-    # activiteiten.bus (expliciete relation-namen)
-    'activiteiten_bus_beschikbare_klas_rel':
-        'myschool_activiteiten_bus_beschikbare_klas_rel',
-    'activiteiten_bus_beschikbare_lk_rel':
-        'myschool_activiteiten_bus_beschikbare_lk_rel',
-    # drukwerk.record
-    'drukwerk_record_klas_rel': 'myschool_drukwerk_record_klas_rel',
-    'drukwerk_record_student_rel': 'myschool_drukwerk_record_student_rel',
-    # professionalisering.record.bewijs_document_ids (auto-named)
-    'professionalisering_record_ir_attachment_rel':
-        'myschool_professionalisering_record_ir_attachment_rel',
+    'activiteiten_record_ir_attachment_rel': {
+        'new': 'myschool_activiteiten_record_ir_attachment_rel',
+        'cols': {'activiteiten_record_id': 'myschool_activiteiten_record_id'},
+    },
+    # --- activiteiten.bus -------------------------------------------------
+    'activiteiten_bus_beschikbare_klas_rel': {
+        'new': 'myschool_activiteiten_bus_beschikbare_klas_rel',
+        'cols': {'activiteiten_bus_id': 'myschool_activiteiten_bus_id'},
+    },
+    'activiteiten_bus_beschikbare_lk_rel': {
+        'new': 'myschool_activiteiten_bus_beschikbare_lk_rel',
+        'cols': {'activiteiten_bus_id': 'myschool_activiteiten_bus_id'},
+    },
+    # activiteiten.bus M2M naar myschool.org: TABELNAAM blijft (begint niet
+    # met activiteiten_ na sort? -> hij begint met 'activiteiten_bus_' dus zou
+    # door een naïeve prefix-match gepakt worden; daarom EXPLICIET met
+    # new=None om hem ongemoeid te laten qua tabelnaam — enkel de kolom gaat
+    # mee). Uit de live-inventaris: kolom activiteiten_bus_id moet hernoemd.
+    'activiteiten_bus_myschool_org_rel': {
+        'new': None,  # tabelnaam blijft
+        'cols': {'activiteiten_bus_id': 'myschool_activiteiten_bus_id'},
+    },
+    # --- drukwerk.record --------------------------------------------------
+    'drukwerk_record_klas_rel': {
+        'new': 'myschool_drukwerk_record_klas_rel',
+        'cols': {'drukwerk_record_id': 'myschool_drukwerk_record_id'},
+    },
+    'drukwerk_record_student_rel': {
+        'new': 'myschool_drukwerk_record_student_rel',
+        'cols': {'drukwerk_record_id': 'myschool_drukwerk_record_id'},
+    },
+    # --- professionalisering.record --------------------------------------
+    # bewijs_document_ids: auto-named ir_attachment-zijde. TABELNAAM begint met
+    # 'ir_attachment_' → houdt zijn naam (new=None); kolom moet mee.
+    'ir_attachment_professionalisering_record_rel': {
+        'new': None,  # tabelnaam blijft (ir_attachment_-prefix)
+        'cols': {
+            'professionalisering_record_id':
+                'myschool_professionalisering_record_id',
+        },
+    },
+    # --- professionalisering (carpool) -----------------------------------
+    # carpool_rel HOUDT zijn oude tabelnaam (nieuwe code hardcodeert die
+    # ZONDER prefix). Maar de comodel-kolom professionalisering_id moet mee.
+    'professionalisering_carpool_rel': {
+        'new': None,  # EXCLUDE van tabel-rename; naam blijft
+        'cols': {
+            'professionalisering_id': 'myschool_professionalisering_id',
+        },
+    },
 }
+
+# Relatie-tabellen die hun OUDE tabelnaam houden (new is None). Wordt gebruikt
+# als EXCLUDE-set in _rename_model_main_tables zodat de generieke hoofdtabel-
+# sweep ze met geen mogelijkheid alsnog hernoemt.
+REL_TABLES_KEEP_NAME = {
+    old for old, spec in REL_TABLES.items() if spec['new'] is None
+}
+
+# Alle relatie-tabelnamen (oud), ongeacht of ze hernoemd worden. Gebruikt om
+# in _rename_model_main_tables ELKE relatie-tabel uit te sluiten.
+ALL_REL_TABLE_NAMES = set(REL_TABLES.keys())
 
 # NB: tabellen die via een FK naar ir_model.id wijzen (ir_model_access,
 # ir_rule, ir_model_fields.model_id, ir_cron/ir_act_server.model_id,
@@ -131,26 +223,94 @@ def migrate(cr, version):
 
     _logger.info('[myschool_core 1.0] start data-behoudende module-rename')
 
-    # Voer alleen uit als er werkelijk nog oude namen zijn (idempotent).
-    cr.execute(
-        "SELECT name FROM ir_module_module WHERE name IN %s",
-        (tuple(MODULE_RENAMES.keys()),),
-    )
-    legacy_modules = {r[0] for r in cr.fetchall()}
-    if not legacy_modules:
+    # ------------------------------------------------------------------
+    # RE-RUN-GUARD (version-trap fix): draai zolang er ÉÉN oude-prefix-
+    # referentie bestaat — kijk niet enkel naar modulenamen (die in een
+    # half-gemigreerde DB al hernoemd zijn) maar naar de gehéle staat:
+    #   (a) ir_module_module met oude naam, of
+    #   (b) ir_model.model met oude prefix, of
+    #   (c) een fysieke hoofdtabel met oude prefix, of
+    #   (d) een m2m relatie-kolom die nog oud heet.
+    # Zo lang íéts oud is -> volledige idempotente migratie opnieuw.
+    # ------------------------------------------------------------------
+    if not _has_legacy_remnants(cr):
         _logger.info(
-            '[myschool_core 1.0] geen legacy-modulenamen aanwezig — '
-            'rename al uitgevoerd, niets te doen')
+            '[myschool_core 1.0] geen enkele oude-prefix-referentie meer '
+            '(module/model/tabel/m2m-kolom) — rename volledig voltooid, '
+            'niets te doen')
         return
 
     _rename_modules(cr)
     _rename_models(cr)
     _rename_model_main_tables(cr)
-    _rename_m2m_tables(cr)
+    _rename_rel_tables(cr)
+    _rename_m2m_columns(cr)
     _fix_model_string_references(cr)
     _drop_stale_report_views(cr)
 
-    _logger.info('[myschool_core 1.0] module-rename voltooid')
+    if _has_legacy_remnants(cr):
+        # Niet fataal (de module-load die hierna volgt kan nog falen op een
+        # niet-voorzien overblijfsel), maar log nadrukkelijk zodat een tweede
+        # -u myschool_core (na version-reset) gericht kan afmaken.
+        _logger.warning(
+            '[myschool_core 1.0] migratie liep door maar er resteren nog '
+            'oude-prefix-referenties; her-draai -u myschool_core na een '
+            'version-reset om af te maken (zie module-docstring).')
+    else:
+        _logger.info('[myschool_core 1.0] module-rename voltooid (geen '
+                     'oude-prefix-referenties meer)')
+
+
+# --------------------------------------------------------------------------
+def _has_legacy_remnants(cr):
+    """True zolang ergens nog een oude-prefix-referentie bestaat.
+
+    Robuuster dan een loutere ``legacy_modules``-check: in een half-gemigreerde
+    DB zijn de modulenamen al hernoemd terwijl een tabel of m2m-kolom nog oud
+    is. Deze guard maakt de migratie écht her-draaibaar.
+    """
+    # (a) Module-namen.
+    cr.execute(
+        "SELECT 1 FROM ir_module_module WHERE name IN %s LIMIT 1",
+        (tuple(MODULE_RENAMES.keys()),),
+    )
+    if cr.fetchone():
+        return True
+
+    # (b) ir_model met oude prefix.
+    like_clauses = ' OR '.join("model LIKE %s" for _ in MODEL_PREFIX_RENAMES)
+    cr.execute(
+        "SELECT 1 FROM ir_model WHERE %s LIMIT 1" % like_clauses,
+        tuple(p + '%' for p in MODEL_PREFIX_RENAMES),
+    )
+    if cr.fetchone():
+        return True
+
+    # (c) Fysieke hoofdtabel met oude prefix (relatie-tabellen uitgesloten:
+    #     sommige houden bewust hun oude naam).
+    for old_pref in TABLE_PREFIX_RENAMES:
+        cr.execute(
+            "SELECT tablename FROM pg_tables "
+            " WHERE schemaname = current_schema() AND tablename LIKE %s",
+            (old_pref + '%',),
+        )
+        for (tbl,) in cr.fetchall():
+            new_pref = TABLE_PREFIX_RENAMES[old_pref]
+            if tbl.startswith(new_pref):
+                continue  # al hernoemd
+            if tbl in ALL_REL_TABLE_NAMES:
+                continue  # relatie-tabel, apart afgehandeld
+            return True
+
+    # (d) m2m relatie-kolom die nog oud heet.
+    for old_tbl, spec in REL_TABLES.items():
+        cur_tbl = old_tbl if spec['new'] is None else spec['new']
+        for old_col in spec['cols']:
+            if _column_exists(cr, old_tbl, old_col) or \
+                    _column_exists(cr, cur_tbl, old_col):
+                return True
+
+    return False
 
 
 # --------------------------------------------------------------------------
@@ -286,60 +446,135 @@ def _rename_models(cr):
 
 # --------------------------------------------------------------------------
 def _rename_model_main_tables(cr):
-    """Hernoem elke fysieke hoofdtabel met oude prefix naar nieuwe prefix.
-    Generiek o.b.v. ir_model: voor elk model met nieuwe prefix berekenen we
-    oude/nieuwe tabelnaam en hernoemen we als de oude tabel bestaat en de
-    nieuwe nog niet.
-    """
-    for old_pref, new_pref in MODEL_PREFIX_RENAMES.items():
-        old_tbl_pref = old_pref.replace('.', '_')    # drukwerk_
-        new_tbl_pref = new_pref.replace('.', '_')    # myschool_drukwerk_
+    """Hernoem elke fysieke MODEL-HOOFDtabel met oude prefix naar nieuwe prefix.
 
-        # Vraag de catalog op voor tabellen die met de oude prefix beginnen,
-        # maar NIET met de nieuwe (myschool_drukwerk_* begint ook met... nee:
-        # 'drukwerk_' is geen prefix van 'myschool_drukwerk_'; wel omgekeerd,
-        # dus we filteren expliciet de reeds-hernoemde uit).
-        cr.execute(
-            "SELECT tablename FROM pg_tables "
-            " WHERE schemaname = current_schema() "
-            "   AND tablename LIKE %s",
-            (old_tbl_pref + '%',),
-        )
-        for (tbl,) in cr.fetchall():
-            if tbl.startswith(new_tbl_pref):
-                continue  # al hernoemd in een vorige run
-            new_tbl = new_tbl_pref + tbl[len(old_tbl_pref):]
-            # m2m-rel-tabellen worden apart afgehandeld (expliciete map);
-            # sla ze hier over om dubbele logica te vermijden.
-            if tbl in M2M_TABLE_RENAMES:
-                continue
-            _rename_table(cr, tbl, new_tbl)
+    UITSLUITEND hoofdtabellen: voor elk ir_model met de nieuwe prefix berekenen
+    we oude/nieuwe tabelnaam en hernoemen we als de oude tabel bestaat en de
+    nieuwe nog niet. Relatie-tabellen (ALL_REL_TABLE_NAMES) worden HIER nooit
+    aangeraakt — die lopen 100 % via _rename_rel_tables. Dat voorkomt o.a. de
+    dubbele carpool_rel (die zijn oude naam houdt).
+
+    We leiden de hoofdtabellen af uit ir_model i.p.v. uit een naïeve pg_tables-
+    prefix-scan, zodat we per ir_model precies één hoofdtabel raken en geen
+    relatie-/view-tabel per ongeluk meepakken.
+    """
+    cr.execute("SELECT model FROM ir_model")
+    for (model,) in cr.fetchall():
+        # ir_model is op dit punt al hernoemd (nieuwe prefix). Leid de oude
+        # tabelnaam af door de nieuwe model-prefix terug te mappen.
+        new_tbl = model.replace('.', '_')
+        old_tbl = _reverse_table_prefix(new_tbl)
+        if old_tbl is None or old_tbl == new_tbl:
+            continue  # model zonder te-hernoemen prefix
+        if old_tbl in ALL_REL_TABLE_NAMES or old_tbl in REL_TABLES_KEEP_NAME:
+            continue  # relatie-tabel: nooit hier
+        _rename_table(cr, old_tbl, new_tbl)
 
 
 # --------------------------------------------------------------------------
-def _rename_m2m_tables(cr):
-    """Hernoem de expliciet-genoemde m2m relatie-tabellen + hun registratie in
-    ir_model_relation (zodat een latere uninstall de juiste tabel target en er
-    geen stale rij blijft staan naar een niet-bestaande tabel)."""
-    for old, new in M2M_TABLE_RENAMES.items():
-        _rename_table(cr, old, new)
+def _rename_rel_tables(cr):
+    """Hernoem de m2m relatie-tabellen volgens REL_TABLES (100 % expliciet).
+
+    Voor tabellen met ``new is None`` blijft de naam ongewijzigd (carpool_rel,
+    ir_attachment_*-zijde, activiteiten_bus_myschool_org_rel). Alleen tabellen
+    met een echte nieuwe naam worden hernoemd; een eventuele reeds-bestaande
+    nieuwe (lege) duplicaat wordt idempotent opgeruimd.
+    """
+    for old, spec in REL_TABLES.items():
+        new = spec['new']
+        if new is None:
+            continue  # tabel houdt zijn naam
+
+        old_exists = _table_exists(cr, old)
+        new_exists = _table_exists(cr, new)
+
+        if old_exists and new_exists:
+            # Beide bestaan -> de module-load (of een vorige run) creëerde al
+            # de nieuwe. Droppen we de LEGE van de twee. Voorkeur: drop de
+            # nieuwe als die leeg is en de oude data heeft; anders drop de
+            # oude als die leeg is.
+            new_cnt = _row_count(cr, new)
+            old_cnt = _row_count(cr, old)
+            if new_cnt == 0:
+                cr.execute('DROP TABLE IF EXISTS "%s" CASCADE' % new)
+                _logger.info(
+                    '[1.0] lege duplicaat-rel-tabel %s gedropt, %s wordt '
+                    'hernoemd (%d rijen)', new, old, old_cnt)
+                new_exists = False
+            elif old_cnt == 0:
+                cr.execute('DROP TABLE IF EXISTS "%s" CASCADE' % old)
+                _logger.info(
+                    '[1.0] lege oude-rel-tabel %s gedropt; %s (%d rijen) '
+                    'behouden', old, new, new_cnt)
+                old_exists = False
+            else:
+                _logger.warning(
+                    '[1.0] ZOWEL %s (%d) als %s (%d) bevat data — handmatig '
+                    'samenvoegen vereist, geen automatische merge',
+                    old, old_cnt, new, new_cnt)
+                continue
+
+        if old_exists and not new_exists:
+            cr.execute('ALTER TABLE "%s" RENAME TO "%s"' % (old, new))
+            _logger.info('[1.0] rel-tabel %s -> %s', old, new)
+
         # ir_model_relation.name bijwerken (module/model-FK volgen automatisch).
-        cr.execute("SELECT to_regclass('public.ir_model_relation')")
-        if cr.fetchone()[0] is None:
+        if _table_exists(cr, 'ir_model_relation'):
+            cr.execute(
+                "DELETE FROM ir_model_relation WHERE name = %s "
+                "  AND EXISTS (SELECT 1 FROM ir_model_relation WHERE name = %s)",
+                (new, old),
+            )
+            cr.execute(
+                "UPDATE ir_model_relation SET name = %s WHERE name = %s",
+                (new, old),
+            )
+            if cr.rowcount:
+                _logger.info('[1.0] ir_model_relation %s -> %s', old, new)
+
+
+# --------------------------------------------------------------------------
+def _rename_m2m_columns(cr):
+    """Hernoem de comodel-kolommen (<oude_model_tabel>_id) in élke relatie-
+    tabel naar hun nieuwe naam. Dit is de fix voor de FK-crash:
+
+      ``column "myschool_activiteiten_bus_id" referenced in foreign key
+        constraint does not exist``
+
+    Per relatie-tabel:
+      1. Pas de EXPLICIETE kolom-map uit REL_TABLES toe (idempotent, guarded).
+      2. Leid daarbovenop GENERIEK eventuele overige comodel-kolommen af: elke
+         kolom die exact ``<oude_model_tabel>_id`` heet en waarvoor een
+         te-hernoemen tabel-prefix geldt, krijgt ``<nieuwe_model_tabel>_id``.
+         Zo blijven we robuust mocht een relatie-tabel een niet-gemapte
+         comodel-kolom hebben.
+    """
+    for old_tbl, spec in REL_TABLES.items():
+        cur_tbl = old_tbl if spec['new'] is None else spec['new']
+        # Tabel kan onder oude of nieuwe naam bestaan (afhankelijk van waar de
+        # run zit). Bepaal de fysiek bestaande naam.
+        phys_tbl = None
+        for cand in (cur_tbl, old_tbl):
+            if _table_exists(cr, cand):
+                phys_tbl = cand
+                break
+        if phys_tbl is None:
             continue
-        # Verwijder een eventueel reeds bestaande nieuwe-naam-rij om een
-        # unique-botsing bij her-draaien te vermijden, hernoem dan de oude.
+
+        # (1) Expliciete map.
+        for old_col, new_col in spec['cols'].items():
+            _rename_column(cr, phys_tbl, old_col, new_col)
+
+        # (2) Generieke afleiding voor overige comodel-kolommen.
         cr.execute(
-            "DELETE FROM ir_model_relation WHERE name = %s "
-            "  AND EXISTS (SELECT 1 FROM ir_model_relation WHERE name = %s)",
-            (new, old),
+            "SELECT column_name FROM information_schema.columns "
+            " WHERE table_schema = current_schema() AND table_name = %s",
+            (phys_tbl,),
         )
-        cr.execute(
-            "UPDATE ir_model_relation SET name = %s WHERE name = %s",
-            (new, old),
-        )
-        if cr.rowcount:
-            _logger.info('[1.0] ir_model_relation %s -> %s', old, new)
+        for (col,) in cr.fetchall():
+            new_col = _apply_table_prefix_to_column(col)
+            if new_col and new_col != col:
+                _rename_column(cr, phys_tbl, col, new_col)
 
 
 # --------------------------------------------------------------------------
@@ -497,12 +732,60 @@ def _apply_prefix(model):
     return model
 
 
+def _reverse_table_prefix(new_tbl):
+    """Geef de OUDE tabelnaam terug voor een nieuwe (myschool_-prefixed)
+    hoofdtabel, of None als er geen te-hernoemen prefix op slaat.
+    """
+    for old_pref, new_pref in TABLE_PREFIX_RENAMES.items():
+        if new_tbl.startswith(new_pref):
+            return old_pref + new_tbl[len(new_pref):]
+    return None
+
+
+def _apply_table_prefix_to_column(col):
+    """Map een m2m-comodel-kolom ``<oude_model_tabel>_id`` naar
+    ``<nieuwe_model_tabel>_id``. Alleen als de kolom EXACT op een te-hernoemen
+    tabel-prefix matcht én op ``_id`` eindigt. Geeft None als niets matcht.
+
+    We vergelijken op de tabel-prefix (bv. 'activiteiten_') én eisen dat de
+    kolom NIET al de nieuwe prefix draagt (anders dubbel-rename).
+    """
+    if not col.endswith('_id'):
+        return None
+    for old_pref, new_pref in TABLE_PREFIX_RENAMES.items():
+        if col.startswith(new_pref):
+            return None  # al nieuw
+        if col.startswith(old_pref):
+            return new_pref + col[len(old_pref):]
+    return None
+
+
+def _table_exists(cr, table):
+    cr.execute("SELECT to_regclass(%s)", ('public.' + table,))
+    return cr.fetchone()[0] is not None
+
+
+def _column_exists(cr, table, column):
+    if not _table_exists(cr, table):
+        return False
+    cr.execute(
+        "SELECT 1 FROM information_schema.columns "
+        " WHERE table_schema = current_schema() "
+        "   AND table_name = %s AND column_name = %s",
+        (table, column),
+    )
+    return bool(cr.fetchone())
+
+
+def _row_count(cr, table):
+    cr.execute('SELECT COUNT(*) FROM "%s"' % table)
+    return cr.fetchone()[0]
+
+
 def _rename_table(cr, old, new):
     """Hernoem tabel ``old`` naar ``new`` als old bestaat en new nog niet."""
-    cr.execute("SELECT to_regclass(%s)", ('public.' + old,))
-    old_exists = cr.fetchone()[0] is not None
-    cr.execute("SELECT to_regclass(%s)", ('public.' + new,))
-    new_exists = cr.fetchone()[0] is not None
+    old_exists = _table_exists(cr, old)
+    new_exists = _table_exists(cr, new)
 
     if not old_exists:
         return
@@ -515,21 +798,51 @@ def _rename_table(cr, old, new):
     _logger.info('[1.0] tabel %s -> %s', old, new)
 
 
+def _rename_column(cr, table, old_col, new_col):
+    """Hernoem ``table.old_col`` -> ``new_col`` als old_col bestaat en new_col
+    nog niet (idempotent / her-draaibaar)."""
+    if not _table_exists(cr, table):
+        return
+    if not _column_exists(cr, table, old_col):
+        return  # al hernoemd of nooit aanwezig
+    if _column_exists(cr, table, new_col):
+        # Beide kolommen bestaan -> de nieuwe is door de module-load al
+        # aangemaakt naast de oude. Dat zou tot een verkeerde (lege) FK leiden.
+        # Veilig: droppen we de (vermoedelijk lege) nieuwe en hernoemen de oude
+        # met data. Als de nieuwe NIET leeg is, laten we hem staan en droppen
+        # we de oude i.p.v. te raden.
+        cr.execute(
+            'SELECT COUNT(*) FROM "%s" WHERE "%s" IS NOT NULL'
+            % (table, new_col))
+        new_filled = cr.fetchone()[0]
+        if new_filled == 0:
+            cr.execute(
+                'ALTER TABLE "%s" DROP COLUMN "%s"' % (table, new_col))
+            cr.execute(
+                'ALTER TABLE "%s" RENAME COLUMN "%s" TO "%s"'
+                % (table, old_col, new_col))
+            _logger.info(
+                '[1.0] lege nieuwe kolom %s.%s gedropt; %s -> %s hernoemd',
+                table, new_col, old_col, new_col)
+        else:
+            cr.execute(
+                'ALTER TABLE "%s" DROP COLUMN "%s"' % (table, old_col))
+            _logger.warning(
+                '[1.0] %s.%s bestond al met data; oude %s gedropt',
+                table, new_col, old_col)
+        return
+    cr.execute(
+        'ALTER TABLE "%s" RENAME COLUMN "%s" TO "%s"'
+        % (table, old_col, new_col))
+    _logger.info('[1.0] kolom %s.%s -> %s', table, old_col, new_col)
+
+
 def _update_prefix_col(cr, table, col, old_pref, new_pref):
     """Vervang de prefix in ``table.col`` voor waarden die met old_pref
     beginnen. Slaat over als de tabel/kolom niet bestaat (idempotent / robuust
     over Odoo-versies).
     """
-    cr.execute("SELECT to_regclass(%s)", ('public.' + table,))
-    if cr.fetchone()[0] is None:
-        return
-    cr.execute(
-        "SELECT 1 FROM information_schema.columns "
-        " WHERE table_schema = current_schema() "
-        "   AND table_name = %s AND column_name = %s",
-        (table, col),
-    )
-    if not cr.fetchone():
+    if not _column_exists(cr, table, col):
         return
     cr.execute(
         'UPDATE "%s" SET "%s" = %%s || substring("%s" from %%s) '
