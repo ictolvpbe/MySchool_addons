@@ -48,7 +48,7 @@ Drie wortelproblemen, hier opgelost:
   1. **m2m relatie-tabel werd hernoemd maar de KOLOMMEN erin niet.** Odoo
      noemt m2m-kolommen ``<comodel_tabel>_id``; na het hernoemen van de
      model-hoofdtabel moeten de kolommen in élke relatie-tabel mee. Opgelost
-     met ``_rename_m2m_columns`` (expliciete kolom-map + generieke afleiding).
+     met ``_rename_m2m_columns`` (expliciete kolom-map).
 
   2. **``carpool_rel`` werd DUBBEL.** De oude generieke tabel-rename pakte
      ALLES wat met ``professionalisering_`` begon → hernoemde óók
@@ -68,6 +68,55 @@ Drie wortelproblemen, hier opgelost:
      idempotente migratie opnieuw. Een half-gemigreerde DB kan zo met een
      herhaalde ``-u myschool_core`` (na version-reset) afgemaakt worden i.p.v.
      restore-per-iteratie.
+
+Vierde iteratie (REL_TABLES afgeleid uit de ECHTE field-definities)
+-------------------------------------------------------------------
+De derde versie hernoemde de m2m-kolommen via een MENGELING van een
+hand-onderhouden map én een generieke ``<tabel>_id``-afleiding. Beide bevatten
+foute AANNAMES over relatie-tabel- en kolomnamen. Op een schone pre-rename-DB
+liep de pre-migrate volledig door, maar het laden crashte op:
+
+  ``ALTER TABLE "professionalisering_carpool_rel" ADD FOREIGN KEY
+    ("professionalisering_id") ... column "professionalisering_id" does not
+    exist``
+
+— want de generieke stap had ``professionalisering_id`` →
+``myschool_professionalisering_id`` hernoemd, terwijl
+``carpool_employee_ids`` die kolomnaam EXPLICIET als oude naam hardcodeert.
+
+Wortelprobleem: de ENIGE bron van waarheid is wat elk ``fields.Many2many`` in
+de NIEUWE code declareert (``relation``/``column1``/``column2``), aangevuld met
+Odoo-19's default-afleiding voor velden zonder die args. REL_TABLES is nu
+mechanisch uit die field-defs afgeleid (zie de per-veld audit bij REL_TABLES),
+NIET meer uit prefix-aannames. Concrete correcties t.o.v. iteratie 3:
+
+  * ``activiteiten.record.document_ids`` (DEFAULT): de sorteer-volgorde van de
+    twee modeltabellen FLIPT bij de rename →
+    ``activiteiten_record_ir_attachment_rel`` wordt
+    ``ir_attachment_myschool_activiteiten_record_rel`` (iteratie 3 mikte op het
+    niet-bestaande ``myschool_activiteiten_record_ir_attachment_rel``).
+  * ``professionalisering.record.bewijs_document_ids`` (DEFAULT):
+    ``ir_attachment_professionalisering_record_rel`` MOET hernoemd naar
+    ``ir_attachment_myschool_professionalisering_record_rel`` (iteratie 3 liet
+    de tabelnaam staan).
+  * ``activiteiten.bus.klas_ids`` (DEFAULT):
+    ``activiteiten_bus_myschool_org_rel`` MOET hernoemd naar
+    ``myschool_activiteiten_bus_myschool_org_rel`` (iteratie 3 liet hem staan).
+  * ``*.record.klas_ids/leerkracht_ids/student_ids`` (EXPLICIETE cols
+    ``record_id``/``org_id``/``person_id``): die kolommen bevatten GEEN prefix
+    → blijven ongewijzigd (iteratie 3 mikte fout op ``activiteiten_record_id``
+    enz., die nooit bestonden).
+  * ``professionalisering.record.carpool_employee_ids`` (oud == nieuw): tabel
+    én beide kolommen blijven ONGEMOEID. Staat in ``REL_TABLES_UNTOUCHED`` en
+    is uit de legacy-guard (c) uitgesloten zodat de her-draaibare guard niet
+    eindeloos op ``professionalisering_carpool_rel`` blijft hangen.
+  * Non-stored m2m (compute + ``store=False``, ook mét ``relation=``) maken in
+    Odoo-19 GEEN fysieke tabel → niet in de map (bus ``beschikbare_*``,
+    alle ``available_*``, de twee ``pp_picker_*`` picker-velden, org_students
+    ``student_ids``).
+
+De generieke kolom-afleiding is volledig verwijderd; alleen de field-afgeleide
+``REL_TABLES['cols']`` bepaalt nog kolom-renames.
 
 Idempotent
 ----------
@@ -109,101 +158,156 @@ TABLE_PREFIX_RENAMES = {
 }  # {'drukwerk_': 'myschool_drukwerk_', ...}
 
 # --------------------------------------------------------------------------
-# 2. m2m RELATIE-tabellen — 100 % EXPLICIET.
+# 2. m2m RELATIE-tabellen — AFGELEID UIT DE ECHTE field-definities.
 #
-#    De model-HOOFDtabellen worden generiek hernoemd o.b.v. ir_model
-#    (_rename_model_main_tables, _auto=True). Relatie-tabellen NIET: hun naam
-#    en kolommen volgen geen herleidbare 1-op-1 prefix-regel en de generieke
-#    sweep zou per ongeluk carpool_rel (zie EXCLUDE) meepakken. Daarom staat
-#    elke relatie-tabel hier expliciet, met:
-#       'new'  : nieuwe tabelnaam (None  -> tabel HOUDT zijn oude naam)
-#       'cols' : { oude_kolomnaam : nieuwe_kolomnaam }  (m2m <comodel>_id's)
+#    Vierde iteratie. De vorige REL_TABLES gebruikte generieke prefix-aannames
+#    ("<comodel_tabel>_id", "tabel begint met activiteiten_ -> hernoem") die
+#    FUNDAMENTEEL fout zijn: de ENIGE bron van waarheid is wat elk
+#    ``fields.Many2many`` in de NIEUWE code letterlijk declareert
+#    (``relation``, ``column1``, ``column2``), gecombineerd met Odoo-19's
+#    default-afleiding voor velden zonder expliciete args.
 #
-#    LET OP de drie subtiele gevallen uit de live-inventaris:
-#      * activiteiten_bus_myschool_org_rel : TABELNAAM blijft (begint niet met
-#        een te-hernoemen model-prefix), maar KOLOM activiteiten_bus_id moet
-#        myschool_activiteiten_bus_id worden.
-#      * ir_attachment_professionalisering_record_rel : TABELNAAM begint met
-#        'ir_attachment_' → werd door de oude generieke sweep gemist; KOLOM
-#        professionalisering_record_id moet mee.
-#      * professionalisering_carpool_rel : staat in EXCLUDE (tabel HOUDT oude
-#        naam, want de nieuwe code hardcodeert die ZONDER prefix), MAAR de
-#        KOLOM professionalisering_id -> myschool_professionalisering_id moet
-#        WÉL hernoemd worden.
+#    Odoo-19 default-afleiding (orm/fields_relational.py Many2many
+#    .setup_nonrelated, GEVERIFIEERD):
+#       * ALLEEN voor STORED velden wordt een relatie-tabel aangemaakt.
+#         Non-stored (compute + store=False) m2m -> relation/column1/column2
+#         = None -> GEEN fysieke tabel, ook NIET met expliciete ``relation=``.
+#       * relation = '%s_%s_rel' % tuple(sorted([model._table, comodel._table]))
+#         (ALFABETISCHE sort van de twee MODEL-tabelnamen!)
+#       * column1 = '%s_id' % model._table   (eigen model)
+#       * column2 = '%s_id' % comodel._table (comodel)
+#
+#    Per-veld AUDIT (veld -> oud (relation, col1, col2) -> nieuw), waaruit
+#    onderstaande map mechanisch volgt. model._table: activiteiten.record ->
+#    (myschool_)activiteiten_record, activiteiten.bus -> (..)activiteiten_bus,
+#    drukwerk.record -> (..)drukwerk_record, professionalisering.record ->
+#    (..)professionalisering_record. comodels: myschool.org -> myschool_org,
+#    myschool.person -> myschool_person, hr.employee -> hr_employee,
+#    ir.attachment -> ir_attachment.
+#
+#    STORED, MET tabel (staan hieronder):
+#      activiteiten.record.klas_ids        expliciet rel NIEUW; col1='record_id'
+#        oud activiteiten_record_klas_rel(record_id,org_id)
+#        -> myschool_activiteiten_record_klas_rel(record_id,org_id)  col ONGEW.
+#      activiteiten.record.leerkracht_ids  idem, col2='person_id'
+#        oud activiteiten_record_leerkracht_rel(record_id,person_id)
+#        -> myschool_activiteiten_record_leerkracht_rel(...)        col ONGEW.
+#      activiteiten.record.document_ids    DEFAULT (sort-order FLIPT!)
+#        oud activiteiten_record_ir_attachment_rel
+#              (activiteiten_record_id, ir_attachment_id)
+#        -> ir_attachment_myschool_activiteiten_record_rel
+#              (myschool_activiteiten_record_id, ir_attachment_id)
+#      activiteiten.bus.klas_ids           DEFAULT
+#        oud activiteiten_bus_myschool_org_rel
+#              (activiteiten_bus_id, myschool_org_id)
+#        -> myschool_activiteiten_bus_myschool_org_rel
+#              (myschool_activiteiten_bus_id, myschool_org_id)
+#      drukwerk.record.klas_ids            expliciet rel NIEUW; col1='record_id'
+#        oud drukwerk_record_klas_rel(record_id,org_id)
+#        -> myschool_drukwerk_record_klas_rel(record_id,org_id)      col ONGEW.
+#      drukwerk.record.student_ids         idem, col2='person_id'
+#        oud drukwerk_record_student_rel(record_id,person_id)
+#        -> myschool_drukwerk_record_student_rel(...)               col ONGEW.
+#      professionalisering.record.carpool_employee_ids  expliciet OUD==NIEUW
+#        professionalisering_carpool_rel(professionalisering_id, employee_id)
+#        -> ONGEWIJZIGD. NIET aanraken (was de FK-crash). Staat hier NIET in
+#           de map: oud==nieuw -> geen tabel-rename, geen kolom-rename.
+#      professionalisering.record.bewijs_document_ids   DEFAULT
+#        oud ir_attachment_professionalisering_record_rel
+#              (professionalisering_record_id, ir_attachment_id)
+#        -> ir_attachment_myschool_professionalisering_record_rel
+#              (myschool_professionalisering_record_id, ir_attachment_id)
+#
+#    NON-STORED, GEEN tabel (worden NIET in de map opgenomen — er is fysiek
+#    niets om te hernoemen, ook al staat er een ``relation=`` arg):
+#      activiteiten.record.available_klas_ids / available_leerkracht_ids
+#      activiteiten.bus.beschikbare_klas_ids (relation=..._beschikbare_klas_rel)
+#      activiteiten.bus.beschikbare_leerkracht_ids (relation=..._beschikbare_lk_rel)
+#      myschool.org(activiteiten).student_ids
+#      drukwerk.record.available_klas_ids
+#      professionalisering.address.picker.available_org_address_ids
+#        (relation='pp_picker_org_rel')   -> transient + non-stored
+#      professionalisering.address.picker.available_address_ids
+#        (relation='pp_picker_loc_rel')   -> transient + non-stored
+#
+#    De map bevat dus UITSLUITEND de stored velden waarvoor oud != nieuw
+#    (relation OF een kolom verandert). Schema:
+#       'new'  : nieuwe relatie-tabelnaam
+#       'cols' : { oude_kolomnaam : nieuwe_kolomnaam }  (alleen veranderende)
+#    Een veld waar oud==nieuw (carpool) komt NIET voor -> nooit aangeraakt.
 # --------------------------------------------------------------------------
 REL_TABLES = {
-    # --- activiteiten.record ---------------------------------------------
+    # --- activiteiten.record (expliciete cols 'record_id' -> ONGEWIJZIGD) ---
     'activiteiten_record_klas_rel': {
         'new': 'myschool_activiteiten_record_klas_rel',
-        'cols': {'activiteiten_record_id': 'myschool_activiteiten_record_id'},
+        'cols': {},  # 'record_id'/'org_id' bevatten geen prefix -> ongewijzigd
     },
     'activiteiten_record_leerkracht_rel': {
         'new': 'myschool_activiteiten_record_leerkracht_rel',
-        'cols': {'activiteiten_record_id': 'myschool_activiteiten_record_id'},
+        'cols': {},  # 'record_id'/'person_id' -> ongewijzigd
     },
-    # activiteiten.record.document_ids (auto-named: <table>_ir_attachment_rel)
+    # activiteiten.record.document_ids: DEFAULT, sort-order flipt
+    # (activiteiten_record < ir_attachment, maar ir_attachment < myschool_...).
     'activiteiten_record_ir_attachment_rel': {
-        'new': 'myschool_activiteiten_record_ir_attachment_rel',
-        'cols': {'activiteiten_record_id': 'myschool_activiteiten_record_id'},
+        'new': 'ir_attachment_myschool_activiteiten_record_rel',
+        'cols': {
+            'activiteiten_record_id': 'myschool_activiteiten_record_id',
+        },
     },
-    # --- activiteiten.bus -------------------------------------------------
-    'activiteiten_bus_beschikbare_klas_rel': {
-        'new': 'myschool_activiteiten_bus_beschikbare_klas_rel',
-        'cols': {'activiteiten_bus_id': 'myschool_activiteiten_bus_id'},
-    },
-    'activiteiten_bus_beschikbare_lk_rel': {
-        'new': 'myschool_activiteiten_bus_beschikbare_lk_rel',
-        'cols': {'activiteiten_bus_id': 'myschool_activiteiten_bus_id'},
-    },
-    # activiteiten.bus M2M naar myschool.org: TABELNAAM blijft (begint niet
-    # met activiteiten_ na sort? -> hij begint met 'activiteiten_bus_' dus zou
-    # door een naïeve prefix-match gepakt worden; daarom EXPLICIET met
-    # new=None om hem ongemoeid te laten qua tabelnaam — enkel de kolom gaat
-    # mee). Uit de live-inventaris: kolom activiteiten_bus_id moet hernoemd.
+    # --- activiteiten.bus.klas_ids: DEFAULT --------------------------------
     'activiteiten_bus_myschool_org_rel': {
-        'new': None,  # tabelnaam blijft
-        'cols': {'activiteiten_bus_id': 'myschool_activiteiten_bus_id'},
+        'new': 'myschool_activiteiten_bus_myschool_org_rel',
+        'cols': {
+            'activiteiten_bus_id': 'myschool_activiteiten_bus_id',
+            # 'myschool_org_id' (comodel) -> ongewijzigd
+        },
     },
-    # --- drukwerk.record --------------------------------------------------
+    # --- drukwerk.record (expliciete cols 'record_id' -> ONGEWIJZIGD) ------
     'drukwerk_record_klas_rel': {
         'new': 'myschool_drukwerk_record_klas_rel',
-        'cols': {'drukwerk_record_id': 'myschool_drukwerk_record_id'},
+        'cols': {},  # 'record_id'/'org_id' -> ongewijzigd
     },
     'drukwerk_record_student_rel': {
         'new': 'myschool_drukwerk_record_student_rel',
-        'cols': {'drukwerk_record_id': 'myschool_drukwerk_record_id'},
+        'cols': {},  # 'record_id'/'person_id' -> ongewijzigd
     },
-    # --- professionalisering.record --------------------------------------
-    # bewijs_document_ids: auto-named ir_attachment-zijde. TABELNAAM begint met
-    # 'ir_attachment_' → houdt zijn naam (new=None); kolom moet mee.
+    # --- professionalisering.record.bewijs_document_ids: DEFAULT -----------
+    # ir_attachment < (myschool_)professionalisering_record -> ir_attachment
+    # blijft VOORAAN; alleen het professionalisering-deel + de col schuiven mee.
     'ir_attachment_professionalisering_record_rel': {
-        'new': None,  # tabelnaam blijft (ir_attachment_-prefix)
+        'new': 'ir_attachment_myschool_professionalisering_record_rel',
         'cols': {
             'professionalisering_record_id':
                 'myschool_professionalisering_record_id',
+            # 'ir_attachment_id' (comodel) -> ongewijzigd
         },
     },
-    # --- professionalisering (carpool) -----------------------------------
-    # carpool_rel HOUDT zijn oude tabelnaam (nieuwe code hardcodeert die
-    # ZONDER prefix). Maar de comodel-kolom professionalisering_id moet mee.
-    'professionalisering_carpool_rel': {
-        'new': None,  # EXCLUDE van tabel-rename; naam blijft
-        'cols': {
-            'professionalisering_id': 'myschool_professionalisering_id',
-        },
-    },
+    # professionalisering.record.carpool_employee_ids: OUD == NIEUW
+    # ('professionalisering_carpool_rel', professionalisering_id, employee_id)
+    # -> BEWUST AFWEZIG. Niet hernoemen, niet kolom-renamen (was de FK-crash).
 }
 
-# Relatie-tabellen die hun OUDE tabelnaam houden (new is None). Wordt gebruikt
-# als EXCLUDE-set in _rename_model_main_tables zodat de generieke hoofdtabel-
-# sweep ze met geen mogelijkheid alsnog hernoemt.
+# Relatie-tabellen die hun OUDE tabelnaam houden (new is None). Met de
+# field-afgeleide map zijn dat er GEEN — elke entry verandert van naam.
+# Behouden als (lege) set voor de helper-aanroepen.
 REL_TABLES_KEEP_NAME = {
     old for old, spec in REL_TABLES.items() if spec['new'] is None
 }
 
-# Alle relatie-tabelnamen (oud), ongeacht of ze hernoemd worden. Gebruikt om
-# in _rename_model_main_tables ELKE relatie-tabel uit te sluiten.
+# Alle relatie-tabelnamen (oud) die we ACTIEF beheren. Gebruikt om in
+# _rename_model_main_tables elke beheerde relatie-tabel uit te sluiten van de
+# hoofdtabel-sweep.
 ALL_REL_TABLE_NAMES = set(REL_TABLES.keys())
+
+# Relatie-tabellen die met RUST gelaten moeten worden (oud == nieuw): tabelnaam
+# én kolommen blijven exact zoals ze in de pre-rename-DB staan, omdat de NIEUWE
+# field-definitie diezelfde namen hardcodeert. _rename_model_main_tables en de
+# legacy-guard moeten deze NOOIT als "te hernoemen" of "legacy remnant" zien.
+#     professionalisering_carpool_rel -> carpool_employee_ids hardcodeert
+#         relation='professionalisering_carpool_rel', col1='professionalisering_id'
+REL_TABLES_UNTOUCHED = {
+    'professionalisering_carpool_rel',
+}
 
 # NB: tabellen die via een FK naar ir_model.id wijzen (ir_model_access,
 # ir_rule, ir_model_fields.model_id, ir_cron/ir_act_server.model_id,
@@ -299,7 +403,12 @@ def _has_legacy_remnants(cr):
             if tbl.startswith(new_pref):
                 continue  # al hernoemd
             if tbl in ALL_REL_TABLE_NAMES:
-                continue  # relatie-tabel, apart afgehandeld
+                continue  # beheerde relatie-tabel, apart afgehandeld
+            if tbl in REL_TABLES_UNTOUCHED:
+                # carpool_rel: tabelnaam blijft BEWUST oud (nieuwe code
+                # hardcodeert die) -> GEEN legacy remnant, anders loopt de
+                # her-draaibare guard eindeloos.
+                continue
             return True
 
     # (d) m2m relatie-kolom die nog oud heet.
@@ -466,7 +575,8 @@ def _rename_model_main_tables(cr):
         old_tbl = _reverse_table_prefix(new_tbl)
         if old_tbl is None or old_tbl == new_tbl:
             continue  # model zonder te-hernoemen prefix
-        if old_tbl in ALL_REL_TABLE_NAMES or old_tbl in REL_TABLES_KEEP_NAME:
+        if old_tbl in ALL_REL_TABLE_NAMES or old_tbl in REL_TABLES_KEEP_NAME \
+                or old_tbl in REL_TABLES_UNTOUCHED:
             continue  # relatie-tabel: nooit hier
         _rename_table(cr, old_tbl, new_tbl)
 
@@ -535,21 +645,26 @@ def _rename_rel_tables(cr):
 
 # --------------------------------------------------------------------------
 def _rename_m2m_columns(cr):
-    """Hernoem de comodel-kolommen (<oude_model_tabel>_id) in élke relatie-
-    tabel naar hun nieuwe naam. Dit is de fix voor de FK-crash:
+    """Hernoem de m2m relatie-kolommen volgens de EXPLICIETE, uit de
+    field-definities afgeleide map in REL_TABLES['cols']. Dit is de fix voor de
+    FK-crash:
 
-      ``column "myschool_activiteiten_bus_id" referenced in foreign key
-        constraint does not exist``
+      ``column "professionalisering_id" does not exist`` /
+      ``column "myschool_activiteiten_bus_id" ... does not exist``
 
-    Per relatie-tabel:
-      1. Pas de EXPLICIETE kolom-map uit REL_TABLES toe (idempotent, guarded).
-      2. Leid daarbovenop GENERIEK eventuele overige comodel-kolommen af: elke
-         kolom die exact ``<oude_model_tabel>_id`` heet en waarvoor een
-         te-hernoemen tabel-prefix geldt, krijgt ``<nieuwe_model_tabel>_id``.
-         Zo blijven we robuust mocht een relatie-tabel een niet-gemapte
-         comodel-kolom hebben.
+    GEEN generieke ``<tabel>_id``-afleiding meer: die hernoemde o.a. de
+    expliciet-NIET-prefixte kolom ``professionalisering_id`` op carpool_rel
+    (crash) en deed aannames over kolomnamen die simpelweg fout zijn. De ENIGE
+    bron van waarheid is wat de Many2many in de NIEUWE code declareert
+    (column1/column2), reeds neergelegd in REL_TABLES['cols'] als
+    {oude_kolom: nieuwe_kolom} — UITSLUITEND voor kolommen die echt veranderen.
+    Kolommen die in oud én nieuw identiek zijn (bv. 'record_id', 'org_id',
+    'employee_id', 'ir_attachment_id', 'myschool_org_id') staan niet in de map
+    en worden dus met rust gelaten.
     """
     for old_tbl, spec in REL_TABLES.items():
+        if not spec['cols']:
+            continue  # geen enkele kolom verandert voor deze tabel
         cur_tbl = old_tbl if spec['new'] is None else spec['new']
         # Tabel kan onder oude of nieuwe naam bestaan (afhankelijk van waar de
         # run zit). Bepaal de fysiek bestaande naam.
@@ -561,20 +676,8 @@ def _rename_m2m_columns(cr):
         if phys_tbl is None:
             continue
 
-        # (1) Expliciete map.
         for old_col, new_col in spec['cols'].items():
             _rename_column(cr, phys_tbl, old_col, new_col)
-
-        # (2) Generieke afleiding voor overige comodel-kolommen.
-        cr.execute(
-            "SELECT column_name FROM information_schema.columns "
-            " WHERE table_schema = current_schema() AND table_name = %s",
-            (phys_tbl,),
-        )
-        for (col,) in cr.fetchall():
-            new_col = _apply_table_prefix_to_column(col)
-            if new_col and new_col != col:
-                _rename_column(cr, phys_tbl, col, new_col)
 
 
 # --------------------------------------------------------------------------
@@ -739,24 +842,6 @@ def _reverse_table_prefix(new_tbl):
     for old_pref, new_pref in TABLE_PREFIX_RENAMES.items():
         if new_tbl.startswith(new_pref):
             return old_pref + new_tbl[len(new_pref):]
-    return None
-
-
-def _apply_table_prefix_to_column(col):
-    """Map een m2m-comodel-kolom ``<oude_model_tabel>_id`` naar
-    ``<nieuwe_model_tabel>_id``. Alleen als de kolom EXACT op een te-hernoemen
-    tabel-prefix matcht én op ``_id`` eindigt. Geeft None als niets matcht.
-
-    We vergelijken op de tabel-prefix (bv. 'activiteiten_') én eisen dat de
-    kolom NIET al de nieuwe prefix draagt (anders dubbel-rename).
-    """
-    if not col.endswith('_id'):
-        return None
-    for old_pref, new_pref in TABLE_PREFIX_RENAMES.items():
-        if col.startswith(new_pref):
-            return None  # al nieuw
-        if col.startswith(old_pref):
-            return new_pref + col[len(old_pref):]
     return None
 
 
