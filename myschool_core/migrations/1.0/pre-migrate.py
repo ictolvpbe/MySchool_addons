@@ -35,10 +35,26 @@ niet in de role-image en wordt nergens in de repo gebruikt). Ze repliceert wat
 ``openupgrade.update_module_names`` + ``rename_models`` + ``rename_tables``
 zouden doen.
 
+Tweede iteratie (na partiële apply op myschool-test)
+----------------------------------------------------
+De eerste versie liep ver maar faalde bij het herladen van XML-data:
+
+  ``KeyError: 'professionalisering.vak'`` /
+  ``ParseError ... vak_data.xml``
+
+Oorzaak: TEKST-kolommen met een platte model-naam die NIET via een FK naar
+``ir_model.id`` meegaan, werden niet allemaal bijgewerkt. Concreet bleven
+``ir_model_data.model`` (xmlid-reconciliatie → ``env[ir_model_data.model]``)
+en ``ir_model_fields.model`` (owner-model, ~636 rijen) op de oude naam staan.
+``_fix_model_string_references`` is daarom uitgebreid tot een UITPUTTENDE
+sweep van álle base-/mail-/MySchool-tabellen met een model-naam-tekstkolom,
+geverifieerd tegen het Odoo-19-schema.
+
 Idempotent
 ----------
 Veilig her-draaien: elke stap checkt ``to_regclass`` / bestaande naam en slaat
-over wat al hernoemd is.
+over wat al hernoemd is. Version blijft 1.0 zodat de migratie her-triggert
+zolang ze nog niet volledig is doorgelopen.
 
 Auteur: Claude Opus 4.8 (1M context)
 """
@@ -98,11 +114,14 @@ M2M_TABLE_RENAMES = {
 }
 
 # NB: tabellen die via een FK naar ir_model.id wijzen (ir_model_access,
-# ir_rule, ir_model_fields.model_id, ir_filters.model_id,
-# ir_cron/ir_act_server.model_id, ir_default.field_id, mail_alias.alias_model_id,
-# ...) volgen de ir_model-rename AUTOMATISCH en worden hier NIET aangeraakt.
+# ir_rule, ir_model_fields.model_id, ir_cron/ir_act_server.model_id,
+# ir_default.field_id, mail_alias.alias_model_id, mail_template.model_id,
+# base_automation.model_id, ...) volgen de ir_model-rename AUTOMATISCH en
+# worden hier NIET aangeraakt.
 # Enkel kolommen die de model-naam als platte STRING opslaan, worden in
-# _fix_model_string_references bijgewerkt.
+# _fix_model_string_references bijgewerkt. LET OP: ondanks hun naam zijn
+# ``ir_filters.model_id`` (Selection) en ``ir_model_fields.model`` (owner)
+# TEKST-kolommen, GEEN FK's — die zitten dus wél in de string-sweep.
 
 
 def migrate(cr, version):
@@ -338,14 +357,45 @@ def _fix_model_string_references(cr):
         # ontbreken). Een platte-prefix-replace werkt voor zowel de pure
         # model-string-kolommen als voor ir_property.res_id ('<model>,<id>')
         # — in beide gevallen wordt enkel het prefix-deel vervangen.
+        #
+        # ----------------------------------------------------------------
+        # UITPUTTENDE LIJST: elke tabel.kolom hieronder slaat een Odoo-MODEL
+        # naam als platte TEKST op (geen FK naar ir_model.id). FK-kolommen
+        # (ir_rule.model_id, ir_default.field_id, mail_alias.alias_model_id,
+        # mail_template.model_id, base_automation.model_id, ir_act_server.
+        # model_id, ir_cron via ir_act_server, ir_model_constraint.model,
+        # ir_model_relation.model, ir_filters.action_id ...) volgen de
+        # ir_model-rename AUTOMATISCH omdat ir_model.id STABIEL blijft en
+        # worden hier dus NIET aangeraakt.
+        #
+        # Doel: NA deze sweep mag NERGENS nog een TEKST-verwijzing
+        # 'drukwerk.*' / 'activiteiten.*' / 'professionalisering.*' (zonder
+        # myschool_-prefix) bestaan. Geverifieerd tegen het Odoo-19-schema
+        # (information_schema-scan op alle char/text kolommen die een
+        # model-naam kunnen dragen).
+        # ----------------------------------------------------------------
 
+        # --- META-tabellen (base) — KRITISCH, waren de nieuwe crash-oorzaak --
+        # ir_model_data.model  <- KeyError 'professionalisering.vak' bij het
+        # herladen van <record>-xmlids (Odoo doet env[ir_model_data.model]).
+        _update_prefix_col(cr, 'ir_model_data', 'model', old_pref, new_pref)
+        # ir_model_fields.model  <- owner-model TEKST-kolom (NIET .relation!);
+        # ~636 rijen droegen nog de oude naam.
+        _update_prefix_col(cr, 'ir_model_fields', 'model', old_pref, new_pref)
+        # ir_model_fields.relation (comodel-string van x2many/related velden)
+        _update_prefix_col(
+            cr, 'ir_model_fields', 'relation', old_pref, new_pref)
+
+        # --- mail.* (mail-stack) -----------------------------------------
         # mail_activity.res_model  <- oorspronkelijke crash-oorzaak (KeyError)
         _update_prefix_col(cr, 'mail_activity', 'res_model', old_pref, new_pref)
-
         # mail_activity_type.res_model (config; ook via XML herladen, maar
         # idempotent meenemen kan geen kwaad)
         _update_prefix_col(
             cr, 'mail_activity_type', 'res_model', old_pref, new_pref)
+        # mail_activity_plan.res_model (persistente activity-plan config)
+        _update_prefix_col(
+            cr, 'mail_activity_plan', 'res_model', old_pref, new_pref)
         # mail_message.model
         _update_prefix_col(cr, 'mail_message', 'model', old_pref, new_pref)
         # mail_followers.res_model
@@ -353,19 +403,60 @@ def _fix_model_string_references(cr):
         # mail_message_subtype.res_model
         _update_prefix_col(
             cr, 'mail_message_subtype', 'res_model', old_pref, new_pref)
+        # mail_template.model (stored related van model_id; FK herstelt dit ook,
+        # maar idempotent meenemen voorkomt een stale read vóór de recompute)
+        _update_prefix_col(cr, 'mail_template', 'model', old_pref, new_pref)
+        # sms_template.model (analoog aan mail_template, indien sms geïnstalleerd)
+        _update_prefix_col(cr, 'sms_template', 'model', old_pref, new_pref)
+        # snailmail_letter.model (indien snailmail geïnstalleerd)
+        _update_prefix_col(cr, 'snailmail_letter', 'model', old_pref, new_pref)
+        # rating_rating.res_model / parent_res_model (persistente ratings)
+        _update_prefix_col(cr, 'rating_rating', 'res_model', old_pref, new_pref)
+        _update_prefix_col(
+            cr, 'rating_rating', 'parent_res_model', old_pref, new_pref)
+
+        # --- ir.attachment + actions -------------------------------------
         # ir_attachment.res_model
         _update_prefix_col(cr, 'ir_attachment', 'res_model', old_pref, new_pref)
         # ir_act_window.res_model / src_model
         _update_prefix_col(cr, 'ir_act_window', 'res_model', old_pref, new_pref)
         _update_prefix_col(cr, 'ir_act_window', 'src_model', old_pref, new_pref)
-        # ir_ui_view.model
-        _update_prefix_col(cr, 'ir_ui_view', 'model', old_pref, new_pref)
-        # ir_act_server.model_name (string-kopie naast model_id-FK)
+        # ir_act_client.res_model (client-actions, persistent)
+        _update_prefix_col(cr, 'ir_act_client', 'res_model', old_pref, new_pref)
+        # ir_act_report_xml.model  <- LET OP: de report-action-tabel heet in
+        # Odoo 19 fysiek 'ir_act_report_xml' (niet 'ir_actions_report'); de
+        # model-naam staat als TEKST in kolom 'model'.
+        _update_prefix_col(cr, 'ir_act_report_xml', 'model', old_pref, new_pref)
+        # ir_act_server.model_name: in Odoo 19 een NIET-opgeslagen related
+        # (geen fysieke kolom) → de guard slaat dit over. Defensief behouden
+        # voor oudere versies waar het wél een kolom was.
         _update_prefix_col(
             cr, 'ir_act_server', 'model_name', old_pref, new_pref)
-        # ir_model_fields.relation (comodel-string van x2many/related velden)
+
+        # --- ir_filters + embedded actions -------------------------------
+        # ir_filters.model_id: ONDANKS de naam '_id' is dit een Selection-veld
+        # dat de model-NAAM als TEKST (character varying) opslaat, GEEN FK.
+        _update_prefix_col(cr, 'ir_filters', 'model_id', old_pref, new_pref)
+        # ir_embedded_actions.parent_res_model (TEKST model-naam)
         _update_prefix_col(
-            cr, 'ir_model_fields', 'relation', old_pref, new_pref)
+            cr, 'ir_embedded_actions', 'parent_res_model', old_pref, new_pref)
+        # ir_ui_view.model
+        _update_prefix_col(cr, 'ir_ui_view', 'model', old_pref, new_pref)
+
+        # --- MySchool-eigen model-tekstkolommen --------------------------
+        # myschool_letter_template.model (stored related van model_id; FK
+        # herstelt ook, idempotent meenemen kan geen kwaad).
+        _update_prefix_col(
+            cr, 'myschool_letter_template', 'model', old_pref, new_pref)
+        # sync_log.model_name + sap_sync_change.target_model: Odoo-model-naam-
+        # tekstkolommen. De sync/sap-laag raakt de 3 hernoemde modules niet
+        # aan → in de praktijk 0 rijen, maar prefix-guarded meenemen is veilig
+        # en idempotent (false-match onmogelijk: geen ander model deelt deze
+        # prefixen). NB: myschool_asset.model_name is BEWUST UITGESLOTEN —
+        # dat is een HARDWARE-modelstring ("Chromebook"), GEEN Odoo-model.
+        _update_prefix_col(cr, 'sync_log', 'model_name', old_pref, new_pref)
+        _update_prefix_col(
+            cr, 'sap_sync_change', 'target_model', old_pref, new_pref)
 
         # ir_property.res_id  ==  '<model>,<id>'  (alleen prefix-deel).
         # LET OP: ir_property bestaat NIET MEER in Odoo 17+ (vervangen door
@@ -373,6 +464,11 @@ def _fix_model_string_references(cr):
         # _update_prefix_col slaat de update over als de tabel ontbreekt,
         # zodat dit op Odoo 19 niet langer crasht.
         _update_prefix_col(cr, 'ir_property', 'res_id', old_pref, new_pref)
+
+        # ir_translation bestaat NIET MEER in Odoo 16+ (vertalingen zitten nu
+        # als jsonb in de kolom zelf). Guard slaat over indien afwezig; we
+        # nemen de kolom defensief mee voor oudere DB's.
+        _update_prefix_col(cr, 'ir_translation', 'name', old_pref, new_pref)
 
 
 # --------------------------------------------------------------------------
