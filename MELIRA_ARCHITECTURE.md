@@ -105,6 +105,39 @@ overlay-repo** — géén product-tier, maar een deployment-laag bovenop een edi
 
 Dit is exact het Odoo-partnermodel voor klant-customisaties en houdt de product-repo's schoon.
 
+### 2.3 Repo-indeling & `addons_path`
+
+`addons_path` is een lijst van mappen waarvan Odoo de **directe submappen** als modules inleest —
+Odoo **recurseert niet**. De natuurlijke eenheid is dus: **één repo = één addons-root op het pad**.
+Modulenaam ≠ mapnaam: de repo-map zélf is de addons-root; de modules erin heten gewoon `ml_core`,
+`ml_projects`, … (OCA-conventie: modules plat in de repo-root; wie de root wil vrijhouden voor
+CI/docs zet ze onder één `addons/`-submap — één van beide, consistent).
+
+```
+melira-platform/          ← staat op addons_path (core én common samen, geen aparte map)
+├── ml_core/  ml_theme/  ml_admin/  ml_oidc/  ml_sync/  ml_servermanager/
+└── ml_projects/  ml_appfoundry/  ml_itsm/  ml_assets/  ml_knowledge/  …
+```
+
+Een instance laadt **platform + zijn eigen editie** (2 roots), niet alle drie:
+
+```ini
+# odoo.conf — EDUCATION-instance
+addons_path = /opt/odoo/odoo/addons, /opt/melira/melira-platform, /opt/melira/melira-education
+
+# odoo.conf — BUSINESS-instance
+addons_path = /opt/odoo/odoo/addons, /opt/melira/melira-platform, /opt/melira/melira-business
+
+# odoo.conf — klant met overlay (§2.2)
+addons_path = /opt/odoo/odoo/addons, /opt/melira/melira-platform, /opt/melira/melira-education, /opt/melira/melira-cust-schoolX
+```
+
+**Anti-patroon:** géén aparte addons-map per tier/module (bv. `ml_core_addons`/`ml_edu_addons`) —
+dat verwart container met modulenaam. En géén mapsplitsing core-vs-common binnen `melira-platform`:
+die grens (common → core) dwing je af via manifest-`depends`, niet via mappen. Wil je common ooit naar
+een eigen 4e repo promoveren (§2.1), leg ze dán pas in submappen `kernel/` + `common/` (= 2
+path-entries) zodat de `git filter-repo`-knip schoon is; tot dan plat houden.
+
 ---
 
 ## 3. Het 3-tier-model
