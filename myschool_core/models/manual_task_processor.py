@@ -348,7 +348,7 @@ class ManualTaskProcessor(models.AbstractModel):
             # Smartschool cascade — same EMPLOYEE-only gate. Runs unconditionally
             # of the LDAP gate above: Smartschool deployments are independent of
             # AD provisioning at OLVP (per-platform config has its own org-link).
-            self._emit_smartschool_user_task(person, 'ADD', changes)
+            self._emit_connector_user_task(person, 'ADD', changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -380,7 +380,7 @@ class ManualTaskProcessor(models.AbstractModel):
             }
             if any(k in update_vals for k in ldap_attrs):
                 self._emit_ldap_user_task(person, 'UPD', changes)
-                self._emit_smartschool_user_task(person, 'UPD', changes)
+                self._emit_connector_user_task(person, 'UPD', changes)
             return {'success': True, 'changes': '\n'.join(changes)}
 
         # Move mode (legacy)
@@ -472,7 +472,7 @@ class ManualTaskProcessor(models.AbstractModel):
 
         # Smartschool cascade — re-uses the persons new PERSON-TREE / PPSBR
         # state to resolve which platform (if any) gets the saveUser push.
-        self._emit_smartschool_user_task(person, 'UPD', changes)
+        self._emit_connector_user_task(person, 'UPD', changes)
 
         return {'success': True, 'changes': '\n'.join(changes)}
 
@@ -588,7 +588,7 @@ class ManualTaskProcessor(models.AbstractModel):
         self._emit_ldap_user_task(person, 'DEACT', changes)
         # Smartschool cascade — same reasoning: resolve config now, before
         # the person + PERSON-TREE flip to inactive.
-        self._emit_smartschool_user_task(person, 'DEACT', changes)
+        self._emit_connector_user_task(person, 'DEACT', changes)
 
         person.write({'is_active': False, 'automatic_sync': False})
         changes.append(f"Deactivated person: {person_name}")
@@ -784,37 +784,6 @@ class ManualTaskProcessor(models.AbstractModel):
             'org_id': org.id,
         }, changes, label=label)
 
-    @api.model
-    def _emit_smartschool_user_task(self, person, action, changes):
-        """Queue *and run* a SMARTSCHOOL/USER/<action> betask for ``person``.
-
-        Same MVP gates as the betask_processor emitter:
-          * ``_is_employee_person`` — leerkrachten only
-          * ``_school_wants_smartschool_for_person`` — school must have an
-            active ``myschool.smartschool.config``
-
-        ``action`` is one of ADD / UPD / DEACT / PWD. DEL is intentionally
-        NOT supported here — that path requires admin confirmation via the
-        lifecycle cron, not from the manual processor.
-
-        Skips silently when the gates reject so manual flows for non-EMPLOYEE
-        persons or non-Smartschool schools are unaffected.
-        """
-        if not person:
-            return
-        processor = self.env['myschool.betask.processor']
-        if not processor._is_employee_person(person):
-            return
-        if not person.automatic_sync:
-            return
-        if not processor._school_wants_smartschool_for_person(person):
-            return
-        label = (f"SMARTSCHOOL/USER/{action} for "
-                 f"{person.first_name} {person.name}")
-        changes.append(f"Queued {label}")
-        self._create_and_run_task('SMARTSCHOOL', 'USER', action, {
-            'person_id': person.id,
-        }, changes, label=label)
 
     @api.model
     def _emit_cloud_group_del_for_org(self, org, changes):

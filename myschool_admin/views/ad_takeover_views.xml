@@ -22,8 +22,6 @@
                         domain="[('source', '=', 'ad')]"/>
                 <filter string="Cloud" name="src_cloud"
                         domain="[('source', '=', 'cloud')]"/>
-                <filter string="Smartschool" name="src_ss"
-                        domain="[('source', '=', 'smartschool')]"/>
 
                 <separator/>
                 <filter string="OUs" name="kind_ou"
@@ -375,9 +373,6 @@
                             <field name="google_workspace_config_id"
                                    options="{'no_create': True}"
                                    domain="[('environment', '=', environment)]"/>
-                            <field name="smartschool_config_id"
-                                   options="{'no_create': True}"
-                                   help="Smartschool kent geen test-omgeving; environment-validatie wordt overgeslagen."/>
                             <field name="scope_org_id" options="{'no_create': True}"/>
                             <field name="base_dn" readonly="1"
                                    invisible="not ldap_config_id"/>

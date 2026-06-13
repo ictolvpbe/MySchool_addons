@@ -57,7 +57,3 @@ class ResConfigSettings(models.TransientModel):
     def action_open_google_workspace(self):
         return self.env.ref(
             'myschool_core.action_google_workspace_config').read()[0]
-
-    def action_open_smartschool(self):
-        return self.env.ref(
-            'myschool_core.action_smartschool_config').read()[0]
