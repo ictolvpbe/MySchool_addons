@@ -256,9 +256,14 @@ extensiepunt** in de generieke kern/admin, waar editie-modules als **plugin** op
    model `ml.person.details`). Business `_inherit`t later voor eigen velden. → Kernel draagt geen
    domein-PII meer. *(Integratie-noot §9: weeg of `ml.person` koppelt aan `res.partner`/`hr.employee`
    i.p.v. parallel datamodel.)*
-2. **Connector-naad.** `smartschool_*`, `informat_*` (DTO + service + config) verhuizen uit core naar
-   **`ml_edu_smartschool`** / **`ml_edu_informat`** (zie patroon hieronder). **SAP-sync** =
-   generiek-enterprise → blijft kernel (verifiëren). LDAP/Google blijven kernel.
+2. **Connector-naad — niet uniform (empirisch bijgesteld, zie §6.2).** Connectors verschillen sterk
+   in verwevenheid; behandel ze niet als één klasse:
+   - **Smartschool = leaf** → schoon te extraheren naar **`ml_edu_smartschool`** (✓ bewezen, §6.2).
+   - **Informat = géén leaf, maar ingestie-backbone** → structureel in de kern (org-sync-actie,
+     SAP-pijplijn, res_config, betask-mappers). Extractie = **herontwerp**, geen move (§6.2).
+   - **SAP-sync is NIET los van Informat**: de SAP-sync ís de Informat-analyse/review-pijplijn — één
+     gekoppelde pijplijn in de kern. (Corrigeert de eerdere aanname "SAP blijft kernel, Informat→edu".)
+   - LDAP/Google: nog te bekijken; vermoedelijk eerder backbone dan leaf.
 3. **Admin-naad.** BRSO/SRBR-wizards in `ml_admin` zijn onderwijs-rolconcepten → naar **`ml_edu_admin`**
    (admin-plugin). `ml_admin` blijft generieke identiteits-/betask-UI én levert de extensiepunten.
 
@@ -280,12 +285,12 @@ class MlDirectoryConnector(models.AbstractModel):
     def sync_person(self, person): return          # default no-op
     def on_person_created(self, person): return
 
-# melira-education/ml_edu_informat — de plugin
-class MlInformatConnector(models.Model):
-    _name = "ml.connector.informat"
+# melira-education/ml_edu_smartschool — de plugin (leaf-connector, ✓ bewezen §6.2)
+class MlSmartschoolConnector(models.Model):
+    _name = "ml.connector.smartschool"
     _inherit = "ml.directory.connector"            # implementeert de interface
     def sync_person(self, person):
-        ...                                         # Informat-push, leest ml_edu_person-velden
+        ...                                         # Smartschool-push
 ```
 
 De processor dispatcht over alle modellen die de interface implementeren. Config + secret van de
@@ -295,11 +300,43 @@ connector zitten in de plugin-module (edu), nooit in de kern — meteen goed voo
 > (één record per actieve connector → wijst naar het implementerende model) handiger zijn voor
 > aan/uit-per-instance via config. Voor pure code-koppeling volstaat de abstract-model-registry.
 
+### 6.2 Empirisch — connector-naad geprototyped (myschool-codebase, 2026-06)
+
+De connector-naad is op de huidige `myschool`-codebase geprototyped (branch `Dev-core-seams`), onder
+de huidige namen (de `ml_`-rename komt later, §11). Twee bevindingen die de architectuur bijsturen:
+
+**Smartschool = leaf, schoon extraheerbaar (✓ gedaan).** Een keystone-extensiepunt op de
+betask-processor (`_get_connector_betask_handlers` + drie no-op cascade-hooks) liet toe álle
+Smartschool-handlers + cascade-emitters + modellen + config/service naar een aparte plugin te
+verhuizen die `_inherit`t op de processor. De kern bevat daarna nul Smartschool-referenties; getest:
+plugin-loze install + plugin-install + admin-zonder-plugin + admin+plugin, plus de volledige
+testsuite identiek aan baseline (0 regressie). Dit ís het §6.1-patroon, bewezen werkbaar.
+
+**Informat = ingestie-backbone, géén leaf.** Anders dan Smartschool zit Informat structureel in de
+kern:
+- het `org`-model heeft een directe sync-actie `informat.service.execute_sync()`;
+- de **SAP-sync ís de Informat-analyse/review-pijplijn** (leest `informat.service.config`, draait in
+  de analyse-fase) → SAP en Informat zijn onlosmakelijk in de kern;
+- core `res.config.settings` hergebruikt de Informat-config-velden via `related`;
+- de JSON→`person`/`person.details`/`org`-mappers worden vanuit de **generieke** EMPLOYEE/STUDENT/
+  ORG-betask-processors aangeroepen (10+ call-sites) — ze zíjn betask-verwerking, geen connector-rand.
+
+→ Informat schoon afsplitsen vergt een **herontwerp** (org-sync-actie, SAP-config-koppeling,
+res_config-reuse én de mapper-call-sites achter extensiepunten brengen), niet de mechanische move die
+bij Smartschool volstond. Behandel dit als eigen ontwerp-stap, samen met de SAP-koppeling en de
+person-naad, en koppel het aan de PII-/4-instance-werf (§10). Tot dan: **Informat + SAP blijven in de
+kern.**
+
+**person-naad idem uitgesteld.** `person.details`/`insz` zijn verweven met generieke admin-tooling
+(een algemene rollback/cleanup-wizard rolt person.details-versies terug) en vergen de
+PII-/retentiebeslissingen van §10 vooraf. Niet nu; bij de PII-werf.
+
 ---
 
 ## 7. Te verifiëren door MITRAS (open naden)
 
-- **SAP-sync**: kernel-generiek of toch edu/biz? (§6.2)
+- **SAP-sync + Informat**: één gekoppelde ingestie-pijplijn in de kern (§6.2) — NIET te scheiden in
+  "SAP blijft / Informat weg". Afsplitsing = herontwerp; koppelen aan de PII-/4-instance-werf (§10).
 - **`kosten_dashboard`**: edu of platform? (hangt enkel aan core+dashboard → mogelijk platform)
 - **`admin` BRSO/SRBR**: bestemming = `ml_edu_admin` (beslist); exacte omvang onderwijs-staart verifiëren.
 - **`dashboard`-familie** (dashboard/directie/kosten): consolideren? (open vraag platform-review).
@@ -398,9 +435,11 @@ iets, dan broncode-fout, geen dataverlies.
 2. **Transform-script** (fase A, beide vervangingen §11) + dry-run-diff reviewen.
 3. **Platform** (kernel/core + common) naar `melira-platform`; extensiepunten in `ml_admin` (§6.1);
    `ml_business`-bundle + `ml_biz_admin` naar `melira-business`; verse install groen.
-4. **Datamodel-naden** (§6): core afslanken, `ml_edu_person` + connector-plugins
-   `ml_edu_informat`/`ml_edu_smartschool` + `ml_edu_admin`; `ml.person`↔
-   `res.partner`/`hr.employee`-brug ontwerpen (§9).
+4. **Datamodel-naden** (§6): core afslanken. **Niet uniform — zie §6.2:** `ml_edu_smartschool` is een
+   schone move (bewezen); **`ml_edu_informat` + SAP + de person-naad (`ml_edu_person`) vergen eerst een
+   herontwerp** (ingestie-backbone achter extensiepunten + PII-/retentiebeslissingen) → eigen
+   ontwerp-stap gekoppeld aan de PII-werf (§10), niet zomaar meenemen. `ml_edu_admin` (BRSO/SRBR) los
+   te onderzoeken. `ml.person`↔`res.partner`/`hr.employee`-brug ontwerpen (§9).
 5. **Education** naar `melira-education`; `ml_education`-bundle; verse install (platform+education) groen.
 6. **MCP-rename** (§8) + her-registratie + infra/DNS-ticket (olvp-ict werf).
 7. **Provisioning**: verse business- en education-instances via `ml_servermanager`.
