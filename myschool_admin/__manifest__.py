@@ -48,7 +48,6 @@
         'views/ldap_server_config_views.xml',
         'views/sync_test_runner_views.xml',
         'views/task_debug_runner_views.xml',
-        'views/smartschool_test_runner_views.xml',
         'views/informat_sync_wizard_views.xml',
         'views/sap_sync_run_views.xml',
         'views/res_company_views.xml',

@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_smartschool_config_admin,myschool.smartschool.config.admin,model_myschool_smartschool_config,myschool_core.group_myschool_core_admin,1,1,1,1
+access_smartschool_config_user,myschool.smartschool.config.user,model_myschool_smartschool_config,myschool_core.group_myschool_core_user,1,0,0,0

@@ -52,7 +52,6 @@ STATUS_SELECTION = [
 SOURCE_SELECTION = [
     ('ad',          'Active Directory'),
     ('cloud',       'Google Workspace'),
-    ('smartschool', 'Smartschool'),
 ]
 PROPOSAL_KIND_SELECTION = [
     ('link_only',      'Koppel — DB-record maken, bron ongewijzigd'),
@@ -126,13 +125,6 @@ class AdTakeoverSession(models.Model):
         help='Bronnetje voor de Cloud-scan. Leeg laten als deze sessie '
              'alleen AD wil scannen. Zoals bij LDAP filtert de UI op de '
              'sessie-environment.')
-    smartschool_config_id = fields.Many2one(
-        'myschool.smartschool.config',
-        string='Smartschool',
-        domain="[('active', '=', True)]",
-        help='Bron voor de Smartschool-scan. Smartschool kent geen '
-             'test-tenants in deze setup; environment-validatie wordt '
-             'overgeslagen voor SS-config.')
 
     # ---- Fase F: clone prod → test ----
     clone_target_ldap_config_id = fields.Many2one(
@@ -343,16 +335,14 @@ class AdTakeoverSession(models.Model):
                         '(bron = prod, doel = test). Deze sessie staat '
                         'op environment=%s.') % s.environment)
 
-    @api.constrains('ldap_config_id', 'google_workspace_config_id',
-                    'smartschool_config_id')
+    @api.constrains('ldap_config_id', 'google_workspace_config_id')
     def _check_at_least_one_source(self):
         for s in self:
             if (not s.ldap_config_id
-                    and not s.google_workspace_config_id
-                    and not s.smartschool_config_id):
+                    and not s.google_workspace_config_id):
                 raise ValidationError(_(
-                    'Kies minstens één bron: LDAP, Google Workspace of '
-                    'Smartschool (of meerdere). Een sessie zonder bron '
+                    'Kies minstens één bron: LDAP of Google Workspace '
+                    '(of beide). Een sessie zonder bron '
                     'kan niets scannen.'))
 
     @api.model_create_multi
@@ -407,7 +397,6 @@ class AdTakeoverSession(models.Model):
         Configured sources:
           * ldap_config_id            → ``_scan_ad``
           * google_workspace_config_id → ``_scan_cloud``  (Fase B2)
-          * (Fase B-future) smartschool_config_id → ``_scan_smartschool``
 
         Each scanner returns ``(new_findings, summary)``. The
         orchestrator wipes pre-existing ``discovered`` rows (no human
@@ -416,11 +405,10 @@ class AdTakeoverSession(models.Model):
         """
         self.ensure_one()
         if (not self.ldap_config_id
-                and not self.google_workspace_config_id
-                and not self.smartschool_config_id):
+                and not self.google_workspace_config_id):
             raise UserError(_(
-                'Geen bron geconfigureerd. Kies minstens een LDAP-server, '
-                'een Google Workspace tenant of een Smartschool-config.'))
+                'Geen bron geconfigureerd. Kies minstens een LDAP-server '
+                'of een Google Workspace tenant.'))
         if self.ldap_config_id and not self.base_dn:
             raise UserError(_(
                 'Scope org "%s" heeft geen ou_fqdn_internal — kan geen '
@@ -448,10 +436,6 @@ class AdTakeoverSession(models.Model):
             summaries.append(summary)
         if self.google_workspace_config_id:
             new, summary = self._scan_cloud(index, existing_by_extid)
-            all_new.extend(new)
-            summaries.append(summary)
-        if self.smartschool_config_id:
-            new, summary = self._scan_smartschool(index, existing_by_extid)
             all_new.extend(new)
             summaries.append(summary)
 
@@ -1079,132 +1063,6 @@ class AdTakeoverSession(models.Model):
             raise UserError(_('Cloud groups ophalen mislukt: %s') % e)
         return groups
 
-    # ------------------------------------------------------------------
-    # Smartschool scanner (Fase B2)
-    # ------------------------------------------------------------------
-
-    def _scan_smartschool(self, index, existing_by_extid):
-        """Scan Smartschool users via getAllAccountsExtended.
-
-        Identity-linker is volledig deterministisch op internnumber →
-        person.sap_ref. Geen STAMP_ID-pad in B2 (SS saveUser is een
-        full-record write; te risicovol zonder hard onderbouwde
-        scope). SS-groups en -classes worden in B2 niet gescand —
-        users-only.
-        """
-        self.ensure_one()
-        svc = self.env['myschool.smartschool.service']
-        config = self.smartschool_config_id
-        try:
-            client = svc._get_client(config)
-            raw = client.service.getAllAccountsExtended(
-                accesscode=config.sudo().api_key,
-                code='',
-                recursive='1',
-            )
-        except Exception as e:
-            _logger.exception('[AD-TAKEOVER] SS scan failed')
-            raise UserError(_('Smartschool-scan mislukt: %s') % e)
-
-        # SS returneert een numeric error-code als string OF een XML-
-        # document met user-records. Detecteer + log.
-        if isinstance(raw, (int, str)) and str(raw).strip().lstrip('-').isdigit():
-            raise UserError(_(
-                'Smartschool returned error code %s — controleer api_key '
-                'en platform_url.') % raw)
-
-        users = self._ss_parse_users(str(raw))
-
-        Person = self.env['myschool.person']
-        new_findings = []
-        us_total = us_match = us_conflict = us_orphan_no_intern = us_orphan = 0
-
-        for u in users:
-            us_total += 1
-            username = (u.get('username') or '').strip()
-            internnumber = (u.get('internnumber') or '').strip()
-            if not username:
-                continue
-            key = ('smartschool', username.lower())
-            if key in existing_by_extid:
-                continue
-
-            vals = {
-                'session_id': self.id,
-                'source': 'smartschool',
-                'external_id': username,
-                'kind': 'user',
-                'ad_dn': username,  # SS heeft geen DN; bewaar username hier
-                'ad_cn': (u.get('name') or u.get('surname') or username),
-                'ad_mail': u.get('email') or False,
-                'ad_givenname': u.get('firstname') or False,
-                'ad_sn': u.get('name') or u.get('surname') or False,
-                'sap_ref': internnumber or False,
-                'ad_sam': username,
-                'ad_attributes_json': json.dumps(u, default=str)[:8000],
-                'match_kind': 'unmatched',
-            }
-
-            # Linker
-            person_id = (index['sap_ref_to_person'].get(internnumber)
-                         if internnumber else None)
-            if person_id:
-                person = Person.browse(person_id)
-                vals.update({
-                    'state': 'done',
-                    'status': 'matched',
-                    'matched_person_id': person.id,
-                    'match_kind': 'matched_in_db',
-                    'risk_level': 'low',
-                })
-                us_match += 1
-                new_findings.append(vals)
-                continue
-
-            if not internnumber:
-                # SS-user zonder internnumber: kan niet via deterministische
-                # sap_ref match. STAMP_ID-naar-SS (saveUser) is uitgesteld.
-                # Markeer als orphan + medium risk zodat admin het opmerkt.
-                vals.update({
-                    'state': 'proposed',
-                    'status': 'investigate',
-                    'proposal_kind': 'link_only',
-                    'risk_level': 'medium',
-                    'notes': (
-                        'Smartschool-user zonder internnumber — geen '
-                        'sap_ref-match mogelijk. STAMP_ID naar SS is in '
-                        'Fase B2 nog niet geïmplementeerd (saveUser '
-                        'vereist een full-record payload). Beslis: '
-                        'manueel internnumber zetten in SS en hertik '
-                        'scan, of importeer als nieuwe DB-persoon.'),
-                })
-                us_orphan_no_intern += 1
-                new_findings.append(vals)
-                continue
-
-            # internnumber gezet maar geen DB-person — echte orphan
-            vals.update({
-                'state': 'proposed',
-                'status': 'investigate',
-                'proposal_kind': 'link_only',
-                'risk_level': 'medium',
-                'notes': (
-                    f'Smartschool-user met internnumber={internnumber} '
-                    f'maar geen DB-person met die sap_ref. '
-                    f'Mogelijk extern account.'),
-            })
-            us_orphan += 1
-            new_findings.append(vals)
-
-        summary = (
-            f'Smartschool-scan:\n'
-            f'  Users: {us_total} gevonden — {us_match} al gelinkt, '
-            f'{us_orphan_no_intern} zonder internnumber, '
-            f'{us_orphan} orphan met internnumber, '
-            f'{us_conflict} identity-conflict.\n'
-            f'  (Groups/classes: nog niet gescand — B2 doet users-only.)'
-        )
-        return new_findings, summary
 
     def _ss_parse_users(self, xml_text):
         """Parse de XML-response van getAllAccountsExtended naar een lijst
@@ -3127,7 +2985,7 @@ class AdTakeoverFinding(models.Model):
         index=True,
         string='Bron',
         help='Externe systeem waar dit object vandaan komt. In Fase A '
-             'altijd "ad"; cloud/smartschool-scanners volgen in Fase B.'
+             'altijd "ad"; cloud-scanner volgt in Fase B.'
     )
     external_id = fields.Char(
         index=True,
