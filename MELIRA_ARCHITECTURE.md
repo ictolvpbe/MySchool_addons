@@ -19,7 +19,7 @@
 | 5 | **Business-editie concreet** bouwen (niet enkel structureel voorzien). | `ml_business`-bundle wordt nu aangemaakt (platform + nog zonder biz-verticals). |
 | 6 | **Tier-prefix in technische modulenamen** (`ml_edu_*`, `ml_biz_*`), **niet** in zichtbare app-namen. | Eindgebruiker ziet "Lessenrooster", niet "Edu Lessenrooster". |
 | 7 | **MCP-namespace mee-renamen** (`mcp__myschool__*` → `mcp__melira__*`). | Her-registratie Claude Code + her-deploy + DNS-host (§8). |
-| 8 | **Repo-split: platform+business in repo A, education in repo B.** | Kan, want dependency-richting loopt al éénrichting (vertical → platform, nooit omgekeerd). |
+| 8 | **3 repo's: `melira-platform` (core+common), `melira-business`, `melira-education` — symmetrische editie-repo's.** | Editie-specifieke admin-extensies + connectors (bv. Informat/Smartschool → edu) zitten in hún editie-repo, als plugins op de generieke admin. Dependency éénrichting (editie → platform). |
 | 9 | **Per-klant maatwerk mag in een aparte overlay-repo.** | Klant-/school-specifieke apps als additieve laag bovenop een editie (§2.2). |
 | 10 | **Integratie met het Odoo-ecosysteem is een doorlopend ontwerpprincipe.** | Bouwen náást/op standaard Odoo + OCA, niet ertegenin (§9). |
 | 11 | **Technische namespace merk-neutraal `ml_`/`ml.`** (modules, modellen, tabellen, XML-IDs, velden); "Melira" enkel in de merklaag. | Een latere gedwongen merkwijziging (bv. Melira→Melirax wegens merkenschending) raakt **enkel** manifest-`name`, repo-namen, DNS en docs — **nul impact op code/data** (§5). |
@@ -28,50 +28,61 @@
 
 ## 2. Repo-topologie
 
-### 2.1 Twee product-repo's
+### 2.1 Drie repo's — één platform + symmetrische editie-repo's
 
-De afhankelijkheid loopt **strikt één kant op**: een vertical hangt af van het platform, nooit
+De afhankelijkheid loopt **strikt één kant op**: een editie hangt af van het platform, nooit
 omgekeerd. Geverifieerd uit de huidige dependency-graph — geen enkele platform-module verwijst naar
-een business- of education-module.
+een business- of education-module. **Core en common reizen altijd samen** (elke instance laadt
+beide), dus ze delen één repo; biz en edu zijn **symmetrische** editie-repo's die elk hun eigen
+admin-extensies + connectors dragen.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ REPO A — melira-platform   (account: TBD; kandidaat publiek)   │
+│ REPO 1 — melira-platform   (account: TBD; kandidaat publiek)   │
 │                                                                │
 │  TIER 1 · PLATFORM                                             │
-│    Kernel        ml_core · ml_theme · ml_admin · ml_oidc ·     │
-│                  ml_sync · ml_servermanager                    │
-│    Gedeelde apps ml_projects · ml_appfoundry · ml_itsm ·       │
-│                  ml_assets · ml_knowledge · ml_tasks ·         │
-│                  ml_processcomposer · ml_mcp · ml_dashboard    │
-│                                                                │
-│  TIER 2 · BUSINESS                                             │
-│    Verticals     ml_biz_*  (greenfield, leeg)                 │
-│    Bundle        ml_business                                   │
+│    Kernel (core)  ml_core · ml_theme · ml_admin(basic) ·      │
+│                   ml_oidc · ml_sync · ml_servermanager        │
+│    Common (apps)  ml_projects · ml_appfoundry · ml_itsm ·     │
+│                   ml_assets · ml_knowledge · ml_tasks ·       │
+│                   ml_processcomposer · ml_mcp · ml_dashboard  │
 └──────────────────────────────────────────────────────────────┘
-                          ▲  depends (éénrichting)
-                          │
-┌──────────────────────────────────────────────────────────────┐
-│ REPO B — melira-education  (account: TBD; privé aanbevolen)     │
-│                                                                │
-│  TIER 3 · EDUCATION                                           │
-│    Verticals     ml_edu_lessenrooster · ml_edu_activiteiten ·  │
-│                  ml_edu_drukwerk · ml_edu_professionalisering ·│
-│                  ml_edu_planner · ml_edu_directie_dashboard ·  │
-│                  ml_edu_kosten_dashboard ·                     │
-│                  ml_edu_connect · ml_edu_person                │
-│    Bundle        ml_education                                   │
-└──────────────────────────────────────────────────────────────┘
+              ▲                                   ▲
+              │  depends (éénrichting)            │
+┌─────────────┴───────────────┐   ┌───────────────┴──────────────┐
+│ REPO 2 — melira-business     │   │ REPO 3 — melira-education     │
+│  (privé)                     │   │  (privé aanbevolen)           │
+│                              │   │                               │
+│  TIER 2 · BUSINESS           │   │  TIER 3 · EDUCATION           │
+│   Verticals  ml_biz_*        │   │   Verticals  ml_edu_*         │
+│   Admin-ext  ml_biz_admin    │   │   Admin-ext  ml_edu_admin     │
+│   Persoon    ml_biz_person   │   │              (BRSO/SRBR)      │
+│   Connectors (later)         │   │   Persoon    ml_edu_person    │
+│   Bundle     ml_business     │   │   Connectors ml_edu_informat ·│
+│                              │   │              ml_edu_smartschool│
+│                              │   │   Bundle     ml_education      │
+└──────────────────────────────┘   └───────────────────────────────┘
 ```
 
 > Repo-namen dragen wél het merk (`melira-…`) — dat is de merklaag (§5) en een repo hernoemen is
 > triviaal (GitHub-rename + `git remote set-url`), zonder code-impact.
 
 **Waarom dit werkt.** Een Odoo-instance laadt meerdere repo's op zijn `addons_path` (zoals OCA).
-- **Business-instance**: repo A → installeert `ml_business`.
-- **Education-instance**: repo A **+** repo B → installeert `ml_education`.
+- **Business-instance**: repo 1 **+** repo 2 → installeert `ml_business`.
+- **Education-instance**: repo 1 **+** repo 3 → installeert `ml_education`.
 
-**Waarom education privé.** Repo B bevat de Belgische onderwijs-integraties (Smartschool/Informat)
+De editie-repo haakt op de **generieke admin** via plugins (zie §6): `ml_edu_informat` declareert
+`depends=['ml_admin']` en injecteert zijn config/connector zonder de kern te raken. Zo zit de
+Informat-/Smartschool-integratie (en de bijhorende secrets/PII) in edu, nooit in core of biz.
+
+**Waarom common bij core en niet apart.** Core en common worden nooit los gedeployed; een aparte
+repo zou in de greenfield-fase (hoogste churn) elke "app heeft net een nieuwe core-hook nodig"-wijziging
+in twee PR's + een versie-pin splitsen. Common blijft binnen repo 1 wél een **strikt
+éénrichtings-module-groep** (common → core, nooit omgekeerd), zodat ze later met `git filter-repo`
+mét historie naar een eigen 4e repo te promoveren is zodra daar een concrete reden voor is
+(apps open-sourcen of externe contributors los van de PII-kern).
+
+**Waarom education privé.** Repo 3 bevat de Belgische onderwijs-integraties (Smartschool/Informat)
 en de school-PII-extensies (INSZ, stamboeknummer, gezinsdump). Gevoeliger en specifieker dan het
 generieke platform; scheidt ook wat ooit open/commercieel kan versus wat schoolgebonden blijft.
 
@@ -82,7 +93,7 @@ overlay-repo** — géén product-tier, maar een deployment-laag bovenop een edi
 
 ```
    melira-platform  ──►  melira-education  ──►  melira-cust-<school-X>
-        (A)                    (B)                  (overlay, privé)
+     (repo 1)              (repo 3)               (overlay, privé)
 ```
 
 - Naampatroon: repo `melira-cust-<klant>` (merklaag) met modules `ml_<klantprefix>_<naam>`.
@@ -100,9 +111,9 @@ Dit is exact het Odoo-partnermodel voor klant-customisaties en houdt de product-
 
 | Tier | Repo | Inhoud | Regel |
 |---|---|---|---|
-| **1 · Platform** | A | **Kernel** (`ml_core` + identiteit org/person/role/proprelation, proces, betask, toegang, sys.event, settings, sync-framework, generieke connectors LDAP/Google/SAP) **+ gedeelde apps** (projects, appfoundry, itsm, assets, knowledge, tasks, processcomposer, mcp, dashboard). | Domein-agnostisch, bruikbaar in elke editie. Gedeelde apps = single-source, geen fork. |
-| **2 · Business** | A | `ml_biz_*`-verticals + bundle `ml_business`. | Hangt af van platform. Nu greenfield. |
-| **3 · Education** | B | `ml_edu_*`-verticals + bundle `ml_education`. | Hangt af van platform. |
+| **1 · Platform** | `melira-platform` | **Kernel/core** (`ml_core` + identiteit org/person/role/proprelation, proces, betask, toegang, sys.event, settings, sync-framework, generieke connectors LDAP/Google/SAP, generieke admin) **+ common/gedeelde apps** (projects, appfoundry, itsm, assets, knowledge, tasks, processcomposer, mcp, dashboard). | Domein-agnostisch, bruikbaar in elke editie. Common = single-source, geen fork; éénrichting common → core. |
+| **2 · Business** | `melira-business` | `ml_biz_*`-verticals + `ml_biz_admin`/`ml_biz_person`-extensies + bundle `ml_business`. | Hangt af van platform. Nu greenfield. |
+| **3 · Education** | `melira-education` | `ml_edu_*`-verticals + `ml_edu_admin` (BRSO/SRBR) + `ml_edu_person` + connectors `ml_edu_informat`/`ml_edu_smartschool` + bundle `ml_education`. | Hangt af van platform. Editie-extensies = plugins op de generieke admin (§6). |
 
 **Editie-bundel** = dun meta-module per vertical-tier (alleen `depends=[...]` + branding). Bepaalt
 welke apps de editie krijgt.
@@ -119,18 +130,18 @@ van "core uitbreiden".)
 > technische naam, nooit in de zichtbare naam. Zichtbare naam (`name`) = merklaag → "Melira …";
 > functie-only namen blijven (bv. "Lessenrooster", "Afdrukcentrum").
 
-### Tier 1 · Platform — Kernel  ·  repo A
+### Tier 1 · Platform — Kernel/core  ·  repo `melira-platform`
 
 | Huidige module | → Nieuwe module | Zichtbare naam | Opmerking |
 |---|---|---|---|
 | `myschool_core` | `ml_core` | Melira Core | **Afslanken**: school-PII + Smartschool/Informat eruit (§6). |
 | `myschool_theme` | `ml_theme` | Melira Theme | |
-| `myschool_admin` | `ml_admin` | Melira Admin | ⚠ BRSO/SRBR-wizards zijn onderwijs-specifiek → naar edu (§7). |
+| `myschool_admin` | `ml_admin` | Melira Admin | **Generiek/basic** — biedt extensiepunten (§6); BRSO/SRBR → `ml_edu_admin`. |
 | `myschool_oidc` | `ml_oidc` | Melira OIDC (Keycloak) | |
 | `myschool_sync` | `ml_sync` | Melira Sync | |
 | `myschool_servermanager` | `ml_servermanager` | Melira Server Manager | |
 
-### Tier 1 · Platform — Gedeelde apps  ·  repo A
+### Tier 1 · Platform — Common/gedeelde apps  ·  repo `melira-platform`
 
 | Huidige module | → Nieuwe module | Zichtbare naam | Opmerking |
 |---|---|---|---|
@@ -144,12 +155,14 @@ van "core uitbreiden".)
 | `myschool_mcp` | `ml_mcp` | Melira MCP Server | Namespace-rename, zie §8. |
 | `myschool_dashboard` | `ml_dashboard` | Mijn Dashboard | Generiek dashboard-framework. |
 
-### Tier 2 · Business  ·  repo A  ·  prefix `ml_biz_`
+### Tier 2 · Business  ·  repo `melira-business`  ·  prefix `ml_biz_`
 
 Nog geen modules — greenfield. Eerste biz-vertical `_inherit`t `ml.person` voor business-velden (§6)
-en hangt aan het platform. Bundle: `ml_business` (zichtbaar "Melira for Business").
+en hangt aan het platform. Editie-extensies symmetrisch met edu: `ml_biz_admin` (plugin op de
+generieke admin), `ml_biz_person`, en later eventuele biz-connectors. Bundle: `ml_business`
+(zichtbaar "Melira for Business").
 
-### Tier 3 · Education  ·  repo B  ·  prefix `ml_edu_`
+### Tier 3 · Education  ·  repo `melira-education`  ·  prefix `ml_edu_`
 
 | Huidige module | → Nieuwe module | Zichtbare naam | Opmerking |
 |---|---|---|---|
@@ -160,10 +173,15 @@ en hangt aan het platform. Bundle: `ml_business` (zichtbaar "Melira for Business
 | `myschool_planner` | `ml_edu_planner` | Planner | |
 | `myschool_directie_dashboard` | `ml_edu_directie_dashboard` | Directie Dashboard | |
 | `myschool_kosten_dashboard` | `ml_edu_kosten_dashboard` | Kosten Dashboard | ⚠ Kandidaat voor **platform** i.p.v. edu — verifiëren (§7). |
-| *(nieuw, uit core)* | `ml_edu_connect` | Smartschool/Informat-koppeling | Extractie connectors uit core (§6). |
+| *(nieuw, uit core)* | `ml_edu_informat` | Informat-koppeling | Connector-plugin op `ml_admin` (§6). Eigen config + secret. |
+| *(nieuw, uit core)* | `ml_edu_smartschool` | Smartschool-koppeling | Connector-plugin op `ml_admin` (§6). Eigen config + secret. |
+| *(nieuw, uit admin)* | `ml_edu_admin` | Onderwijs-admin (BRSO/SRBR) | Admin-plugin: BRSO/SRBR-wizards + onderwijs-rolconcepten. |
 | *(nieuw, uit core)* | `ml_edu_person` | Onderwijs-persoonsgegevens | Extractie INSZ/`person.details` uit core (§6). |
 
-Bundle: `ml_education` (zichtbaar "Melira for Education"), repo B.
+> De twee connectors mogen ook samen in één `ml_edu_connect` als de config gedeeld blijkt; per-connector
+> modules (hierboven) geven schonere aan/uit-controle en gescheiden secrets per koppeling.
+
+Bundle: `ml_education` (zichtbaar "Melira for Education"), repo `melira-education`.
 
 ---
 
@@ -193,10 +211,11 @@ reden om `ml_` te kiezen i.p.v. `melira_` voluit.
 
 ---
 
-## 6. Datamodel-naden (de echte herstructurering)
+## 6. Datamodel-naden + extensiepunt-patroon (de echte herstructurering)
 
 Drie naden waarlangs de kernel wordt afgeslankt — méér dan rename: de domein-splitsing die de
-4-instance-split en PII-classificatie tóch al vroegen (§10).
+4-instance-split en PII-classificatie tóch al vroegen (§10). Elke naad wordt een **expliciet
+extensiepunt** in de generieke kern/admin, waar editie-modules als **plugin** op haken.
 
 1. **`person`-naad.** Kernel definieert generiek `ml.person(person_type)`. Onderwijs-velden (`insz`,
    `stamboeknummer`, `person.details`-dump = INSZ/bankrekening/gezinssamenstelling) verhuizen uit
@@ -205,10 +224,43 @@ Drie naden waarlangs de kernel wordt afgeslankt — méér dan rename: de domein
    domein-PII meer. *(Integratie-noot §9: weeg of `ml.person` koppelt aan `res.partner`/`hr.employee`
    i.p.v. parallel datamodel.)*
 2. **Connector-naad.** `smartschool_*`, `informat_*` (DTO + service + config) verhuizen uit core naar
-   **`ml_edu_connect`**. **SAP-sync** = generiek-enterprise → blijft kernel (verifiëren). LDAP/Google
-   blijven kernel.
-3. **Admin-naad.** BRSO/SRBR-wizards in `ml_admin` zijn onderwijs-rolconcepten → naar edu (bv.
-   `ml_edu_person` of `ml_edu_admin`). `ml_admin` blijft generieke identiteits-/betask-UI.
+   **`ml_edu_smartschool`** / **`ml_edu_informat`** (zie patroon hieronder). **SAP-sync** =
+   generiek-enterprise → blijft kernel (verifiëren). LDAP/Google blijven kernel.
+3. **Admin-naad.** BRSO/SRBR-wizards in `ml_admin` zijn onderwijs-rolconcepten → naar **`ml_edu_admin`**
+   (admin-plugin). `ml_admin` blijft generieke identiteits-/betask-UI én levert de extensiepunten.
+
+### 6.1 Extensiepunt-patroon (plugin op de generieke admin)
+
+**Éénrichtingsregel.** De generieke admin/kern noemt **nooit** een editie-begrip (geen `if person.insz`,
+geen `informat` in core). Hij biedt extensiepunten; de plugin vult ze in. Afhankelijkheid loopt
+`ml_edu_*` → `ml_admin`, **nooit** omgekeerd — dezelfde regel als de repo-grens, één niveau dieper.
+Uitsluitend `_inherit`/view-inheritance/menu-extensie; **geen monkey-patch** (§9).
+
+**Connector-interface (abstract-model-registry).** De kern definieert een domein-neutrale interface;
+elke connector-plugin implementeert ze, en de betask-processor roept ze generiek aan zonder één naam
+te kennen:
+
+```python
+# melira-platform — het extensiepunt
+class MlDirectoryConnector(models.AbstractModel):
+    _name = "ml.directory.connector"
+    def sync_person(self, person): return          # default no-op
+    def on_person_created(self, person): return
+
+# melira-education/ml_edu_informat — de plugin
+class MlInformatConnector(models.Model):
+    _name = "ml.connector.informat"
+    _inherit = "ml.directory.connector"            # implementeert de interface
+    def sync_person(self, person):
+        ...                                         # Informat-push, leest ml_edu_person-velden
+```
+
+De processor dispatcht over alle modellen die de interface implementeren. Config + secret van de
+connector zitten in de plugin-module (edu), nooit in de kern — meteen goed voor de PII/security-scheiding.
+
+> Variant: i.p.v. de abstract-model-registry kan een data-gedreven `ml.connector.provider`-model
+> (één record per actieve connector → wijst naar het implementerende model) handiger zijn voor
+> aan/uit-per-instance via config. Voor pure code-koppeling volstaat de abstract-model-registry.
 
 ---
 
@@ -216,7 +268,7 @@ Drie naden waarlangs de kernel wordt afgeslankt — méér dan rename: de domein
 
 - **SAP-sync**: kernel-generiek of toch edu/biz? (§6.2)
 - **`kosten_dashboard`**: edu of platform? (hangt enkel aan core+dashboard → mogelijk platform)
-- **`admin` BRSO/SRBR**: exacte omvang onderwijs-staart; waarheen.
+- **`admin` BRSO/SRBR**: bestemming = `ml_edu_admin` (beslist); exacte omvang onderwijs-staart verifiëren.
 - **`dashboard`-familie** (dashboard/directie/kosten): consolideren? (open vraag platform-review).
 - **`processcomposer` vs `tasks`**: twee BPMN-families (`process.map.*` vs `ml.process.*`) —
   greenfield = hét moment om er één te deprecaten.
@@ -295,24 +347,28 @@ verschillende vervangingen:**
 **Fase A — vlakke rename** over de hele boom (beide vervangingen hierboven).
 
 **Fase B — tier-prefix + repo-split + datamodel-naden**: onderwijs-modules → `ml_edu_*` (dir +
-manifest + XML-ID-module; cross-refs bijwerken); extractie §6 (person-PII, connectors, BRSO/SRBR) uit
-core; bundels `ml_business` (A) + `ml_education` (B); modellen blijven plat `ml.*`; repo A/B splitsen
-+ `addons_path`-profielen per editie.
+manifest + XML-ID-module; cross-refs bijwerken); extractie §6 (person-PII, connectors als plugins,
+BRSO/SRBR → `ml_edu_admin`) uit core; extensiepunten in `ml_admin` definiëren; bundels `ml_business`
+(repo `melira-business`) + `ml_education` (repo `melira-education`); modellen blijven plat `ml.*`;
+de drie repo's splitsen + `addons_path`-profielen per editie.
 
-**Verificatie** (per repo, verse DB): `-i ml_business` (A alleen) en `-i ml_education` (A+B) op lege
-DB → install + bestaande test-suites groen. Geen upgrade-pad; faalt iets, dan broncode-fout, geen
-dataverlies.
+**Verificatie** (per editie, verse DB): `-i ml_business` (platform + business) en `-i ml_education`
+(platform + education) op lege DB → install + bestaande test-suites groen. Geen upgrade-pad; faalt
+iets, dan broncode-fout, geen dataverlies.
 
 ---
 
 ## 12. Werkvolgorde voor MITRAS
 
-1. **Repo's + accounts** vastleggen (GitHub TBD), `addons_path`-profielen, CI per repo.
+1. **Repo's + accounts** vastleggen (3 repo's: `melira-platform`/`-business`/`-education`, GitHub TBD),
+   `addons_path`-profielen, CI per repo.
 2. **Transform-script** (fase A, beide vervangingen §11) + dry-run-diff reviewen.
-3. **Platform** (kernel + gedeelde apps) naar repo A; `ml_business`-bundle; verse install groen.
-4. **Datamodel-naden** (§6): core afslanken, `ml_edu_person`/`ml_edu_connect`; `ml.person`↔
+3. **Platform** (kernel/core + common) naar `melira-platform`; extensiepunten in `ml_admin` (§6.1);
+   `ml_business`-bundle + `ml_biz_admin` naar `melira-business`; verse install groen.
+4. **Datamodel-naden** (§6): core afslanken, `ml_edu_person` + connector-plugins
+   `ml_edu_informat`/`ml_edu_smartschool` + `ml_edu_admin`; `ml.person`↔
    `res.partner`/`hr.employee`-brug ontwerpen (§9).
-5. **Education** naar repo B; `ml_education`-bundle; verse install (A+B) groen.
+5. **Education** naar `melira-education`; `ml_education`-bundle; verse install (platform+education) groen.
 6. **MCP-rename** (§8) + her-registratie + infra/DNS-ticket (olvp-ict werf).
 7. **Provisioning**: verse business- en education-instances via `ml_servermanager`.
 8. **Decommissioning** oude `test`-instance + repo `odoo-myschool` archiveren.
@@ -321,3 +377,42 @@ dataverlies.
 Pre-conditie: naam **Melira** juridisch bevestigd (BOIP) vóór externe publicatie/DNS. Interne
 greenfield-bouw kan vooruit; externe namen als laatste. Dankzij de `ml_`-ontkoppeling (§5) blijft een
 late merkwijziging sowieso buiten de code.
+
+---
+
+## 13. Frontend-strategie — headless-posture (beslist 2026-06-13)
+
+**Keuze: Odoo blijft, de presentatielaag wordt ontkoppeld. Géén platformmigratie naar
+Django + Vue.** De pijnpunten (views-als-data is star; native install lastig) zitten in de
+*presentatie* en *deploy*, niet in wat Odoo gratis geeft (ORM, ACL/record rules, betask-pipeline,
+connectors, sync, multi-company, MCP). Een volledige rewrite gooit die dure helft weg (~1-2 jaar om op
+feature-pariteit te komen) om het minst-erge probleem op te lossen.
+
+```
+   ┌─────────────── presentatie (vervangbaar) ───────────────┐
+   │  Learning Assistant   admin-SPA        leerling-portaal   │
+   │  (Vue ✓)              (Vue/OWL)        (later)            │
+   └───────────────┬──────────────┬───────────────┬───────────┘
+                   │  JSON-RPC / REST / MCP  (versioneerd contract)
+   ┌───────────────┴──────────────────────────────────────────┐
+   │  Odoo = system-of-record + business-logica + auth         │
+   │  betask · connectors · sync · ACL · multi-company         │
+   └───────────────────────────────────────────────────────────┘
+```
+
+**Bewijs van haalbaarheid.** De Learning Assistant is al **herwerkt van Next.js naar Vue.js in een
+halve dag** — bewuste keuze tégen een big-tech-frontend. Dat toont dat de frontend tegen een stabiel
+API-contract een weekendklus is om te wisselen, geen migratie.
+
+**Toepassing (greenfield = goedkoopste moment om in te bakken):**
+- `ml_core` **headless-vriendelijk**: alle logica in models/services, niets cruciaals dat enkel via
+  een Odoo-view bereikbaar is (betask dwingt dit al grotendeels af).
+- Eigen UX = OWL-workspace of externe **Vue-SPA**; Odoo's XML-views blijven voor ICT-admin-CRUD, waar
+  starheid net een voordeel is (snel, gratis, onderhoudsarm).
+- **JSON-RPC/MCP als versioneerd publiek API-contract** behandelen → frontend vervangen wordt
+  additief, geen rewrite. Sluit aan op de API-first 4-instance-split (§10, [[project-arch-split-admin-apps]]).
+
+**Heroverweeg een volledige overstap pas als ≥2 van 3 waar zijn:** (1) de frontend wórdt het
+product/differentiator; (2) Odoo's breaking-change-last (`<tree>`→`<list>`, `category_id`/`name_get`
+weg) weegt structureel zwaarder dan wat de ORM bespaart; (3) je wil weg van de AGPL/Odoo-SA-binding om
+commerciële redenen.
