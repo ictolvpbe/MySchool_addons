@@ -2032,15 +2032,38 @@ class BeTaskProcessor(models.AbstractModel):
             # =========================================================
             ('LETTER', 'USER', 'GENERATE'): self.process_letter_user_generate,
         }
-        
+
+        # Extensiepunt: connector-plugins (Smartschool/Informat/…) dragen via
+        # _get_connector_betask_handlers extra (target, object, action)→handler-
+        # entries bij, zonder dat core hun methodes hoeft te kennen. Default = {}
+        # → niet-brekend; entries hier overschrijven de hardgecodeerde tabel niet
+        # tenzij dezelfde sleutel (bewust: plugin wint).
+        handler_map.update(self._get_connector_betask_handlers())
+
         handler = handler_map.get((target, obj, action))
-        
+
         if handler:
             return handler(task)
         else:
             _logger.warning(f'No specific handler for {target}_{obj}_{action}, using fallback')
             return True
-    
+
+    @api.model
+    def _get_connector_betask_handlers(self):
+        """Extensiepunt voor connector-plugins (editie-modules).
+
+        Connector-modules (bv. ``myschool_edu_smartschool``,
+        ``myschool_edu_informat``) overschrijven deze methode via ``_inherit``
+        op ``myschool.betask.processor`` en geven een dict terug van de vorm
+        ``{(target, object, action): self.handler_method}``. De handler-methodes
+        leven dan op deze ``AbstractModel`` zodra de plugin geïnstalleerd is;
+        core hoeft de plugins niet te kennen (éénrichting: plugin → core).
+
+        Default (geen plugin geïnstalleerd) = lege dict → het dispatch-gedrag
+        blijft ongewijzigd.
+        """
+        return {}
+
     @api.model
     def _parse_task_data(self, data_str):
         """Parse task data from string (usually JSON)."""
