@@ -42,7 +42,7 @@
                                invisible="not create_odoo_user or link_existing_user"/>
                     </group>
                 </group>
-                <group string="Debug Information" >
+                <group string="Debug Information" groups="base.group_no_one">
                     <field name="debug_info" readonly="1" widget="text"/>
                 </group>
                 <footer>

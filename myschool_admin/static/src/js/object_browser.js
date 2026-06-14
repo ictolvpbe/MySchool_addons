@@ -3,6 +3,7 @@
 import { registry } from "@web/core/registry";
 import { Component, useState, onWillStart, useRef, onMounted, onWillUnmount, onWillUpdateProps } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
+import { InputDialog } from "@myschool_core/webclient/input_dialog";
 
 /**
  * Single source of truth for the actions available on a node.
@@ -1099,6 +1100,7 @@ export class ObjectBrowserClient extends Component {
         this.orm = useService("orm");
         this.action = useService("action");
         this.notification = useService("notification");
+        this.dialog = useService("dialog");
         this.containerRef = useRef("container");
         this.globalSearchRef = useRef("globalSearch");
         
@@ -2398,9 +2400,15 @@ export class ObjectBrowserClient extends Component {
 
     async quickActionRename(dn, cn) {
         if (!this.state.adActiveSessionId) return;
-        const newName = window.prompt(
-            `Hernoem "${cn}" naar:\n\n(Alleen de leaf-naam, niet het volledige DN.)`,
-            cn);
+        const newName = await new Promise((resolve) => {
+            this.dialog.add(InputDialog, {
+                title: `Hernoem "${cn}"`,
+                label: "Alleen de leaf-naam, niet het volledige DN.",
+                defaultValue: cn,
+                confirm: (v) => resolve(v),
+                cancel: () => resolve(null),
+            });
+        });
         if (!newName || newName === cn) return;
         try {
             const result = await this.orm.call(
@@ -2425,13 +2433,18 @@ export class ObjectBrowserClient extends Component {
 
     async quickActionMove(dn, cn) {
         if (!this.state.adActiveSessionId) return;
-        // Eenvoudig prompt: admin typt het target parent-DN.
+        // Admin typt het target parent-DN.
         // Een autocomplete-OU-picker is mooier maar groter scope.
-        const newParent = window.prompt(
-            `Verplaats "${cn}" naar nieuwe parent-DN:\n\n`
-            + `(bv. "OU=Personeel,DC=test,DC=local"). De RDN blijft `
-            + `ongewijzigd.`,
-            dn.split(',', 1).length > 1 ? dn.slice(dn.indexOf(',') + 1) : '');
+        const newParent = await new Promise((resolve) => {
+            this.dialog.add(InputDialog, {
+                title: `Verplaats "${cn}"`,
+                label: 'Nieuwe parent-DN (bv. "OU=Personeel,DC=test,DC=local"). '
+                    + "De RDN blijft ongewijzigd.",
+                defaultValue: dn.split(',', 1).length > 1 ? dn.slice(dn.indexOf(',') + 1) : "",
+                confirm: (v) => resolve(v),
+                cancel: () => resolve(null),
+            });
+        });
         if (!newParent) return;
         try {
             const result = await this.orm.call(

@@ -169,6 +169,10 @@ class MyschoolServer(models.Model):
             vals['last_enrolled'] = fields.Datetime.now()
             if clear_admin_pw:
                 vals['target_admin_password'] = False
+            # Bewaar de remote-RPC-credential niet plaintext na een
+            # geslaagde enrollment; de manager voert hem opnieuw in voor
+            # een test-connectie of her-enrollment.
+            vals['api_key'] = False
         self.write(vals)
         self.message_post(body=_("Enrollment (%s):") % state
                           + '<br/>' + '<br/>'.join(log))
