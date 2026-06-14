@@ -26,13 +26,23 @@
                     <group>
                         <group>
                             <field name="imported_count"/>
-                            <field name="created_klassen"/>
+                            <field name="skipped_count"/>
                         </group>
                         <group>
+                            <field name="missing_klassen"
+                                   invisible="not missing_klassen"/>
+                            <field name="missing_lokalen"
+                                   invisible="not missing_lokalen"/>
                             <field name="missing_teachers"
                                    invisible="not missing_teachers"/>
                         </group>
                     </group>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not skipped_count">
+                        Onbekende klassen worden niet aangemaakt door de import.
+                        Maak ze eerst aan (via de SIS-sync of manueel) en importeer
+                        opnieuw.
+                    </div>
                 </div>
 
                 <field name="state" invisible="1"/>
