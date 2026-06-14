@@ -199,7 +199,7 @@ generieke admin), `ml_biz_person`, en later eventuele biz-connectors. Bundle: `m
 
 | Huidige module | → Nieuwe module | Zichtbare naam | Opmerking |
 |---|---|---|---|
-| `myschool_lessenrooster` | `ml_edu_lessenrooster` | Lessenrooster | |
+| `myschool_lessenrooster` | `ml_edu_lessenrooster` | Lessenrooster | Edu bevestigd 2026-06-14. Uurroosters = onderwijs-specifiek maar belangrijk. De CSV-import (uit een extern roosterprogramma) maakt **géén** org-structuur meer aan: klassen/lokalen komen uit de SIS (Informat) of manueel beheer (= eigenaarschap org-boom); onbekende klas → overgeslagen + gemeld. Geen betask-overtreding meer. |
 | `myschool_activiteiten` | `ml_edu_activiteiten` | Activiteiten | |
 | `myschool_drukwerk` | `ml_edu_drukwerk` | Afdrukcentrum | |
 | `myschool_professionalisering` | `ml_edu_professionalisering` | Professionalisering | |
