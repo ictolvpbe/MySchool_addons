@@ -59,8 +59,7 @@ class ResConfigSettings(models.TransientModel):
     def action_open_ldap_servers(self):
         return self.env.ref('myschool_admin.action_ldap_server_config').read()[0]
 
-    def action_open_informat_config(self):
-        return self.env.ref('myschool_admin.action_informat_service_config').read()[0]
+    # action_open_informat_config verhuisd naar plugin myschool_edu_informat.
 
     def action_open_config_items(self):
         return self.env.ref('myschool_admin.action_config_item').read()[0]

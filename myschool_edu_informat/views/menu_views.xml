@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Informat-menu's (verhuisd uit myschool_admin). Parent
+         menu_sync_triggers leeft in myschool_admin. -->
+
+    <menuitem id="menu_informat_sync_wizard"
+              name="Informat Sync (gericht)"
+              parent="myschool_admin.menu_sync_triggers"
+              action="action_informat_sync_wizard"
+              sequence="40"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+    <menuitem id="menu_informat_service_config"
+              name="Informat-configuratie"
+              parent="myschool_admin.menu_sync_triggers"
+              action="action_informat_service_config"
+              sequence="41"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+</odoo>

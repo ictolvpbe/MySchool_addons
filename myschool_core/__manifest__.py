@@ -1,6 +1,6 @@
 {
     'name': 'MySchool Core Module',
-    'version': '1.0',
+    'version': '1.1',
     'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, and periods',
     'description': """

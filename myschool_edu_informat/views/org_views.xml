@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Voeg de per-school Informat-sync-knop toe aan de org-form
+         (verhuisd uit myschool_admin). -->
+    <record id="view_myschool_org_form_informat" model="ir.ui.view">
+        <field name="name">myschool.org.form.informat</field>
+        <field name="model">myschool.org</field>
+        <field name="inherit_id" ref="myschool_admin.view_myschool_org_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//button[@name='action_verify_groups']" position="after">
+                <button name="action_sync_this_school" type="object"
+                        string="Sync this school"
+                        class="btn-primary" icon="fa-cloud-download"
+                        invisible="sap_provider != '1' or not inst_nr"
+                        confirm="Een Informat sync uitvoeren voor enkel deze school? Dit raadpleegt de live Informat API en queueet betasks op basis van de respons."
+                        title="Run an Informat sync scoped to this school's inst_nr only — useful for debugging without touching the other schools."/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

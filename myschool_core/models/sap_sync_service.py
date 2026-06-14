@@ -30,7 +30,7 @@ from odoo import api, fields, models, _
 _logger = logging.getLogger(__name__)
 
 
-# Default-drempels (kunnen overschreven worden in informat.service.config).
+# Default-drempels (kunnen overschreven worden in myschool.sap.sync.config).
 DEFAULT_THRESHOLDS = {
     'PERSON': 20.0,
     'ORG': 20.0,
@@ -191,8 +191,8 @@ class SapSyncService(models.AbstractModel):
 
     @api.model
     def _get_thresholds(self):
-        """Lees de drempels uit informat.service.config (met defaults)."""
-        config = self.env['myschool.informat.service.config'].get_config()
+        """Lees de drempels uit myschool.sap.sync.config (met defaults)."""
+        config = self.env['myschool.sap.sync.config'].get_config()
         if not getattr(config, 'safeguard_enabled', True):
             return None, 0
         thresholds = {
