@@ -312,20 +312,30 @@ verhuizen die `_inherit`t op de processor. De kern bevat daarna nul Smartschool-
 plugin-loze install + plugin-install + admin-zonder-plugin + admin+plugin, plus de volledige
 testsuite identiek aan baseline (0 regressie). Dit ís het §6.1-patroon, bewezen werkbaar.
 
-**Informat = ingestie-backbone, géén leaf.** Anders dan Smartschool zit Informat structureel in de
-kern:
-- het `org`-model heeft een directe sync-actie `informat.service.execute_sync()`;
-- de **SAP-sync ís de Informat-analyse/review-pijplijn** (leest `informat.service.config`, draait in
-  de analyse-fase) → SAP en Informat zijn onlosmakelijk in de kern;
-- core `res.config.settings` hergebruikt de Informat-config-velden via `related`;
-- de JSON→`person`/`person.details`/`org`-mappers worden vanuit de **generieke** EMPLOYEE/STUDENT/
-  ORG-betask-processors aangeroepen (10+ call-sites) — ze zíjn betask-verwerking, geen connector-rand.
+**Informat = ingestie-backbone, géén leaf — daarom GEFASEERD afgesplitst.** Anders dan Smartschool zit
+Informat structureel in de kern. De afsplitsing is daarom in twee stukken gedaan:
 
-→ Informat schoon afsplitsen vergt een **herontwerp** (org-sync-actie, SAP-config-koppeling,
-res_config-reuse én de mapper-call-sites achter extensiepunten brengen), niet de mechanische move die
-bij Smartschool volstond. Behandel dit als eigen ontwerp-stap, samen met de SAP-koppeling en de
-person-naad, en koppel het aan de PII-/4-instance-werf (§10). Tot dan: **Informat + SAP blijven in de
-kern.**
+**Stage-1 (✓ gedaan, Dev `91676a0`, 2026-06-14) — `myschool_edu_informat` (depends core+admin).** De
+service/config/dto + admin-UI (wizard, config-view, test-runner-stappen) zijn verhuisd en de drie
+echte core→Informat-module-naden geknipt:
+- *org-sync-actie*: `action_sync_this_school` (knop + methode) → plugin (`_inherit myschool.org` +
+  view-xpath). Core-`org` noemt geen Informat meer.
+- *safeguard-config*: de drempel-velden bleken functioneel **SAP-sync**, niet Informat. Ze zijn naar
+  een neutraal kernel-model `myschool.sap.sync.config` verhuisd (met data-migratie); `sap_sync_service`
+  leest daaruit. De `res.config.settings`-reuse + het settings-blok verhuizen mee naar de plugin.
+- *cron*: `ir_cron_sap_sync_auto` (reft het Informat-model) → plugin; de neutrale cleanup-cron blijft.
+- Geverifieerd: 4 install-configs (core-Informat-vrij / plugin / admin-zonder / admin+plugin) + de
+  migratie-upgrade + de volledige testsuite identiek aan baseline (0 regressie). Recon-correctie:
+  **sync re-emit géén DB-betasks** (serialiseert het neutrale record naar `('API',*,'SYNC')`) → een
+  slave raakt de Informat-handlers nooit, de plugin hoeft enkel op de master.
+
+**Stage-2 (uitgesteld → PII-werf §10).** Wat in de kern blíjft is de eigenlijke ingestie: de
+JSON→`person`/`person.details`/`org`-mappers + `_create/_update_person_from_*`-helpers, aangeroepen
+vanuit de **generieke** `('DB',EMPLOYEE/STUDENT/…)`-betask-handlers (manuele edits lopen via aparte
+`('MANUAL',…)`-handlers — de DB-ingestie is dus feitelijk Informat-only). Dit verhuizen via het
+keystone-extensiepunt (`_get_connector_betask_handlers`) raakt **exact de PII-velden** (`insz`,
+`reg_*`, het volledige JSON-archief) en hoort daarom bij de PII-/retentie-werf, samen met de
+person-naad. Na Stage-1 is dit nog enkel **data-vorm-koppeling**, geen module-koppeling meer.
 
 **person-naad idem uitgesteld.** `person.details`/`insz` zijn verweven met generieke admin-tooling
 (een algemene rollback/cleanup-wizard rolt person.details-versies terug) en vergen de
@@ -335,8 +345,10 @@ PII-/retentiebeslissingen van §10 vooraf. Niet nu; bij de PII-werf.
 
 ## 7. Te verifiëren door MITRAS (open naden)
 
-- **SAP-sync + Informat**: één gekoppelde ingestie-pijplijn in de kern (§6.2) — NIET te scheiden in
-  "SAP blijft / Informat weg". Afsplitsing = herontwerp; koppelen aan de PII-/4-instance-werf (§10).
+- **SAP-sync + Informat**: de connector-laag is afgesplitst (§6.2 Stage-1, `myschool_edu_informat`);
+  de **safeguard-drempels** zijn neutraal geworden (`myschool.sap.sync.config`). Wat resteert is de
+  Informat-JSON→record-ingestie in de generieke DB-betask-handlers (Stage-2) — koppelen aan de
+  PII-/4-instance-werf (§10), want het raakt de PII-velden.
 - **`kosten_dashboard`**: edu of platform? (hangt enkel aan core+dashboard → mogelijk platform)
 - **`admin` BRSO/SRBR**: bestemming = `ml_edu_admin` (beslist); exacte omvang onderwijs-staart verifiëren.
 - **`dashboard`-familie** (dashboard/directie/kosten): consolideren? (open vraag platform-review).
