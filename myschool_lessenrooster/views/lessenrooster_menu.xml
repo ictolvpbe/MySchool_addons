@@ -27,5 +27,6 @@
               name="Importeren"
               parent="menu_lessenrooster_root"
               action="action_lessenrooster_import"
+              groups="myschool_core.group_myschool_core_admin"
               sequence="20"/>
 </odoo>

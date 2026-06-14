@@ -66,6 +66,7 @@
         'data/company_sync_cron.xml',
         'data/letter_task_types.xml',
         'data/letter_template_data.xml',
+        'data/letter_cleanup_cron.xml',
         'data/password_wordlist_data.xml',
         'data/mail_template_sap_safeguard.xml',
         'data/sap_sync_cron.xml',

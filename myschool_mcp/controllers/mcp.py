@@ -118,10 +118,12 @@ class McpController(http.Controller):
                 JSONRPC_METHOD_NOT_FOUND,
                 f'Method not found: {method}',
                 request_id=request_id)
-        except Exception as e:
+        except Exception:
+            # Details enkel server-side loggen; naar de client een generieke
+            # melding (geen interne foutdetails/stacktrace lekken).
             _logger.exception('MCP: handler crashed for method %r', method)
             return self._jsonrpc_error(
-                JSONRPC_INTERNAL_ERROR, f'Internal error: {e}',
+                JSONRPC_INTERNAL_ERROR, 'Internal error',
                 request_id=request_id, status=500)
 
     # ------------------------------------------------------------------
