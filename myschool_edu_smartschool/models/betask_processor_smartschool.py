@@ -344,13 +344,12 @@ class BeTaskProcessorSmartschool(models.AbstractModel):
             changes.append(f'[DRY RUN] saveUser would {"create" if is_new_user else "update"} {username}')
         elif is_new_user:
             changes.append(f'Created Smartschool user {username} for {person.name}')
-            # MVP: random password is logged at INFO level so the cron
-            # output shows it during initial rollout. Productiehouding
-            # vereist een LETTER/USER/GENERATE-cascade die het wachtwoord
-            # naar de gebruiker mailt — TODO Fase 4.
-            _logger.info(
-                '[SMARTSCHOOL] Created %s — initial password: %s',
-                username, password)
+            # Het initiële wachtwoord wordt NIET gelogd (lekt naar log +
+            # eventueel sys.event). Het wordt hieronder op person.password
+            # bewaard zodat een LETTER/USER/GENERATE-cascade het later naar
+            # de gebruiker kan mailen — TODO Fase 4.
+            _logger.info('[SMARTSCHOOL] Created %s (initieel wachtwoord gezet)',
+                         username)
             # Persist on person.password so a LETTER template can pick
             # it up via ``{{ object.password }}`` later.
             try:

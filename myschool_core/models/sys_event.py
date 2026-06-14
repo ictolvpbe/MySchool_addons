@@ -302,12 +302,11 @@ class SysEvent(models.Model):
             if record.priority not in ['0', '1', '2', '3']:
                 raise ValidationError(_('Priority must be between 0 and 3'))
     
-    def name_get(self):
-        """Custom display name"""
-        result = []
+    @api.depends('name', 'eventcode')
+    def _compute_display_name(self):
+        """Custom display name (Odoo 19: name_get bestaat niet meer)."""
         for record in self:
             name = f"{record.name}"
             if record.eventcode:
                 name += f" [{record.eventcode}]"
-            result.append((record.id, name))
-        return result
+            record.display_name = name

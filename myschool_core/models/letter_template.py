@@ -21,6 +21,7 @@ shows the exact ``{{ ... }}`` string ready to copy into the editor.
 
 import base64
 import logging
+from datetime import timedelta
 
 from markupsafe import Markup
 
@@ -44,6 +45,14 @@ class LetterTemplate(models.Model):
     _description = 'Letter Template'
     _inherit = ['mail.render.mixin']
     _order = 'sequence, name'
+
+    # Marker op gegenereerde brief-PDF's (ir.attachment.description) zodat de
+    # opruim-cron ze betrouwbaar terugvindt. Welkomstbrieven bevatten het
+    # plaintext-wachtwoord ({{ object.password }}) → ze mogen niet eeuwig op
+    # de persoon blijven staan.
+    _LETTER_ATTACHMENT_MARKER = 'MYSCHOOL_LETTER_PDF'
+    # Bewaartermijn (dagen) voor gegenereerde brief-PDF's.
+    _LETTER_ATTACHMENT_RETENTION_DAYS = 30
 
     # ---------------------------------------------------------------- identification
     name = fields.Char(string='Name', required=True, translate=True)
@@ -392,6 +401,9 @@ class LetterTemplate(models.Model):
             'name': filename,
             'datas': base64.b64encode(pdf_bytes),
             'mimetype': 'application/pdf',
+            # Marker zodat _cron_cleanup_letter_attachments deze PDF later
+            # kan opruimen (kan een plaintext-wachtwoord bevatten).
+            'description': self._LETTER_ATTACHMENT_MARKER,
         }
         if attach:
             vals.update({
@@ -408,6 +420,27 @@ class LetterTemplate(models.Model):
             '[LETTER] Generated attachment %s (template=%s, record=%s/%s)',
             attachment.id, self.code, record._name, record.id)
         return attachment
+
+    @api.model
+    def _cron_cleanup_letter_attachments(self):
+        """Verwijder gegenereerde brief-PDF's ouder dan de bewaartermijn.
+
+        Welkomstbrieven bevatten een plaintext-wachtwoord; ze worden bewust
+        niet onbeperkt bewaard. Wordt door een dagelijkse cron aangeroepen.
+        """
+        cutoff = fields.Datetime.now() - timedelta(
+            days=self._LETTER_ATTACHMENT_RETENTION_DAYS)
+        stale = self.env['ir.attachment'].sudo().search([
+            ('description', '=', self._LETTER_ATTACHMENT_MARKER),
+            ('create_date', '<', cutoff),
+        ])
+        count = len(stale)
+        if stale:
+            stale.unlink()
+            _logger.info(
+                '[LETTER] Opgeruimd: %d brief-PDF(s) ouder dan %d dagen',
+                count, self._LETTER_ATTACHMENT_RETENTION_DAYS)
+        return count
 
     def _build_attachment_filename(self, record):
         """Build a human-friendly filename for the generated PDF.

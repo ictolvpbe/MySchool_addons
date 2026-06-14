@@ -20,13 +20,16 @@ class MySchoolAdminController(http.Controller):
     @http.route('/myschool/benchmark/ping', type='http', auth='public',
                 csrf=False, methods=['GET'])
     def benchmark_ping(self):
-        """Lightweight ping endpoint for cross-server network benchmarking."""
+        """Lightweight ping endpoint for cross-server network benchmarking.
+
+        Publiek (auth='public') → bewust GEEN db-naam of andere interne
+        identificatie in de respons; enkel een liveness-signaal + timestamp
+        voor netwerk-latentiemeting.
+        """
         from datetime import datetime
         data = {
             'status': 'ok',
             'timestamp': datetime.now().isoformat(),
-            'database': request.env.cr.dbname,
-            'server': 'myschool',
         }
         return request.make_response(
             json.dumps(data),
