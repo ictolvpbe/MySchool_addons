@@ -100,14 +100,8 @@
                         </setting>
                     </block>
 
-                    <block title="Integraties — Informat" name="ms_core_informat">
-                        <setting string="Informat synchronisatie"
-                                 help="API-endpoints, storage-paden (dev/prod), sync-toggles (rollen, werknemers, klassen, leerlingen) en timing-parameters voor de Informat-koppeling.">
-                            <button name="action_open_informat_config"
-                                    type="object" icon="fa-database"
-                                    string="Beheer Informat-configuratie" class="btn-link"/>
-                        </setting>
-                    </block>
+                    <!-- "Integraties — Informat" verhuisd naar plugin
+                         myschool_edu_informat/views/res_config_settings_views.xml -->
 
                     <!-- ==========================================================
                          Settings Items (SI).

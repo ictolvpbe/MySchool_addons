@@ -41,14 +41,12 @@
         'views/sys_event_views.xml',
         'views/sys_event_type_views.xml',
         'views/betask_type_views.xml',
-        'views/informat_service_config_views.xml',
         'views/log_viewer_views.xml',
         'views/dashboard_views.xml',
         'views/object_browser_views.xml',
         'views/ldap_server_config_views.xml',
         'views/sync_test_runner_views.xml',
         'views/task_debug_runner_views.xml',
-        'views/informat_sync_wizard_views.xml',
         'views/sap_sync_run_views.xml',
         'views/res_company_views.xml',
         'views/res_users_views.xml',
@@ -87,6 +85,10 @@
 
         # Menus (must load after all actions are defined)
         'views/menu_views.xml',
+
+        # SAP-sync safeguard config (neutral kernel model; menu parent
+        # lives in menu_views.xml so load after it).
+        'views/sap_sync_config_views.xml',
 
         # Note: sequence.xml and sys_event_data.xml are loaded by myschool_core
 

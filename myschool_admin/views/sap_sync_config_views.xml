@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- SAP-sync Safeguard Configuration form -->
+    <record id="view_sap_sync_config_form" model="ir.ui.view">
+        <field name="name">myschool.sap.sync.config.form</field>
+        <field name="model">myschool.sap.sync.config</field>
+        <field name="arch" type="xml">
+            <form string="SAP-sync veiligheid (safeguard)">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="active" widget="boolean_toggle"/>
+                    </group>
+                    <group>
+                        <group string="Algemeen">
+                            <field name="safeguard_enabled" widget="boolean_toggle"/>
+                            <field name="safeguard_min_changes"/>
+                        </group>
+                        <group string="Drempels per objecttype (%)"
+                               help="Boven deze drempel wordt de sync opgeschort en de admin verwittigd.">
+                            <field name="threshold_person_pct"/>
+                            <field name="threshold_org_pct"/>
+                            <field name="threshold_orggroup_pct"/>
+                            <field name="threshold_proprelation_pct"/>
+                        </group>
+                    </group>
+                    <div class="alert alert-info" role="alert">
+                        Drempels worden enkel toegepast vanaf
+                        <strong><field name="safeguard_min_changes" readonly="1" nolabel="1"/></strong>
+                        absolute wijzigingen — kleine populaties triggeren géén alarm.
+                        Beheerders met admin-rol krijgen een mail bij overschrijding.
+                        Iedere admin kan in zijn/haar gebruikersprofiel kiezen om de
+                        review-UI altijd te zien (ook zonder drempel-overschrijding).
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_sap_sync_config_list" model="ir.ui.view">
+        <field name="name">myschool.sap.sync.config.list</field>
+        <field name="model">myschool.sap.sync.config</field>
+        <field name="arch" type="xml">
+            <list string="SAP-sync veiligheid" decoration-muted="not active">
+                <field name="name"/>
+                <field name="active" widget="boolean"/>
+                <field name="safeguard_enabled" widget="boolean"/>
+                <field name="threshold_person_pct"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_sap_sync_config" model="ir.actions.act_window">
+        <field name="name">SAP-sync veiligheid</field>
+        <field name="res_model">myschool.sap.sync.config</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="menu_sap_sync_config"
+              name="SAP-sync veiligheid"
+              parent="menu_sync_triggers"
+              action="action_sap_sync_config"
+              sequence="46"
+              groups="myschool_core.group_myschool_core_admin"/>
+
+</odoo>
