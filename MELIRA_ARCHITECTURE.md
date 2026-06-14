@@ -350,7 +350,17 @@ PII-/retentiebeslissingen van §10 vooraf. Niet nu; bij de PII-werf.
   Informat-JSON→record-ingestie in de generieke DB-betask-handlers (Stage-2) — koppelen aan de
   PII-/4-instance-werf (§10), want het raakt de PII-velden.
 - **`kosten_dashboard`**: edu of platform? (hangt enkel aan core+dashboard → mogelijk platform)
-- **`admin` BRSO/SRBR**: bestemming = `ml_edu_admin` (beslist); exacte omvang onderwijs-staart verifiëren.
+- **`admin` BRSO/SRBR** (verkend 2026-06: ~~`ml_edu_admin`~~ **vervalt**): géén edition-naad. BRSO/SRBR
+  zijn geen aparte modellen maar `proprelation_type_id.name`-waarden op het generieke `proprelation` —
+  dus **platform**, geen edu-concept ("School" in BRSO = gewoon een org; een biz-editie gebruikt
+  dezelfde mechaniek). Decompositie: (a) generieke factories (`proprelation_service.create_brso/
+  create_sr_br`) blijven kern; (b) de account-lifecycle-logica — SR-BR-resolutie in de PPSBR-handler
+  (`betask_processor`) + BRSO-groep-cascade (`manual_task_processor`) — zit verweven in de generieke
+  DB-betask-handlers, exact als de Informat-Stage-2-mappers → zelfde gating (PII-/betask-werf §10);
+  (c) de admin-UI (relations-manager-wizard + org-snippet "Nieuwe BRSO" + list-filters) maakt enkel
+  generieke proprelations → UI-suiker, niet edu. SRBR (SAP-rol→backend-rol) heeft als enige SAP-geur
+  en hoort bij het Informat-/Stage-2-betask-herontwerp, niet bij een edu-admin-plugin. **Conclusie:
+  geen aparte slice; wat resteert valt samen met Stage-2.**
 - **`dashboard`-familie** (dashboard/directie/kosten): consolideren? (open vraag platform-review).
 - **`processcomposer` vs `tasks`**: twee BPMN-families (`process.map.*` vs `ml.process.*`) —
   greenfield = hét moment om er één te deprecaten.
