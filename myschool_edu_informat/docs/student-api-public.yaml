@@ -1,0 +1,603 @@
+openapi: "3.0.3"
+info:
+  title: Student API (Public)
+  version: "1.0.0"
+  description: |
+    Public API for managing student enrollments and absences in secondary education (SO).
+
+    ## Authentication
+
+    All endpoints require a **Bearer JWT** token issued by the identity server.
+    Every request must include an `instituteNo` header identifying the school institute.
+    The token must contain the scope `api_informat_sas_leerlingen.leerlingen.{instituteNo}`.
+
+    ## Error Responses
+
+    All error responses follow the [RFC 7807](https://tools.ietf.org/html/rfc7807) Problem Details format.
+    Validation and business-rule violations include a `validationErrors` array with structured error entries.
+
+servers:
+  - url: https://studentapi.informatsoftware.be/api/v1
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: enrollments
+    description: Student enrollment management
+  - name: students
+    description: Student absence management
+
+paths:
+  /enrollments/create:
+    post:
+      operationId: createEnrollment
+      summary: Create a student enrollment
+      description: |
+        Creates a new enrollment for a student in a secondary education (SO) admin group.
+
+        Returns the enrollment ID on success.
+      tags:
+        - enrollments
+      parameters:
+        - $ref: "#/components/parameters/InstituteNo"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEnrollmentRequest"
+      responses:
+        "200":
+          description: Enrollment created successfully.
+          content:
+            application/json:
+              schema:
+                type: string
+                format: uuid
+                description: The enrollment ID.
+                example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        "400":
+          description: |
+            Validation error. One or more request fields are invalid.
+
+            | Code | Field | Description |
+            |------|-------|-------------|
+            | BR034A | schoolYear | School year is required. |
+            | BR034B | schoolYear | School year format is invalid. Expected format: `yyyy-yy` (e.g. `2025-26`). |
+            | BR043A | mainStructure | Main structure is required. |
+            | BR043B | mainStructure | Main structure must be `311` (SO — secondary education). |
+            | BR044 | personId | Person ID is required. |
+            | BR038A | admgrpNo | Admin group number is required. |
+            | BR038B | admgrpNo | Admin group number must have a length of exactly 6 characters. |
+            | BR045 | admgrpNo | Admin group number cannot be HBO5 (`043905`), 1A (`006246`), or 1B (`006247`). |
+            | BR046A | startDate | Start date is required. |
+            | BR046B | startDate | Start date must be within the school year boundaries (September 1 – June 30). |
+            | BR046C | startDate | Start date cannot be on a weekend unless it is September 1st. |
+            | BR017 | religionCode | Invalid religion code. See the `ReligionCode` enum for allowed values. |
+            | BR047A | nameExternalProvider | Name of external provider is required. |
+            | BR047B | nameExternalProvider | Name of external provider must not exceed 50 characters. |
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                type: "https://tools.ietf.org/html/rfc7231#section-6.5.1"
+                title: "One or more validation errors occurred."
+                status: 400
+                detail: "admgrpNo must have a length of 6 characters"
+                validationErrors:
+                  - name: "admgrpNo"
+                    reason: "admgrpNo must have a length of 6 characters"
+                    code: "BR038B"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: |
+            Business rule conflict. The request cannot be processed due to the current state of the data.
+
+            | Code | Field | Description |
+            |------|-------|-------------|
+            | DNF002 | personId | No student exists with the given person ID. |
+            | DNF003 | personId | The student's age must be between 11 and 25 years on December 31st of the school year. |
+            | DNF004 | instituteNo | No school found for the given institute number and school year. |
+            | MNA006 | admgrpNo | Student is already enrolled in the given admin group for the school year. |
+            | DNF005 | admgrpNo | No (unique) department year found for the given admin group number. |
+            | DNF006 | classCode | No (unique) class found for the given class code. |
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                title: "Conflict"
+                status: 409
+                detail: "Student is already enrolled in admin group '012345' for school year '2025-26'"
+                validationErrors:
+                  - name: "admgrpNo"
+                    reason: "Student is already enrolled in admin group '012345' for school year '2025-26'"
+                    code: "MNA006"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /enrollments/{enrollmentId}/link-class:
+    put:
+      operationId: linkClassEnrollment
+      summary: Link a class to an enrollment
+      description: |
+        Links a class to an existing enrollment, or updates the class registration if one already exists for the given start date.
+
+        Returns the class enrollment ID on success (`200`), or `204` if no change was needed
+        (e.g., the class is already linked or the start date is older than existing registrations).
+      tags:
+        - enrollments
+      parameters:
+        - $ref: "#/components/parameters/InstituteNo"
+        - name: enrollmentId
+          in: path
+          required: true
+          description: The enrollment ID (UUID) to link the class to.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkClassEnrollmentRequest"
+      responses:
+        "200":
+          description: Class linked successfully.
+          content:
+            application/json:
+              schema:
+                type: string
+                format: uuid
+                description: The class enrollment ID.
+                example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        "204":
+          description: |
+            No change needed. Returned when:
+            - The class is already linked with the same class code.
+            - The requested start date is older than the most recent class registration.
+        "400":
+          description: |
+            Validation error. One or more request fields are invalid.
+
+            | Code | Field | Description |
+            |------|-------|-------------|
+            | BR048 | enrollmentId | Enrollment ID is required. |
+            | BR049A | classCode | Class code is required. |
+            | BR046A | startDate | Start date is required. |
+            | BR046C | startDate | Start date cannot be on a weekend unless it is September 1st. |
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                type: "https://tools.ietf.org/html/rfc7231#section-6.5.1"
+                title: "One or more validation errors occurred."
+                status: 400
+                detail: "classCode is required"
+                validationErrors:
+                  - name: "classCode"
+                    reason: "classCode is required"
+                    code: "BR049A"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: |
+            Business rule conflict. The request cannot be processed due to the current state of the data.
+
+            | Code | Field | Description |
+            |------|-------|-------------|
+            | DNF007 | enrollmentId | No enrollment found with the given ID for the institute. |
+            | BR046D | startDate | Start date must be within the enrollment year boundaries. |
+            | DNF006 | classCode | No (unique) class found for the given class code. |
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                title: "Conflict"
+                status: 409
+                detail: "No enrollment found with id 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' for institute '012345'"
+                validationErrors:
+                  - name: "enrollmentId"
+                    reason: "No enrollment found with id 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' for institute '012345'"
+                    code: "DNF007"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /students/{studentId}/absences:
+    put:
+      operationId: saveAbsence
+      summary: Save a student absence
+      description: |
+        Creates or updates an absence record for a student on a specific date and part of day.
+
+        Uses optimistic concurrency via the `timestamp` field: if the existing absence record has a newer
+        timestamp and was not originally created by the Student API, the update is rejected with a
+        `409 Conflict` (code `MNA007`).
+
+        Returns the absence ID on success (`200`), or `204` if the absence already has the same absence code
+        (no update needed).
+      tags:
+        - students
+      parameters:
+        - $ref: "#/components/parameters/InstituteNo"
+        - name: studentId
+          in: path
+          required: true
+          description: The student's person ID (UUID).
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveAbsenceRequest"
+      responses:
+        "200":
+          description: Absence saved successfully.
+          content:
+            application/json:
+              schema:
+                type: string
+                format: uuid
+                description: The absence ID. Returns an empty GUID (`00000000-...`) when updating an existing absence.
+                example: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+        "204":
+          description: |
+            No change needed. The existing absence already has the same absence code.
+        "400":
+          description: |
+            Validation error. One or more request fields are invalid.
+
+            | Code | Field | Description |
+            |------|-------|-------------|
+            | BR034A | schoolYear | School year is required. |
+            | BR034B | schoolYear | School year format is invalid. Expected format: `yyyy-yy` (e.g. `2025-26`). |
+            | BR050 | absenceCode | Absence code is required. |
+            | BR051A | date | Date is required. |
+            | BR051B | date | Date must be within the school year boundaries (September 1 – June 30). |
+            | BR052 | partOfDay | Part of day is required. |
+            | BR052B | partOfDay | Part of day must be `VM` (morning) or `NM` (afternoon). |
+            | BR053A | timestamp | Timestamp is required. |
+            | BR053B | timestamp | Timestamp must not be in the future (compared to Western European Time). |
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                type: "https://tools.ietf.org/html/rfc7231#section-6.5.1"
+                title: "One or more validation errors occurred."
+                status: 400
+                detail: "partOfDay must be 'VM' or 'NM'"
+                validationErrors:
+                  - name: "partOfDay"
+                    reason: "partOfDay must be 'VM' or 'NM'"
+                    code: "BR052B"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: |
+            Business rule conflict. The request cannot be processed due to the current state of the data.
+
+            | Code | Field | Description |
+            |------|-------|-------------|
+            | DNF009 | date | No Instruction or Evaluation day found for the given date and part of day. |
+            | DNF002 | personId | No student exists with the given student ID. |
+            | MNA007 | timestamp | Updating the absence is not allowed because a more recent registration already exists. Only applies when the existing absence was not originally registered via the Student API. |
+            | DNF008 | locationIdDiscimus | No location found for the given Discimus location ID, institute, and school year. |
+            | DNF011 | studentId | No active enrollment in an official class found for the student at the given location. |
+            | DNF010 | absenceCode | No allowed absence code found for the given code on the given date. |
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                title: "Conflict"
+                status: 409
+                detail: "Updating the absence is not allowed because a more recent registration with code 'B' already exists"
+                validationErrors:
+                  - name: "timestamp"
+                    reason: "Updating the absence is not allowed because a more recent registration with code 'B' already exists"
+                    code: "MNA007"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token issued by the identity server.
+        The token must contain a scope matching `api_informat_sas_leerlingen.leerlingen.{instituteNo}`.
+
+  parameters:
+    InstituteNo:
+      name: instituteNo
+      in: header
+      required: true
+      description: The institute number identifying the school. Must match a scope in the JWT token.
+      schema:
+        type: string
+        example: "012345"
+
+  schemas:
+    CreateEnrollmentRequest:
+      type: object
+      required:
+        - schoolYear
+        - mainStructure
+        - personId
+        - admgrpNo
+        - startDate
+        - nameExternalProvider
+      properties:
+        schoolYear:
+          type: string
+          description: |
+            The school year in `yyyy-yy` format (e.g. `2025-26`).
+            The last two digits must match the start year + 1.
+          pattern: "^\\d{4}-\\d{2}$"
+          example: "2025-26"
+        mainStructure:
+          type: string
+          description: |
+            The main education structure code. Must be `311` (SO — secondary education).
+          enum:
+            - "311"
+          example: "311"
+        personId:
+          type: string
+          format: uuid
+          description: The unique person identifier (UUID) of the student.
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        admgrpNo:
+          type: string
+          description: |
+            The admin group number. Must be exactly 6 characters.
+            Cannot be `043905` (HBO5), `006246` (1A), or `006247` (1B).
+          minLength: 6
+          maxLength: 6
+          example: "012345"
+        startDate:
+          type: string
+          format: date
+          description: |
+            The enrollment start date. Must fall within the school year boundaries.
+            Cannot be on a weekend (Saturday or Sunday) unless it is September 1st.
+          example: "2025-09-01"
+        locationIdDiscimus:
+          type: integer
+          nullable: true
+          description: |
+            The Discimus location identifier. Optional.
+            When provided, it is used to narrow down the department year lookup.
+          example: 12345
+        classCode:
+          type: string
+          nullable: true
+          description: |
+            The class code to assign the student to. Optional.
+            When provided, must resolve to exactly one class within the department year.
+          example: "3A"
+        religionCode:
+          type: integer
+          nullable: true
+          description: |
+            The religion/philosophy code. Optional.
+            When omitted, the system determines the value automatically based on the student's
+            previous enrollment or the school's default.
+
+            Allowed values:
+            - `52` — Cultuurbeschouwing
+            - `63` — Eigen cultuur en religie
+            - `135` — Islamitische godsdienst
+            - `136` — Israelitische godsdienst
+            - `140` — Katholieke godsdienst
+            - `187` — Niet-confessionele zedenleer
+            - `194` — Orthodoxe godsdienst
+            - `225` — Protestants-evangelische godsdienst
+            - `418` — Anglicaanse godsdienst
+            - `9999` — Vrijstelling of niet van toepassing
+          enum:
+            - 52
+            - 63
+            - 135
+            - 136
+            - 140
+            - 187
+            - 194
+            - 225
+            - 418
+            - 9999
+          example: 140
+        isReturningStudent:
+          type: boolean
+          nullable: true
+          description: |
+            Indicates whether the student is returning from a previous school year. Optional.
+            Defaults to `true` when not provided. When `true`, the system attempts to carry over
+            the religion code from the student's previous enrollment.
+          example: true
+        nameExternalProvider:
+          type: string
+          description: The name of the external provider registering the enrollment.
+          maxLength: 50
+          example: "Smartschool"
+
+    LinkClassEnrollmentRequest:
+      type: object
+      required:
+        - classCode
+        - startDate
+      properties:
+        classCode:
+          type: string
+          description: The class code to link to the enrollment. Must resolve to exactly one class.
+          example: "3A"
+        startDate:
+          type: string
+          format: date
+          description: |
+            The class registration start date.
+            Must fall within the enrollment's date range.
+            Cannot be on a weekend (Saturday or Sunday) unless it is September 1st.
+          example: "2025-09-01"
+
+    SaveAbsenceRequest:
+      type: object
+      required:
+        - schoolYear
+        - absenceCode
+        - date
+        - partOfDay
+        - locationIdDiscimus
+        - timestamp
+      properties:
+        schoolYear:
+          type: string
+          description: |
+            The school year in `yyyy-yy` format (e.g. `2025-26`).
+            The last two digits must match the start year + 1.
+          pattern: "^\\d{4}-\\d{2}$"
+          example: "2025-26"
+        absenceCode:
+          type: string
+          description: |
+            The absence code. Must be an API-allowed absence code that is valid for the given date
+            and the student's compulsory education type.
+          example: "B"
+        date:
+          type: string
+          format: date
+          description: |
+            The date of the absence. Must fall within the school year boundaries.
+            The date must correspond to an Instruction or Evaluation day for the given part of day.
+          example: "2025-10-15"
+        partOfDay:
+          type: string
+          description: |
+            The part of the day for the absence.
+            - `VM` — Morning (voormiddag)
+            - `NM` — Afternoon (namiddag)
+          enum:
+            - VM
+            - NM
+          example: "VM"
+        locationIdDiscimus:
+          type: integer
+          description: The Discimus location identifier for the school location.
+          example: 12345
+        timestamp:
+          type: string
+          format: date-time
+          description: |
+            The timestamp of the absence registration, used for optimistic concurrency control.
+            Must not be in the future (compared to Western European Time).
+            If an existing absence record has a newer timestamp (and was not originally registered
+            via the Student API), the update is rejected.
+          example: "2025-10-15T08:30:00"
+
+    ProblemDetails:
+      type: object
+      description: |
+        Error response following [RFC 7807](https://tools.ietf.org/html/rfc7807) Problem Details.
+      properties:
+        type:
+          type: string
+          description: A URI reference that identifies the problem type.
+          example: "https://tools.ietf.org/html/rfc7231#section-6.5.1"
+        title:
+          type: string
+          description: A short, human-readable summary of the problem type.
+          example: "One or more validation errors occurred."
+        status:
+          type: integer
+          description: The HTTP status code.
+          example: 400
+        detail:
+          type: string
+          description: A human-readable explanation specific to this occurrence of the problem.
+          example: "admgrpNo must have a length of 6 characters"
+        instance:
+          type: string
+          description: The request path that generated the error.
+          example: "/api/v1/enrollments/create"
+        traceId:
+          type: string
+          description: The trace identifier for the request.
+          example: "00-abcdef1234567890abcdef1234567890-abcdef1234567890-00"
+        validationErrors:
+          type: array
+          description: Structured validation error entries.
+          items:
+            $ref: "#/components/schemas/ValidationErrorEntry"
+
+    ValidationErrorEntry:
+      type: object
+      required:
+        - name
+        - reason
+      properties:
+        name:
+          type: string
+          description: The field name that caused the error.
+          example: "admgrpNo"
+        reason:
+          type: string
+          description: A human-readable description of the error.
+          example: "admgrpNo must have a length of 6 characters"
+        code:
+          type: string
+          nullable: true
+          description: The error code identifying the specific validation rule.
+          example: "BR038B"
+
+  responses:
+    Unauthorized:
+      description: Authentication is required or the JWT token is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            title: "Unauthorized"
+            status: 401
+            detail: "Authentication is required or has failed."
+    Forbidden:
+      description: |
+        The authenticated user does not have the required scope for the specified institute.
+        The JWT token must contain the scope `api_informat_sas_leerlingen.leerlingen.{instituteNo}`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            title: "Forbidden"
+            status: 403
+            detail: "You do not have permission to perform this action."
+    InternalServerError:
+      description: An unexpected error occurred while processing the request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            title: "Error"
+            status: 500
+            detail: "Unknown error occurred."
