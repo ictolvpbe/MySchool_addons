@@ -636,28 +636,52 @@ class SapSyncService(models.AbstractModel):
         changes = self.env['myschool.sap.sync.change'].search(
             domain, limit=limit)
 
-        # Resolve naam+voornaam voor PERSON-changes zodat de review meer
-        # dan enkel een UUID/id toont (cruciaal voor troubleshooting van
-        # bv. DEACT-voorstellen). Gebatcht: één query per match-as i.p.v.
-        # per rij. Match primair op source_key (=sap_person_uuid), met
-        # target_res_id als fallback.
+        # Resolve naam+voornaam zodat de review meer dan een UUID/id toont
+        # (cruciaal voor troubleshooting). Gebatcht: één query per match-as.
+        # PERSON-changes matchen op source_key (=sap_person_uuid) /
+        # target_res_id; PROPRELATION-changes (PPSBR e.d.) dragen de persoon
+        # in de payload (person_db_id / personId) — die resolven we ook zodat
+        # zichtbaar is over welke werknemer een job-change gaat.
         Person = self.env['myschool.person'].with_context(active_test=False)
-        person_changes = changes.filtered(lambda c: c.object_type == 'PERSON')
         by_uuid = {}
         by_id = {}
-        uuids = [c.source_key for c in person_changes if c.source_key]
+        uuids = set()
+        db_ids = set()
+        payload_person = {}  # change.id -> (person_db_id, person_uuid)
+        for c in changes:
+            if c.object_type == 'PERSON':
+                if c.source_key:
+                    uuids.add(c.source_key)
+                if c.target_res_id:
+                    db_ids.add(c.target_res_id)
+            elif c.object_type == 'PROPRELATION':
+                try:
+                    pl = json.loads(c.payload_new_json or '{}')
+                except (ValueError, TypeError):
+                    pl = {}
+                did = pl.get('person_db_id')
+                uid = pl.get('personId')
+                if did:
+                    db_ids.add(did)
+                if uid:
+                    uuids.add(uid)
+                payload_person[c.id] = (did, uid)
         if uuids:
-            for p in Person.search([('sap_person_uuid', 'in', uuids)]):
+            for p in Person.search([('sap_person_uuid', 'in', list(uuids))]):
                 by_uuid[p.sap_person_uuid] = p
-        res_ids = [c.target_res_id for c in person_changes if c.target_res_id]
-        if res_ids:
-            for p in Person.browse(res_ids).exists():
+        if db_ids:
+            for p in Person.browse(list(db_ids)).exists():
                 by_id[p.id] = p
 
         def _person_label(c):
-            if c.object_type != 'PERSON':
-                return ''
-            p = by_id.get(c.target_res_id) or by_uuid.get(c.source_key)
+            p = None
+            if c.object_type == 'PERSON':
+                p = (by_id.get(c.target_res_id) if c.target_res_id else None) \
+                    or by_uuid.get(c.source_key)
+            elif c.object_type == 'PROPRELATION':
+                did, uid = payload_person.get(c.id, (None, None))
+                p = (by_id.get(did) if did else None) \
+                    or (by_uuid.get(uid) if uid else None)
             if not p:
                 return ''
             return p.name or ' '.join(
