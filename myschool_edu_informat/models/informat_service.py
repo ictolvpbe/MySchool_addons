@@ -1361,11 +1361,18 @@ class InformatService(models.AbstractModel):
                 # =====================================================
                 person_is_active_db = person_in_db.is_active
 
-                # Check for PersonDetails for this instNr
+                # Check for PersonDetails for this instNr.
+                # Filter op de ACTIEVE versie: de write-kant versioneert
+                # (oude details deactiveren + nieuwe is_active=True aanmaken),
+                # dus zonder deze filter pakt limit=1 (default order id↑) een
+                # gedeactiveerde, stale versie → SCENARIO 2d ziet altijd een
+                # diff → eindeloze phantom-UPD. Vergelijk tegen de huidige
+                # actieve versie zodat de sync idempotent is.
                 person_details = PersonDetails.search([
                     ('person_id', '=', person_in_db.id),
-                    ('extra_field_1', '=', inst_nr)
-                ], limit=1)
+                    ('extra_field_1', '=', inst_nr),
+                    ('is_active', '=', True),
+                ], order='id desc', limit=1)
 
                 # -----------------------------------------------------
                 # SCENARIO 2a: Should DEACTIVATE for this instNr
