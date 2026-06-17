@@ -317,6 +317,7 @@ class BeTask(models.Model):
                 'processing_start': False,
                 'processing_end': False,
                 'error_description': False,
+                'lastrun': False,
             })
             _logger.info(f'BeTask {record.name} reset to NEW')
     
@@ -329,6 +330,7 @@ class BeTask(models.Model):
                 'processing_end': False,
                 'error_description': False,
                 'retry_count': 0,
+                'lastrun': False,
             })
             _logger.info(f'BeTask {record.name} FORCE RESET')
     
@@ -421,6 +423,7 @@ class BeTask(models.Model):
                 'processing_end': False,
                 'error_description': False,
                 'retry_count': 0,
+                'lastrun': False,
             })
             reset += 1
             _logger.info(f'BeTask {task.name} bulk-reset error → new')
