@@ -1459,28 +1459,42 @@ class InformatService(models.AbstractModel):
             # =====================================================
             # Check for persons to DEACTIVATE (in DB but not in import)
             # =====================================================
-            # Only check employees that are synced automatically
-            active_synced_persons = Person.search([
-                ('is_active', '=', True),
-                ('automatic_sync', '=', True),
-                ('person_type_id.name', '=', 'EMPLOYEE')  # Only employees
-            ])
+            # SCOPE-GUARD: dit globale "niet in import → DEACT"-blok mag
+            # ALLEEN draaien bij een VOLLEDIGE sync. Bij een scoped run
+            # (per inst_nr — wizard of cron met inst_nrs) bevat
+            # ``processed_person_uuids`` enkel de werknemers van die
+            # school(en), dus zou élke werknemer van élke ándere school
+            # ten onrechte gedeactiveerd worden. Per-school-deactivatie
+            # loopt al via SCENARIO 2a (_deactivate_employee_for_instnr).
+            scoped = bool(self.env.context.get('informat_inst_nrs'))
+            if scoped:
+                self._create_sys_event(
+                    "BETASK-001",
+                    "Scoped sync (inst_nrs gezet) — globaal "
+                    "'niet-in-import'-deactivatieblok overgeslagen.")
+            else:
+                # Only check employees that are synced automatically
+                active_synced_persons = Person.search([
+                    ('is_active', '=', True),
+                    ('automatic_sync', '=', True),
+                    ('person_type_id.name', '=', 'EMPLOYEE')  # Only employees
+                ])
 
-            for person in active_synced_persons:
-                if person.sap_person_uuid and person.sap_person_uuid not in processed_person_uuids:
-                    # Person is in DB but not in import - deactivate
-                    deact_data = {
-                        'personId': person.sap_person_uuid,
-                        'reason': 'Not in import'
-                    }
-                    deact_data['person_type'] = 'EMPLOYEE'
-                    self._create_betask(
-                        'DB', 'PERSON', 'DEACT',
-                        json.dumps(deact_data),
-                        None
-                    )
-                    self._create_sys_event("BETASK-001",
-                                           f"DEACT task created for person not in import: {person.sap_person_uuid}")
+                for person in active_synced_persons:
+                    if person.sap_person_uuid and person.sap_person_uuid not in processed_person_uuids:
+                        # Person is in DB but not in import - deactivate
+                        deact_data = {
+                            'personId': person.sap_person_uuid,
+                            'reason': 'Not in import'
+                        }
+                        deact_data['person_type'] = 'EMPLOYEE'
+                        self._create_betask(
+                            'DB', 'PERSON', 'DEACT',
+                            json.dumps(deact_data),
+                            None
+                        )
+                        self._create_sys_event("BETASK-001",
+                                               f"DEACT task created for person not in import: {person.sap_person_uuid}")
 
             self._create_sys_event("BETASK-001", f"{procedure_name} completed")
             return True
