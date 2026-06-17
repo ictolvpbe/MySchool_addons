@@ -200,7 +200,7 @@
                                                t-on-change="() => this.onToggleRow(ch.id)"/>
                                     </td>
                                     <td class="ssr-source"><t t-esc="ch.source_key"/></td>
-                                    <td><t t-esc="ch.display_name"/></td>
+                                    <td><t t-esc="ch.person_label or ch.display_name"/></td>
                                     <td>
                                         <span class="ssr-badge"
                                               t-att-class="'ssr-action-' + ch.action.toLowerCase()"

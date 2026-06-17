@@ -635,6 +635,34 @@ class SapSyncService(models.AbstractModel):
 
         changes = self.env['myschool.sap.sync.change'].search(
             domain, limit=limit)
+
+        # Resolve naam+voornaam voor PERSON-changes zodat de review meer
+        # dan enkel een UUID/id toont (cruciaal voor troubleshooting van
+        # bv. DEACT-voorstellen). Gebatcht: één query per match-as i.p.v.
+        # per rij. Match primair op source_key (=sap_person_uuid), met
+        # target_res_id als fallback.
+        Person = self.env['myschool.person'].with_context(active_test=False)
+        person_changes = changes.filtered(lambda c: c.object_type == 'PERSON')
+        by_uuid = {}
+        by_id = {}
+        uuids = [c.source_key for c in person_changes if c.source_key]
+        if uuids:
+            for p in Person.search([('sap_person_uuid', 'in', uuids)]):
+                by_uuid[p.sap_person_uuid] = p
+        res_ids = [c.target_res_id for c in person_changes if c.target_res_id]
+        if res_ids:
+            for p in Person.browse(res_ids).exists():
+                by_id[p.id] = p
+
+        def _person_label(c):
+            if c.object_type != 'PERSON':
+                return ''
+            p = by_id.get(c.target_res_id) or by_uuid.get(c.source_key)
+            if not p:
+                return ''
+            return p.name or ' '.join(
+                x for x in (p.last_name, p.first_name) if x)
+
         out = []
         for c in changes:
             out.append({
@@ -643,6 +671,7 @@ class SapSyncService(models.AbstractModel):
                 'action': c.action,
                 'source_key': c.source_key or '',
                 'display_name': c.display_name or '',
+                'person_label': _person_label(c),
                 'diff_summary': c.diff_summary or '',
                 'state': c.state,
                 'state_reason': c.state_reason or '',
