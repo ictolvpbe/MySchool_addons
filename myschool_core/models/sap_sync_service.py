@@ -532,7 +532,7 @@ class SapSyncService(models.AbstractModel):
             group = None
         recipients = []
         if group:
-            recipients = [u.email for u in group.users
+            recipients = [u.email for u in group.user_ids
                           if u.email and u.active]
         if not recipients:
             _logger.warning(
