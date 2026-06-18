@@ -8034,20 +8034,33 @@ class BeTaskProcessor(models.AbstractModel):
                 'is_active': True,
             })
 
-        # Current active PG-P members
-        current_rels = PropRelation.search([
+        # Look at ALL PG-P relations (active + inactive). Reactivating an
+        # existing inactive relation instead of creating a fresh one is
+        # what stops re-runs from piling up duplicate rows for the same
+        # (persongroup, person) pair.
+        all_rels = PropRelation.search([
             ('proprelation_type_id', '=', pg_p_type.id),
             ('id_org', '=', persongroup_org.id),
-            ('is_active', '=', True),
         ])
-        current_person_ids = set(r.id_person.id for r in current_rels if r.id_person)
+        active_rels = all_rels.filtered(lambda r: r.is_active)
+        current_person_ids = set(r.id_person.id for r in active_rels if r.id_person)
         desired = set(desired_person_ids)
 
         to_add = desired - current_person_ids
         to_remove = current_person_ids - desired
 
+        # Reusable inactive relations, indexed by person.
+        inactive_by_person = {}
+        for r in all_rels:
+            if not r.is_active and r.id_person:
+                inactive_by_person.setdefault(r.id_person.id, r)
+
         Person = self.env['myschool.person']
         for pid in to_add:
+            existing = inactive_by_person.get(pid)
+            if existing:
+                existing.write({'is_active': True})
+                continue
             person = Person.browse(pid).exists()
             if person:
                 rel_name = build_proprelation_name('PG-P', id_org=persongroup_org, id_person=person)
@@ -8060,7 +8073,7 @@ class BeTaskProcessor(models.AbstractModel):
                 })
 
         if to_remove:
-            rels_to_deact = current_rels.filtered(
+            rels_to_deact = active_rels.filtered(
                 lambda r: r.id_person and r.id_person.id in to_remove)
             if rels_to_deact:
                 rels_to_deact.write({'is_active': False})
@@ -8140,21 +8153,58 @@ class BeTaskProcessor(models.AbstractModel):
         ppsbr_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_PPSBR)], limit=1)
         brso_type = PropRelationType.search([('name', '=', self.PROPRELATION_TYPE_BRSO)], limit=1)
 
+        # Orgs to scan for membership signals (PERSON-TREE placement +
+        # BRSO targets). Two things to get right here:
+        #
+        # 1. FEEDER NODE — a persongroup is fed by a separate tree-node
+        #    org: node 'leerkrachten' carries
+        #    com_group_name='grp-lkr-pers-baple' while the persongroup
+        #    itself is a distinct '…grp.grp-lkr-pers-baple' org. BRSOs and
+        #    PERSON-TREE point at the NODE, not the persongroup org — so
+        #    scanning only the persongroup's own id yields an EMPTY desired
+        #    set and wrongly deactivates every member.
+        #
+        # 2. ADDITIVE ROLL-UP — membership is additive up the personnel
+        #    tree: someone signalled at a DEEPER node (e.g. 'lager')
+        #    belongs to this group AND every group-bearing ancestor ('lkr',
+        #    'pers'). We model that by pulling from each feeder node's whole
+        #    name_tree subtree, so an ancestor group rolls up its
+        #    descendants. Levels whose org has no group flag simply have no
+        #    persongroup and are skipped automatically (the HasGroup=False
+        #    "overslaan" rule).
+        source_org_ids = {org.id}
+        group_names = {n for n in (persongroup.com_group_name,
+                                   persongroup.sec_group_name) if n}
+        if group_names:
+            feeders = Org.search([
+                '|',
+                ('com_group_name', 'in', list(group_names)),
+                ('sec_group_name', 'in', list(group_names)),
+            ])
+            source_org_ids.update(feeders.ids)
+            for feeder in feeders:
+                if feeder.name_tree:
+                    descendants = Org.search([
+                        ('name_tree', '=like', feeder.name_tree + '.%'),
+                    ])
+                    source_org_ids.update(descendants.ids)
+        source_org_ids = list(source_org_ids)
+
         person_ids = set()
         if pt_type:
             pt_rels = PropRelation.search([
                 ('proprelation_type_id', '=', pt_type.id),
-                ('id_org', '=', org.id),
+                ('id_org', 'in', source_org_ids),
                 ('is_active', '=', True),
                 ('id_person', '!=', False),
             ])
             person_ids.update(r.id_person.id for r in pt_rels if r.id_person)
 
         if brso_type and ppsbr_type:
-            # Roles whose BRSOs target this org.
+            # Roles whose BRSOs target this org (or one of its feeder nodes).
             brsos_to_here = PropRelation.search([
                 ('proprelation_type_id', '=', brso_type.id),
-                ('id_org', '=', org.id),
+                ('id_org', 'in', source_org_ids),
                 ('is_active', '=', True),
                 ('id_role', '!=', False),
             ])
