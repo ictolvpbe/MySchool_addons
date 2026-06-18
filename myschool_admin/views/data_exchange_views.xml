@@ -50,6 +50,7 @@
                             <group string="Structureel">
                                 <field name="include_types"/>
                                 <field name="include_orgs"/>
+                                <field name="include_companies"/>
                                 <field name="include_roles"/>
                                 <field name="include_periods"/>
                                 <field name="include_proprelations"/>

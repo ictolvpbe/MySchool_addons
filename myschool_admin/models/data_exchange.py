@@ -51,6 +51,11 @@ class DataExchange(models.TransientModel):
     # Main models.
     include_orgs = fields.Boolean(
         string='Include orgs', default=True)
+    include_companies = fields.Boolean(
+        string='Include Odoo companies (bedrijven)', default=True,
+        help='De res.company-boom (VZW-parent + sub-bedrijven per school, '
+             'elk gekoppeld aan een school-org via school_id). Importeer '
+             'NA de orgs — company.school_id verwijst naar een org.')
     include_persongroups = fields.Boolean(
         string='Include persongroups', default=False,
         help='PERSONGROUP-orgs zijn standaard uitgesloten omdat ze per '
@@ -159,6 +164,8 @@ class DataExchange(models.TransientModel):
             out['proprelation_types'] = self._export_proprelation_types()
         if self.include_orgs:
             out['orgs'] = self._export_orgs(scope_ids)
+        if self.include_companies:
+            out['companies'] = self._export_companies()
         if self.include_persongroups:
             out['persongroups'] = self._export_persongroups(scope_ids)
         if self.include_classgroups:
@@ -270,6 +277,40 @@ class DataExchange(models.TransientModel):
             domain.append(('id', 'in', list(scope_ids)))
         records = self.env['myschool.org'].search(domain)
         return [self._serialize_org(r) for r in records]
+
+    def _export_companies(self):
+        """Export the res.company tree (VZW-parent + per-school sub-companies).
+
+        Identity travels on the linked school-org's natural key
+        (inst_nr + name_short) — the same key ``_import_orgs`` matches on —
+        so company↔school re-links correctly on the target. The parent is
+        referenced the same way (with ``parent_name`` as fallback for a
+        parent without a school link). ``is_main`` flags the root so a
+        fresh instance can adopt/rename its placeholder "My Company".
+        """
+        # Enkel de school-gekoppelde boom (VZW + sub-bedrijven). De bare
+        # Odoo-placeholder "My Company" (geen school_id) hoort niet bij de
+        # boom en zou een tweede root opleveren → overslaan.
+        records = self.env['res.company'].search([('school_id', '!=', False)])
+        out = []
+        for r in records:
+            entry = {
+                'name': r.name,
+                'short_name': r.short_name or '',
+                'email_domain': r.email_domain or '',
+                'is_main': not r.parent_id,
+                'school_inst_nr': r.school_id.inst_nr or '' if r.school_id else '',
+                'school_name_short': r.school_id.name_short or '' if r.school_id else '',
+                'parent_name': r.parent_id.name or '' if r.parent_id else '',
+                'parent_school_inst_nr': (
+                    r.parent_id.school_id.inst_nr or ''
+                    if r.parent_id and r.parent_id.school_id else ''),
+                'parent_school_name_short': (
+                    r.parent_id.school_id.name_short or ''
+                    if r.parent_id and r.parent_id.school_id else ''),
+            }
+            out.append(entry)
+        return out
 
     def _export_persongroups(self, scope_ids=None):
         """Export PERSONGROUP-type orgs. Same wire format as ``orgs`` —
@@ -562,6 +603,8 @@ class DataExchange(models.TransientModel):
             stats['settings_items'] = sudo_self._import_settings_items(data['settings_items'], errors)
         if self.include_orgs and 'orgs' in data:
             stats['orgs'] = sudo_self._import_orgs(data['orgs'], errors)
+        if self.include_companies and 'companies' in data:
+            stats['companies'] = sudo_self._import_companies(data['companies'], errors)
         if self.include_persongroups and 'persongroups' in data:
             stats['persongroups'] = sudo_self._import_orgs(data['persongroups'], errors)
         if self.include_classgroups and 'classgroups' in data:
@@ -727,6 +770,108 @@ class DataExchange(models.TransientModel):
                 self.env.cr.rollback()
                 errors.append(f"org '{inst_nr}/{name_short}': {e}")
                 skipped += 1
+        return (created, updated, skipped)
+
+    def _import_companies(self, items, errors):
+        """Upsert de res.company-boom (VZW-parent + sub-bedrijven per school).
+
+        Topologisch (ouder vóór kind) want Odoo laat ``parent_id`` NIET
+        meer via ``write`` wijzigen ("company hierarchy cannot be changed")
+        → parent wordt bij ``create`` gezet. Matchen primair op
+        ``school_id`` (school-org natural key inst_nr+name_short), met
+        ``name`` als fallback (res.company.name is uniek). Voor de root
+        (``is_main``) zonder match wordt het placeholder-bedrijf (root +
+        geen school = typisch "My Company") geadopteerd/hernoemd (D-C).
+        Rename-guard wordt bewust omzeild.
+        """
+        Company = self.env['res.company'].with_context(
+            skip_school_rename_guard=True)
+        Org = self.env['myschool.org']
+        created = updated = skipped = 0
+
+        def _resolve_org(inst_nr, name_short):
+            if not inst_nr:
+                return Org.browse()
+            return Org.search([
+                ('inst_nr', '=', inst_nr),
+                ('name_short', '=', name_short),
+            ], limit=1)
+
+        def _existing_company(item, org):
+            if org:
+                c = Company.search([('school_id', '=', org.id)], limit=1)
+                if c:
+                    return c
+            c = Company.search([('name', '=', item.get('name', ''))], limit=1)
+            if c:
+                return c
+            if item.get('is_main'):
+                return Company.search([
+                    ('parent_id', '=', False),
+                    ('school_id', '=', False),
+                ], limit=1)
+            return Company.browse()
+
+        def _parent_company(item):
+            porg = _resolve_org(item.get('parent_school_inst_nr'),
+                                item.get('parent_school_name_short'))
+            if porg:
+                p = Company.search([('school_id', '=', porg.id)], limit=1)
+                if p:
+                    return p
+            if item.get('parent_name'):
+                return Company.search(
+                    [('name', '=', item.get('parent_name'))], limit=1)
+            return Company.browse()
+
+        # Topologisch: een entry met parent-ref wacht tot die parent
+        # bestaat (parent_id is enkel bij create te zetten).
+        pending = list(items)
+        guard = 0
+        while pending and guard <= len(items):
+            guard += 1
+            still = []
+            for item in pending:
+                has_parent_ref = bool(item.get('parent_school_inst_nr')
+                                      or item.get('parent_name'))
+                parent = _parent_company(item) if has_parent_ref \
+                    else Company.browse()
+                if has_parent_ref and not parent:
+                    still.append(item)   # parent nog niet aanwezig → later
+                    continue
+                try:
+                    with self.env.cr.savepoint():
+                        org = _resolve_org(item.get('school_inst_nr'),
+                                           item.get('school_name_short'))
+                        company = _existing_company(item, org)
+                        vals = {
+                            'name': item.get('name', ''),
+                            'short_name': item.get('short_name') or False,
+                            'email_domain': item.get('email_domain') or False,
+                        }
+                        if org:
+                            vals['school_id'] = org.id
+                        if company:
+                            # parent_id NIET wijzigbaar op bestaand bedrijf.
+                            company.write(vals)
+                            updated += 1
+                        else:
+                            if parent:
+                                vals['parent_id'] = parent.id
+                            Company.create(vals)
+                            created += 1
+                except Exception as e:
+                    errors.append(f"company '{item.get('name')}': {e}")
+                    skipped += 1
+            if len(still) == len(pending):
+                break   # geen vooruitgang → resterende parents onvindbaar
+            pending = still
+
+        for item in pending:
+            errors.append(f"company '{item.get('name')}': parent niet "
+                          f"gevonden, overgeslagen")
+            skipped += 1
+
         return (created, updated, skipped)
 
     def _import_roles(self, items, errors):
