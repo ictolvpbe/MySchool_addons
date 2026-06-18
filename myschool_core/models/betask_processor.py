@@ -8012,8 +8012,16 @@ class BeTaskProcessor(models.AbstractModel):
             _logger.warning(f'[PG-SYNC] Betask created but persongroup not found for "{name}" (source={source_label})')
             return None, False
 
-    def _sync_pg_p_members(self, persongroup_org, desired_person_ids, source_label='auto'):
+    def _sync_pg_p_members(self, persongroup_org, desired_person_ids, source_label='auto', allow_remove=True):
         """Set-based diff to sync PG-P members of a persongroup.
+
+        ``allow_remove=False`` makes the sync additive-only: members are
+        added/reactivated but never deactivated. Used when the caller
+        can't authoritatively compute the full member set (a node-fed
+        persongroup synced via the persongroup org itself, where no BRSO
+        or PERSON-TREE points at the persongroup so ``desired`` would
+        wrongly come back empty) — its membership is owned by the
+        feeder-node sync, not this pass.
 
         Creates PG-P proprelations for persons to add,
         deactivates PG-P proprelations for persons to remove.
@@ -8072,11 +8080,13 @@ class BeTaskProcessor(models.AbstractModel):
                     'is_active': True,
                 })
 
-        if to_remove:
+        if to_remove and allow_remove:
             rels_to_deact = active_rels.filtered(
                 lambda r: r.id_person and r.id_person.id in to_remove)
             if rels_to_deact:
                 rels_to_deact.write({'is_active': False})
+        elif to_remove:
+            to_remove = set()  # additive-only: report nothing removed
 
         if to_add or to_remove:
             _logger.info(f'[PG-SYNC] {persongroup_org.name}: +{len(to_add)} -{len(to_remove)} members (source={source_label})')
@@ -8175,6 +8185,7 @@ class BeTaskProcessor(models.AbstractModel):
         source_org_ids = {org.id}
         group_names = {n for n in (persongroup.com_group_name,
                                    persongroup.sec_group_name) if n}
+        roots = {org}
         if group_names:
             feeders = Org.search([
                 '|',
@@ -8182,12 +8193,20 @@ class BeTaskProcessor(models.AbstractModel):
                 ('sec_group_name', 'in', list(group_names)),
             ])
             source_org_ids.update(feeders.ids)
-            for feeder in feeders:
-                if feeder.name_tree:
-                    descendants = Org.search([
-                        ('name_tree', '=like', feeder.name_tree + '.%'),
-                    ])
-                    source_org_ids.update(descendants.ids)
+            roots |= set(feeders)
+        # Additive roll-up: pull from each root's whole name_tree subtree —
+        # the node being synced AND any name-matched feeder node. An
+        # ancestor group thus rolls up its descendant nodes (a 'lager'
+        # teacher lands in 'lkr' and 'pers'). Crucially the personnel-root
+        # node ('personeel') usually carries NO com_group_name of its own,
+        # so rolling up ``org``'s own subtree — not just name-matched
+        # feeders — is what makes the top-level group additive.
+        for root in roots:
+            if root.name_tree:
+                descendants = Org.search([
+                    ('name_tree', '=like', root.name_tree + '.%'),
+                ])
+                source_org_ids.update(descendants.ids)
         source_org_ids = list(source_org_ids)
 
         person_ids = set()
@@ -8242,8 +8261,15 @@ class BeTaskProcessor(models.AbstractModel):
                     ])
                     person_ids.update(r.id_person.id for r in ppsbr_rels if r.id_person)
 
+        # In persongroup-mode (org IS the persongroup), a node-fed group has
+        # no BRSO/PERSON-TREE pointing at the persongroup org itself, so
+        # ``person_ids`` comes back empty — that's not "everyone left", it's
+        # "this group is owned by its feeder-node sync". Don't deactivate in
+        # that case; the node sync holds the authoritative member set.
+        allow_remove = (not is_persongroup) or bool(person_ids)
         self._sync_pg_p_members(
-            persongroup, list(person_ids), source_label=f'org:{org.name}')
+            persongroup, list(person_ids), source_label=f'org:{org.name}',
+            allow_remove=allow_remove)
 
     def _sync_role_persongroups(self, role):
         """Sync persongroups for a role across all schools where it
