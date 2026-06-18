@@ -1986,10 +1986,30 @@ class BeTaskProcessor(models.AbstractModel):
             self._log_error('BETASK-500', f'Error processing task {task.name}: {error_msg}')
             return self._register_task_error(task, str(e))
     
-    # Maximum time (in seconds) to spend processing tasks in a single cron
-    # cycle. Keeps well under Odoo's default limit_time_real (120s) so the
-    # worker is never killed. Remaining tasks are picked up on the next cycle.
+    # Floor / fallback for the per-run wall-time budget. The effective
+    # budget is derived at runtime from the worker's ``limit_time_real``
+    # (see ``_processing_time_limit``); this value only applies when that
+    # can't be read or is tiny. Remaining tasks defer to the next run.
     PROCESSING_TIME_LIMIT = 90
+
+    def _processing_time_limit(self):
+        """Seconds to spend draining tasks in one ``process_all_pending``.
+
+        Instead of a fixed 90s, use most of the worker's allowed wall-time
+        (``limit_time_real``) with a 60s margin for the final task + commit
+        + response — so a single "Verwerk alle taken" drains far more per
+        batch when the deployment allows it (e.g. limit_time_real=600 →
+        540s). Servers on Odoo's 120s default keep the old 90s; an
+        unlimited worker is still capped so one run can't monopolise.
+        """
+        try:
+            from odoo.tools import config
+            real = config.get('limit_time_real') or 0
+        except Exception:
+            real = 0
+        if real and real > 0:
+            return max(self.PROCESSING_TIME_LIMIT, real - 60)
+        return max(self.PROCESSING_TIME_LIMIT, 600)
 
     @api.model
     def process_all_pending(self):
@@ -2001,6 +2021,7 @@ class BeTaskProcessor(models.AbstractModel):
         up on the next cron cycle.
         """
         start_time = time.time()
+        time_limit = self._processing_time_limit()
         self._log_event('BETASK-001', 'START PROCESSING ALL PENDING TASKS')
 
         type_service = self.env['myschool.betask.type.service']
@@ -2030,13 +2051,13 @@ class BeTaskProcessor(models.AbstractModel):
                 for task in pending_tasks:
                     # Check time limit before starting next task
                     elapsed = time.time() - start_time
-                    if elapsed >= self.PROCESSING_TIME_LIMIT:
+                    if elapsed >= time_limit:
                         remaining = len(pending_tasks) - (
                             results['successful_tasks'] + results['failed_tasks'])
                         results['skipped_time_limit'] = remaining
                         _logger.warning(
                             f'Time limit reached ({elapsed:.0f}s >= '
-                            f'{self.PROCESSING_TIME_LIMIT}s), '
+                            f'{time_limit}s), '
                             f'{remaining} task(s) deferred to next cycle')
                         time_limit_reached = True
                         break
