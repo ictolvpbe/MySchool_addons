@@ -26,7 +26,7 @@ import os
 import re
 import shutil
 
-from odoo import api, fields, models
+from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
@@ -515,7 +515,7 @@ EXPECTATIONS = {
 
 
 CAPTURED_LOGGERS = (
-    'odoo.addons.myschool_core.models.informat_service',
+    'odoo.addons.myschool_edu_informat.models.informat_service',
     'odoo.addons.myschool_core.models.betask_processor',
     'odoo.addons.myschool_core.models.manual_task_processor',
     'odoo.addons.myschool_core.models.manual_task_service',
@@ -2248,6 +2248,11 @@ class SyncTestStep(models.Model):
         """Execute this single step: write files, sync, process tasks, verify."""
         self.ensure_one()
         session = self.session_id
+        if 'myschool.informat.service' not in self.env:
+            raise UserError(_(
+                'De Informat-sync-testrunner vereist de edu-plugin '
+                '"myschool_edu_informat". Installeer die module om deze '
+                'stap te draaien.'))
         service = self.env['myschool.informat.service']
         dev_dir = service._get_storage_path_for_students(dev_mode=True) \
             if session.mode == 'students' else service._get_storage_path(dev_mode=True)
@@ -2384,6 +2389,8 @@ class SyncTestStep(models.Model):
                 self._restore_sync_flags(config_saved_flags)
 
     def _force_sync_flags_for_mode(self, mode):
+        if 'myschool.informat.service.config' not in self.env:
+            return None
         Config = self.env['myschool.informat.service.config']
         config = Config.search([], limit=1)
         if not config:

@@ -820,7 +820,7 @@ class Person(models.Model):
                 try:
                     processor._emit_ldap_user_add_for_person(person, cascade_log)
                     processor._emit_cloud_user_add_for_person(person, cascade_log)
-                    processor._emit_smartschool_user_add_for_person(person, cascade_log)
+                    processor._emit_connector_user_add_for_person(person, cascade_log)
                 except Exception as e:
                     _logger.warning(
                         '[DEFERRED-PROVISIONING] cascade failed for %s: %s',
@@ -856,7 +856,7 @@ class Person(models.Model):
             try:
                 processor._emit_ldap_user_add_for_person(person, cascade_log)
                 processor._emit_cloud_user_add_for_person(person, cascade_log)
-                processor._emit_smartschool_user_add_for_person(person, cascade_log)
+                processor._emit_connector_user_add_for_person(person, cascade_log)
             except Exception as e:
                 _logger.warning(
                     '[MANUAL-PROVISION] cascade failed for %s: %s',

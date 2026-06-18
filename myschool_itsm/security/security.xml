@@ -38,5 +38,33 @@
         <field name="comment">Full ITSM access including changes, services, SLAs, and CMDB.</field>
     </record>
 
+    <!-- =====================================================================
+         Ticket write-rules. De ACL geeft itsm_user write op itsm.ticket,
+         maar zonder rule kon elke melder ÁLLE tickets wijzigen. Een melder
+         (itsm_user) mag enkel tickets schrijven die hij zelf aanmaakte of
+         volgt; agents/managers mogen alles (OR-regel — agent implied user).
+         ===================================================================== -->
+    <record id="itsm_ticket_user_write_own_rule" model="ir.rule">
+        <field name="name">ITSM Ticket: melder — enkel eigen/gevolgde tickets schrijven</field>
+        <field name="model_id" ref="model_itsm_ticket"/>
+        <field name="domain_force">['|', ('create_uid', '=', user.id), ('message_partner_ids', 'in', [user.partner_id.id])]</field>
+        <field name="groups" eval="[(4, ref('group_itsm_user'))]"/>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
+    <record id="itsm_ticket_agent_write_all_rule" model="ir.rule">
+        <field name="name">ITSM Ticket: agent/manager — alle tickets schrijven</field>
+        <field name="model_id" ref="model_itsm_ticket"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_itsm_agent'))]"/>
+        <field name="perm_read" eval="False"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="False"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+
     </data>
 </odoo>

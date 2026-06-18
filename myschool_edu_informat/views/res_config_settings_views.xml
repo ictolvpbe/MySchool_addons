@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Voeg het Informat-blok terug toe aan de MySchool-Core settings-tab
+         (verhuisd uit myschool_admin). -->
+    <record id="res_config_settings_view_form_informat" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.informat</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id"
+               ref="myschool_admin.res_config_settings_view_form_ms_core_tab"/>
+        <field name="arch" type="xml">
+            <xpath expr="//block[@name='ms_core_ad']" position="after">
+                <block title="Integraties — Informat" name="ms_core_informat">
+                    <setting string="Informat synchronisatie"
+                             help="API-endpoints, storage-paden (dev/prod), sync-toggles (rollen, werknemers, klassen, leerlingen) en timing-parameters voor de Informat-koppeling.">
+                        <button name="action_open_informat_config"
+                                type="object" icon="fa-database"
+                                string="Beheer Informat-configuratie" class="btn-link"/>
+                    </setting>
+                </block>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

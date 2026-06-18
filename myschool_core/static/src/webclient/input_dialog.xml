@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_core.InputDialog">
+        <Dialog title="title" size="'md'">
+            <div t-if="props.label" class="mb-2" style="white-space: pre-line;">
+                <t t-esc="props.label"/>
+            </div>
+            <input type="text" class="form-control" t-ref="input"
+                   t-model="state.value"
+                   t-att-placeholder="props.placeholder || ''"
+                   t-on-keydown="onKeydown"/>
+            <t t-set-slot="footer">
+                <button class="btn btn-primary" t-on-click="onConfirm">
+                    <t t-esc="confirmLabel"/>
+                </button>
+                <button class="btn btn-secondary" t-on-click="onCancel">Annuleren</button>
+            </t>
+        </Dialog>
+    </t>
+
+</templates>

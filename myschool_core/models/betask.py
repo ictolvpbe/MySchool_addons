@@ -560,15 +560,14 @@ class BeTask(models.Model):
             'context': {'search_default_today': 1},
         }
     
-    def name_get(self):
-        """Custom display name"""
-        result = []
+    @api.depends('name', 'betasktype_id')
+    def _compute_display_name(self):
+        """Custom display name (Odoo 19: name_get bestaat niet meer)."""
         for record in self:
             name = f"{record.name}"
             if record.betasktype_id:
                 name += f" [{record.betasktype_id.name}]"
-            result.append((record.id, name))
-        return result
+            record.display_name = name
 
     # ==========================================================================
     # JSON Formatting Methods

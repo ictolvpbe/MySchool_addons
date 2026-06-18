@@ -100,23 +100,8 @@
                         </setting>
                     </block>
 
-                    <block title="Integraties — Smartschool" name="ms_core_smartschool">
-                        <setting string="Smartschool"
-                                 help="Beheer Smartschool-platformen (één per school): platform-URL, API-key, standaardrol voor leerkrachten. Accounts worden via de betask-pipeline gepusht.">
-                            <button name="action_open_smartschool"
-                                    type="object" icon="fa-graduation-cap"
-                                    string="Beheer Smartschool-platformen" class="btn-link"/>
-                        </setting>
-                    </block>
-
-                    <block title="Integraties — Informat" name="ms_core_informat">
-                        <setting string="Informat synchronisatie"
-                                 help="API-endpoints, storage-paden (dev/prod), sync-toggles (rollen, werknemers, klassen, leerlingen) en timing-parameters voor de Informat-koppeling.">
-                            <button name="action_open_informat_config"
-                                    type="object" icon="fa-database"
-                                    string="Beheer Informat-configuratie" class="btn-link"/>
-                        </setting>
-                    </block>
+                    <!-- "Integraties — Informat" verhuisd naar plugin
+                         myschool_edu_informat/views/res_config_settings_views.xml -->
 
                     <!-- ==========================================================
                          Settings Items (SI).

@@ -6,6 +6,7 @@ import { View } from "@web/views/view";
 import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { SegmentNav } from "@myschool_web/components/segment_nav/segment_nav";
+import { InputDialog } from "@myschool_core/webclient/input_dialog";
 import {
     DAY_MS, itemStart, itemEnd, dayIndex as utilDayIndex, computeRange, spanFor,
     barGeom, applyDragGeom, applyDragDates, computeArrows,
@@ -893,7 +894,15 @@ export class ProjectWorkspace extends Component {
     }
     async _renameProject(id) {
         const proj = this.state.byId[id];
-        const name = window.prompt("Nieuwe projectnaam:", proj ? proj.name : "");
+        const name = await new Promise((resolve) => {
+            this.dialog.add(InputDialog, {
+                title: "Project hernoemen",
+                label: "Nieuwe projectnaam:",
+                defaultValue: proj ? proj.name : "",
+                confirm: (v) => resolve(v),
+                cancel: () => resolve(null),
+            });
+        });
         if (name && name.trim()) {
             await this.orm.write("myschool.project", [id], { name: name.trim() });
             await this.loadProjects();

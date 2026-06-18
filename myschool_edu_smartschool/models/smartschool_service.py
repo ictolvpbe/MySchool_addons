@@ -166,17 +166,31 @@ class SmartschoolService(models.AbstractModel):
         return bool(config.dry_run)
 
     @api.model
+    @staticmethod
+    def _redact_kwargs(kwargs):
+        """Strip ``accesscode`` én maskeer elk wachtwoord-veld.
+
+        Gedeeld door alle log-/audit-paden zodat een wachtwoord (passwd1,
+        password, …) nooit in een logregel of sys.event terechtkomt.
+        """
+        return {
+            k: ('***' if ('passwd' in k.lower() or 'password' in k.lower())
+                else v)
+            for k, v in kwargs.items()
+            if k != 'accesscode'
+        }
+
     def _audit_dry_run(self, config, method, kwargs, person=None, reason='dry_run'):
         """Write a sys_event recording what the SOAP call would have done.
 
         ``reason`` is one of ``dry_run`` (simulated as configured),
         ``read_only_reject`` (global read-only mode), or
         ``ownership_skip`` (ownership-check failed). The data field
-        carries a JSON blob with method, kwargs (api_key redacted),
-        config name and person id.
+        carries a JSON blob with method, kwargs (api_key + wachtwoorden
+        geredigeerd), config name and person id.
         """
         try:
-            safe_kwargs = {k: v for k, v in kwargs.items() if k != 'accesscode'}
+            safe_kwargs = self._redact_kwargs(kwargs)
             payload = {
                 'reason': reason,
                 'config': config.name,
@@ -385,8 +399,7 @@ class SmartschoolService(models.AbstractModel):
                 self._audit_dry_run(config, method, kwargs, person=person,
                                     reason='dry_run')
                 _logger.info('[SMARTSCHOOL-DRYRUN] %s skipped — payload=%r',
-                             method, {k: v for k, v in kwargs.items()
-                                      if k != 'accesscode'})
+                             method, self._redact_kwargs(kwargs))
                 return {
                     'success': True,
                     'message': _('Dry run — %s call simulated') % method,
@@ -410,14 +423,8 @@ class SmartschoolService(models.AbstractModel):
         # server's response is unhelpful, only the exact request body
         # tells us which field was rejected.
         if mutating:
-            safe_payload = {
-                k: ('***' if 'passwd' in k.lower() or 'password' in k.lower()
-                    else v)
-                for k, v in call_kwargs.items()
-                if k != 'accesscode'
-            }
             _logger.info('[SMARTSCHOOL-CALL] %s payload=%r',
-                         method, safe_payload)
+                         method, self._redact_kwargs(call_kwargs))
 
         try:
             raw = op(**call_kwargs)

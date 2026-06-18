@@ -3,6 +3,7 @@
 import { registry } from "@web/core/registry";
 import { Component, useState, onWillStart, useRef, onMounted, onWillUnmount, onWillUpdateProps } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
+import { InputDialog } from "@myschool_core/webclient/input_dialog";
 
 /**
  * Single source of truth for the actions available on a node.
@@ -1099,6 +1100,7 @@ export class ObjectBrowserClient extends Component {
         this.orm = useService("orm");
         this.action = useService("action");
         this.notification = useService("notification");
+        this.dialog = useService("dialog");
         this.containerRef = useRef("container");
         this.globalSearchRef = useRef("globalSearch");
         
@@ -1193,16 +1195,6 @@ export class ObjectBrowserClient extends Component {
             cloudSlideOverPath: null,
             cloudSlideOverNode: null,
             cloudSlideOverLoading: false,
-            // ----- SS-browser tab (Fase I6) -----
-            ssConfigs: [],
-            ssActiveConfigId: null,
-            ssUsers: [],
-            ssUsersLoading: false,
-            ssUsersError: null,
-            ssFilter: '',
-            ssSlideOverUsername: null,
-            ssSlideOverUser: null,
-            ssSlideOverLoading: false,
         });
         // Debounce-timer voor search-input
         this._adSearchTimer = null;
@@ -2299,99 +2291,6 @@ export class ObjectBrowserClient extends Component {
         this.state.cloudSlideOverNode = null;
     }
 
-    async onSwitchToSSTab() {
-        this.switchTab('smartschool');
-        if (!this.state.ssConfigs.length) {
-            await this.loadSsConfigs();
-        }
-    }
-
-    async loadSsConfigs() {
-        try {
-            const configs = await this.orm.call(
-                'myschool.object.browser', 'ss_get_configs', []);
-            this.state.ssConfigs = configs;
-            if (configs.length) await this.onSsConfigChange(configs[0].id);
-        } catch (e) {
-            this.state.ssUsersError =
-                'SS-configs ophalen mislukt: ' + (e?.message || e);
-        }
-    }
-
-    async onSsConfigChange(configId) {
-        const cfgId = typeof configId === 'object'
-            ? parseInt(configId.target?.value, 10)
-            : parseInt(configId, 10);
-        if (!cfgId) return;
-        this.state.ssActiveConfigId = cfgId;
-        this.state.ssUsers = [];
-        this.state.ssUsersError = null;
-        this.state.ssFilter = '';
-        await this.loadSsUsers();
-    }
-
-    async loadSsUsers() {
-        if (!this.state.ssActiveConfigId) return;
-        this.state.ssUsersLoading = true;
-        try {
-            const result = await this.orm.call(
-                'myschool.object.browser', 'ss_list_users',
-                [this.state.ssActiveConfigId]);
-            if (result.error) {
-                this.state.ssUsersError = result.error;
-                this.state.ssUsers = [];
-            } else {
-                this.state.ssUsersError = null;
-                this.state.ssUsers = result.users || [];
-            }
-        } catch (e) {
-            this.state.ssUsersError =
-                'SS-users ophalen mislukt: ' + (e?.message || e);
-        } finally {
-            this.state.ssUsersLoading = false;
-        }
-    }
-
-    onSsFilterInput(ev) {
-        this.state.ssFilter = ev.target.value;
-    }
-
-    get filteredSsUsers() {
-        const f = (this.state.ssFilter || '').trim().toLowerCase();
-        if (!f) return this.state.ssUsers;
-        return this.state.ssUsers.filter(u =>
-            (u.username || '').toLowerCase().includes(f) ||
-            (u.name || '').toLowerCase().includes(f) ||
-            (u.surname || '').toLowerCase().includes(f) ||
-            (u.firstname || '').toLowerCase().includes(f) ||
-            (u.email || '').toLowerCase().includes(f) ||
-            (u.internnumber || '').toLowerCase().includes(f));
-    }
-
-    async openSsSlideOver(username) {
-        this.state.ssSlideOverUsername = username;
-        this.state.ssSlideOverUser = null;
-        this.state.ssSlideOverLoading = true;
-        try {
-            const result = await this.orm.call(
-                'myschool.object.browser', 'ss_browse_user',
-                [this.state.ssActiveConfigId, username]);
-            if (result.error) {
-                this.state.ssUsersError = result.error;
-                this.state.ssSlideOverUsername = null;
-                return;
-            }
-            this.state.ssSlideOverUser = result.user;
-        } finally {
-            this.state.ssSlideOverLoading = false;
-        }
-    }
-
-    closeSsSlideOver() {
-        this.state.ssSlideOverUsername = null;
-        this.state.ssSlideOverUser = null;
-    }
-
     async onSwitchToADTab() {
         this.switchTab('ad');
         // Eerste-keer: laad de config-lijst zodat de dropdown gevuld is.
@@ -2501,9 +2400,15 @@ export class ObjectBrowserClient extends Component {
 
     async quickActionRename(dn, cn) {
         if (!this.state.adActiveSessionId) return;
-        const newName = window.prompt(
-            `Hernoem "${cn}" naar:\n\n(Alleen de leaf-naam, niet het volledige DN.)`,
-            cn);
+        const newName = await new Promise((resolve) => {
+            this.dialog.add(InputDialog, {
+                title: `Hernoem "${cn}"`,
+                label: "Alleen de leaf-naam, niet het volledige DN.",
+                defaultValue: cn,
+                confirm: (v) => resolve(v),
+                cancel: () => resolve(null),
+            });
+        });
         if (!newName || newName === cn) return;
         try {
             const result = await this.orm.call(
@@ -2528,13 +2433,18 @@ export class ObjectBrowserClient extends Component {
 
     async quickActionMove(dn, cn) {
         if (!this.state.adActiveSessionId) return;
-        // Eenvoudig prompt: admin typt het target parent-DN.
+        // Admin typt het target parent-DN.
         // Een autocomplete-OU-picker is mooier maar groter scope.
-        const newParent = window.prompt(
-            `Verplaats "${cn}" naar nieuwe parent-DN:\n\n`
-            + `(bv. "OU=Personeel,DC=test,DC=local"). De RDN blijft `
-            + `ongewijzigd.`,
-            dn.split(',', 1).length > 1 ? dn.slice(dn.indexOf(',') + 1) : '');
+        const newParent = await new Promise((resolve) => {
+            this.dialog.add(InputDialog, {
+                title: `Verplaats "${cn}"`,
+                label: 'Nieuwe parent-DN (bv. "OU=Personeel,DC=test,DC=local"). '
+                    + "De RDN blijft ongewijzigd.",
+                defaultValue: dn.split(',', 1).length > 1 ? dn.slice(dn.indexOf(',') + 1) : "",
+                confirm: (v) => resolve(v),
+                cancel: () => resolve(null),
+            });
+        });
         if (!newParent) return;
         try {
             const result = await this.orm.call(

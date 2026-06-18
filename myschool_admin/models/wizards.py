@@ -7,7 +7,7 @@ Wizards for add, move, and bulk operations.
 
 from datetime import timedelta
 
-from odoo import models, fields, api
+from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 import logging
 
@@ -960,6 +960,18 @@ class CreatePersonWizard(models.TransientModel):
         person_id = self._extract_person_id_from_task(task)
         if person_id:
             self._assign_org_roles_to_person(person_id)
+            person = self.env['myschool.person'].browse(person_id)
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Persoon aangemaakt'),
+                    'message': _('%s is succesvol aangemaakt.') % (
+                        person.display_name or person.name or ''),
+                    'type': 'success',
+                    'next': {'type': 'ir.actions.act_window_close'},
+                },
+            }
 
         return {'type': 'ir.actions.act_window_close'}
 

@@ -187,7 +187,11 @@ class SettingsItem(models.Model):
                 "Settings Item '%s' niet gevonden in catalogus.", key)
             return default
 
-        Value = self.env['myschool.settings.value']
+        # sudo(): programmatische SI-resolutie moet werken ongeacht de
+        # caller; de record-rule op settings.value (versleutelde waarden
+        # enkel voor admins) geldt voor directe/RPC/export-toegang, niet
+        # voor deze interne resolutie.
+        Value = self.env['myschool.settings.value'].sudo()
 
         # 1. Person-scoped — direct, geen inheritance.
         if person:

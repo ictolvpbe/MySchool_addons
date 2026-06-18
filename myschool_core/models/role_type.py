@@ -238,14 +238,13 @@ class RoleType(models.Model):
         """Deactivate this role type."""
         self.write({'is_active': False})
 
-    def name_get(self):
-        """Custom name display including active status."""
-        result = []
+    @api.depends('name', 'shortname', 'is_active')
+    def _compute_display_name(self):
+        """Custom name display incl. active status (Odoo 19: geen name_get)."""
         for record in self:
             name = record.name
             if record.shortname:
                 name = f"{record.name} ({record.shortname})"
             if not record.is_active:
                 name = f"{name} [Inactive]"
-            result.append((record.id, name))
-        return result
+            record.display_name = name

@@ -347,12 +347,7 @@
               sequence="30"
               groups="myschool_core.group_myschool_core_admin"/>
 
-    <menuitem id="menu_informat_sync_wizard"
-              name="Informat Sync (gericht)"
-              parent="menu_sync_triggers"
-              action="action_informat_sync_wizard"
-              sequence="40"
-              groups="myschool_core.group_myschool_core_admin"/>
+    <!-- menu_informat_sync_wizard verhuisd naar plugin myschool_edu_informat -->
 
     <menuitem id="menu_sap_sync_run"
               name="SAP-sync overzicht"
@@ -366,13 +361,6 @@
               parent="menu_sync_triggers"
               action="action_sync_test_runner"
               sequence="50"
-              groups="myschool_core.group_myschool_core_admin"/>
-
-    <menuitem id="menu_smartschool_test_runner"
-              name="Smartschool Test Runner"
-              parent="menu_sync_triggers"
-              action="action_smartschool_test_runner"
-              sequence="60"
               groups="myschool_core.group_myschool_core_admin"/>
 
     <!-- ========================================= -->

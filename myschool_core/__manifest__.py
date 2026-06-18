@@ -1,6 +1,6 @@
 {
     'name': 'MySchool Core Module',
-    'version': '1.2',
+    'version': '1.3',
     'category': 'MySchool',
     'summary': 'Manage school organizations, persons, roles, and periods',
     'description': """
@@ -62,11 +62,11 @@
         #'data/users_data.xml',
         'data/ldap_task_types.xml',
         'data/cloud_task_types.xml',
-        'data/smartschool_task_types.xml',
         'data/cloud_cron.xml',
         'data/company_sync_cron.xml',
         'data/letter_task_types.xml',
         'data/letter_template_data.xml',
+        'data/letter_cleanup_cron.xml',
         'data/password_wordlist_data.xml',
         'data/mail_template_sap_safeguard.xml',
         'data/sap_sync_cron.xml',
@@ -83,7 +83,6 @@
         'views/google_workspace_config_views.xml',
 
         # Smartschool integration
-        'views/smartschool_config_views.xml',
 
         # Letter templates
         'views/letter_template_views.xml',
