@@ -4012,6 +4012,15 @@ class ResetSyncDataWizard(models.TransientModel):
         help='Idem voor Google Workspace: users, groups (mail-enabled '
              'side), en OrgUnits voor classgroups. Skipt netjes als '
              'geen actieve Workspace-config bestaat.')
+    delete_odoo_users = fields.Boolean(
+        string='Verwijder gekoppelde Odoo-users + HR-employees',
+        default=False,
+        help='Verwijder ook de gekoppelde res.users en hr.employee van de '
+             'verwijderde personen (i.p.v. ze enkel los te koppelen). '
+             'Beschermd: superuser, admin en de huidige gebruiker worden '
+             'nooit verwijderd. Best-effort per record — een account dat door '
+             'andere data geblokkeerd is, wordt overgeslagen en gelogd. '
+             '(De gekoppelde res.partner blijft staan.)')
 
     person_count = fields.Integer(string='Persons to delete',
                                   compute='_compute_counts')
@@ -4023,6 +4032,10 @@ class ResetSyncDataWizard(models.TransientModel):
                                 compute='_compute_counts')
     proprelation_count = fields.Integer(string='Proprelations to delete',
                                         compute='_compute_counts')
+    odoo_user_count = fields.Integer(string='Odoo users to delete',
+                                     compute='_compute_counts')
+    odoo_employee_count = fields.Integer(string='HR employees to delete',
+                                         compute='_compute_counts')
 
     state = fields.Selection([
         ('confirm', 'Confirm'),
@@ -4117,6 +4130,8 @@ class ResetSyncDataWizard(models.TransientModel):
             wiz.persongroup_count = len(persongroups)
             wiz.role_count = len(roles)
             wiz.proprelation_count = len(proprels)
+            wiz.odoo_user_count = len(persons.mapped('odoo_user_id'))
+            wiz.odoo_employee_count = len(persons.mapped('odoo_employee_id'))
 
     # ------------------------------------------------------------------
     # Backend cleanup
@@ -4153,7 +4168,7 @@ class ResetSyncDataWizard(models.TransientModel):
         # ---- Persons -----------------------------------------------
         ldap_ok = ldap_err = cloud_ok = cloud_err = 0
         for person in persons:
-            if ldap_svc:
+            if ldap_cfg:
                 try:
                     res = ldap_svc.delete_user(ldap_cfg, person)
                     if res.get('success'):
@@ -4165,7 +4180,7 @@ class ResetSyncDataWizard(models.TransientModel):
                     _logger.warning(
                         '[RESET-SYNC-DATA] LDAP user delete failed for '
                         '%s: %s', person.name, e)
-            if gd_svc:
+            if ws_cfg:
                 processor = self.env['myschool.betask.processor']
                 tree_org = None
                 try:
@@ -4184,10 +4199,10 @@ class ResetSyncDataWizard(models.TransientModel):
                         '[RESET-SYNC-DATA] Cloud user delete failed for '
                         '%s: %s', person.name, e)
 
-        if ldap_svc and (ldap_ok or ldap_err):
+        if ldap_cfg and (ldap_ok or ldap_err):
             log.append(
                 f'LDAP: {ldap_ok} user(s) verwijderd, {ldap_err} fout(en).')
-        if gd_svc and (cloud_ok or cloud_err):
+        if ws_cfg and (cloud_ok or cloud_err):
             log.append(
                 f'Cloud: {cloud_ok} user(s) verwijderd, {cloud_err} fout(en).')
 
@@ -4200,7 +4215,7 @@ class ResetSyncDataWizard(models.TransientModel):
             org_type = (org.org_type_id.name or '').upper() \
                 if org.org_type_id else ''
             if org_type == 'PERSONGROUP':
-                if ldap_svc:
+                if ldap_cfg:
                     for fqdn_field in (
                             'com_group_fqdn_internal',
                             'sec_group_fqdn_internal'):
@@ -4218,7 +4233,7 @@ class ResetSyncDataWizard(models.TransientModel):
                             _logger.warning(
                                 '[RESET-SYNC-DATA] LDAP group delete %s: %s',
                                 dn, e)
-                if gd_svc:
+                if ws_cfg:
                     grp_email = (org.com_group_email or '').strip()
                     if grp_email:
                         try:
@@ -4239,7 +4254,7 @@ class ResetSyncDataWizard(models.TransientModel):
                 # to avoid blowing away parent containers; those aren't
                 # in scope of "auto-sync data" anyway. Cloud OU-delete
                 # runs for any non-PERSONGROUP org as before.
-                if ldap_svc and org_type == 'CLASSGROUP':
+                if ldap_cfg and org_type == 'CLASSGROUP':
                     ou_dn = (org.ou_fqdn_internal or '').strip()
                     if ou_dn:
                         try:
@@ -4253,7 +4268,7 @@ class ResetSyncDataWizard(models.TransientModel):
                             _logger.warning(
                                 '[RESET-SYNC-DATA] LDAP OU delete %s: %s',
                                 ou_dn, e)
-                if gd_svc:
+                if ws_cfg:
                     try:
                         res = gd_svc.delete_orgunit(ws_cfg, org)
                         if res.get('success'):
@@ -4266,23 +4281,51 @@ class ResetSyncDataWizard(models.TransientModel):
                             '[RESET-SYNC-DATA] Cloud OU delete %s: %s',
                             org.name, e)
 
-        if ldap_svc and (ldap_grp_ok or ldap_grp_err):
+        if ldap_cfg and (ldap_grp_ok or ldap_grp_err):
             log.append(
                 f'LDAP: {ldap_grp_ok} group(en) verwijderd, '
                 f'{ldap_grp_err} fout(en).')
-        if ldap_svc and (ldap_ou_ok or ldap_ou_err):
+        if ldap_cfg and (ldap_ou_ok or ldap_ou_err):
             log.append(
                 f'LDAP: {ldap_ou_ok} OU(s) (subtree) verwijderd, '
                 f'{ldap_ou_err} fout(en).')
-        if gd_svc and (cloud_grp_ok or cloud_grp_err):
+        if ws_cfg and (cloud_grp_ok or cloud_grp_err):
             log.append(
                 f'Cloud: {cloud_grp_ok} group(en) verwijderd, '
                 f'{cloud_grp_err} fout(en).')
-        if gd_svc and (cloud_ou_ok or cloud_ou_err):
+        if ws_cfg and (cloud_ou_ok or cloud_ou_err):
             log.append(
                 f'Cloud: {cloud_ou_ok} OU(s) verwijderd, '
                 f'{cloud_ou_err} fout(en).')
         return log
+
+    def _delete_odoo_accounts(self, employees, users, ctx):
+        """Best-effort delete van losgekoppelde hr.employee + res.users.
+
+        Employees eerst (verwijzen naar de user), dan users. Elk record in een
+        eigen savepoint zodat een geblokkeerd account (bv. FK naar andere data)
+        de rest niet aborteert; mislukkingen worden gelogd en geteld.
+        """
+        out = []
+        for label, recs in (('HR employee', employees), ('Odoo user', users)):
+            ok = err = 0
+            for rec in recs:
+                if not rec.exists():
+                    continue
+                try:
+                    with self.env.cr.savepoint():
+                        rec.with_context(**ctx).unlink()
+                    ok += 1
+                except Exception as e:
+                    err += 1
+                    ref = getattr(rec, 'login', False) or rec.display_name or rec.id
+                    _logger.warning(
+                        '[RESET-SYNC-DATA] %s delete failed (%s): %s',
+                        label, ref, e)
+            if ok or err:
+                out.append('Deleted %s %s(s)%s.' % (
+                    ok, label, (', %s failed' % err) if err else ''))
+        return out
 
     # ------------------------------------------------------------------
     # Action
@@ -4326,11 +4369,23 @@ class ResetSyncDataWizard(models.TransientModel):
                 self.env.cr.rollback()
                 raise UserError(f'Failed to delete proprelations: {e}')
 
+        odoo_users = self.env['res.users']
+        odoo_emps = self.env['hr.employee']
         if persons:
+            # Optioneel: verzamel de gekoppelde Odoo-accounts VÓÓR het
+            # loskoppelen (daarna is odoo_user_id/_employee_id leeg). Beschermde
+            # accounts (superuser, admin, huidige user) worden uitgesloten.
+            if self.delete_odoo_users:
+                protected = self.env.user
+                for xmlid in ('base.user_root', 'base.user_admin'):
+                    u = self.env.ref(xmlid, raise_if_not_found=False)
+                    if u:
+                        protected |= u
+                odoo_users = persons.mapped('odoo_user_id') - protected
+                odoo_emps = persons.mapped('odoo_employee_id')
             try:
                 # Detach from Odoo users / HR employees so unlink doesn't
-                # trip on related-record write protection. We don't delete
-                # the user/employee — that's a separate concern.
+                # trip on related-record write protection.
                 persons.with_context(**ctx).write({
                     'odoo_user_id': False,
                     'odoo_employee_id': False,
@@ -4356,6 +4411,12 @@ class ResetSyncDataWizard(models.TransientModel):
             except Exception as e:
                 self.env.cr.rollback()
                 raise UserError(f'Failed to delete orgs: {e}')
+
+        # Optioneel: de losgekoppelde Odoo-users + HR-employees verwijderen.
+        # Best-effort per record (savepoint) zodat een geblokkeerd account de
+        # rest niet tegenhoudt. De persons zijn al ontkoppeld + verwijderd.
+        if self.delete_odoo_users and (odoo_emps or odoo_users):
+            report.extend(self._delete_odoo_accounts(odoo_emps, odoo_users, ctx))
 
         self.env.cr.commit()
         _logger.info('[RESET-SYNC-DATA] %s', ' | '.join(report))

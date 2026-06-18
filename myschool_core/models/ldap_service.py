@@ -523,6 +523,13 @@ class LdapService(models.AbstractModel):
 
         Returns:
             dict with operation result
+
+        Note:
+            This computes the DN from the org-tree (``build_user_dn``) and
+            then delegates the actual provisioning to
+            :meth:`create_user_at_dn`. The external behaviour is identical
+            to the original implementation — callers that depend on the
+            org-derived placement keep working unchanged.
         """
         self._check_ldap3_available()
 
@@ -530,7 +537,47 @@ class LdapService(models.AbstractModel):
         cn = self._build_user_cn(person, org=org)
         dn = self.build_user_dn(cn, org, config)
 
-        # Build user attributes
+        return self.create_user_at_dn(config, dn, person, org=org,
+                                      dry_run=dry_run)
+
+    @api.model
+    def create_user_at_dn(self, config, dn, person, org=None, dry_run=False):
+        """Create a user in Active Directory at a *precomputed* DN.
+
+        Mirror of :meth:`create_group_at_dn`: use this when the caller
+        already knows exactly where the user object must live (e.g. a
+        per-school OU resolved outside the generic ``build_user_dn``
+        heuristic — see ``myschool_connect_light``). Reuses the exact same
+        building blocks as :meth:`create_user` so attribute/password/enable
+        behaviour is identical:
+
+          * ``_build_user_attributes`` (sAMAccountName from ``_build_user_cn``)
+          * ``_find_user_dn`` idempotency pre-check (no password rotation
+            when the account already exists *anywhere*)
+          * ``_ensure_ou_path`` backfill of missing parent OUs
+          * ``conn.add`` with the user objectclasses
+          * ``_set_user_password`` + ``_enable_user_account``
+
+        Args:
+            config: ldap.server.config record
+            dn: full DN where the user must live (CN=...,OU=...,DC=...)
+            person: myschool.person record
+            org: myschool.org record (used for attribute resolution: UPN
+                domain, CN templates). Optional.
+            dry_run: If True, only simulate the operation
+
+        Returns:
+            dict with operation result
+        """
+        self._check_ldap3_available()
+        if not dn:
+            return {
+                'success': False,
+                'dn': dn or '',
+                'message': 'create_user_at_dn requires a dn',
+            }
+
+        # Build user attributes (sAMAccountName = _build_user_cn(person, org))
         attributes = self._build_user_attributes(person, config, org=org)
 
         _logger.info(f'Creating LDAP user: {dn}')

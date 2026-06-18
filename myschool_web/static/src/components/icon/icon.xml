@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_web.Icon" owl="1">
+        <svg class="o_ms_icon" t-att-width="props.size" t-att-height="props.size"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             t-att-stroke-width="props.strokeWidth"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <!-- ===== Gecureerde lijn-icoonset (volgt de FA-namen) ===== -->
+            <t t-if="props.name === 'plus'">
+                <path d="M12 5v14"/><path d="M5 12h14"/>
+            </t>
+            <t t-elif="props.name === 'times' or props.name === 'x' or props.name === 'close'">
+                <path d="M18 6 6 18"/><path d="M6 6l12 12"/>
+            </t>
+            <t t-elif="props.name === 'check'">
+                <path d="M20 6 9 17l-5-5"/>
+            </t>
+            <t t-elif="props.name === 'search'">
+                <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+            </t>
+            <t t-elif="props.name === 'user'">
+                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </t>
+            <t t-elif="props.name === 'users'">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </t>
+            <t t-elif="props.name === 'user-plus'">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                <path d="M19 8v6"/><path d="M22 11h-6"/>
+            </t>
+            <t t-elif="props.name === 'trash'">
+                <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                <path d="M10 11v6"/><path d="M14 11v6"/>
+            </t>
+            <t t-elif="props.name === 'pencil' or props.name === 'edit'">
+                <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+            </t>
+            <t t-elif="props.name === 'refresh'">
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/>
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>
+            </t>
+            <t t-elif="props.name === 'list'">
+                <path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/>
+                <path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>
+            </t>
+            <t t-elif="props.name === 'tasks' or props.name === 'list-checks'">
+                <path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/>
+                <path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>
+            </t>
+            <t t-elif="props.name === 'eye'">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
+            </t>
+            <t t-elif="props.name === 'columns'">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>
+            </t>
+            <t t-elif="props.name === 'caret-right' or props.name === 'chevron-right'">
+                <path d="m9 18 6-6-6-6"/>
+            </t>
+            <t t-elif="props.name === 'caret-down' or props.name === 'chevron-down'">
+                <path d="m6 9 6 6 6-6"/>
+            </t>
+            <t t-elif="props.name === 'bell'">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+            </t>
+            <t t-elif="props.name === 'folder'">
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+            </t>
+            <t t-elif="props.name === 'info-circle' or props.name === 'info'">
+                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+            </t>
+            <t t-elif="props.name === 'exclamation-triangle' or props.name === 'alert-triangle'">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+                <path d="M12 9v4"/><path d="M12 17h.01"/>
+            </t>
+            <t t-elif="props.name === 'building'">
+                <rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/>
+                <path d="M8 6h.01"/><path d="M12 6h.01"/><path d="M16 6h.01"/>
+                <path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/>
+                <path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/>
+            </t>
+            <t t-elif="props.name === 'sitemap' or props.name === 'hierarchy'">
+                <rect x="9" y="2" width="6" height="6" rx="1"/>
+                <rect x="3" y="16" width="6" height="6" rx="1"/>
+                <rect x="15" y="16" width="6" height="6" rx="1"/>
+                <path d="M12 8v4"/><path d="M6 16v-2h12v2"/><path d="M12 12v2"/>
+            </t>
+            <t t-elif="props.name === 'sliders'">
+                <path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/>
+                <path d="M20 21v-5"/><path d="M20 12V3"/>
+                <path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/>
+            </t>
+            <t t-elif="props.name === 'tag'">
+                <path d="M12.59 2.59A2 2 0 0 0 11.17 2H4a2 2 0 0 0-2 2v7.17a2 2 0 0 0 .59 1.42l8.41 8.41a2 2 0 0 0 2.83 0l7.17-7.17a2 2 0 0 0 0-2.83Z"/>
+                <path d="M7.5 7.5h.01"/>
+            </t>
+            <t t-elif="props.name === 'cube' or props.name === 'box'">
+                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                <path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>
+            </t>
+            <t t-elif="props.name === 'history' or props.name === 'clock'">
+                <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+            </t>
+            <t t-elif="props.name === 'ellipsis-v' or props.name === 'more-vertical'">
+                <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
+            </t>
+            <t t-elif="props.name === 'ellipsis-h' or props.name === 'more-horizontal'">
+                <circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>
+            </t>
+            <!-- Fallback: onbekende naam → neutrale cirkel -->
+            <t t-else="">
+                <circle cx="12" cy="12" r="9"/>
+            </t>
+        </svg>
+    </t>
+
+</templates>

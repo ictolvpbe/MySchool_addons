@@ -52,7 +52,7 @@ class SapSyncService(models.AbstractModel):
 
     @api.model
     def start_run(self, trigger='manual', inst_nrs=None, phases=None,
-                  require_review=False):
+                  require_review=False, ignore_threshold=False):
         """Maak een nieuwe sync.run aan en supersede openstaande items.
 
         :param trigger: 'cron' of 'manual'
@@ -69,6 +69,7 @@ class SapSyncService(models.AbstractModel):
             'inst_nrs': ','.join(inst_nrs) if inst_nrs else False,
             'phases_json': json.dumps(phases or {}),
             'require_review': bool(require_review),
+            'ignore_threshold': bool(ignore_threshold),
         })
 
         self._log_event(
@@ -239,6 +240,9 @@ class SapSyncService(models.AbstractModel):
     def _compute_counts_and_breach(self, run):
         """Bereken counts per object_type + check drempel-overschrijding."""
         thresholds, min_changes = self._get_thresholds()
+        # Per-run override: "Veiligheidsdrempel negeren" (wizard) → geen breach.
+        if getattr(run, 'ignore_threshold', False):
+            thresholds = None
         counts = {}
         breach_details = []
 
@@ -532,7 +536,7 @@ class SapSyncService(models.AbstractModel):
             group = None
         recipients = []
         if group:
-            recipients = [u.email for u in group.users
+            recipients = [u.email for u in group.user_ids
                           if u.email and u.active]
         if not recipients:
             _logger.warning(
@@ -635,6 +639,58 @@ class SapSyncService(models.AbstractModel):
 
         changes = self.env['myschool.sap.sync.change'].search(
             domain, limit=limit)
+
+        # Resolve naam+voornaam zodat de review meer dan een UUID/id toont
+        # (cruciaal voor troubleshooting). Gebatcht: één query per match-as.
+        # PERSON-changes matchen op source_key (=sap_person_uuid) /
+        # target_res_id; PROPRELATION-changes (PPSBR e.d.) dragen de persoon
+        # in de payload (person_db_id / personId) — die resolven we ook zodat
+        # zichtbaar is over welke werknemer een job-change gaat.
+        Person = self.env['myschool.person'].with_context(active_test=False)
+        by_uuid = {}
+        by_id = {}
+        uuids = set()
+        db_ids = set()
+        payload_person = {}  # change.id -> (person_db_id, person_uuid)
+        for c in changes:
+            if c.object_type == 'PERSON':
+                if c.source_key:
+                    uuids.add(c.source_key)
+                if c.target_res_id:
+                    db_ids.add(c.target_res_id)
+            elif c.object_type == 'PROPRELATION':
+                try:
+                    pl = json.loads(c.payload_new_json or '{}')
+                except (ValueError, TypeError):
+                    pl = {}
+                did = pl.get('person_db_id')
+                uid = pl.get('personId')
+                if did:
+                    db_ids.add(did)
+                if uid:
+                    uuids.add(uid)
+                payload_person[c.id] = (did, uid)
+        if uuids:
+            for p in Person.search([('sap_person_uuid', 'in', list(uuids))]):
+                by_uuid[p.sap_person_uuid] = p
+        if db_ids:
+            for p in Person.browse(list(db_ids)).exists():
+                by_id[p.id] = p
+
+        def _person_label(c):
+            p = None
+            if c.object_type == 'PERSON':
+                p = (by_id.get(c.target_res_id) if c.target_res_id else None) \
+                    or by_uuid.get(c.source_key)
+            elif c.object_type == 'PROPRELATION':
+                did, uid = payload_person.get(c.id, (None, None))
+                p = (by_id.get(did) if did else None) \
+                    or (by_uuid.get(uid) if uid else None)
+            if not p:
+                return ''
+            return p.name or ' '.join(
+                x for x in (p.last_name, p.first_name) if x)
+
         out = []
         for c in changes:
             out.append({
@@ -643,6 +699,7 @@ class SapSyncService(models.AbstractModel):
                 'action': c.action,
                 'source_key': c.source_key or '',
                 'display_name': c.display_name or '',
+                'person_label': _person_label(c),
                 'diff_summary': c.diff_summary or '',
                 'state': c.state,
                 'state_reason': c.state_reason or '',

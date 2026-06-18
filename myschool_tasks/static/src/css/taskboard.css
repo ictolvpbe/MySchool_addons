@@ -9,7 +9,14 @@
     min-height: 100%;
     height: 100%;
     overflow-y: auto;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    font-family: var(--ms-font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif);
+}
+
+/* Koppen / KPI-cijfers volgen het head-token (calm-tech: Plus Jakarta Sans
+   wanneer de theme-overlay actief is). */
+.tb-title,
+.tb-kpi-value {
+    font-family: var(--ms-font-head, inherit);
 }
 
 .tb-container * {
@@ -186,36 +193,10 @@
    FILTER TABS
    ================================================================ */
 
+/* Spacer-wrapper rond de SegmentNav-filterbalk (de balk brengt zijn eigen
+   pill-styling mee via --ms-* tokens). */
 .tb-filter-row {
-    display: flex;
-    gap: 4px;
     margin-bottom: 16px;
-    background: var(--ms-bg-card, #fff);
-    border-radius: 10px;
-    padding: 4px;
-    width: fit-content;
-    box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06);
-}
-
-.tb-filter-tab {
-    padding: 6px 16px;
-    border: none;
-    background: transparent;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--ms-gray, #9B9B9B);
-    cursor: pointer;
-    transition: all 0.15s;
-}
-
-.tb-filter-tab:hover {
-    color: var(--ms-brand-1, #007d8c);
-}
-
-.tb-filter-tab.active {
-    background: var(--ms-brand-1, #007d8c);
-    color: #fff;
 }
 
 /* ================================================================

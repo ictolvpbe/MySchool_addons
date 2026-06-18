@@ -71,6 +71,7 @@
                             <field name="started_at" readonly="1"/>
                             <field name="finished_at" readonly="1"/>
                             <field name="require_review" readonly="1"/>
+                            <field name="ignore_threshold" readonly="1"/>
                         </group>
                         <group string="Scope">
                             <field name="inst_nrs" readonly="1"/>

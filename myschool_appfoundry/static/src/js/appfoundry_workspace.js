@@ -4,6 +4,7 @@ import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
+import { SegmentNav } from "@myschool_web/components/segment_nav/segment_nav";
 
 /**
  * Lightweight right-click context menu (shared look with the rest of MySchool).
@@ -446,8 +447,19 @@ export class BacklogTable extends Component {
  */
 export class AppfoundryWorkspace extends Component {
     static template = "myschool_appfoundry.Workspace";
-    static components = { View, BacklogTable, AfwContextMenu };
+    static components = { View, BacklogTable, AfwContextMenu, SegmentNav };
     static props = ["*"];
+
+    /** Secties voor de SegmentNav-view-switcher (scrum-cyclus). */
+    get viewTabs() {
+        return [
+            { key: "backlog", label: "Backlog" },
+            { key: "sprintboard", label: "Sprint Board" },
+            { key: "sprints", label: "Sprints" },
+            { key: "board", label: "Board" },
+            { key: "list", label: "List" },
+        ];
+    }
 
     setup() {
         this.orm = useService("orm");

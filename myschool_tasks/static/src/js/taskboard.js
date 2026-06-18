@@ -3,9 +3,20 @@
 import { registry } from "@web/core/registry";
 import { Component, useState, onWillStart } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
+import { SegmentNav } from "@myschool_web/components/segment_nav/segment_nav";
 
 export class TaskBoard extends Component {
     static template = "myschool_tasks.TaskBoard";
+    static components = { SegmentNav };
+
+    /** Secties voor de SegmentNav-filterbalk. */
+    get filterTabs() {
+        return [
+            { key: "all", label: "Alle taken" },
+            { key: "mine", label: "Mijn taken" },
+            { key: "group", label: "Groepstaken" },
+        ];
+    }
 
     setup() {
         this.orm = useService("orm");

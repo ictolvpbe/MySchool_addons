@@ -20,7 +20,7 @@
     'author': 'MySchool OLVP',
     'website': 'https://www.olvp.be',
     'license': 'LGPL-3',
-    'depends': ['base', 'mail', 'myschool_core'],
+    'depends': ['base', 'mail', 'myschool_core', 'myschool_web'],
     'data': [
         'security/myschool_projects_security.xml',
         'security/ir.model.access.csv',

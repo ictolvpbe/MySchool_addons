@@ -493,6 +493,7 @@ KEYWORD_SHAPES = {
     'finance': _shape_euro, 'account': _shape_euro,
     'security': _shape_shield, 'shield': _shape_shield,
     'hr': _shape_users, 'user': _shape_users, 'employee': _shape_users,
+    'leerling': _shape_users, 'student': _shape_users, 'persoon': _shape_users,
     'sale': _shape_cart, 'shop': _shape_cart, 'purchase': _shape_cart,
     'web': _shape_globe, 'website': _shape_globe,
     'mail': _shape_envelope, 'chat': _shape_envelope,
@@ -522,42 +523,324 @@ def _get_shape_func(module_name):
     return _shape_generic
 
 
-def generate_icon(main_color, accent_color, module_name='', display_name=''):
-    """Generate a 100x100 PNG icon in Odoo's abstract shape style.
+# ---------------------------------------------------------------------------
+# Calm-tech LINE style — één monochrome stroked glyph op een effen tegel
+# (Lucide/Feather-vormtaal: stroke, ronde hoeken/caps). Dezelfde categorie-
+# resolutie als de filled stijl wordt hergebruikt via _FILLED_TO_KEY.
+# ---------------------------------------------------------------------------
 
-    White rounded background with colorful semantic shapes that
-    visually represent what the app does. No text overlay.
+IVORY = (251, 250, 246, 255)
+LINE_W = 6
 
-    :param main_color: hex color for primary shapes
-    :param accent_color: hex color for secondary shapes
-    :param module_name: technical module name (for shape selection)
-    :param display_name: human-readable name (unused, kept for API compat)
+
+def _scale_xy(xy, s):
+    """Schaal coords; ondersteunt zowel platte [x0,y0,x1,y1] als [(x,y), ...]."""
+    if not xy:
+        return xy
+    if isinstance(xy[0], (tuple, list)):
+        return [(p[0] * s, p[1] * s) for p in xy]
+    return [v * s for v in xy]
+
+
+class _ScaledDraw:
+    """Dunne ImageDraw-wrapper die alle coords/breedtes ×s schaalt, zodat de
+    glyphs in 100-ruimte getekend kunnen worden maar op een supersample-canvas
+    landen (anti-aliasing via terugschalen)."""
+
+    def __init__(self, draw, s):
+        self.d = draw
+        self.s = s
+
+    def _w(self, kw):
+        if kw.get('width'):
+            kw = dict(kw)
+            kw['width'] = max(1, int(round(kw['width'] * self.s)))
+        return kw
+
+    def rounded_rectangle(self, xy, radius=0, **kw):
+        self.d.rounded_rectangle(_scale_xy(xy, self.s), radius=radius * self.s, **self._w(kw))
+
+    def ellipse(self, xy, **kw):
+        self.d.ellipse(_scale_xy(xy, self.s), **self._w(kw))
+
+    def arc(self, xy, start, end, **kw):
+        self.d.arc(_scale_xy(xy, self.s), start, end, **self._w(kw))
+
+    def line(self, xy, **kw):
+        self.d.line(_scale_xy(xy, self.s), **self._w(kw))
+
+    def polygon(self, xy, **kw):
+        self.d.polygon(_scale_xy(xy, self.s), **kw)
+
+
+def _cap(d, x, y, color, w):
+    """Ronde eindcap (PIL-lijnen hebben butt-caps)."""
+    r = w / 2.0
+    d.ellipse([x - r, y - r, x + r, y + r], fill=color)
+
+
+def _rl(d, pts, color, w=LINE_W):
+    """Stroke een polyline met ronde joins + caps."""
+    if len(pts) >= 2:
+        d.line(pts, fill=color, width=w, joint='curve')
+    _cap(d, pts[0][0], pts[0][1], color, w)
+    _cap(d, pts[-1][0], pts[-1][1], color, w)
+
+
+def _line_calendar(d, g, w):
+    d.rounded_rectangle([26, 32, 74, 74], radius=6, outline=g, width=w)
+    d.line([26, 44, 74, 44], fill=g, width=w)
+    _rl(d, [(40, 24), (40, 34)], g, w)
+    _rl(d, [(60, 24), (60, 34)], g, w)
+    for cx in (38, 50, 62):
+        for cy in (56, 66):
+            d.ellipse([cx - 2.5, cy - 2.5, cx + 2.5, cy + 2.5], fill=g)
+
+
+def _line_dashboard(d, g, w):
+    d.arc([26, 30, 74, 78], 180, 360, fill=g, width=w)
+    _rl(d, [(50, 54), (63, 40)], g, w)
+    d.ellipse([45, 49, 55, 59], fill=g)
+
+
+def _line_code(d, g, w):
+    _rl(d, [(44, 32), (28, 50), (44, 68)], g, w)
+    _rl(d, [(56, 32), (72, 50), (56, 68)], g, w)
+
+
+def _line_monitor(d, g, w):
+    d.rounded_rectangle([24, 28, 76, 60], radius=5, outline=g, width=w)
+    _rl(d, [(50, 60), (50, 70)], g, w)
+    _rl(d, [(38, 72), (62, 72)], g, w)
+
+
+def _line_cog(d, g, w):
+    import math
+    d.ellipse([39, 39, 61, 61], outline=g, width=w)   # tandwiel-ring
+    d.ellipse([46, 46, 54, 54], fill=g)               # naaf
+    for i in range(8):
+        a = i * math.pi / 4
+        _rl(d, [(50 + 11 * math.cos(a), 50 + 11 * math.sin(a)),
+                (50 + 19 * math.cos(a), 50 + 19 * math.sin(a))], g, w)
+
+
+def _line_laptop(d, g, w):
+    d.rounded_rectangle([30, 30, 70, 58], radius=4, outline=g, width=w)
+    d.rounded_rectangle([22, 62, 78, 70], radius=3, outline=g, width=w)
+
+
+def _line_play(d, g, w):
+    d.ellipse([28, 28, 72, 72], outline=g, width=w)
+    d.polygon([(45, 39), (45, 61), (65, 50)], fill=g)
+
+
+def _line_sync(d, g, w):
+    d.arc([28, 28, 72, 72], 300, 150, fill=g, width=w)
+    d.arc([28, 28, 72, 72], 120, 330, fill=g, width=w)
+    _rl(d, [(60, 22), (72, 28), (71, 40)], g, w)
+    _rl(d, [(40, 78), (28, 72), (29, 60)], g, w)
+
+
+def _line_tasks(d, g, w):
+    for y in (38, 50, 62):
+        _rl(d, [(28, y), (32, y + 4), (39, y - 4)], g, w)
+        _rl(d, [(48, y), (72, y)], g, w)
+
+
+def _line_graduation(d, g, w):
+    _rl(d, [(50, 28), (76, 42), (50, 56), (24, 42), (50, 28)], g, w)
+    d.arc([34, 50, 66, 74], 0, 180, fill=g, width=w)
+    _rl(d, [(66, 49), (66, 66)], g, w)
+    d.ellipse([63, 66, 69, 72], fill=g)
+
+
+def _line_sitemap(d, g, w):
+    d.rounded_rectangle([42, 22, 58, 38], radius=3, outline=g, width=w)
+    for x0 in (22, 42, 62):
+        d.rounded_rectangle([x0, 58, x0 + 16, 74], radius=3, outline=g, width=w)
+    _rl(d, [(50, 38), (50, 48)], g, w)
+    _rl(d, [(30, 48), (70, 48)], g, w)
+    _rl(d, [(30, 48), (30, 58)], g, w)
+    _rl(d, [(50, 48), (50, 58)], g, w)
+    _rl(d, [(70, 48), (70, 58)], g, w)
+
+
+def _line_book(d, g, w):
+    _rl(d, [(50, 32), (32, 28), (28, 66), (50, 70)], g, w)
+    _rl(d, [(50, 32), (68, 28), (72, 66), (50, 70)], g, w)
+    _rl(d, [(50, 32), (50, 70)], g, w)
+
+
+def _line_euro(d, g, w):
+    d.ellipse([28, 28, 72, 72], outline=g, width=w)
+    d.arc([40, 38, 62, 62], 50, 310, fill=g, width=w)
+    _rl(d, [(36, 46), (56, 46)], g, w)
+    _rl(d, [(36, 54), (56, 54)], g, w)
+
+
+def _line_shield(d, g, w):
+    _rl(d, [(50, 26), (70, 34), (68, 56), (50, 74), (32, 56), (30, 34), (50, 26)], g, w)
+    _rl(d, [(42, 50), (48, 57), (60, 42)], g, w)
+
+
+def _line_users(d, g, w):
+    d.ellipse([38, 28, 54, 44], outline=g, width=w)
+    d.arc([30, 48, 62, 82], 180, 360, fill=g, width=w)
+    d.ellipse([57, 32, 69, 44], outline=g, width=w)
+    d.arc([55, 50, 77, 76], 210, 360, fill=g, width=w)
+
+
+def _line_cart(d, g, w):
+    _rl(d, [(22, 28), (32, 30), (38, 58), (66, 58), (71, 36), (34, 36)], g, w)
+    d.ellipse([37, 64, 47, 74], outline=g, width=w)
+    d.ellipse([58, 64, 68, 74], outline=g, width=w)
+
+
+def _line_globe(d, g, w):
+    d.ellipse([26, 26, 74, 74], outline=g, width=w)
+    d.ellipse([40, 26, 60, 74], outline=g, width=w)
+    _rl(d, [(27, 50), (73, 50)], g, w)
+
+
+def _line_envelope(d, g, w):
+    d.rounded_rectangle([24, 32, 76, 68], radius=5, outline=g, width=w)
+    _rl(d, [(27, 36), (50, 54), (73, 36)], g, w)
+
+
+def _line_chart(d, g, w):
+    _rl(d, [(28, 72), (72, 72)], g, w)
+    _rl(d, [(38, 72), (38, 54)], g, w)
+    _rl(d, [(50, 72), (50, 40)], g, w)
+    _rl(d, [(62, 72), (62, 48)], g, w)
+
+
+def _line_database(d, g, w):
+    d.ellipse([28, 22, 72, 38], outline=g, width=w)
+    _rl(d, [(28, 30), (28, 62)], g, w)
+    _rl(d, [(72, 30), (72, 62)], g, w)
+    d.arc([28, 38, 72, 54], 0, 180, fill=g, width=w)
+    d.arc([28, 54, 72, 70], 0, 180, fill=g, width=w)
+
+
+def _line_cubes(d, g, w):
+    d.rounded_rectangle([30, 30, 58, 58], radius=4, outline=g, width=w)
+    d.rounded_rectangle([46, 46, 72, 72], radius=4, outline=g, width=w)
+
+
+def _line_wrench(d, g, w):
+    d.arc([26, 26, 50, 50], 35, 305, fill=g, width=w)
+    _rl(d, [(43, 43), (72, 72)], g, w + 1)
+
+
+def _line_printer(d, g, w):
+    d.rounded_rectangle([26, 44, 74, 64], radius=4, outline=g, width=w)
+    d.rounded_rectangle([34, 26, 66, 44], radius=2, outline=g, width=w)
+    d.rounded_rectangle([34, 62, 66, 76], radius=2, outline=g, width=w)
+    d.ellipse([64, 51, 70, 57], fill=g)
+
+
+def _line_bus(d, g, w):
+    d.rounded_rectangle([24, 32, 76, 64], radius=6, outline=g, width=w)
+    _rl(d, [(24, 50), (76, 50)], g, w)
+    _rl(d, [(50, 34), (50, 50)], g, w)
+    d.ellipse([31, 62, 43, 74], outline=g, width=w)
+    d.ellipse([57, 62, 69, 74], outline=g, width=w)
+
+
+def _line_request(d, g, w):
+    d.rounded_rectangle([32, 24, 68, 76], radius=4, outline=g, width=w)
+    _rl(d, [(58, 24), (58, 34), (68, 34)], g, w)
+    for y in (44, 56, 66):
+        _rl(d, [(38, y), (41, y + 3), (46, y - 3)], g, w)
+        _rl(d, [(50, y), (62, y)], g, w)
+
+
+def _line_generic(d, g, w):
+    for (x0, y0) in [(30, 30), (54, 30), (30, 54), (54, 54)]:
+        d.rounded_rectangle([x0, y0, x0 + 16, y0 + 16], radius=3, outline=g, width=w)
+
+
+LINE_SHAPES = {
+    'request': _line_request, 'calendar': _line_calendar, 'dashboard': _line_dashboard,
+    'code': _line_code, 'monitor': _line_monitor, 'cog': _line_cog,
+    'laptop': _line_laptop, 'play': _line_play, 'sync': _line_sync,
+    'tasks': _line_tasks, 'graduation': _line_graduation, 'sitemap': _line_sitemap,
+    'book': _line_book, 'euro': _line_euro, 'shield': _line_shield,
+    'users': _line_users, 'cart': _line_cart, 'globe': _line_globe,
+    'envelope': _line_envelope, 'chart': _line_chart, 'database': _line_database,
+    'cubes': _line_cubes, 'wrench': _line_wrench, 'printer': _line_printer,
+    'bus': _line_bus, 'generic': _line_generic,
+}
+
+# Filled-shape-functie → categorie-key, om dezelfde naam→categorie-resolutie
+# (_get_shape_func) te hergebruiken voor de lijn-stijl.
+_FILLED_TO_KEY = {
+    _shape_request: 'request', _shape_calendar: 'calendar', _shape_dashboard: 'dashboard',
+    _shape_code: 'code', _shape_monitor: 'monitor', _shape_cog: 'cog',
+    _shape_laptop: 'laptop', _shape_play: 'play', _shape_sync: 'sync',
+    _shape_tasks: 'tasks', _shape_graduation: 'graduation', _shape_sitemap: 'sitemap',
+    _shape_book: 'book', _shape_euro: 'euro', _shape_shield: 'shield',
+    _shape_users: 'users', _shape_cart: 'cart', _shape_globe: 'globe',
+    _shape_envelope: 'envelope', _shape_chart: 'chart', _shape_database: 'database',
+    _shape_cubes: 'cubes', _shape_wrench: 'wrench', _shape_printer: 'printer',
+    _shape_bus: 'bus', _shape_generic: 'generic',
+}
+
+
+def _get_line_func(module_name):
+    """Lijn-glyph voor een module, via dezelfde categorie als de filled stijl."""
+    key = _FILLED_TO_KEY.get(_get_shape_func(module_name), 'generic')
+    return LINE_SHAPES.get(key, _line_generic)
+
+
+def generate_icon(main_color, accent_color, module_name='', display_name='', style='shapes'):
+    """Generate a 100x100 PNG app icon.
+
+    Twee stijlen:
+      * 'shapes' (default) — witte tegel + kleurrijke gevulde semantische vorm.
+      * 'line' — calm-tech: effen tegel (main_color) + één monochrome ivoor
+        lijn-glyph (Lucide/Feather-stijl). accent_color wordt hier genegeerd.
+
+    :param main_color: hex — gevulde vormen ('shapes') / tegel ('line')
+    :param accent_color: hex — secundaire vormen ('shapes', genegeerd bij 'line')
+    :param module_name: technische modulenaam (bepaalt de vorm/glyph)
+    :param display_name: leesbare naam (ongebruikt, API-compat)
+    :param style: 'shapes' | 'line'
     :returns: PNG image as bytes
     """
     main = _hex_to_rgba(main_color)
     accent = _hex_to_rgba(accent_color)
     dark = _darken(main)
 
-    img = Image.new('RGBA', (ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
-    bg = Image.new('RGBA', (ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
-    bg_draw = ImageDraw.Draw(bg)
+    # Supersample voor gladde (anti-aliased) randen bij de lijn-stijl.
+    ss = 4 if style == 'line' else 1
+    size = ICON_SIZE * ss
 
-    # White background
-    bg_draw.rounded_rectangle(
-        [0, 0, ICON_SIZE, ICON_SIZE], radius=RADIUS, fill=WHITE)
+    # Transparante achtergrond — geen tegel. Het motief wordt direct op een
+    # doorzichtig canvas getekend, zodat het icoon zich aanpast aan elke
+    # ondergrond (apps-menu-tegel, navbar, light/dark).
+    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
 
-    # Draw semantic shapes
-    shape_func = _get_shape_func(module_name)
-    shape_func(bg_draw, main, accent, dark)
+    if style == 'line':
+        # Monochrome lijn-glyph in de hoofdkleur (geen tegel meer → main i.p.v.
+        # ivoor, zodat de glyph contrasteert op een lichte ondergrond).
+        _get_line_func(module_name)(_ScaledDraw(draw, ss), main, LINE_W)
+    else:
+        _get_shape_func(module_name)(draw, main, accent, dark)
+        # In de filled-stijl was WIT de 'tegel die doorschijnt' (negatieve
+        # ruimte). Nu er geen tegel is, maken we puur wit transparant zodat die
+        # uitsnedes echte gaten worden en het icoon zich aan elke ondergrond
+        # aanpast. (ss == 1 → geen AA-halo's, dus exact-wit keyen is schoon.)
+        px = img.load()
+        for y in range(size):
+            for x in range(size):
+                r, g, b, a = px[x, y]
+                if a and r >= 250 and g >= 250 and b >= 250:
+                    px[x, y] = (r, g, b, 0)
 
-    # Apply rounded-rectangle mask for clean edges
-    mask = Image.new('L', (ICON_SIZE, ICON_SIZE), 0)
-    mask_draw = ImageDraw.Draw(mask)
-    mask_draw.rounded_rectangle(
-        [0, 0, ICON_SIZE, ICON_SIZE], radius=RADIUS, fill=255)
-
-    bg.putalpha(mask)
-    img.paste(bg, (0, 0), bg)
+    if ss != 1:
+        img = img.resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
 
     buf = io.BytesIO()
     img.save(buf, 'PNG')

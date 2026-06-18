@@ -334,13 +334,12 @@ if records:
             </field>
         </record>
 
-        <!-- Drain the entire pending queue in priority order.
-             Calls processor.process_all_pending() so dependencies are
-             honoured (LDAP/ORG/ADD before LDAP/USER/ADD before
-             LDAP/GROUPMEMBER/ADD, etc.) — unlike the per-record
-             "Verwerk geselecteerde NEW tasks" which runs in list-view
-             order (newest first). Wired up as a top-level menu so
-             admins can run it without first navigating into a list. -->
+        <!-- Drain de hele wachtrij in prioriteitsvolgorde. betask.
+             action_run_all_pending() ketent via ``next`` naar deze action terug
+             (auto-continue tot de wachtrij leeg is, inclusief cascade-taken).
+             De action staat hier (admin) zodat de menu-item ernaar kan
+             verwijzen zonder dat een admin-only upgrade afhangt van een
+             core-data-load; core's betask refereert er guarded naar. -->
         <record id="action_betask_run_all_pending" model="ir.actions.server">
             <field name="name">Verwerk alle wachtende taken (in volgorde)</field>
             <field name="model_id" ref="myschool_core.model_myschool_betask"/>

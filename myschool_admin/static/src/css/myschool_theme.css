@@ -4,48 +4,13 @@
    This file keeps ONLY admin-specific overrides.
    ============================================================ */
 
-/* --- Bridge variables: --ms-* aliases for --myschool-* ---
-   Used by OWL components in myschool_admin that reference --ms-*.
+/* --- Bridge variables ---
+   De canonieke --ms-* light-tokens zijn verhuisd naar de basis-theme
+   (myschool_theme/static/src/scss/layout.scss → :root). Die laadt vóór
+   een theme-overlay, zodat de overlay de tokens betrouwbaar kan
+   herdefiniëren. Hier blijven enkel de dark-mode-overrides + de
+   admin-specifieke widget-stijlen.
 */
-:root {
-    /* Brand palette — linked to myschool_theme settings */
-    --ms-brand-1: var(--myschool-brand-1, #007d8c);
-    --ms-brand-2: var(--myschool-brand-2, #0094A4);
-    --ms-brand-3: var(--myschool-brand-3, #00ACBF);
-    --ms-brand-4: var(--myschool-brand-4, #00C4D9);
-
-    /* Neutrals */
-    --ms-black: #252525;
-    --ms-gray: #9B9B9B;
-    --ms-text: var(--myschool-text, #003333);
-    --ms-text-muted: var(--myschool-text-muted, #5a7a7a);
-
-    /* Surfaces — linked to myschool_theme settings */
-    --ms-bg: var(--myschool-bg, #dce9e9);
-    --ms-bg-card: var(--myschool-bg-card, #ffffff);
-    --ms-border: var(--myschool-border, #d6e4e4);
-    --ms-border-light: var(--myschool-border-light, #e8f0f0);
-
-    /* Layered surfaces for theme-aware panels. Use these instead of
-       raw #fff / #f5fafa / etc. so dark-mode just works. */
-    --ms-surface-base: #f5fafa;     /* widget canvas (page bg) */
-    --ms-surface-1: #ffffff;        /* primary panel (cards, pane bodies) */
-    --ms-surface-2: #f5fafa;        /* secondary surface (headers, inputs) */
-    --ms-surface-3: #e6f7f8;        /* tertiary tint */
-    --ms-hover: #f0f8f8;            /* row hover */
-    --ms-active: #d9f2f4;           /* selected row / active state */
-    --ms-overlay-strong: rgba(0,0,0,0.08);
-
-    /* Semantic */
-    --ms-success: #0d9488;
-    --ms-success-bg: #ccfbf1;
-    --ms-error: #dc2626;
-    --ms-error-bg: #fee2e2;
-    --ms-warning: #d97706;
-    --ms-warning-bg: #fef3c7;
-    --ms-info: #0284c7;
-    --ms-info-bg: #e0f2fe;
-}
 
 /* ============================================================
    Dark mode — applied on <body data-theme="dark"> by the

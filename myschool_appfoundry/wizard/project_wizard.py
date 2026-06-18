@@ -296,6 +296,11 @@ class AppfoundryIconWizard(models.TransientModel):
         string='Modulenaam',
         help='Technische modulenaam voor het icoon (bepaalt de vorm).',
     )
+    icon_style = fields.Selection(
+        [('shapes', 'Kleurrijk (gevuld)'), ('line', 'Lijn (calm-tech)')],
+        string='Stijl', default='shapes',
+        help='Kleurrijke gevulde vorm, of een monochrome lijn-glyph op een '
+             'effen tegel (calm-tech).')
     icon_preview = fields.Binary(string='Icoon voorbeeld', readonly=True)
 
     @api.model
@@ -307,6 +312,7 @@ class AppfoundryIconWizard(models.TransientModel):
             defaults['icon_main_color'] = project.icon_main_color
             defaults['icon_accent_color'] = project.icon_accent_color
             defaults['icon_module_name'] = project.icon_module_name
+            defaults['icon_style'] = project.icon_style or 'shapes'
             defaults['icon_preview'] = project.icon_preview
         return defaults
 
@@ -320,6 +326,7 @@ class AppfoundryIconWizard(models.TransientModel):
                 record.icon_accent_color or '#00C4D9',
                 module_name=module_name.lower().replace(' ', '_'),
                 display_name=record.project_id.name or module_name,
+                style=record.icon_style or 'shapes',
             )
             preview = base64.b64encode(icon_bytes)
             record.icon_preview = preview
@@ -327,6 +334,7 @@ class AppfoundryIconWizard(models.TransientModel):
                 'icon_main_color': record.icon_main_color,
                 'icon_accent_color': record.icon_accent_color,
                 'icon_module_name': record.icon_module_name,
+                'icon_style': record.icon_style,
                 'icon_preview': preview,
             })
         return {
@@ -344,6 +352,7 @@ class AppfoundryIconWizard(models.TransientModel):
                 'icon_main_color': record.icon_main_color,
                 'icon_accent_color': record.icon_accent_color,
                 'icon_module_name': record.icon_module_name,
+                'icon_style': record.icon_style,
             })
             record.project_id.action_apply_icon_to_menu()
         return {'type': 'ir.actions.act_window_close'}

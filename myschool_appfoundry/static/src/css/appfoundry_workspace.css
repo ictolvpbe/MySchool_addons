@@ -167,6 +167,9 @@
     flex-wrap: wrap;
 }
 .o_afw_title { display: flex; align-items: center; gap: 8px; }
+/* SegmentNav-slot: neemt de flexibele middenruimte zodat de sub-nav-tabs
+   responsief invouwen ("Meer ▾") en de Properties-knop niet wegduwen. */
+.o_afw_switch { flex: 1 1 auto; min-width: 0; }
 .o_afw_title .o_afw_proj_name { font-size: 16px; }
 .o_afw_release {
     font-size: 12px;

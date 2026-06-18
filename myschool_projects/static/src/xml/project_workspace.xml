@@ -418,22 +418,9 @@
                             <span class="o_msp_proj_name" t-esc="selected.name"/>
                             <span t-if="selected.code" class="o_msp_proj_code" t-esc="selected.code"/>
                         </div>
-                        <div class="o_msp_switch btn-group">
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'table' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('table')">Table</button>
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'timeline' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('timeline')">Timeline</button>
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'overview' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('overview')">Overview</button>
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'kanban' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('kanban')">Board</button>
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'calendar' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('calendar')">Calendar</button>
+                        <div class="o_msp_switch">
+                            <SegmentNav tabs="viewTabs" value="state.view"
+                                        onChange="(v) => this.setView(v)"/>
                         </div>
                         <button class="btn btn-sm btn-light ms-auto"
                                 t-on-click="applyProcess"

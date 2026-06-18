@@ -73,18 +73,8 @@
                     <!-- Filter Tabs                                 -->
                     <!-- ═══════════════════════════════════════════ -->
                     <div class="tb-filter-row">
-                        <button t-att-class="'tb-filter-tab ' + (state.activeFilter === 'all' ? 'active' : '')"
-                                t-on-click="() => this.setFilter('all')">
-                            Alle taken
-                        </button>
-                        <button t-att-class="'tb-filter-tab ' + (state.activeFilter === 'mine' ? 'active' : '')"
-                                t-on-click="() => this.setFilter('mine')">
-                            Mijn taken
-                        </button>
-                        <button t-att-class="'tb-filter-tab ' + (state.activeFilter === 'group' ? 'active' : '')"
-                                t-on-click="() => this.setFilter('group')">
-                            Groepstaken
-                        </button>
+                        <SegmentNav tabs="filterTabs" value="state.activeFilter"
+                                    onChange="(f) => this.setFilter(f)"/>
                     </div>
 
                     <!-- ═══════════════════════════════════════════ -->

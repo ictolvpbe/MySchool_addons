@@ -910,6 +910,8 @@
                 <group invisible="state != 'confirm'" string="What to delete">
                     <group>
                         <field name="delete_persons"/>
+                        <field name="delete_odoo_users"
+                               invisible="not delete_persons"/>
                         <field name="delete_classgroups"/>
                         <field name="delete_persongroups"/>
                         <field name="delete_classgroup_roles"
@@ -917,6 +919,10 @@
                     </group>
                     <group string="Preview (matching records)">
                         <field name="person_count" readonly="1"/>
+                        <field name="odoo_user_count" readonly="1"
+                               invisible="not delete_persons"/>
+                        <field name="odoo_employee_count" readonly="1"
+                               invisible="not delete_persons"/>
                         <field name="classgroup_count" readonly="1"/>
                         <field name="persongroup_count" readonly="1"/>
                         <field name="role_count" readonly="1"/>

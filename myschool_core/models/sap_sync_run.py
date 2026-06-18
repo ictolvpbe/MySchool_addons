@@ -128,6 +128,15 @@ class SapSyncRun(models.Model):
         help='Manueel ingesteld op de wizard. Forceert de review-UI ongeacht drempel.',
     )
 
+    ignore_threshold = fields.Boolean(
+        string='Veiligheidsdrempel negeren',
+        default=False,
+        help='Manueel ingesteld op de wizard. Slaat de safeguard-drempelcheck '
+             'over voor deze run (geen breach → geen awaiting_approval). '
+             'Handig bij een lege/kleine basis waar een paar adds de '
+             'procentuele drempel meteen overschrijden.',
+    )
+
     active = fields.Boolean(default=True)
 
     @api.depends('change_ids')

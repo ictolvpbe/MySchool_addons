@@ -7,90 +7,98 @@
             <t t-if="state.loading">
                 <div class="db-loading">
                     <i class="fa fa-spinner fa-spin fa-2x"/>
-                    <p>Loading dashboard...</p>
+                    <p>Dashboard laden…</p>
                 </div>
             </t>
             <t t-else="">
                 <div class="db-page">
-                    <div class="db-page-title">Dashboard</div>
+                    <!-- ============================================ -->
+                    <!-- Begroeting (calm-tech header)                -->
+                    <!-- ============================================ -->
+                    <div class="db-greeting">
+                        <h1>
+                            <t t-esc="greeting"/><t t-if="firstName">, <t t-esc="firstName"/></t>
+                        </h1>
+                        <p class="db-greeting-sub"><t t-esc="todayLabel"/></p>
+                    </div>
 
                     <!-- ============================================ -->
-                    <!-- Hero: Organisation Manager CTA               -->
+                    <!-- Hero: Organisatiebeheer-CTA                  -->
                     <!-- ============================================ -->
                     <div class="db-hero">
                         <div class="db-hero-icon">
-                            <i class="fa fa-sitemap"/>
+                            <Icon name="'sitemap'" size="28"/>
                         </div>
                         <div class="db-hero-text">
-                            <h2>Organisation Manager</h2>
-                            <p>Browse the full organizational hierarchy, manage persons, roles, and relations in one place.</p>
+                            <h2>Organisatiebeheer</h2>
+                            <p>Doorblader de volledige organisatiehiërarchie en beheer personen, rollen en relaties op één plek.</p>
                             <div class="db-hero-stats">
                                 <div class="db-hero-stat">
-                                    <strong><t t-esc="formatNumber(state.heroStats.organizations)"/></strong> organizations
+                                    <strong><t t-esc="formatNumber(state.heroStats.organizations)"/></strong> organisaties
                                 </div>
                                 <div class="db-hero-stat">
-                                    <strong><t t-esc="formatNumber(state.heroStats.persons)"/></strong> persons
+                                    <strong><t t-esc="formatNumber(state.heroStats.persons)"/></strong> personen
                                 </div>
                                 <div class="db-hero-stat">
-                                    <strong><t t-esc="formatNumber(state.heroStats.roles)"/></strong> roles
+                                    <strong><t t-esc="formatNumber(state.heroStats.roles)"/></strong> rollen
                                 </div>
                             </div>
                         </div>
                         <button class="db-hero-btn" t-on-click="openObjectBrowser">
-                            <i class="fa fa-sitemap"/> Open Organisation Manager
+                            <Icon name="'sitemap'" size="16"/> Open organisatiebeheer
                         </button>
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- KPI Row                                      -->
+                    <!-- KPI-rij                                      -->
                     <!-- ============================================ -->
                     <div class="db-kpi-row">
                         <div class="db-kpi-card db-kpi-c1">
-                            <div class="db-kpi-label">Active Students</div>
+                            <div class="db-kpi-label">Actieve leerlingen</div>
                             <div class="db-kpi-value"><t t-esc="formatNumber(state.kpis.active_students)"/></div>
-                            <div class="db-kpi-sub">enrolled this schoolyear</div>
+                            <div class="db-kpi-sub">ingeschreven dit schooljaar</div>
                         </div>
                         <div class="db-kpi-card db-kpi-c2">
-                            <div class="db-kpi-label">Active Employees</div>
+                            <div class="db-kpi-label">Actieve medewerkers</div>
                             <div class="db-kpi-value"><t t-esc="formatNumber(state.kpis.active_employees)"/></div>
-                            <div class="db-kpi-sub">active in system</div>
+                            <div class="db-kpi-sub">actief in systeem</div>
                         </div>
                         <div class="db-kpi-card db-kpi-c3">
-                            <div class="db-kpi-label">Organizations</div>
+                            <div class="db-kpi-label">Organisaties</div>
                             <div class="db-kpi-value"><t t-esc="formatNumber(state.kpis.organizations)"/></div>
-                            <div class="db-kpi-sub"><t t-esc="state.kpis.classgroups || 0"/> classgroups</div>
+                            <div class="db-kpi-sub"><t t-esc="state.kpis.classgroups || 0"/> klasgroepen</div>
                         </div>
                         <div class="db-kpi-card db-kpi-c4">
-                            <div class="db-kpi-label">Pending Tasks</div>
+                            <div class="db-kpi-label">Openstaande taken</div>
                             <div class="db-kpi-value"><t t-esc="formatNumber(state.kpis.pending_tasks)"/></div>
                             <div class="db-kpi-sub">
                                 <t t-if="state.kpis.error_tasks > 0">
-                                    <span class="db-kpi-down"><t t-esc="state.kpis.error_tasks"/> errors</span>
+                                    <span class="db-kpi-down"><t t-esc="state.kpis.error_tasks"/> fouten</span>
                                 </t>
-                                <t t-else="">all clear</t>
+                                <t t-else="">alles in orde</t>
                             </div>
                         </div>
                     </div>
 
                     <!-- ============================================ -->
-                    <!-- Main grid: 2fr | 1fr                         -->
+                    <!-- Hoofdgrid: 2fr | 1fr                         -->
                     <!-- ============================================ -->
                     <div class="db-grid">
-                        <!-- LEFT column -->
+                        <!-- LINKERkolom -->
                         <div class="db-grid-left">
-                            <!-- Recent Backend Tasks -->
+                            <!-- Recente backend-taken -->
                             <div class="db-card">
                                 <div class="db-card-header">
-                                    <span>Recent Backend Tasks</span>
-                                    <a class="db-card-link" t-on-click="openTasks">View all &#x2192;</a>
+                                    <span>Recente backend-taken</span>
+                                    <a class="db-card-link" t-on-click="openTasks">Alles bekijken &#x2192;</a>
                                 </div>
                                 <table class="db-mini-table">
                                     <thead>
                                         <tr>
-                                            <th>Task</th>
+                                            <th>Taak</th>
                                             <th>Type</th>
                                             <th>Status</th>
-                                            <th>Created</th>
+                                            <th>Aangemaakt</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -103,24 +111,24 @@
                                             </tr>
                                         </t>
                                         <t t-if="!state.recentTasks.length">
-                                            <tr><td colspan="4" class="db-empty-cell">No recent tasks</td></tr>
+                                            <tr><td colspan="4" class="db-empty-cell">Geen recente taken</td></tr>
                                         </t>
                                     </tbody>
                                 </table>
                             </div>
 
-                            <!-- System Events -->
+                            <!-- Systeemgebeurtenissen -->
                             <div class="db-card">
                                 <div class="db-card-header">
-                                    <span>System Events</span>
-                                    <a class="db-card-link" t-on-click="openEvents">View all &#x2192;</a>
+                                    <span>Systeemgebeurtenissen</span>
+                                    <a class="db-card-link" t-on-click="openEvents">Alles bekijken &#x2192;</a>
                                 </div>
                                 <table class="db-mini-table">
                                     <thead>
                                         <tr>
-                                            <th>Event</th>
-                                            <th>Severity</th>
-                                            <th>Time</th>
+                                            <th>Gebeurtenis</th>
+                                            <th>Ernst</th>
+                                            <th>Tijd</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -132,55 +140,55 @@
                                             </tr>
                                         </t>
                                         <t t-if="!state.systemEvents.length">
-                                            <tr><td colspan="3" class="db-empty-cell">No recent events</td></tr>
+                                            <tr><td colspan="3" class="db-empty-cell">Geen recente gebeurtenissen</td></tr>
                                         </t>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
 
-                        <!-- RIGHT column -->
+                        <!-- RECHTERkolom -->
                         <div class="db-grid-right">
-                            <!-- Quick Actions -->
+                            <!-- Snelle acties -->
                             <div class="db-card">
-                                <div class="db-card-header">Quick Actions</div>
+                                <div class="db-card-header">Snelle acties</div>
                                 <div class="db-card-body">
                                     <div class="db-quick-actions">
                                         <a class="db-qa-btn" t-on-click="openObjectBrowser">
-                                            <div class="db-qa-icon db-qa-c1"><i class="fa fa-sitemap"/></div>
+                                            <div class="db-qa-icon db-qa-c1"><Icon name="'sitemap'"/></div>
                                             <div class="db-qa-text">
-                                                <strong>Org Manager</strong>
-                                                <span>Browse hierarchy</span>
+                                                <strong>Organisatiebeheer</strong>
+                                                <span>Doorblader de hiërarchie</span>
                                             </div>
                                         </a>
                                         <a class="db-qa-btn" t-on-click="openPersons">
-                                            <div class="db-qa-icon db-qa-c2"><i class="fa fa-user-plus"/></div>
+                                            <div class="db-qa-icon db-qa-c2"><Icon name="'user-plus'"/></div>
                                             <div class="db-qa-text">
-                                                <strong>Persons</strong>
-                                                <span>Employees &amp; students</span>
+                                                <strong>Personen</strong>
+                                                <span>Medewerkers &amp; leerlingen</span>
                                             </div>
                                         </a>
                                         <a class="db-qa-btn" t-on-click="openPendingTasks">
-                                            <div class="db-qa-icon db-qa-c3"><i class="fa fa-tasks"/></div>
+                                            <div class="db-qa-icon db-qa-c3"><Icon name="'tasks'"/></div>
                                             <div class="db-qa-text">
-                                                <strong>Pending Tasks</strong>
-                                                <span><t t-esc="state.kpis.pending_tasks || 0"/> pending</span>
+                                                <strong>Openstaande taken</strong>
+                                                <span><t t-esc="state.kpis.pending_tasks || 0"/> openstaand</span>
                                             </div>
                                         </a>
                                         <a class="db-qa-btn" t-on-click="openEvents">
-                                            <div class="db-qa-icon db-qa-c4"><i class="fa fa-bell"/></div>
+                                            <div class="db-qa-icon db-qa-c4"><Icon name="'bell'"/></div>
                                             <div class="db-qa-text">
-                                                <strong>System Events</strong>
-                                                <span>View all events</span>
+                                                <strong>Systeemgebeurtenissen</strong>
+                                                <span>Alle gebeurtenissen</span>
                                             </div>
                                         </a>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Recent Activity -->
+                            <!-- Recente activiteit -->
                             <div class="db-card">
-                                <div class="db-card-header">Recent Activity</div>
+                                <div class="db-card-header">Recente activiteit</div>
                                 <div class="db-card-body">
                                     <ul class="db-timeline">
                                         <t t-foreach="state.recentActivity" t-as="item" t-key="item_index">
@@ -191,7 +199,7 @@
                                             </li>
                                         </t>
                                         <t t-if="!state.recentActivity.length">
-                                            <li class="db-tl-item db-tl-info">No recent activity</li>
+                                            <li class="db-tl-item db-tl-info">Geen recente activiteit</li>
                                         </t>
                                     </ul>
                                 </div>

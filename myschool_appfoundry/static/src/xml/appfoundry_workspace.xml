@@ -283,22 +283,9 @@
                                 <i class="fa fa-tag"/> <t t-esc="state.currentReleaseName"/>
                             </span>
                         </div>
-                        <div class="o_afw_switch btn-group">
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'backlog' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('backlog')">Backlog</button>
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'sprintboard' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('sprintboard')">Sprint Board</button>
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'sprints' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('sprints')">Sprints</button>
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'board' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('board')">Board</button>
-                            <button class="btn btn-sm"
-                                    t-att-class="state.view === 'list' ? 'btn-primary' : 'btn-secondary'"
-                                    t-on-click="() => this.setView('list')">List</button>
+                        <div class="o_afw_switch">
+                            <SegmentNav tabs="viewTabs" value="state.view"
+                                        onChange="(v) => this.setView(v)"/>
                         </div>
                         <button class="btn btn-sm btn-light o_afw_openform"
                                 t-on-click="openProjectForm" title="Open de app-eigenschappen">

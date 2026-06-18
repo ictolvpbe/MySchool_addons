@@ -265,7 +265,8 @@ class InformatService(models.AbstractModel):
                      phases: Optional[Dict[str, bool]] = None,
                      trigger: str = 'cron',
                      require_review: bool = False,
-                     auto_commit_on_no_breach: bool = True) -> Any:
+                     auto_commit_on_no_breach: bool = True,
+                     ignore_threshold: bool = False) -> Any:
         """
         Main synchronization method - retrieves data from SAP, analyzes it,
         and creates the required tasks.
@@ -346,6 +347,7 @@ class InformatService(models.AbstractModel):
             inst_nrs=inst_nrs,
             phases=phases,
             require_review=require_review,
+            ignore_threshold=ignore_threshold,
         )
         self = self.with_context(sap_sync_run_id=run.id)
 
@@ -1361,11 +1363,18 @@ class InformatService(models.AbstractModel):
                 # =====================================================
                 person_is_active_db = person_in_db.is_active
 
-                # Check for PersonDetails for this instNr
+                # Check for PersonDetails for this instNr.
+                # Filter op de ACTIEVE versie: de write-kant versioneert
+                # (oude details deactiveren + nieuwe is_active=True aanmaken),
+                # dus zonder deze filter pakt limit=1 (default order id↑) een
+                # gedeactiveerde, stale versie → SCENARIO 2d ziet altijd een
+                # diff → eindeloze phantom-UPD. Vergelijk tegen de huidige
+                # actieve versie zodat de sync idempotent is.
                 person_details = PersonDetails.search([
                     ('person_id', '=', person_in_db.id),
-                    ('extra_field_1', '=', inst_nr)
-                ], limit=1)
+                    ('extra_field_1', '=', inst_nr),
+                    ('is_active', '=', True),
+                ], order='id desc', limit=1)
 
                 # -----------------------------------------------------
                 # SCENARIO 2a: Should DEACTIVATE for this instNr
@@ -1459,28 +1468,42 @@ class InformatService(models.AbstractModel):
             # =====================================================
             # Check for persons to DEACTIVATE (in DB but not in import)
             # =====================================================
-            # Only check employees that are synced automatically
-            active_synced_persons = Person.search([
-                ('is_active', '=', True),
-                ('automatic_sync', '=', True),
-                ('person_type_id.name', '=', 'EMPLOYEE')  # Only employees
-            ])
+            # SCOPE-GUARD: dit globale "niet in import → DEACT"-blok mag
+            # ALLEEN draaien bij een VOLLEDIGE sync. Bij een scoped run
+            # (per inst_nr — wizard of cron met inst_nrs) bevat
+            # ``processed_person_uuids`` enkel de werknemers van die
+            # school(en), dus zou élke werknemer van élke ándere school
+            # ten onrechte gedeactiveerd worden. Per-school-deactivatie
+            # loopt al via SCENARIO 2a (_deactivate_employee_for_instnr).
+            scoped = bool(self.env.context.get('informat_inst_nrs'))
+            if scoped:
+                self._create_sys_event(
+                    "BETASK-001",
+                    "Scoped sync (inst_nrs gezet) — globaal "
+                    "'niet-in-import'-deactivatieblok overgeslagen.")
+            else:
+                # Only check employees that are synced automatically
+                active_synced_persons = Person.search([
+                    ('is_active', '=', True),
+                    ('automatic_sync', '=', True),
+                    ('person_type_id.name', '=', 'EMPLOYEE')  # Only employees
+                ])
 
-            for person in active_synced_persons:
-                if person.sap_person_uuid and person.sap_person_uuid not in processed_person_uuids:
-                    # Person is in DB but not in import - deactivate
-                    deact_data = {
-                        'personId': person.sap_person_uuid,
-                        'reason': 'Not in import'
-                    }
-                    deact_data['person_type'] = 'EMPLOYEE'
-                    self._create_betask(
-                        'DB', 'PERSON', 'DEACT',
-                        json.dumps(deact_data),
-                        None
-                    )
-                    self._create_sys_event("BETASK-001",
-                                           f"DEACT task created for person not in import: {person.sap_person_uuid}")
+                for person in active_synced_persons:
+                    if person.sap_person_uuid and person.sap_person_uuid not in processed_person_uuids:
+                        # Person is in DB but not in import - deactivate
+                        deact_data = {
+                            'personId': person.sap_person_uuid,
+                            'reason': 'Not in import'
+                        }
+                        deact_data['person_type'] = 'EMPLOYEE'
+                        self._create_betask(
+                            'DB', 'PERSON', 'DEACT',
+                            json.dumps(deact_data),
+                            None
+                        )
+                        self._create_sys_event("BETASK-001",
+                                               f"DEACT task created for person not in import: {person.sap_person_uuid}")
 
             self._create_sys_event("BETASK-001", f"{procedure_name} completed")
             return True
@@ -1962,38 +1985,22 @@ class InformatService(models.AbstractModel):
                             )
                             continue
 
-                        # Find the SAP Role TODO: REQUIRED?????
-                        sap_role = Role.search([('shortname', '=', hoofd_ambt_code)], limit=1)
-
-                        # Find Backend Role via SRBR relation
-                        be_role = None
-                        if sap_role and sr_br_type:
-                            sr_br_relation = PropRelation.search([
-                                ('id_role', '=', sap_role.id),
-                                ('proprelation_type_id', '=', sr_br_type.id),
-                                ('is_active', '=', True)
-                            ], limit=1)
-
-                            if sr_br_relation and sr_br_relation.id_role_parent:
-                                be_role = sr_br_relation.id_role_parent
-
-                        # If no backend role found via SR-BR, check BRSO with parent org
-                        # (roles might be defined at parent org level for administrative orgs)
-                        if not be_role and role_lookup_org and brso_type:
-                            brso_relation = PropRelation.search([
-                                ('proprelation_type_id', '=', brso_type.id),
-                                ('id_org', '=', role_lookup_org.id),
-                                ('is_active', '=', True)
-                            ], limit=1)
-                            if brso_relation and brso_relation.id_role:
-                                be_role = brso_relation.id_role
-                                self._create_sys_event(
-                                    "BETASK-001",
-                                    f"Found role via BRSO for parent org {role_lookup_org.name}: {be_role.name}"
-                                )
-
-                        # Use Backend Role if found, otherwise SAP Role
-                        role_to_use = be_role if be_role else sap_role
+                        # Resolve ambtCode → (sap_role, be_role, role_to_use)
+                        # via the shared chain (SAP-role by shortname →
+                        # SRBR backend role → BRSO fallback). The same
+                        # helper runs at employee-creation time so both
+                        # paths derive identical roles.
+                        sap_role, be_role, role_to_use = self.env[
+                            'myschool.betask.processor'
+                        ]._resolve_role_for_ambt(
+                            hoofd_ambt_code, sr_br_type, brso_type,
+                            role_lookup_org)
+                        if be_role and role_lookup_org:
+                            self._create_sys_event(
+                                "BETASK-001",
+                                f"Resolved backend role {be_role.name} for "
+                                f"ambtCode {hoofd_ambt_code}"
+                            )
 
                         if not role_to_use:
                             self._create_sys_event(

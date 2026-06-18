@@ -670,6 +670,13 @@ class BeTaskProcessor(models.AbstractModel):
         # Only create PPSBR if employee has active assignments
         if self._has_active_assignments(employee_json):
             self._create_ppsbr_for_new_employee(new_person, employee_json, inst_nr)
+            # Also derive the job-specific role PPSBRs (e.g. TEACHER_PRI)
+            # from the assignments now, so a person created via the SAP
+            # review→commit path gets their role immediately instead of
+            # only on the next periodic sync (Phase 2 can't see a person
+            # that isn't active in the DB yet).
+            self._create_role_ppsbrs_for_new_employee(
+                new_person, employee_json, inst_nr)
 
         return new_person
 
@@ -716,6 +723,163 @@ class BeTaskProcessor(models.AbstractModel):
             None
         )
         _logger.info(f'Created DB-PROPRELATION-ADD task for {person.name} at {school_org.name} with EMPLOYEE role')
+
+    @api.model
+    def _resolve_role_for_ambt(self, ambt_code, sr_br_type=None,
+                               brso_type=None, role_lookup_org=None):
+        """Resolve an Informat ``ambtCode`` to a role triplet.
+
+        Returns ``(sap_role, be_role, role_to_use)``:
+          * ``sap_role``    — myschool.role whose ``shortname`` == ambt_code
+          * ``be_role``     — backend role via the SRBR mapping
+                              (``id_role_parent``), or via BRSO on the
+                              (parent) school org as fallback
+          * ``role_to_use`` — ``be_role`` when found, else ``sap_role``
+
+        Single source of truth for the ambtCode→backend-role chain,
+        shared by the periodic Phase-2 sync
+        (``informat_service._sync_employee_proprelations``) and the
+        employee-creation path, so both derive identical roles. Pass the
+        already-resolved SRBR/BRSO proprelation types when you have them
+        to avoid a redundant lookup; otherwise they're resolved by name.
+        """
+        Role = self.env['myschool.role']
+        PropRelation = self.env['myschool.proprelation']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        if sr_br_type is None:
+            sr_br_type = PropRelationType.search([('name', '=', 'SRBR')], limit=1)
+        if brso_type is None:
+            brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+
+        sap_role = Role.search([('shortname', '=', ambt_code)], limit=1)
+
+        be_role = None
+        if sap_role and sr_br_type:
+            sr_br_relation = PropRelation.search([
+                ('id_role', '=', sap_role.id),
+                ('proprelation_type_id', '=', sr_br_type.id),
+                ('is_active', '=', True),
+            ], limit=1)
+            if sr_br_relation and sr_br_relation.id_role_parent:
+                be_role = sr_br_relation.id_role_parent
+
+        # Fallback: backend role defined at (parent) school-org level.
+        if not be_role and role_lookup_org and brso_type:
+            brso_relation = PropRelation.search([
+                ('proprelation_type_id', '=', brso_type.id),
+                ('id_org', '=', role_lookup_org.id),
+                ('is_active', '=', True),
+            ], limit=1)
+            if brso_relation and brso_relation.id_role:
+                be_role = brso_relation.id_role
+
+        role_to_use = be_role if be_role else sap_role
+        return sap_role, be_role, role_to_use
+
+    def _create_role_ppsbrs_for_new_employee(self, person, employee_json: dict,
+                                             inst_nr: str):
+        """Queue DB/PROPRELATION/ADD tasks for the *role* PPSBRs of a new employee.
+
+        The base EMPLOYEE PPSBR is queued by
+        ``_create_ppsbr_for_new_employee``; this adds the job-specific
+        backend roles (e.g. TEACHER_PRI) derived from the employee's
+        assignments, using the same ambtCode→SAP-role→SRBR→backend-role
+        chain as the periodic Phase-2 sync (``_resolve_role_for_ambt``).
+
+        Closes the ordering gap whereby a person created via the SAP
+        review→commit path only received their role on the *next* sync:
+        Phase 2 iterates persons already active in the DB, which a
+        brand-new commit isn't yet — so its role was never derived.
+        """
+        if not inst_nr:
+            return
+        Org = self.env['myschool.org']
+        Role = self.env['myschool.role']
+        PropRelationType = self.env['myschool.proprelation.type']
+
+        # Assignments are merged into employee_json by _sync_employees;
+        # they may arrive as a JSON string or an already-parsed list.
+        assignments = employee_json.get('assignments')
+        if isinstance(assignments, str):
+            try:
+                assignments = json.loads(assignments)
+            except (json.JSONDecodeError, TypeError):
+                assignments = None
+        if not isinstance(assignments, list) or not assignments:
+            return
+
+        school_org = Org.search([
+            ('inst_nr', '=', inst_nr),
+            ('is_active', '=', True),
+        ], limit=1)
+        if not school_org:
+            return
+        # BRSO fallback resolves roles on the school org. The parent-org
+        # refinement (for administrative orgs) lives on informat.service;
+        # school_org covers the common non-administrative case, and SRBR
+        # resolution — the primary path — doesn't need it at all.
+        role_lookup_org = school_org
+
+        sr_br_type = PropRelationType.search([('name', '=', 'SRBR')], limit=1)
+        brso_type = PropRelationType.search([('name', '=', 'BRSO')], limit=1)
+        employee_role = Role.search([('name', '=', 'EMPLOYEE')], limit=1)
+
+        today = fields.Date.context_today(self)
+        one_week_ago = today - timedelta(days=7)
+
+        queued_role_ids = set()
+        for assignment in assignments:
+            if not isinstance(assignment, dict):
+                continue
+            ambt_code = assignment.get('ambtCode') or ''
+            if not ambt_code:
+                continue
+            # Skip assignments that ended more than a week ago (mirrors
+            # Phase-2); active/future assignments drive role creation.
+            end_date = self._parse_date_safe(assignment.get('einddatum'))
+            if end_date:
+                if isinstance(end_date, datetime):
+                    end_date = end_date.date()
+                if end_date < one_week_ago:
+                    continue
+
+            sap_role, be_role, role_to_use = self._resolve_role_for_ambt(
+                ambt_code, sr_br_type, brso_type, role_lookup_org)
+            if not role_to_use:
+                _logger.info(
+                    '[ROLE-PPSBR] %s: no role for ambtCode %s @ %s — skipping',
+                    person.name, ambt_code, inst_nr)
+                continue
+            # The base EMPLOYEE PPSBR is queued separately; don't
+            # duplicate it, and queue each distinct role only once even
+            # when several assignments share an ambtCode.
+            if employee_role and role_to_use.id == employee_role.id:
+                continue
+            if role_to_use.id in queued_role_ids:
+                continue
+            queued_role_ids.add(role_to_use.id)
+
+            proprel_data = {
+                'personId': person.sap_person_uuid,
+                'person_db_id': person.id,
+                'instNr': inst_nr,
+                'orgId': school_org.id,
+                'roleCode': ambt_code,
+                'roleName': assignment.get('ambt', '') or (role_to_use.name or ''),
+                'roleId': role_to_use.id,
+                'sapRoleId': sap_role.id if sap_role else None,
+                'beRoleId': be_role.id if be_role else None,
+            }
+            self._create_betask_internal(
+                'DB', 'PROPRELATION', 'ADD',
+                json.dumps(proprel_data),
+                None,
+            )
+            _logger.info(
+                '[ROLE-PPSBR] %s: queued DB/PROPRELATION/ADD for role %s '
+                '(ambtCode %s) @ %s',
+                person.name, role_to_use.name, ambt_code, school_org.name)
 
     def _ensure_ppsbr_exists_for_employee(self, person, inst_nr: str, field_changes: list = None):
         """
@@ -1916,21 +2080,14 @@ class BeTaskProcessor(models.AbstractModel):
         _logger.info(f'Processing task {task.name}: {target}_{obj}_{action}')
         
         handler_map = {
-            # DB PERSON handlers (unified dispatchers)
+            # DB PERSON handlers (unified dispatchers). Deze routeren intern op
+            # person_type naar process_db_{student,employee}_* — de losse
+            # DB/STUDENT/* + DB/EMPLOYEE/* legacy-types (en hun handler-entries)
+            # zijn verwijderd (2026-06-18).
             ('DB', 'PERSON', 'ADD'): self.process_db_person_add,
             ('DB', 'PERSON', 'UPD'): self.process_db_person_upd,
             ('DB', 'PERSON', 'DEACT'): self.process_db_person_deact,
 
-            # Legacy DB EMPLOYEE handlers (for old tasks still in queue)
-            ('DB', 'EMPLOYEE', 'ADD'): self.process_db_employee_add,
-            ('DB', 'EMPLOYEE', 'UPD'): self.process_db_employee_upd,
-            ('DB', 'EMPLOYEE', 'DEACT'): self.process_db_employee_deact,
-
-            # Legacy DB STUDENT handlers (for old tasks still in queue)
-            ('DB', 'STUDENT', 'ADD'): self.process_db_student_add,
-            ('DB', 'STUDENT', 'UPD'): self.process_db_student_upd,
-            ('DB', 'STUDENT', 'DEACT'): self.process_db_student_deact,
-            
             # DB ORG handlers
             ('DB', 'ORG', 'ADD'): self.process_db_org_add,
             ('DB', 'ORG', 'UPD'): self.process_db_org_upd,
@@ -2084,6 +2241,8 @@ class BeTaskProcessor(models.AbstractModel):
 
     # =========================================================================
     # DB EMPLOYEE TASK PROCESSORS
+    # Geen losse betask-types meer; uitsluitend aangeroepen via de unified
+    # process_db_person_* dispatchers (person_type != STUDENT).
     # =========================================================================
 
     @api.model
@@ -2214,6 +2373,8 @@ class BeTaskProcessor(models.AbstractModel):
 
     # =========================================================================
     # DB STUDENT TASK PROCESSORS
+    # Geen losse betask-types meer; uitsluitend aangeroepen via de unified
+    # process_db_person_* dispatchers (person_type == STUDENT).
     # =========================================================================
     
     @api.model
@@ -8791,9 +8952,48 @@ class BeTaskProcessor(models.AbstractModel):
         # brand-new import without proprelations is dormant, not in
         # suspend.
         AllPropRelation = PropRelation.with_context(active_test=False)
+
+        # Feed-gap guard: an assignment feed that came back empty or
+        # failed for a whole school leaves *every* employee there with
+        # no stored assignments — flagging them all would mass-suspend
+        # valid staff (e.g. a teacher whose school's feed simply didn't
+        # arrive). Trust a school's "no assignment" signal only when at
+        # least one employee in that school DOES have an active
+        # assignment, which proves the feed actually landed. Build that
+        # trusted-school set (by inst_nr) once.
+        PersonDetails = self.env['myschool.person.details']
+        trusted_inst_nrs = set()
+        for d in PersonDetails.search([('is_active', '=', True)]):
+            inst = (d.extra_field_1 or '').strip()
+            if inst and d.assignments and self._has_active_assignments(
+                    {'assignments': d.assignments}):
+                trusted_inst_nrs.add(inst)
+        _logger.info(
+            '[LIFECYCLE-0] trusted assignment feed for school(s): %s',
+            sorted(trusted_inst_nrs) or '(none)')
+
         for person in candidates:
             try:
                 if self._person_has_active_assignments(person):
+                    continue
+                # Don't flag a person whose school(s) never produced a
+                # trustworthy assignment feed this cycle — that's a feed
+                # gap, not a departure. Stay conservative: skip when we
+                # can't confirm the feed arrived for any of their schools.
+                person_inst_nrs = {
+                    (d.extra_field_1 or '').strip()
+                    for d in PersonDetails.search([
+                        ('person_id', '=', person.id),
+                        ('is_active', '=', True),
+                    ])
+                    if (d.extra_field_1 or '').strip()
+                }
+                if not (person_inst_nrs & trusted_inst_nrs):
+                    _logger.info(
+                        '[LIFECYCLE-0] skip %s: no trusted assignment '
+                        'feed for school(s) %s — treating as feed gap, '
+                        'not departure',
+                        person.name, sorted(person_inst_nrs) or '(unknown)')
                     continue
                 ever_had = bool(AllPropRelation.search_count([
                     '|', '|',

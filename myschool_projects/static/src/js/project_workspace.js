@@ -5,6 +5,7 @@ import { useService } from "@web/core/utils/hooks";
 import { View } from "@web/views/view";
 import { SelectCreateDialog } from "@web/views/view_dialogs/select_create_dialog";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
+import { SegmentNav } from "@myschool_web/components/segment_nav/segment_nav";
 import {
     DAY_MS, itemStart, itemEnd, dayIndex as utilDayIndex, computeRange, spanFor,
     barGeom, applyDragGeom, applyDragDates, computeArrows,
@@ -784,8 +785,19 @@ export class GanttTimeline extends Component {
  */
 export class ProjectWorkspace extends Component {
     static template = "myschool_projects.Workspace";
-    static components = { View, WbsNode, WorkPackageTable, GanttTimeline, WsContextMenu };
+    static components = { View, WbsNode, WorkPackageTable, GanttTimeline, WsContextMenu, SegmentNav };
     static props = ["*"];
+
+    /** Secties voor de SegmentNav-view-switcher. */
+    get viewTabs() {
+        return [
+            { key: "table", label: "Table" },
+            { key: "timeline", label: "Timeline" },
+            { key: "overview", label: "Overview" },
+            { key: "kanban", label: "Board" },
+            { key: "calendar", label: "Calendar" },
+        ];
+    }
 
     setup() {
         this.orm = useService("orm");

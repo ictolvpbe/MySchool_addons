@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_web.SegmentNav" owl="1">
+        <div class="o_sn" t-ref="root">
+            <div class="o_sn_bar">
+                <t t-foreach="layout.visible" t-as="tab" t-key="tab.key">
+                    <button
+                        class="o_sn_tab"
+                        t-att-class="{ o_sn_tab_active: tab.key === props.value }"
+                        t-on-click="() => this.selectTab(tab.key)">
+                        <t t-esc="tab.label"/>
+                    </button>
+                </t>
+
+                <t t-if="layout.hasOverflow">
+                    <div class="o_sn_sep"/>
+                    <div class="o_sn_more_wrap">
+                        <button
+                            class="o_sn_more"
+                            t-att-class="{ o_sn_more_active: layout.moreActive }"
+                            t-on-click="toggleOpen">
+                            <span t-esc="layout.moreLabel"/>
+                            <svg class="o_sn_chev" width="14" height="14" viewBox="0 0 24 24"
+                                 fill="none" stroke="currentColor" stroke-width="2"
+                                 stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                        </button>
+
+                        <t t-if="state.open">
+                            <div class="o_sn_menu">
+                                <t t-foreach="layout.overflow" t-as="mi" t-key="mi.key">
+                                    <button
+                                        class="o_sn_menu_item"
+                                        t-att-class="{ o_sn_menu_item_active: mi.key === props.value }"
+                                        t-on-click="() => this.selectTab(mi.key)">
+                                        <span t-esc="mi.label"/>
+                                        <svg t-if="mi.key === props.value" class="o_sn_check"
+                                             width="15" height="15" viewBox="0 0 24 24" fill="none"
+                                             stroke="currentColor" stroke-width="2.4"
+                                             stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M5 12.5l4 4 10-10"/>
+                                        </svg>
+                                    </button>
+                                </t>
+                            </div>
+                        </t>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+
+</templates>

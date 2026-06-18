@@ -1,7 +1,7 @@
 {
     'name': 'MySchool Theme',
     'summary': 'Teal-based backend theme for MySchool',
-    'version': '19.0.2.0.8',
+    'version': '19.0.2.0.9',
     'category': 'Themes/Backend',
     'license': 'LGPL-3',
     'author': 'MySchool',

@@ -21,6 +21,63 @@
     --myschool-statusbar-current: #007d8c;
     --myschool-statusbar-done: #b0dfe5;
     --myschool-statusbar-future: #e8f0f0;
+
+    // ------------------------------------------------------------------------
+    // Canonieke --ms-* design-tokens (token-API voor de OWL-apps).
+    // Brand/text/bg/border zijn afgeleid van de --myschool-* hierboven, zodat
+    // er één bron-van-waarheid is; de overige tokens (surfaces, semantic,
+    // typografie, radii, schaduwen) krijgen hier hun teal-default. Een theme-
+    // overlay (bv. myschool_theme_calm) hoeft enkel deze --ms-* te
+    // herdefiniëren — die overlay laadt ná dit bestand (depend op myschool_theme)
+    // dus wint betrouwbaar, ongeacht bron-volgorde t.o.v. andere modules.
+    // ------------------------------------------------------------------------
+    // Brand (afgeleid)
+    --ms-brand-1: var(--myschool-brand-1);
+    --ms-brand-2: var(--myschool-brand-2);
+    --ms-brand-3: var(--myschool-brand-3);
+    --ms-brand-4: var(--myschool-brand-4);
+    // Tekst / neutralen (afgeleid waar mogelijk)
+    --ms-text: var(--myschool-text);
+    --ms-text-muted: var(--myschool-text-muted);
+    --ms-black: #252525;
+    --ms-gray: #9B9B9B;
+    // Oppervlakken (afgeleid + gelaagd)
+    --ms-bg: var(--myschool-bg);
+    --ms-bg-card: var(--myschool-bg-card);
+    --ms-border: var(--myschool-border);
+    --ms-border-light: var(--myschool-border-light);
+    --ms-surface-base: #f5fafa;     // widget-canvas (pagina-bg)
+    --ms-surface-1: #ffffff;        // primair paneel (kaarten, pane-bodies)
+    --ms-surface-2: #f5fafa;        // secundair vlak (headers, inputs)
+    --ms-surface-3: #e6f7f8;        // tertiaire tint
+    --ms-hover: #f0f8f8;            // rij-hover
+    --ms-active: #d9f2f4;           // geselecteerde rij / actieve staat
+    --ms-overlay-strong: rgba(0, 0, 0, 0.08);
+    // Semantisch
+    --ms-success: #0d9488;
+    --ms-success-bg: #ccfbf1;
+    --ms-error: #dc2626;
+    --ms-error-bg: #fee2e2;
+    --ms-warning: #d97706;
+    --ms-warning-bg: #fef3c7;
+    --ms-info: #0284c7;
+    --ms-info-bg: #e0f2fe;
+    // AI-accent (gereserveerd voor assistent-UI) — neutrale default = brand
+    --ms-accent-ai: var(--myschool-brand-1);
+    --ms-accent-ai-soft: #e6f7f8;
+    --ms-accent-ai-line: #d6e4e4;
+    --ms-accent-ai-text: var(--myschool-brand-1);
+    // Typografie (token zodat een overlay webfonts kan injecteren)
+    --ms-font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    --ms-font-head: var(--ms-font-body);
+    // Radii
+    --ms-radius-sm: 6px;
+    --ms-radius-md: 12px;
+    --ms-radius-lg: 18px;
+    --ms-radius-pill: 20px;
+    // Schaduwen (zacht)
+    --ms-shadow-1: 0 1px 3px rgba(0, 60, 60, 0.06);
+    --ms-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 // -- Page background --------------------------------------------------------

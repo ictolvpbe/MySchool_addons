@@ -86,6 +86,14 @@ class InformatSyncWizard(models.TransientModel):
              'effectief gecommit worden. Uit = onmiddellijk committen '
              'tenzij de veiligheidsdrempel overschreden is.')
 
+    ignore_threshold = fields.Boolean(
+        string='Veiligheidsdrempel negeren',
+        default=False,
+        help='Aan = de safeguard-drempelcheck wordt voor deze run '
+             'overgeslagen (geen breach, geen "wacht op goedkeuring"). '
+             'Handig bij een lege/kleine basis waar enkele adds de '
+             'procentuele drempel meteen overschrijden.')
+
     last_run_id = fields.Many2one(
         comodel_name='myschool.sap.sync.run',
         string='Laatste sync-run',
@@ -151,6 +159,7 @@ class InformatSyncWizard(models.TransientModel):
                 trigger='manual',
                 require_review=self.require_review,
                 auto_commit_on_no_breach=not self.require_review,
+                ignore_threshold=self.ignore_threshold,
             )
         except Exception as e:
             _logger.exception('[INFORMAT-SYNC-WIZARD] sync failed')

@@ -317,6 +317,7 @@ class BeTask(models.Model):
                 'processing_start': False,
                 'processing_end': False,
                 'error_description': False,
+                'lastrun': False,
             })
             _logger.info(f'BeTask {record.name} reset to NEW')
     
@@ -329,6 +330,7 @@ class BeTask(models.Model):
                 'processing_end': False,
                 'error_description': False,
                 'retry_count': 0,
+                'lastrun': False,
             })
             _logger.info(f'BeTask {record.name} FORCE RESET')
     
@@ -421,6 +423,7 @@ class BeTask(models.Model):
                 'processing_end': False,
                 'error_description': False,
                 'retry_count': 0,
+                'lastrun': False,
             })
             reset += 1
             _logger.info(f'BeTask {task.name} bulk-reset error → new')
@@ -484,19 +487,64 @@ class BeTask(models.Model):
                  % {'total': total, 'ok': ok}]
         if err:
             parts.append(_('%(err)s fout(en)') % {'err': err})
-        if skipped:
-            parts.append(_('%(skipped)s overgeslagen (tijdslimiet)')
-                         % {'skipped': skipped})
         message = ', '.join(parts) + '.'
+
+        # Auto-continue. We ketenen via ``next`` terug naar de run-all
+        # server-action zolang er nog werk is, in opeenvolgende veilige batches:
+        #   1) ``skipped`` > 0  → één batch stopte na PROCESSING_TIME_LIMIT (om de
+        #      HTTP-/cron-worker niet te laten killen).
+        #   2) er staan nog ``new``-taken van auto-process-types open — typisch
+        #      CASCADE-taken die tijdens deze run zijn aangemaakt voor een type
+        #      dat in de iteratie al gepasseerd was (bv. DB/PERSON/ADD maakt
+        #      ODOO/PERSON/ADD + DB/PROPRELATION/ADD; zonder herloop blijven die
+        #      'new' → persoon bestaat maar zonder account/lidmaatschap).
+        # De progressie-guard (ok+err > 0) voorkomt een oneindige lus mocht één
+        # taak langer dan de limiet duren of niet te verwerken zijn.
+        auto_types = self.env['myschool.betask.type.service'].find_auto_process_types()
+        remaining_new = self.search_count([
+            ('status', '=', 'new'),
+            ('betasktype_id', 'in', auto_types.ids),
+        ]) if auto_types else 0
+        made_progress = (ok + err) > 0
+        # De run-all server-action staat in myschool_admin (waar de menu zit);
+        # guarded opgehaald zodat core hier niet hard van admin afhangt.
+        chain_act = self.env.ref(
+            'myschool_admin.action_betask_run_all_pending',
+            raise_if_not_found=False)
+        if (skipped or remaining_new) and made_progress and chain_act:
+            if skipped:
+                message += ' ' + _(
+                    '%(skipped)s resterende taak(en) (tijdslimiet) — wordt '
+                    'automatisch verder verwerkt…') % {'skipped': skipped}
+            else:
+                message += ' ' + _(
+                    '%(n)s vervolgtaak(en) aangemaakt — wordt automatisch verder '
+                    'verwerkt…') % {'n': remaining_new}
+            next_action = {
+                'type': 'ir.actions.server',
+                'id': chain_act.id,
+            }
+            notif_type = 'info'
+            sticky = False
+        else:
+            if skipped:
+                # Geen vooruitgang maar wel deferred → niet ketenen (mogelijk
+                # een hangende taak); toon het zodat de admin kan ingrijpen.
+                message += ' ' + _(
+                    '%(skipped)s overgeslagen (tijdslimiet, geen vooruitgang).'
+                ) % {'skipped': skipped}
+            next_action = {'type': 'ir.actions.client', 'tag': 'soft_reload'}
+            notif_type = 'success' if not err else 'warning'
+            sticky = bool(err)
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
             'params': {
                 'title': _('Backend tasks verwerkt'),
                 'message': message,
-                'type': 'success' if not err else 'warning',
-                'sticky': bool(err),
-                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+                'type': notif_type,
+                'sticky': sticky,
+                'next': next_action,
             },
         }
 

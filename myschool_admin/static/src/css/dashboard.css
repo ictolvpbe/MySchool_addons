@@ -9,7 +9,38 @@
     min-height: 100%;
     height: 100%;
     overflow-y: auto;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    font-family: var(--ms-font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif);
+}
+
+/* Koppen / metric-cijfers volgen het head-token (calm-tech: Plus Jakarta Sans
+   wanneer de theme-overlay actief is; anders erven ze de body-stack). */
+.db-greeting h1,
+.db-page-title,
+.db-hero-text h2,
+.db-kpi-value {
+    font-family: var(--ms-font-head, inherit);
+}
+
+/* ================================================================
+   BEGROETING (calm-tech header)
+   ================================================================ */
+
+.db-greeting {
+    margin-bottom: 22px;
+}
+
+.db-greeting h1 {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+    color: var(--ms-text, #33403C);
+    margin: 0 0 2px;
+}
+
+.db-greeting-sub {
+    font-size: 14px;
+    color: var(--ms-text-muted, #8A918C);
+    margin: 0;
 }
 
 .db-container * {
@@ -139,13 +170,19 @@
 
 .db-kpi-card {
     background: var(--ms-bg-card, #fff);
-    border-radius: 12px;
+    border-radius: var(--ms-radius-lg, 18px);
     padding: 20px 24px;
-    box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06);
+    box-shadow: var(--ms-shadow-1, 0 1px 3px rgba(0, 60, 60, 0.06));
     display: flex;
     flex-direction: column;
     gap: 4px;
     border-left: 4px solid transparent;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.db-kpi-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--ms-shadow-2, 0 4px 12px rgba(0, 0, 0, 0.15));
 }
 
 .db-kpi-c1 { border-left-color: var(--ms-brand-1, #007d8c); }
@@ -162,9 +199,10 @@
 }
 
 .db-kpi-value {
-    font-size: 32px;
+    font-size: 34px;
     font-weight: 700;
-    color: var(--ms-black, #252525);
+    letter-spacing: -1px;
+    color: var(--ms-text, #252525);
 }
 
 .db-kpi-sub {
@@ -209,8 +247,8 @@
 
 .db-card {
     background: var(--ms-bg-card, #fff);
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0, 60, 60, 0.06);
+    border-radius: var(--ms-radius-lg, 18px);
+    box-shadow: var(--ms-shadow-1, 0 1px 3px rgba(0, 60, 60, 0.06));
     overflow: hidden;
 }
 

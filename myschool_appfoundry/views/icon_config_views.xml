@@ -6,11 +6,23 @@
         <field name="model">appfoundry.icon.config</field>
         <field name="arch" type="xml">
             <form string="Icon Generator Standaardkleuren">
+                <header>
+                    <button name="action_force_style_all_menu_icons" type="object"
+                            string="Stijl op alle app-menu's toepassen"
+                            class="btn-primary" icon="fa-paint-brush"
+                            confirm="ELK actief app-project wordt op de hierboven gekozen stijl gezet en meteen op zijn app-menu toegepast (per-project kleuren blijven). Doorgaan?"/>
+                    <button name="action_apply_all_menu_icons" type="object"
+                            string="Alle app-menu-iconen (her)toepassen"
+                            class="btn-secondary" icon="fa-refresh"
+                            confirm="Het opgeslagen icoon van elk actief app-project wordt opnieuw op zijn app-menu toegepast (handig na een upgrade op een andere instance). Doorgaan?"/>
+                </header>
                 <sheet>
                     <group>
                         <group string="Standaardkleuren voor nieuwe projecten">
                             <field name="main_color" widget="color"/>
                             <field name="accent_color" widget="color"/>
+                            <field name="icon_style" widget="radio"
+                                   options="{'horizontal': True}"/>
                         </group>
                     </group>
                 </sheet>

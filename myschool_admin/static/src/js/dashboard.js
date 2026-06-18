@@ -3,12 +3,15 @@
 import { registry } from "@web/core/registry";
 import { Component, useState, onWillStart } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
+import { user } from "@web/core/user";
+import { Icon } from "@myschool_web/components/icon/icon";
 
 /**
  * MySchool Admin Dashboard — OWL2 client-action component.
  */
 export class MySchoolDashboard extends Component {
     static template = "myschool_admin.Dashboard";
+    static components = { Icon };
 
     setup() {
         this.orm = useService("orm");
@@ -49,6 +52,29 @@ export class MySchoolDashboard extends Component {
     async onRefresh() {
         this.state.loading = true;
         await this.loadData();
+    }
+
+    // ----- Begroeting (calm-tech header) -----
+
+    get greeting() {
+        const h = new Date().getHours();
+        if (h < 6) return "Goedenacht";
+        if (h < 12) return "Goedemorgen";
+        if (h < 18) return "Goedemiddag";
+        return "Goedenavond";
+    }
+
+    get firstName() {
+        return (user.name || "").trim().split(/\s+/)[0] || "";
+    }
+
+    get todayLabel() {
+        const s = new Date().toLocaleDateString("nl-BE", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+        });
+        return s.charAt(0).toUpperCase() + s.slice(1);
     }
 
     // ----- Navigation helpers -----
@@ -92,10 +118,10 @@ export class MySchoolDashboard extends Component {
 
     statusLabel(status) {
         const map = {
-            done: "Done",
-            pending: "Pending",
-            processing: "Processing",
-            error: "Error",
+            done: "Voltooid",
+            pending: "In wachtrij",
+            processing: "Bezig",
+            error: "Fout",
         };
         return map[status] || status;
     }
@@ -113,9 +139,9 @@ export class MySchoolDashboard extends Component {
     severityLabel(severity) {
         const map = {
             info: "Info",
-            error: "Error",
-            warning: "Warning",
-            success: "Success",
+            error: "Fout",
+            warning: "Waarschuwing",
+            success: "Geslaagd",
         };
         return map[severity] || severity;
     }

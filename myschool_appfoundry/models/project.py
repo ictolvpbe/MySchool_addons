@@ -213,6 +213,11 @@ class AppfoundryProject(models.Model):
         string='Accentkleur',
         default=lambda self: self.env['appfoundry.icon.config'].sudo()._get_defaults().accent_color,
     )
+    icon_style = fields.Selection(
+        [('shapes', 'Kleurrijk (gevuld)'), ('line', 'Lijn (calm-tech)')],
+        string='Icoonstijl',
+        default=lambda self: self._default_icon_style(),
+    )
     icon_module_name = fields.Char(
         string='Modulenaam',
         help='Technische modulenaam voor het icoon (bepaalt de vorm).',
@@ -226,6 +231,22 @@ class AppfoundryProject(models.Model):
     )
     custom_icon_filename = fields.Char(string='Bestandsnaam custom icon')
 
+    def _default_icon_style(self):
+        """Init-veilige default voor icon_style.
+
+        Tijdens de upgrade die deze kolom toevoegt bestaat
+        ``appfoundry_icon_config.icon_style`` mogelijk nog niet (de
+        model-init-volgorde garandeert niet dat config eerst geüpgraded is).
+        Een savepoint zorgt dat een gefaalde SELECT de cursor niet 'poisont';
+        we vallen dan terug op 'shapes'. Na de upgrade (kolom bestaat) erft een
+        nieuw project gewoon de huisstijl uit de config — net als de kleuren.
+        """
+        try:
+            with self.env.cr.savepoint(flush=False):
+                return self.env['appfoundry.icon.config'].sudo()._get_defaults().icon_style or 'shapes'
+        except Exception:
+            return 'shapes'
+
     def action_generate_icon_preview(self):
         """Generate a preview icon using the icon generator."""
         import base64
@@ -237,6 +258,7 @@ class AppfoundryProject(models.Model):
                 record.icon_accent_color or '#00C4D9',
                 module_name=module_name.lower().replace(' ', '_'),
                 display_name=record.name or module_name,
+                style=record.icon_style or 'shapes',
             )
             record.icon_preview = base64.b64encode(icon_bytes)
 
@@ -272,6 +294,7 @@ class AppfoundryProject(models.Model):
                     record.icon_accent_color or '#00C4D9',
                     module_name=module_name,
                     display_name=record.name or module_name,
+                    style=record.icon_style or 'shapes',
                 )
 
             # Schrijf naar disk via PIL (zorgt voor geldig PNG-formaat)
@@ -314,6 +337,7 @@ class AppfoundryProject(models.Model):
                     record.icon_accent_color or '#00C4D9',
                     module_name=mod_name_clean,
                     display_name=record.name or module_name,
+                    style=record.icon_style or 'shapes',
                 )
                 icon_b64 = base64.b64encode(icon_bytes)
             # Apply to ALL top-level menus owned by this module — een module

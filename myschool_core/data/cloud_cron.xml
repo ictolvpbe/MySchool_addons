@@ -43,5 +43,59 @@
             <field name="active" eval="True"/>
         </record>
 
+        <!--
+            Employee account lifecycle — daily three-phase drain driven
+            by deactivation_pending_since. Phase 0 flags employees whose
+            assignment feed shows no active job (guarded against a
+            failed/empty school feed); Phase 1 suspends the Odoo + AD +
+            Google account after EmployeeSuspendPeriod; Phase 2 hard-
+            deletes the Google account after EmployeeDeletePeriod.
+
+            Historically this lived in betask_data.xml, which was dropped
+            from the manifest (and used Odoo ≤18 fields), so the flow
+            silently stopped running. This is the loaded replacement.
+        -->
+        <record forcecreate="True" id="ir_cron_employee_account_lifecycle" model="ir.cron">
+            <field name="name">Employee Account Lifecycle</field>
+            <field name="model_id" ref="model_myschool_betask_processor"/>
+            <field name="state">code</field>
+            <field name="code">model.cron_employee_account_lifecycle()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <!-- Bewust UIT tot de flow manueel getest is — deze cron doet
+                 ECHTE deactivaties + AD/Google-account-deletes. Activeer
+                 via Instellingen > Technisch > Geplande acties, of zet
+                 active terug op True zodra de test geslaagd is. -->
+            <field name="active" eval="False"/>
+        </record>
+
+        <!--
+            Housekeeping — archive completed betasks older than 30 days
+            so the queue table stays lean. Also previously stranded in
+            the unloaded betask_data.xml.
+        -->
+        <record forcecreate="True" id="ir_cron_cleanup_betasks" model="ir.cron">
+            <field name="name">Backend Tasks: Cleanup Old Tasks</field>
+            <field name="model_id" ref="model_myschool_betask"/>
+            <field name="state">code</field>
+            <field name="code">
+# Archive completed tasks older than 30 days.
+# NB: ir.cron safe-eval exposes the `datetime` module (not `fields`).
+cutoff = datetime.datetime.now() - datetime.timedelta(days=30)
+old_tasks = model.search([
+    ('status', '=', 'completed_ok'),
+    ('lastrun', '&lt;', cutoff),
+    ('active', '=', True),
+])
+if old_tasks:
+    old_tasks.write({'active': False})
+            </field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+
     </data>
 </odoo>

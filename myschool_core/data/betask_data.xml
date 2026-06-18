@@ -39,45 +39,10 @@
             <field name="priority">10</field>
         </record>
 
-        <!-- Database Operations - Students -->
-        <record id="betask_type_db_student_add" model="myschool.betask.type">
-            <field name="name">DB_STUDENT_ADD</field>
-            <field name="target">DB</field>
-            <field name="object">STUDENT</field>
-            <field name="action">ADD</field>
-            <field name="description">Add student to database</field>
-            <field name="processor_method">process_db_student_add</field>
-            <field name="priority">20</field>
-        </record>
-
-        <record id="betask_type_db_student_update" model="myschool.betask.type">
-            <field name="name">DB_STUDENT_UPDATE</field>
-            <field name="target">DB</field>
-            <field name="object">STUDENT</field>
-            <field name="action">UPDATE</field>
-            <field name="description">Update student in database</field>
-            <field name="priority">20</field>
-        </record>
-
-        <!-- Database Operations - Employees -->
-        <record id="betask_type_db_employee_add" model="myschool.betask.type">
-            <field name="name">DB_EMPLOYEE_ADD</field>
-            <field name="target">DB</field>
-            <field name="object">EMPLOYEE</field>
-            <field name="action">ADD</field>
-            <field name="description">Add employee to database</field>
-            <field name="processor_method">process_db_employee_add</field>
-            <field name="priority">20</field>
-        </record>
-
-        <record id="betask_type_db_employee_upd" model="myschool.betask.type">
-            <field name="name">DB_EMPLOYEE_UPD</field>
-            <field name="target">DB</field>
-            <field name="object">EMPLOYEE</field>
-            <field name="action">UPD</field>
-            <field name="description">Update employee in database</field>
-            <field name="priority">20</field>
-        </record>
+        <!-- DB/STUDENT/* + DB/EMPLOYEE/* types verwijderd (2026-06-18):
+             legacy, vervangen door het generieke DB/PERSON/*-spoor (0 instanties,
+             niets maakt ze aan). Wees-records worden gewist door migratie
+             1.1/post-migrate.py. -->
 
         <!-- Database Operations - Roles -->
         <record id="betask_type_db_role_add" model="myschool.betask.type">
@@ -121,33 +86,11 @@
             <field name="priority">90</field>
         </record>
 
-        <record id="betask_type_ldap_student_add" model="myschool.betask.type">
-            <field name="name">LDAP_STUDENT_ADD</field>
-            <field name="target">LDAP</field>
-            <field name="object">STUDENT</field>
-            <field name="action">ADD</field>
-            <field name="description">Add student to LDAP/Active Directory</field>
-            <field name="priority">35</field>
-        </record>
-
-        <record id="betask_type_ldap_employee_add" model="myschool.betask.type">
-            <field name="name">LDAP_EMPLOYEE_ADD</field>
-            <field name="target">LDAP</field>
-            <field name="object">EMPLOYEE</field>
-            <field name="action">ADD</field>
-            <field name="description">Add employee to LDAP/Active Directory</field>
-            <field name="processor_method">process_ldap_employee_add</field>
-            <field name="priority">35</field>
-        </record>
-
-        <record id="betask_type_ldap_employee_upd" model="myschool.betask.type">
-            <field name="name">LDAP_EMPLOYEE_UPD</field>
-            <field name="target">LDAP</field>
-            <field name="object">EMPLOYEE</field>
-            <field name="action">UPD</field>
-            <field name="description">Update employee in LDAP/Active Directory</field>
-            <field name="priority">35</field>
-        </record>
+        <!-- LDAP/STUDENT/* + LDAP/EMPLOYEE/* types verwijderd (2026-06-18):
+             legacy, vervangen door het generieke LDAP/USER/*-spoor. Hadden 0
+             instanties en geen processor. De wees-records (zonder xmlid, ooit
+             door de dode ensure_standard_types-seeder gemaakt) worden door de
+             migratie 1.1/post-migrate.py opgekuist. -->
 
         <!-- All Systems Operations -->
         <record id="betask_type_all_role_upd" model="myschool.betask.type">
@@ -210,33 +153,15 @@
             <field name="priority">20</field>
         </record>
 
-        <!-- Deactivate old EMPLOYEE/STUDENT types (replaced by unified PERSON) -->
-        <record id="betask_type_db_employee_add" model="myschool.betask.type">
-            <field name="active" eval="False"/>
-        </record>
-        <record id="betask_type_db_employee_upd" model="myschool.betask.type">
-            <field name="active" eval="False"/>
-        </record>
-        <record id="betask_type_db_student_add" model="myschool.betask.type">
-            <field name="active" eval="False"/>
-        </record>
-        <record id="betask_type_db_student_update" model="myschool.betask.type">
-            <field name="active" eval="False"/>
-        </record>
+        <!-- (DB/EMPLOYEE/* + DB/STUDENT/* definities verwijderd — zie boven;
+             wees-records gewist door migratie 1.1/post-migrate.py.) -->
 
         <!-- Deactivate unused types -->
         <record id="betask_type_ldap_org_add" model="myschool.betask.type">
             <field name="active" eval="False"/>
         </record>
-        <record id="betask_type_ldap_student_add" model="myschool.betask.type">
-            <field name="active" eval="False"/>
-        </record>
-        <record id="betask_type_ldap_employee_add" model="myschool.betask.type">
-            <field name="active" eval="False"/>
-        </record>
-        <record id="betask_type_ldap_employee_upd" model="myschool.betask.type">
-            <field name="active" eval="False"/>
-        </record>
+        <!-- ldap_student_add / ldap_employee_add / ldap_employee_upd:
+             definities verwijderd (zie boven) — niet langer deactiveren. -->
         <record id="betask_type_all_role_upd" model="myschool.betask.type">
             <field name="active" eval="False"/>
         </record>
@@ -247,60 +172,18 @@
     </data>
 
     <!-- ========================================= -->
-    <!-- SCHEDULED ACTIONS (CRON JOBS) -->
+    <!-- SCHEDULED ACTIONS (CRON JOBS) — VERHUISD -->
     <!-- ========================================= -->
-    
-    <data noupdate="0">
-        
-        <!-- Main task processor - runs every 15 minutes -->
-        <record id="ir_cron_process_betasks" model="ir.cron">
-            <field name="name">Backend Tasks: Process Pending</field>
-            <field name="model_id" ref="model_myschool_betask_processor"/>
-            <field name="state">code</field>
-            <field name="code">model.cron_process_tasks()</field>
-            <field name="interval_number">15</field>
-            <field name="interval_type">minutes</field>
-            <field name="numbercall">-1</field>
-            <field name="active">True</field>
-            <field name="doall">False</field>
-        </record>
+    <!--
+        Alle cron-records (process-betasks, cleanup-betasks én
+        employee-account-lifecycle) staan nu in data/cloud_cron.xml,
+        dat WEL in de core-manifest geladen wordt. Dit bestand
+        (betask_data.xml) staat NIET in de manifest — vroeger stonden
+        de crons hier met Odoo ≤18-velden (numbercall/doall) waardoor
+        de lifecycle-flow stil gestopt is. Niet opnieuw hier toevoegen.
 
-        <!-- Cleanup old completed tasks - runs daily -->
-        <record id="ir_cron_cleanup_betasks" model="ir.cron">
-            <field name="name">Backend Tasks: Cleanup Old Tasks</field>
-            <field name="model_id" ref="model_myschool_betask"/>
-            <field name="state">code</field>
-            <field name="code">
-# Archive completed tasks older than 30 days
-from datetime import datetime, timedelta
-cutoff = datetime.now() - timedelta(days=30)
-old_tasks = model.search([
-    ('status', '=', 'completed_ok'),
-    ('lastrun', '&lt;', cutoff),
-    ('active', '=', True)
-])
-if old_tasks:
-    old_tasks.write({'active': False})
-            </field>
-            <field name="interval_number">1</field>
-            <field name="interval_type">days</field>
-            <field name="numbercall">-1</field>
-            <field name="active">True</field>
-            <field name="doall">False</field>
-        </record>
-
-        <!-- Employee Account Lifecycle - runs daily -->
-        <record id="ir_cron_employee_account_lifecycle" model="ir.cron">
-            <field name="name">Employee Account Lifecycle</field>
-            <field name="model_id" ref="model_myschool_betask_processor"/>
-            <field name="state">code</field>
-            <field name="code">model.cron_employee_account_lifecycle()</field>
-            <field name="interval_number">1</field>
-            <field name="interval_type">days</field>
-            <field name="numbercall">-1</field>
-            <field name="active">True</field>
-            <field name="doall">False</field>
-        </record>
-
-    </data>
+        Idem de "Verwerk alle wachtende taken"-server-action: die staat
+        in myschool_admin (myschool_admin.action_betask_run_all_pending);
+        betask.action_run_all_pending() ketent er guarded naar.
+    -->
 </odoo>

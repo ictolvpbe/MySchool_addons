@@ -190,6 +190,8 @@
                         <field name="icon_accent_color" widget="color"/>
                         <field name="icon_module_name"
                                placeholder="bv. myschool_admin, activiteiten, ..."/>
+                        <field name="icon_style" widget="radio"
+                               options="{'horizontal': True}"/>
                     </group>
                     <group string="Voorbeeld">
                         <field name="icon_preview" widget="image"
