@@ -106,7 +106,11 @@
             <field name="object">GROUPMEMBER</field>
             <field name="action">ADD</field>
             <field name="description">Add member to Google Group</field>
-            <field name="priority">20</field>
+            <!-- 25 > CLOUD/USER/ADD (20): the Google account must exist
+                 before it can be added to a group, else the membership
+                 task fails with "user not found". Mirrors the LDAP chain
+                 (USER 40 < GROUPMEMBER 45). -->
+            <field name="priority">25</field>
         </record>
         <record id="cloud_groupmember_remove" model="myschool.betask.type">
             <field name="target">CLOUD</field>
