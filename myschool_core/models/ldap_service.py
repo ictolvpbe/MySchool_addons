@@ -547,7 +547,7 @@ class LdapService(models.AbstractModel):
         Mirror of :meth:`create_group_at_dn`: use this when the caller
         already knows exactly where the user object must live (e.g. a
         per-school OU resolved outside the generic ``build_user_dn``
-        heuristic — see ``myschool_connect_light``). Reuses the exact same
+        heuristic). Reuses the exact same
         building blocks as :meth:`create_user` so attribute/password/enable
         behaviour is identical:
 
