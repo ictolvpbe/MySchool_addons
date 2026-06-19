@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="myschool_admin.Ad2dbOuTreeNode" owl="1">
+        <div class="ad2db-ou-node d-flex align-items-center" t-att-style="indentStyle">
+            <span class="ad2db-ou-caret" t-on-click="() => props.onToggle(props.node)">
+                <i t-if="isBusy" class="fa fa-spinner fa-spin"/>
+                <i t-elif="canExpand" class="fa"
+                   t-att-class="isExpanded ? 'fa-caret-down' : 'fa-caret-right'"/>
+                <i t-else="" class="fa fa-fw"/>
+            </span>
+            <input type="checkbox" class="form-check-input m-0 me-2"
+                   t-att-checked="props.node.exclude"
+                   t-on-change="() => props.onExclude(props.node)"/>
+            <span class="ad2db-ou-name"
+                  t-att-class="{ 'text-muted text-decoration-line-through': props.node.exclude }"
+                  t-on-click="() => props.onToggle(props.node)">
+                <i class="fa fa-folder-o me-1"/>
+                <t t-esc="props.node.name"/>
+            </span>
+            <small class="text-muted ms-2 text-truncate" t-esc="props.node.dn"/>
+        </div>
+        <t t-if="isExpanded">
+            <t t-foreach="props.node.children" t-as="child" t-key="child.id">
+                <Ad2dbOuTreeNode node="child" level="childLevel"
+                                 expanded="props.expanded" busy="props.busy"
+                                 onToggle="props.onToggle" onExclude="props.onExclude"/>
+            </t>
+        </t>
+    </t>
+
+    <t t-name="myschool_admin.Ad2dbOuTreeField" owl="1">
+        <div class="ad2db-ou-tree">
+            <t t-if="state.loading">
+                <span class="text-muted"><i class="fa fa-spinner fa-spin me-1"/>Laden…</span>
+            </t>
+            <t t-elif="!sessionId">
+                <span class="text-muted">Sla de sessie eerst op.</span>
+            </t>
+            <t t-elif="state.nodes.length === 0">
+                <span class="text-muted">Nog geen OU's geladen — klik "Toon / laad top-OU's".</span>
+            </t>
+            <t t-else="">
+                <t t-foreach="state.nodes" t-as="node" t-key="node.id">
+                    <Ad2dbOuTreeNode node="node" level="0"
+                                     expanded="state.expanded" busy="state.busy"
+                                     onToggle.bind="onToggle" onExclude.bind="onExclude"/>
+                </t>
+            </t>
+        </div>
+    </t>
+
+</templates>

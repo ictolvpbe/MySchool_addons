@@ -1,0 +1,32 @@
+.ad2db-ou-tree {
+    max-height: 360px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color, #dee2e6);
+    border-radius: 4px;
+    padding: 4px 0;
+    background: var(--view-background-color, #fff);
+}
+
+.ad2db-ou-tree .ad2db-ou-node {
+    padding-top: 2px;
+    padding-bottom: 2px;
+    line-height: 1.6;
+}
+
+.ad2db-ou-tree .ad2db-ou-node:hover {
+    background: rgba(0, 0, 0, 0.035);
+}
+
+.ad2db-ou-tree .ad2db-ou-caret {
+    cursor: pointer;
+    width: 16px;
+    display: inline-block;
+    text-align: center;
+    color: #6c757d;
+    flex: 0 0 16px;
+}
+
+.ad2db-ou-tree .ad2db-ou-name {
+    cursor: pointer;
+    white-space: nowrap;
+}

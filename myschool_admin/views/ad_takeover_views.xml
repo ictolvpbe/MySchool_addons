@@ -422,13 +422,8 @@
                             sub-OU's</strong> blijven uit de scan (bv. OU's met
                             computeraccounts of jaarlijks heraangemaakte klassen).
                         </div>
-                        <field name="ou_exclusion_ids" nolabel="1" colspan="2">
-                            <list editable="bottom" decoration-muted="not exclude">
-                                <field name="exclude" widget="boolean_toggle"/>
-                                <field name="name" readonly="1"/>
-                                <field name="dn" readonly="1"/>
-                            </list>
-                        </field>
+                        <field name="ou_exclusion_ids" nolabel="1" colspan="2"
+                               widget="ad2db_ou_tree"/>
                     </group>
 
                     <group string="3. Scan">
