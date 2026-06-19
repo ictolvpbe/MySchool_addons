@@ -259,6 +259,10 @@ class AdTakeoverSession(models.Model):
     # machine in `_compute_counts`. Commit 4 replaces the view fields
     # with the *_count_v2 set.
     finding_count          = fields.Integer(compute='_compute_counts')
+    # Per-type tellers voor de "Beoordelen"-badges (OU's / Groepen / Accounts).
+    ou_finding_count       = fields.Integer(compute='_compute_counts')
+    group_finding_count    = fields.Integer(compute='_compute_counts')
+    user_finding_count     = fields.Integer(compute='_compute_counts')
     investigate_count      = fields.Integer(compute='_compute_counts')
     delete_after_count     = fields.Integer(compute='_compute_counts')
     takeover_pending_count = fields.Integer(compute='_compute_counts')
@@ -378,6 +382,9 @@ class AdTakeoverSession(models.Model):
         for rec in self:
             f = rec.finding_ids
             rec.finding_count = len(f)
+            rec.ou_finding_count = len(f.filtered(lambda x: x.kind == 'ou'))
+            rec.group_finding_count = len(f.filtered(lambda x: x.kind == 'group'))
+            rec.user_finding_count = len(f.filtered(lambda x: x.kind == 'user'))
 
             # New state-based counters
             rec.discovered_count = len(f.filtered(lambda x: x.state == 'discovered'))

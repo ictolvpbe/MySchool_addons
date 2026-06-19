@@ -298,17 +298,6 @@
         <field name="arch" type="xml">
             <form string="AD2DB sessie">
                 <header>
-                    <button name="action_list_top_ous" type="object"
-                            string="Toon top-OU's" class="btn-secondary"
-                            icon="fa-sitemap"
-                            invisible="not ldap_config_id"/>
-                    <button name="action_scan" type="object"
-                            string="Scan AD" class="btn-primary"
-                            icon="fa-search"/>
-                    <button name="action_preflight_report" type="object"
-                            string="Pre-flight rapport" class="btn-secondary"
-                            icon="fa-stethoscope"
-                            invisible="not last_scan_at"/>
                     <button name="action_apply_pending_takeovers" type="object"
                             string="Pas AD2DB toe" class="btn-success"
                             icon="fa-check"
@@ -372,7 +361,7 @@
                         <h1><field name="name" placeholder="Sessienaam, bv. Migratie BAWA — maart 2026"/></h1>
                     </div>
                     <group>
-                        <group string="Scope">
+                        <group string="1. Bron &amp; scope">
                             <field name="environment" widget="radio"
                                    options="{'horizontal': true}"/>
                             <field name="ldap_config_id"
@@ -399,7 +388,7 @@
                                    invisible="environment != 'prod'"
                                    string="Clone-doel Google"/>
                         </group>
-                        <group string="Tellingen">
+                        <group string="Voortgang">
                             <field name="finding_count" readonly="1"/>
                             <field name="discovered_count" readonly="1"
                                    string="Ontdekt"/>
@@ -420,13 +409,18 @@
                         </group>
                     </group>
 
-                    <group string="OU-uitsluiting (optioneel)"
+                    <group string="2. Uitsluitingen (optioneel)"
                            invisible="not ldap_config_id">
+                        <div colspan="2">
+                            <button name="action_list_top_ous" type="object"
+                                    string="Toon / laad top-OU's" class="btn-secondary"
+                                    icon="fa-sitemap"/>
+                        </div>
                         <div class="text-muted" colspan="2">
-                            Klik <strong>"Toon top-OU's"</strong> om de OU's op het
-                            hoogste niveau onder de scope op te halen. Vink een OU
-                            aan om die <strong>én al haar sub-OU's</strong> over te
-                            slaan bij de scan (bv. OU's met computeraccounts).
+                            Haal de OU's op het hoogste niveau onder de scope op en
+                            vink aan wat je wil overslaan: die OU <strong>én al haar
+                            sub-OU's</strong> blijven uit de scan (bv. OU's met
+                            computeraccounts of jaarlijks heraangemaakte klassen).
                         </div>
                         <field name="ou_exclusion_ids" nolabel="1" colspan="2">
                             <list editable="bottom" decoration-muted="not exclude">
@@ -437,8 +431,18 @@
                         </field>
                     </group>
 
-                    <group invisible="not scan_summary">
-                        <field name="scan_summary" nolabel="1" widget="text" readonly="1"/>
+                    <group string="3. Scan">
+                        <div colspan="2">
+                            <button name="action_scan" type="object"
+                                    string="Scan AD" class="btn-primary"
+                                    icon="fa-search"/>
+                            <button name="action_preflight_report" type="object"
+                                    string="Pre-flight rapport" class="btn-secondary"
+                                    icon="fa-stethoscope"
+                                    invisible="not last_scan_at"/>
+                        </div>
+                        <field name="scan_summary" nolabel="1" widget="text"
+                               readonly="1" invisible="not scan_summary"/>
                     </group>
 
                     <group invisible="not preflight_report_html"
@@ -455,6 +459,13 @@
                                readonly="1" widget="html"/>
                     </group>
 
+                    <separator string="4. Beoordelen"/>
+                    <group col="6" class="text-muted" invisible="finding_count == 0">
+                        <field name="ou_finding_count" string="OU's" readonly="1"/>
+                        <field name="group_finding_count" string="Groepen" readonly="1"/>
+                        <field name="user_finding_count" string="Accounts" readonly="1"/>
+                    </group>
+
                     <notebook>
                         <page string="Pipeline" name="pipeline">
                             <field name="finding_ids"
@@ -462,7 +473,7 @@
                                    context="{'search_default_gb_state': 1}"/>
                         </page>
 
-                        <page string="OUs" name="ous">
+                        <page string="OU's" name="ous">
                             <field name="finding_ou_ids"
                                    context="{'default_session_id': id, 'default_kind': 'ou'}">
                                 <list editable="bottom"
@@ -526,7 +537,7 @@
                             </field>
                         </page>
 
-                        <page string="Groups" name="groups">
+                        <page string="Groepen" name="groups">
                             <field name="finding_group_ids"
                                    context="{'default_session_id': id, 'default_kind': 'group'}">
                                 <list editable="bottom"
@@ -593,7 +604,7 @@
                             </field>
                         </page>
 
-                        <page string="Users" name="users">
+                        <page string="Accounts" name="users">
                             <field name="finding_user_ids"
                                    context="{'default_session_id': id, 'default_kind': 'user'}">
                                 <list editable="bottom"
