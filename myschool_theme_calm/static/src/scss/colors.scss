@@ -1,0 +1,12 @@
+// ============================================================================
+// MySchool Theme — Calm Tech · Odoo SCSS primary-variable overrides
+// ----------------------------------------------------------------------------
+// Geladen NA myschool_theme/colors.scss in web._assets_primary_variables, dus
+// deze waarden winnen op compile-time. Salie (#7E9B79) wordt het Odoo/Bootstrap-
+// primaire merkpunt i.p.v. teal. De rest van het palet zit in calm.scss
+// (CSS custom properties + selector-overrides).
+// ============================================================================
+
+$o-brand-odoo: #7E9B79;
+$o-brand-primary: #7E9B79;
+$o-navbar-badge-bg: #7E9B79;

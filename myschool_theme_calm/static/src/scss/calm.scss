@@ -1,0 +1,407 @@
+// ============================================================================
+// MySchool Theme — Calm-tech re-skin  (overlay op myschool_theme)
+// ----------------------------------------------------------------------------
+// Laadt NA myschool_theme (dependency) in web.assets_backend en herdefinieert
+// enkel de DESIGN-TOKENS: palet (crème/salie/lila-AI), typografie, radii,
+// schaduwen. Het structurele SCSS/JS/XML van myschool_theme (navbar-, sidebar-,
+// apps-menu-gedrag) blijft hergebruikt. Module verwijderen → de teal-theme
+// komt terug.
+//
+// Token-architectuur:
+//   --myschool-*  → laag-1 (drijft de standaard Odoo-schermen via layout.scss)
+//   --ms-*        → canonieke token-API die de OWL-apps consumeren; in de basis
+//                   afgeleid van --myschool-* + eigen surface/semantic/font/
+//                   radius/accent-tokens. Deze overlay overschrijft beide lagen,
+//                   merk-neutraal (géén productnaam in token-namen).
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. DESIGN TOKENS
+// ----------------------------------------------------------------------------
+:root {
+    // -- Laag-1 (--myschool-*): salie i.p.v. teal; voedt ook de afgeleide
+    //    --ms-brand/text/bg/border in de basis-theme. --
+    --myschool-brand-1: #7E9B79;
+    --myschool-brand-2: #6F8E69;
+    --myschool-brand-3: #8FA98A;
+    --myschool-brand-4: #B7CBB2;   // active-underline indicator
+    --myschool-text: #33403C;
+    --myschool-text-muted: #8A918C;
+    --myschool-bg: #F2EEE5;        // warm crème
+    --myschool-bg-card: #FBFAF6;
+    --myschool-border: #E6DECF;
+    --myschool-border-light: #F0EBE0;
+    --myschool-hover-row: #EFF1E9;
+    --myschool-hover-btn: #EAF0E6;
+    --myschool-surface: transparent;
+    --myschool-sidebar-bg: #EFEAE0;   // lichte variant
+    --myschool-statusbar-current: #7E9B79;
+    --myschool-statusbar-done: #CFE0C8;
+    --myschool-statusbar-future: #ECE6DA;
+    --myschool-appsmenu-text: #33403C;   // ink op licht
+
+    // -- Laag-2 (--ms-*): calm-tech overrides van de canonieke token-API --
+    // Gelaagde warme oppervlakken (de basis had teal-getinte defaults)
+    --ms-surface-base: #F2EEE5;   // widget-canvas / pagina-bg
+    --ms-surface-1: #FBFAF6;      // primair paneel (kaarten, pane-bodies)
+    --ms-surface-2: #F7F4EC;      // secundair vlak (headers, inputs, statusbar)
+    --ms-surface-3: #E7EEE2;      // salie-soft tint
+    --ms-hover: #EFF1E9;
+    --ms-active: #E7EEE2;         // selectie / actieve pill / facet
+    // Semantisch — "succes" wordt salie voor cohesie; rest blijft generiek
+    --ms-success: #6F8E69;
+    --ms-success-bg: #E7EEE2;
+    // AI-accent — lila/lavendel, gereserveerd voor assistent-UI
+    --ms-accent-ai: #7C68B8;
+    --ms-accent-ai-soft: #EFEBF8;
+    --ms-accent-ai-line: #E2DAF3;
+    --ms-accent-ai-text: #6E5FA0;
+    // Typografie — Inter (body) + Plus Jakarta Sans (koppen), self-hosted
+    --ms-font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --ms-font-head: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    // Calm-tech vorm: ruimere radii + zachte warme schaduwen
+    --ms-radius-md: 14px;
+    --ms-radius-lg: 18px;
+    --ms-shadow-1: 0 1px 2px rgba(59, 69, 75, 0.04), 0 16px 34px -22px rgba(59, 69, 75, 0.16);
+    --ms-shadow-2: 0 2px 4px rgba(59, 69, 75, 0.05), 0 22px 44px -20px rgba(59, 69, 75, 0.22);
+
+    // -- Overlay-lokaal: diepe salie-charcoal navbar (witte iconen ~7:1),
+    //    i.p.v. de mid-salie brand-1 die te weinig contrast met wit geeft. --
+    --ms-navbar-bg: #3F4A43;
+}
+
+// ----------------------------------------------------------------------------
+// 2. TYPOGRAFIE — via de --ms-font-* tokens
+// ----------------------------------------------------------------------------
+.o_web_client,
+.o_main_navbar,
+.modal {
+    font-family: var(--ms-font-body);
+}
+.o_control_panel .breadcrumb,
+.o_form_view .oe_title h1,
+.o_form_view .oe_title h1 .o_field_widget,
+.o_form_view .oe_title h3,
+.modal-title,
+.ms_sidebar_label {
+    font-family: var(--ms-font-head);
+}
+.o_control_panel .breadcrumb { letter-spacing: -0.2px; }
+
+// ----------------------------------------------------------------------------
+// 3. NAVBAR — diepe salie-charcoal i.p.v. de salie brand-1 (witte tekst blijft)
+// ----------------------------------------------------------------------------
+.o_main_navbar {
+    background-color: var(--ms-navbar-bg) !important;
+    border-bottom: none !important;
+
+    // Active-indicator in salie i.p.v. licht teal
+    .o_menu_sections > .o-dropdown.show > .dropdown-toggle,
+    .o_menu_sections > button.active {
+        box-shadow: inset 0 -2px 0 var(--myschool-brand-1);
+        border-bottom-color: var(--myschool-brand-1);
+    }
+
+    // Dropdown-items (op licht oppervlak): salie-tint hover
+    .o_menu_sections .dropdown-item:hover,
+    .o_menu_sections .dropdown-item:focus {
+        background-color: var(--ms-active) !important;
+        color: var(--myschool-brand-2) !important;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 4. SIDEBAR — lichte variant met salie active-bar
+//    (de bg volgt --myschool-sidebar-bg; tekstkleuren waren in myschool_theme
+//     wit-op-donker → hier overschreven naar ink-op-licht)
+// ----------------------------------------------------------------------------
+.ms_sidebar {
+    border-right: 1px solid var(--myschool-border);
+}
+.ms_sidebar_toggle {
+    color: var(--myschool-text-muted);
+    border-bottom: 1px solid var(--myschool-border);
+
+    &:hover {
+        color: var(--myschool-text);
+        background-color: var(--ms-active);
+    }
+}
+.ms_sidebar_nav::-webkit-scrollbar-thumb {
+    background-color: #D8D0C0;
+}
+.ms_sidebar_item {
+    color: #5E686E;
+
+    &:hover {
+        background-color: #EAE4D7;
+        color: var(--myschool-text);
+    }
+
+    &.ms_sidebar_item_active {
+        background-color: var(--ms-active);
+        color: var(--ms-text);
+        box-shadow: inset 3px 0 0 var(--myschool-brand-1);   // salie linker-accentbalk
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 5. APPS-MENU (fullscreen) — licht crème i.p.v. de teal #004850
+// ----------------------------------------------------------------------------
+.ms_app_menu.dropdown-menu {
+    background-image: none !important;
+    background:
+        radial-gradient(1200px 600px at 80% -10%, #F6F3FB 0%, rgba(246, 243, 251, 0) 60%),
+        radial-gradient(1000px 500px at 0% 110%, #EAF0E6 0%, rgba(234, 240, 230, 0) 55%),
+        var(--myschool-bg) !important;
+
+    .o_app > a {
+        .ms_app_icon {
+            background-color: var(--myschool-bg-card);
+            box-shadow:
+                inset 0 0 0 1px var(--myschool-border),
+                0 10px 24px -16px rgba(59, 69, 75, 0.40);
+        }
+
+        .ms_app_name {
+            color: var(--myschool-appsmenu-text);
+            text-shadow: none;
+        }
+
+        &:hover .ms_app_icon {
+            box-shadow:
+                inset 0 0 0 1px #C7D5C1,
+                0 16px 30px -16px rgba(59, 69, 75, 0.45);
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// 6. WARME OPPERVLAKKEN — vervang teal-getinte #f5fafa / #dfdfdf
+// ----------------------------------------------------------------------------
+.o_form_statusbar {
+    background-color: var(--ms-surface-2) !important;
+}
+.modal-content .modal-header {
+    background-color: var(--ms-surface-2);
+}
+.o_list_view .o_group_header {
+    background-color: var(--ms-surface-2);
+
+    &:hover { background-color: var(--myschool-hover-btn); }
+}
+.o_notebook .nav-tabs .nav-link:hover:not(.active) {
+    background-color: var(--ms-surface-2);
+}
+.o_list_view .o_list_table thead,
+.o_form_view .o_list_table thead {
+    background-color: var(--ms-surface-2);
+
+    th { background-color: var(--ms-surface-2); }
+}
+
+// ----------------------------------------------------------------------------
+// 7. SELECTIES / FACETS — vervang teal #d9f2f4 door salie-soft
+// ----------------------------------------------------------------------------
+::selection {
+    background-color: var(--ms-active);
+    color: var(--myschool-text);
+}
+.o_list_view .o_list_table .o_data_row.o_data_row_selected > td {
+    background-color: var(--ms-active);
+}
+.o_control_panel .dropdown-menu .dropdown-item.selected,
+.o_control_panel .dropdown-menu .dropdown-item.active {
+    background-color: var(--ms-active);
+    color: var(--myschool-brand-2);
+}
+.o_control_panel .o_searchview_facet {
+    background-color: var(--ms-active);
+    border-color: var(--myschool-brand-2);
+
+    .o_facet_value { color: #57704F; }
+}
+
+// ----------------------------------------------------------------------------
+// 8. PRIMAIRE KNOP-STATEN + FOCUS-RINGEN — teal-rgba → salie-rgba
+// ----------------------------------------------------------------------------
+.o_form_view .btn-primary,
+.o_list_view .btn-primary,
+.o_kanban_view .btn-primary,
+.o_control_panel .btn-primary,
+.modal-content .btn-primary,
+.o_list_table .btn-primary {
+    &:hover {
+        background-color: #5E7A55 !important;
+        border-color: #5E7A55 !important;
+    }
+    &:focus {
+        box-shadow: 0 0 0 3px rgba(126, 155, 121, 0.30) !important;
+    }
+}
+.o_control_panel .o_list_button_add:hover {
+    background-color: #5E7A55 !important;
+    border-color: #5E7A55 !important;
+}
+.o_field_widget input.o_input:focus,
+.o_field_widget textarea.o_input:focus,
+.o_field_widget select.o_input:focus,
+.o_field_widget .o_input:focus {
+    border-color: var(--myschool-brand-2);
+    box-shadow: 0 0 0 3px rgba(126, 155, 121, 0.18);
+}
+.o_searchview:focus-within {
+    box-shadow: 0 0 0 3px rgba(126, 155, 121, 0.18);
+}
+
+// ----------------------------------------------------------------------------
+// 9. SEMANTISCH "SUCCES" → salie voor cohesie (info/waarschuwing/fout blijven)
+// ----------------------------------------------------------------------------
+.text-bg-success,
+.bg-success {
+    background-color: var(--ms-success) !important;
+}
+.o_list_view .o_field_badge .badge.text-bg-success {
+    background-color: var(--ms-success-bg) !important;
+    color: #57704F !important;
+}
+
+// ----------------------------------------------------------------------------
+// 10. CALM-TECH VORM — grotere radii + zachte warme schaduwen
+// ----------------------------------------------------------------------------
+.o_form_sheet {
+    border-radius: var(--ms-radius-lg);
+    border-color: var(--myschool-border);
+    box-shadow: var(--ms-shadow-1);
+}
+.o_form_statusbar {
+    border-radius: 16px 16px 0 0;
+}
+.o_list_view .o_list_renderer {
+    border-radius: var(--ms-radius-lg);
+    border-color: var(--myschool-border);
+    box-shadow: var(--ms-shadow-1);
+}
+.o_list_view .o_list_table thead tr:first-child th:first-child { border-top-left-radius: 17px; }
+.o_list_view .o_list_table thead tr:first-child th:last-child  { border-top-right-radius: 17px; }
+.o_kanban_view .o_kanban_record {
+    border-radius: 16px;
+    border-color: var(--myschool-border);
+    box-shadow: 0 1px 2px rgba(59, 69, 75, 0.04), 0 12px 26px -20px rgba(59, 69, 75, 0.16);
+
+    &:hover {
+        border-color: var(--myschool-brand-2);
+        box-shadow: var(--ms-shadow-2);
+    }
+}
+.modal-content {
+    border-radius: var(--ms-radius-lg);
+
+    .modal-header { border-radius: 18px 18px 0 0; }
+    .modal-footer { border-radius: 0 0 18px 18px; }
+}
+.o_searchview {
+    border-radius: 14px !important;
+}
+.o_control_panel .dropdown-menu {
+    border-radius: 16px;
+}
+
+// ----------------------------------------------------------------------------
+// 11. DIVERSE WARME TINTEN
+// ----------------------------------------------------------------------------
+.o-mail-Chatter .o-mail-Message-bubble:hover {
+    background-color: var(--ms-active);
+}
+.o_base_settings_view .settings_tab a.tab:hover:not(.selected) {
+    color: var(--myschool-text) !important;
+}
+
+// ----------------------------------------------------------------------------
+// 12. DARK MODE — calm-tech dark (warme near-blacks i.p.v. puur zwart)
+// ----------------------------------------------------------------------------
+// De theme_service (myschool_admin) zet `data-theme="dark"` op <body>. Het
+// admin-dark-blok herstyle't de native Odoo-widgets al via `var(--ms-*)`; door
+// hier enkel de TOKEN-WAARDEN naar calm-tech-dark te kantelen erven die widgets
+// + de OWL-apps automatisch mee. Selector `html body[data-theme="dark"]`
+// (specificiteit 0,1,2) wint betrouwbaar van het admin-blok (`body[data-theme]`,
+// 0,1,1), ongeacht bron-volgorde.
+// ----------------------------------------------------------------------------
+html body[data-theme="dark"] {
+    // -- Laag-1 (--myschool-*) — standaard Odoo-schermen --
+    --myschool-brand-1: #8FAD89;
+    --myschool-brand-2: #7E9B79;
+    --myschool-brand-3: #93B08D;
+    --myschool-brand-4: #3D5239;
+    --myschool-text: #E2E0D5;
+    --myschool-text-muted: #AEB4AC;
+    --myschool-bg: #191B19;          // warme near-black canvas
+    --myschool-bg-card: #242725;
+    --myschool-border: #343832;
+    --myschool-border-light: #2E322D;
+    --myschool-hover-row: #2D302B;
+    --myschool-hover-btn: #2E332D;
+    --myschool-sidebar-bg: #1F221E;
+    --myschool-statusbar-current: #8FAD89;
+    --myschool-statusbar-done: #2A352A;
+    --myschool-statusbar-future: #2E322D;
+
+    // -- Laag-2 (--ms-*) — OWL-apps + native widget-overrides --
+    --ms-surface-base: #191B19;
+    --ms-surface-1: #242725;
+    --ms-surface-2: #2A2D29;
+    --ms-surface-3: #2A352A;         // salie-tint
+    --ms-hover: #2D302B;
+    --ms-active: #2A352A;
+    --ms-overlay-strong: rgba(0, 0, 0, 0.40);
+    --ms-black: #F0F4F0;
+    --ms-gray: #8B918A;
+    // Succes = salie op dark (info/waarschuwing/fout blijven via admin-dark gedimd)
+    --ms-success: #8FAD89;
+    --ms-success-bg: #2A352A;
+    // AI-accent — lila/lavendel op dark
+    --ms-accent-ai: #9B8BD0;
+    --ms-accent-ai-soft: #2C2640;
+    --ms-accent-ai-line: #392F4F;
+    --ms-accent-ai-text: #B3A4E0;
+    // Zachte zwart-gebaseerde schaduwen
+    --ms-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.30), 0 16px 34px -22px rgba(0, 0, 0, 0.55);
+    --ms-shadow-2: 0 2px 4px rgba(0, 0, 0, 0.35), 0 22px 44px -20px rgba(0, 0, 0, 0.60);
+    // Navbar — diepste laag
+    --ms-navbar-bg: #20231F;
+}
+
+// -- Selector-fixes voor de calm.scss-eigen plekken die licht hardcoderen --
+html body[data-theme="dark"] {
+    // Apps-menu (fullscreen): warme near-black i.p.v. crème, met subtiele aura's
+    .ms_app_menu.dropdown-menu {
+        background:
+            radial-gradient(1200px 600px at 80% -10%, rgba(124, 104, 184, 0.10) 0%, rgba(124, 104, 184, 0) 60%),
+            radial-gradient(1000px 500px at 0% 110%, rgba(143, 173, 137, 0.10) 0%, rgba(143, 173, 137, 0) 55%),
+            var(--ms-surface-base) !important;
+
+        .o_app > a:hover .ms_app_icon {
+            box-shadow:
+                inset 0 0 0 1px var(--ms-accent-ai-line),
+                0 16px 30px -16px rgba(0, 0, 0, 0.6);
+        }
+    }
+
+    // Sidebar-items: ink-op-licht → licht-op-dark
+    .ms_sidebar_item {
+        color: var(--ms-text-muted);
+
+        &:hover {
+            background-color: var(--ms-hover);
+            color: var(--ms-text);
+        }
+    }
+    .ms_sidebar_nav::-webkit-scrollbar-thumb {
+        background-color: #3A3E37;
+    }
+
+    // Facet-tekst leesbaar op de donkere salie-tint
+    .o_control_panel .o_searchview_facet .o_facet_value {
+        color: #A6C49F;
+    }
+}

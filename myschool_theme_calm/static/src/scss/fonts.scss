@@ -1,0 +1,46 @@
+// ============================================================================
+// MySchool Theme — Calm Tech · Self-hosted webfonts (GDPR-vriendelijk)
+// ----------------------------------------------------------------------------
+// woff2 latin-subset (dekt NL-accenten), opgehaald van Google Fonts en lokaal
+// geserveerd uit /myschool_theme_calm/static/src/fonts/ — geen externe call.
+// @font-face mag overal in de bundel staan (anders dan @import), dus betrouwbaar.
+// ============================================================================
+
+// -- Inter (body) -----------------------------------------------------------
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/myschool_theme_calm/static/src/fonts/inter-400.woff2') format('woff2');
+}
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('/myschool_theme_calm/static/src/fonts/inter-500.woff2') format('woff2');
+}
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('/myschool_theme_calm/static/src/fonts/inter-600.woff2') format('woff2');
+}
+
+// -- Plus Jakarta Sans (headings/brand) -------------------------------------
+@font-face {
+    font-family: 'Plus Jakarta Sans';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('/myschool_theme_calm/static/src/fonts/jakarta-600.woff2') format('woff2');
+}
+@font-face {
+    font-family: 'Plus Jakarta Sans';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('/myschool_theme_calm/static/src/fonts/jakarta-700.woff2') format('woff2');
+}
