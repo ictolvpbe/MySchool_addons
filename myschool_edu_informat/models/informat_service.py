@@ -2194,6 +2194,12 @@ class InformatService(models.AbstractModel):
             # -----------------------------------------------------------------
             # Process each ACTIVE employee in database
             # -----------------------------------------------------------------
+            # SCOPE-GUARD (zoals Phase 1): bij een scoped run (inst_nrs gezet)
+            # mogen we ENKEL PPSBR's van de gesyncte scholen deactiveren —
+            # anders verliezen werknemers van álle ándere scholen hun rollen
+            # omdat hun opdrachten niet in deze (gescopte) import zitten.
+            scoped_inst_nrs = self.env.context.get('informat_inst_nrs')
+
             active_employees = Person.search([
                 ('is_active', '=', True),
                 ('automatic_sync', '=', True),
@@ -2215,13 +2221,21 @@ class InformatService(models.AbstractModel):
                 # Get imported assignments for this person
                 imported_assignments = assignments_by_person.get(person_uuid, {})
 
-                # Get existing active PPSBR PropRelations for this person
-                existing_ppsbr = PropRelation.search([
+                # Get existing active PPSBR PropRelations for this person.
+                # Bij een scoped run: enkel PPSBR's verankerd aan een gesyncte
+                # school (id_org_parent.inst_nr in scope), zodat rollen van
+                # out-of-scope scholen NIET als "niet in import" gedeactiveerd
+                # worden.
+                ppsbr_domain = [
                     ('id_person', '=', person.id),
                     ('proprelation_type_id', '=', ppsbr_type.id),
                     ('is_active', '=', True),
-                    ('automatic_sync', '=', True)
-                ])
+                    ('automatic_sync', '=', True),
+                ]
+                if scoped_inst_nrs:
+                    ppsbr_domain.append(
+                        ('id_org_parent.inst_nr', 'in', list(scoped_inst_nrs)))
+                existing_ppsbr = PropRelation.search(ppsbr_domain)
 
                 # Track which PPSBR we've processed (to detect ones to deactivate)
                 # Key: person_id + org_id + role_id (without period for employees)
