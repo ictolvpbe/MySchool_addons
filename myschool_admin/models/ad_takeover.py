@@ -519,11 +519,17 @@ class AdTakeoverSession(models.Model):
     # ------------------------------------------------------------------
 
     def action_list_top_ous(self):
-        """ONELEVEL scan: list the OUs directly under the scope base_dn.
+        """ONELEVEL scan: list the top-level OUs *and* containers under base_dn.
+
+        Includes both ``organizationalUnit`` (OU=…) and ``container`` (CN=…)
+        objects, because AD's default holders for accounts/computers —
+        ``CN=Users``, ``CN=Computers``, ``CN=Managed Service Accounts``, … —
+        are containers, not OUs. They must be listable so the admin can
+        exclude e.g. the computer-account container.
 
         Upserts ``ou_exclusion_ids`` so the admin can tick which top-level
-        OUs (and their whole subtree) to skip. Existing tick-marks for OUs
-        that still exist are preserved; rows for vanished OUs are dropped.
+        nodes (and their whole subtree) to skip. Existing tick-marks for nodes
+        that still exist are preserved; rows for vanished nodes are dropped.
         """
         self.ensure_one()
         if not self.ldap_config_id:
@@ -540,9 +546,12 @@ class AdTakeoverSession(models.Model):
             with ldap_service._get_connection(self.ldap_config_id) as conn:
                 conn.search(
                     search_base=self.base_dn,
-                    search_filter='(objectClass=organizationalUnit)',
+                    search_filter=(
+                        '(|(objectClass=organizationalUnit)'
+                        '(objectClass=container))'),
                     search_scope='LEVEL',
-                    attributes=['distinguishedName', 'ou', 'description'])
+                    attributes=['distinguishedName', 'ou', 'cn',
+                                'description'])
                 rows = list(conn.entries)
         except Exception as e:
             _logger.exception('[AD2DB] top-OU list failed')
@@ -559,9 +568,11 @@ class AdTakeoverSession(models.Model):
             seen.add(key)
             if key in existing:
                 continue  # preserve the admin's exclude-flag
+            # OUs expose 'ou', containers expose 'cn'.
             cmds.append((0, 0, {
                 'dn': dn,
-                'name': self._entry_str(entry, 'ou') or dn,
+                'name': (self._entry_str(entry, 'ou')
+                         or self._entry_str(entry, 'cn') or dn),
                 'exclude': False,
             }))
         for key, rec in existing.items():
@@ -579,8 +590,8 @@ class AdTakeoverSession(models.Model):
             'params': {
                 'title': _("Top-OU's opgehaald"),
                 'message': _(
-                    '%d OU(s) op het hoogste niveau onder de scope. Vink aan '
-                    'wat je wil overslaan.') % len(seen),
+                    '%d OU(s)/container(s) op het hoogste niveau onder de '
+                    'scope. Vink aan wat je wil overslaan.') % len(seen),
                 'type': 'success',
                 'sticky': False,
                 'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},

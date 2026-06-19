@@ -1556,9 +1556,13 @@ class TestAdTakeoverOuExclusion(TransactionCase):
             'scope_org_id': cls.school.id, 'environment': 'prod',
         })
 
-    def _entry(self, dn, ou):
+    def _entry(self, dn, ou=None, cn=None):
         e = MagicMock()
-        attrs = {'distinguishedName': dn, 'ou': ou, 'description': ''}
+        attrs = {'distinguishedName': dn, 'description': ''}
+        if ou is not None:
+            attrs['ou'] = ou
+        if cn is not None:
+            attrs['cn'] = cn
         e.__contains__.side_effect = lambda k, _a=attrs: k in _a
         e.__getitem__.side_effect = (
             lambda k, _a=attrs: MagicMock(value=_a.get(k, '')))
@@ -1628,6 +1632,18 @@ class TestAdTakeoverOuExclusion(TransactionCase):
         self._run_list([
             self._entry('OU=Nieuw,OU=exs,DC=olvp,DC=int', 'Nieuw')])
         self.assertEqual(self.session.ou_exclusion_ids.name, 'Nieuw')
+
+    def test_list_top_ous_includes_containers(self):
+        # CN=Users is een container (cn, geen ou) — moet ook verschijnen,
+        # met zijn cn als naam, zodat je hem kan uitsluiten.
+        self._run_list([
+            self._entry('OU=Personeel,OU=exs,DC=olvp,DC=int', ou='Personeel'),
+            self._entry('CN=Users,OU=exs,DC=olvp,DC=int', cn='Users'),
+            self._entry('CN=Computers,OU=exs,DC=olvp,DC=int', cn='Computers'),
+        ])
+        self.assertEqual(len(self.session.ou_exclusion_ids), 3)
+        names = set(self.session.ou_exclusion_ids.mapped('name'))
+        self.assertEqual(names, {'Personeel', 'Users', 'Computers'})
 
 
 @tagged('post_install', '-at_install')
