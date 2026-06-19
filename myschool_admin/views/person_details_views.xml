@@ -83,6 +83,9 @@
                         <page string="Assignments" name="assignments">
                             <field name="assignments_html" nolabel="1"/>
                         </page>
+                        <page string="Verlof / onderbrekingen" name="interruptions">
+                            <field name="interruptions_html" nolabel="1"/>
+                        </page>
                     </notebook>
                 </sheet>
             </form>

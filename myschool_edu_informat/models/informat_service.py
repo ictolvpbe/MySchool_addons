@@ -1364,6 +1364,7 @@ class InformatService(models.AbstractModel):
             self._create_sys_error("SAPSYNC-900", "Phase Verlof: interruptions-fetch faalde")
             return
         interruptions_by_doid = {}
+        interruptions_by_person = {}
         for val in all_interruptions.values():
             try:
                 itr = json.loads(val)
@@ -1371,10 +1372,11 @@ class InformatService(models.AbstractModel):
                 continue
             if itr.get('doId'):
                 interruptions_by_doid[itr['doId']] = itr
-        if not interruptions_by_doid:
-            self._create_sys_event("SAPSYNC-001", "Phase Verlof: geen interruptions ontvangen")
-            return
+            pid = itr.get('personId')
+            if pid:
+                interruptions_by_person.setdefault(pid, []).append(itr)
 
+        scoped_inst_nrs = self.env.context.get('informat_inst_nrs')
         Person = self.env['myschool.person']
         PersonDetails = self.env['myschool.person.details']
         employees = Person.search([
@@ -1383,11 +1385,24 @@ class InformatService(models.AbstractModel):
             ('person_type_id.name', '=', 'EMPLOYEE'),
         ])
         mode = 'ENFORCE' if enforce else 'dry-run'
-        acted = 0
+        acted = stored = 0
         for person in employees:
             det = PersonDetails.search([
                 ('person_id', '=', person.id), ('is_active', '=', True)], limit=1)
-            if not det or not det.assignments:
+            if not det:
+                continue
+            # ALTIJD (voor in-scope personen) de geïmporteerde verlof-JSON op de
+            # persoon bewaren — voor de Verlof-tab — ook in dry-run. Bij een
+            # scoped run niet de details van out-of-scope scholen aanraken.
+            in_scope = (not scoped_inst_nrs) or (det.extra_field_1 in scoped_inst_nrs)
+            if in_scope:
+                itrs = interruptions_by_person.get(person.sap_person_uuid or '', [])
+                new_json = json.dumps(itrs, indent=2, ensure_ascii=False) if itrs else False
+                if (det.interruptions or '') != (new_json or ''):
+                    det.interruptions = new_json
+                    stored += 1
+            # beleid (dry-run tenzij enforce)
+            if not det.assignments:
                 continue
             try:
                 assignments = json.loads(det.assignments)
@@ -1400,6 +1415,8 @@ class InformatService(models.AbstractModel):
                 self._create_sys_event(
                     "SAPSYNC-001",
                     f"Verlof [{mode}]: {person.name} → {res['action']}")
+        self._create_sys_event(
+            "SAPSYNC-001", f"Phase Verlof: {stored} verlof-detail(s) opgeslagen")
         self._create_sys_event(
             "SAPSYNC-001",
             f"Phase Verlof [{mode}]: {acted} persoon/personen met voltijds verlof "

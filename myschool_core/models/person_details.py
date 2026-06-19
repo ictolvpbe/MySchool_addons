@@ -31,6 +31,10 @@ class PersonDetails(models.Model):
     partner = fields.Text(string='Partner (JSON)')
     children = fields.Text(string='Kinderen (JSON)')
     assignments = fields.Text(string='Assignments (JSON)')
+    interruptions = fields.Text(
+        string='Verlof / onderbrekingen (JSON)',
+        help='Geïmporteerde dienstonderbrekingen (verlofstelsels) uit de '
+             'Informat /employees/interruptions-endpoint, per persoon.')
 
     hoofd_ambt = fields.Char(string='Hoofd Ambt')
     extra_field_1 = fields.Char(string='Extra Veld 1 / InstNr')  # Mapped from extraField1 in Java
@@ -96,9 +100,10 @@ class PersonDetails(models.Model):
     partner_html = fields.Html(string='Partner', compute='_compute_json_html', sanitize=False)
     children_html = fields.Html(string='Kinderen', compute='_compute_json_html', sanitize=False)
     assignments_html = fields.Html(string='Assignments', compute='_compute_json_html', sanitize=False)
+    interruptions_html = fields.Html(string='Verlof / onderbrekingen', compute='_compute_json_html', sanitize=False)
 
     @api.depends('full_json_string', 'addresses', 'emails', 'comnrs', 'bank_accounts',
-                 'relations', 'partner', 'children', 'assignments')
+                 'relations', 'partner', 'children', 'assignments', 'interruptions')
     def _compute_json_html(self):
         """Convert JSON text fields to formatted HTML with <pre> tags."""
         import html
@@ -113,7 +118,8 @@ class PersonDetails(models.Model):
     # JSON fields that should be pretty-printed
     _JSON_FIELDS = [
         'full_json_string', 'addresses', 'emails', 'comnrs',
-        'bank_accounts', 'relations', 'partner', 'children', 'assignments'
+        'bank_accounts', 'relations', 'partner', 'children', 'assignments',
+        'interruptions'
     ]
 
     def _reformat_json_field(self, value):
