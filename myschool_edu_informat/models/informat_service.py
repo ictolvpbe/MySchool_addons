@@ -419,6 +419,21 @@ class InformatService(models.AbstractModel):
                     return run
 
             # =====================================================
+            # PHASE 1c: Verlof-policy (dienstonderbrekingen / verlofstelsels)
+            # =====================================================
+            # Voltijds verlof → account/opdracht deactiveren. Detectie via de
+            # assignment-vervangingen (doId), classificatie via de interruptions-
+            # endpoint. Gated achter SI 'LeavePolicyEnforce' (default uit =
+            # observeren/loggen, geen mutatie). Zie
+            # docs/VERLOFSTELSEL_INTEGRATIE_ANALYSE.md.
+            if config.sync_employees:
+                try:
+                    self._apply_leave_policy(dev_mode)
+                except Exception:
+                    self._create_sys_error(
+                        "SAPSYNC-900", f"Phase Verlof: {traceback.format_exc()}")
+
+            # =====================================================
             # PHASE 2a: Class (Org) Processing
             # =====================================================
 
@@ -1322,6 +1337,64 @@ class InformatService(models.AbstractModel):
                     'personId': person.sap_person_uuid or '',
                     'reason': 'Opdracht op voltijds verlof',
                 }), None)
+
+    def _apply_leave_policy(self, dev_mode):
+        """Phase 1c: haal de interruptions op en pas het verlof-beleid toe op
+        elke actieve employee.
+
+        Gated achter SI ``LeavePolicyEnforce`` (default **uit**): zolang die
+        uit staat draait alles in **dry-run** — enkel classificeren + loggen
+        wat er zou gebeuren, géén mutatie. Zet de SI op True om de deactivaties
+        echt door te voeren.
+        """
+        SettingsItem = self.env['myschool.settings.item']
+        enforce = bool(SettingsItem.get('LeavePolicyEnforce', default=False))
+
+        all_interruptions = self._get_employee_interruptions_from_informat(dev_mode)
+        if all_interruptions is None:
+            self._create_sys_error("SAPSYNC-900", "Phase Verlof: interruptions-fetch faalde")
+            return
+        interruptions_by_doid = {}
+        for val in all_interruptions.values():
+            try:
+                itr = json.loads(val)
+            except (ValueError, TypeError):
+                continue
+            if itr.get('doId'):
+                interruptions_by_doid[itr['doId']] = itr
+        if not interruptions_by_doid:
+            self._create_sys_event("SAPSYNC-001", "Phase Verlof: geen interruptions ontvangen")
+            return
+
+        Person = self.env['myschool.person']
+        PersonDetails = self.env['myschool.person.details']
+        employees = Person.search([
+            ('is_active', '=', True),
+            ('automatic_sync', '=', True),
+            ('person_type_id.name', '=', 'EMPLOYEE'),
+        ])
+        mode = 'ENFORCE' if enforce else 'dry-run'
+        acted = 0
+        for person in employees:
+            det = PersonDetails.search([
+                ('person_id', '=', person.id), ('is_active', '=', True)], limit=1)
+            if not det or not det.assignments:
+                continue
+            try:
+                assignments = json.loads(det.assignments)
+            except (ValueError, TypeError):
+                continue
+            res = self.apply_leave_policy_for_person(
+                person, assignments, interruptions_by_doid, dry_run=not enforce)
+            if res.get('action') and res['action'] != 'none':
+                acted += 1
+                self._create_sys_event(
+                    "SAPSYNC-001",
+                    f"Verlof [{mode}]: {person.name} → {res['action']}")
+        self._create_sys_event(
+            "SAPSYNC-001",
+            f"Phase Verlof [{mode}]: {acted} persoon/personen met voltijds verlof "
+            f"(van {len(employees)} actieve employees)")
 
     # =========================================================================
     # Analysis and Task Creation Methods
