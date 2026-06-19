@@ -1,0 +1,13 @@
+// ============================================================================
+// MySchool Theme — OLVP · Odoo SCSS primary-variable overrides
+// ----------------------------------------------------------------------------
+// Geladen NA myschool_theme_calm/colors.scss in web._assets_primary_variables,
+// dus deze waarden winnen op compile-time. De calm-overlay maakte salie
+// (#7E9B79) het Odoo/Bootstrap-merkpunt; hier zetten we het terug naar de echte
+// OLVP-petrol #007E8C (handoff: "Primair (logo)"). De rest van het palet
+// (surfaces, semantic, AI) zit in olvp.scss als CSS custom properties.
+// ============================================================================
+
+$o-brand-odoo: #007E8C;
+$o-brand-primary: #007E8C;
+$o-navbar-badge-bg: #007E8C;

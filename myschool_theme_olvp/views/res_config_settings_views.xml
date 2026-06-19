@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- =============================================================
+         Tab "MySchool Theme — OLVP" in het MySchool-instellingenscherm.
+         Erft de primary view myschool_settings_form (myschool_admin), zodat
+         de tab naast "MySchool Theme" in dezelfde sidebar verschijnt. De
+         velden + methoden leven in myschool_theme_olvp.res_config_settings;
+         deze view laadt enkel als de OLVP-overlay geïnstalleerd is.
+
+         Stuurt de LIGHT-mode kerntokens van olvp.scss. Donkere modus + de
+         calm-tech vorm (typografie/radii/schaduwen) blijven via de SCSS.
+         ============================================================= -->
+
+    <record id="res_config_settings_view_form_olvp_theme_tab" model="ir.ui.view">
+        <field name="name">myschool.settings.tab.theme.olvp</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="myschool_admin.myschool_settings_form"/>
+        <field name="priority">35</field>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="OLVP-thema" string="OLVP-thema"
+                     name="ms_theme_olvp">
+
+                    <block title="Merkkleur" name="olvp_brand"
+                           help="OLVP-petrol als primaire kleur + de hover/actief-tint">
+                        <setting string="Petrol">
+                            <div class="w-50 row">
+                                <label for="olvp_color_primary" string="Primair (petrol)"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_primary"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="olvp_color_primary_hover" string="Primair hover"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_primary_hover"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Achtergrond &amp; oppervlak" name="olvp_surface"
+                           help="Warm ivoor, kaarten, randen en tekst">
+                        <setting string="Achtergrond">
+                            <div class="w-50 row">
+                                <label for="olvp_color_bg" string="Achtergrond (ivoor)"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_bg"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="olvp_color_card" string="Kaart-oppervlak"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_card"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="olvp_color_warm" string="Warm vlak"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_warm"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                        <setting string="Rand &amp; tekst">
+                            <div class="w-50 row">
+                                <label for="olvp_color_border" string="Rand"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_border"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="olvp_color_text" string="Tekst"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_text"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Accenten" name="olvp_accents"
+                           help="Salie (secundair/succes), klei (waarschuwing) en lila (AI, gereserveerd)">
+                        <setting string="Accentkleuren">
+                            <div class="w-50 row">
+                                <label for="olvp_color_accent_green" string="Salie / succes"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_accent_green"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="olvp_color_accent_clay" string="Klei / waarschuwing"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_accent_clay"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                            <div class="w-50 row">
+                                <label for="olvp_color_accent_ai" string="AI (lila)"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_accent_ai"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                        <setting string="Navbar">
+                            <div class="w-50 row">
+                                <label for="olvp_color_navbar" string="Navbar"
+                                       class="d-block w-75 py-2"/>
+                                <field name="olvp_color_navbar"
+                                       class="d-block w-25 p-0 m-0" widget="color"/>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Reset" name="olvp_reset">
+                        <setting string="Terug naar handoff-kleuren"
+                                 help="Verwijdert de aanpassingen en herstelt de oorspronkelijke OLVP-tokens uit olvp.scss">
+                            <button name="action_reset_olvp_colors"
+                                    icon="fa-refresh" type="object"
+                                    string="OLVP-kleuren resetten" class="btn-link"/>
+                        </setting>
+                    </block>
+
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

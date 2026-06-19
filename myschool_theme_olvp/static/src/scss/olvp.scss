@@ -1,0 +1,139 @@
+// ============================================================================
+// MySchool Theme — OLVP · token- + interactie-overlay
+// ----------------------------------------------------------------------------
+// Laadt NA myschool_theme_calm/calm.scss in web.assets_backend. Erft de
+// calm-tech VORM van calm.scss (typografie Inter/Plus Jakarta Sans, ruime
+// radii, zachte warme schaduwen, warme oppervlakken, navbar-/sidebar-/apps-
+// menu-gedrag) en kantelt enkel:
+//   (a) de DESIGN-TOKENS naar de exacte handoff-hexes (petrol-primair, ivoor,
+//       salie-secundair, klei-waarschuwing, lila-AI);
+//   (b) de handvol interactie-regels die calm in SALIE hardcodeerde
+//       (knop-hover, focus-ringen, facet-tekst) → PETROL.
+//
+// Bron-van-waarheid voor kleur = de token-tabel in het design-handoff
+// (design_handoff/calm tech olvp/.../README.md §6).
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. DESIGN TOKENS — LIGHT
+// ----------------------------------------------------------------------------
+:root {
+    // -- Laag-1 (--myschool-*): petrol-familie i.p.v. salie. Voedt ook de
+    //    afgeleide --ms-brand/text/bg/border in de basis-theme. --
+    --myschool-brand-1: #007E8C;   // PRIMAIR · OLVP-petrol (logo)
+    --myschool-brand-2: #006A77;   // donkerder · hover / borders / facets
+    --myschool-brand-3: #2C97A3;   // lichter accent
+    --myschool-brand-4: #7FC4CD;   // active-underline indicator (licht petrol)
+    --myschool-text: #3B454B;      // leisteen (handoff body-tekst)
+    --myschool-text-muted: #5E686E;
+    --myschool-bg: #FBFAF6;        // zuiver warm ivoor (handoff achtergrond)
+    --myschool-bg-card: #FFFFFF;   // kaart-oppervlak (handoff = puur wit)
+    --myschool-border: #ECE6DA;    // subtiele kaartrand
+    --myschool-border-light: #F4EFE6;
+    --myschool-hover-row: #F1F6F6;     // heel licht petrol
+    --myschool-hover-btn: #EAF3F4;
+    --myschool-sidebar-bg: #F1ECE2;    // licht warm
+    --myschool-statusbar-current: #007E8C;
+    --myschool-statusbar-done: #BFE0E4;     // licht petrol
+    --myschool-statusbar-future: #ECE6DA;
+    --myschool-appsmenu-text: #33403C;      // ink op licht
+
+    // -- Laag-2 (--ms-*): handoff-surfaces + semantiek --
+    --ms-surface-base: #FBFAF6;    // pagina-bg · ivoor
+    --ms-surface-1: #FFFFFF;       // primair paneel (kaarten, pane-bodies)
+    --ms-surface-2: #F4EFE6;       // warm vlak (headers, inputs, statusbar)
+    --ms-surface-3: #E2EEEF;       // petrol-tint (vlakken in dezelfde familie)
+    --ms-hover: #F1F6F6;
+    --ms-active: #E2EEEF;          // selectie / actieve pill / facet (petrol-tint)
+    // Semantisch — salie blijft het SECUNDAIRE/"succes"-accent (handoff)
+    --ms-success: #6F8E69;
+    --ms-success-bg: #E7EEE2;
+    // Waarschuwing — klei/terracotta (handoff: clay → $warning)
+    --ms-warning: #9A7B66;
+    --ms-warning-bg: #F1E7DF;
+    // AI-accent — lila (Meli), gereserveerd voor assistent-UI
+    --ms-accent-ai: #8E7CC3;
+    --ms-accent-ai-soft: #EFEBF8;
+    --ms-accent-ai-line: #E2DAF3;
+    --ms-accent-ai-text: #6E5FA0;
+
+    // -- Navbar: diepe petrol-slate (witte iconen ~AAA), teal-familie i.p.v.
+    //    calm's salie-charcoal. --
+    --ms-navbar-bg: #0E3A40;
+}
+
+// ----------------------------------------------------------------------------
+// 2. INTERACTIE-REGELS DIE CALM IN SALIE HARDCODEERDE → PETROL
+//    (zelfde selectors als calm.scss §7/§8, geladen erna → winnen)
+// ----------------------------------------------------------------------------
+
+// -- Primaire knop-staten (calm: #5E7A55 hover + salie focus-rgba) --
+.o_form_view .btn-primary,
+.o_list_view .btn-primary,
+.o_kanban_view .btn-primary,
+.o_control_panel .btn-primary,
+.modal-content .btn-primary,
+.o_list_table .btn-primary {
+    &:hover {
+        background-color: #006A77 !important;
+        border-color: #006A77 !important;
+    }
+    &:focus {
+        box-shadow: 0 0 0 3px rgba(0, 126, 140, 0.30) !important;
+    }
+}
+.o_control_panel .o_list_button_add:hover {
+    background-color: #006A77 !important;
+    border-color: #006A77 !important;
+}
+
+// -- Focus-ringen op inputs / searchview (calm: salie-rgba) → petrol --
+.o_field_widget input.o_input:focus,
+.o_field_widget textarea.o_input:focus,
+.o_field_widget select.o_input:focus,
+.o_field_widget .o_input:focus {
+    border-color: var(--myschool-brand-2);
+    box-shadow: 0 0 0 3px rgba(0, 126, 140, 0.18);
+}
+.o_searchview:focus-within {
+    box-shadow: 0 0 0 3px rgba(0, 126, 140, 0.18);
+}
+
+// -- Facet-tekst (calm: salie #57704F op salie-tint) → petrol op petrol-tint --
+.o_control_panel .o_searchview_facet .o_facet_value {
+    color: #006A77;
+}
+
+// ----------------------------------------------------------------------------
+// 3. DESIGN TOKENS — DARK (OLVP-petrol op de calm-tech warme near-blacks)
+//    Erft calm's donkere canvas/structuur; kantelt enkel brand + petrol-tints.
+//    Selector-specificiteit gelijk aan calm's dark-blok, geladen erna → wint.
+// ----------------------------------------------------------------------------
+html body[data-theme="dark"] {
+    // -- Laag-1 (--myschool-*) --
+    --myschool-brand-1: #2BA7B5;     // lichter petrol voor leesbaarheid op dark
+    --myschool-brand-2: #1E97A4;
+    --myschool-brand-3: #3FB4C1;
+    --myschool-brand-4: #0E4148;
+    --myschool-statusbar-current: #2BA7B5;
+    --myschool-statusbar-done: #143438;
+
+    // -- Laag-2 (--ms-*) --
+    --ms-surface-3: #143438;         // petrol-tint op dark (was salie)
+    --ms-active: #143438;
+    // Succes blijft salie op dark (handoff: groen = secundair); klei-warning:
+    --ms-warning: #B79A86;
+    --ms-warning-bg: #34291F;
+    // AI blijft lila op dark
+    --ms-accent-ai: #9B8BD0;
+    --ms-accent-ai-soft: #2C2640;
+    --ms-accent-ai-line: #392F4F;
+    --ms-accent-ai-text: #B3A4E0;
+    // Navbar — diepste petrol-laag
+    --ms-navbar-bg: #0A2A2E;
+
+    // Facet-tekst leesbaar op de donkere petrol-tint
+    .o_control_panel .o_searchview_facet .o_facet_value {
+        color: #6FC2CB;
+    }
+}
