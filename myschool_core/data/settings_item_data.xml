@@ -97,5 +97,41 @@
             <field name="is_encrypted">1</field>
         </record>
 
+        <!-- ===============================================================
+             Verlofstelsel- / eigen-velden-beleid (Informat-connector).
+             Beide enforce-vlaggen staan default UIT: zolang ze uit staan
+             draait het beleid in dry-run (classificeren + loggen, geen
+             mutatie). Zie myschool_edu_informat.
+             =============================================================== -->
+        <record id="si_leave_policy_enforce" model="myschool.settings.item">
+            <field name="key">LeavePolicyEnforce</field>
+            <field name="label">Verlofbeleid afdwingen</field>
+            <field name="description">Indien aan: personeel in voltijds verlof (Informat /employees/interruptions) wordt gedeactiveerd; deeltijds blijft behouden. Uit = dry-run (enkel classificeren + loggen).</field>
+            <field name="category">lifecycle</field>
+            <field name="value_type">boolean</field>
+            <field name="scope_kind">global</field>
+            <field name="default_boolean">0</field>
+        </record>
+
+        <record id="si_fulltime_leave_codes" model="myschool.settings.item">
+            <field name="key">FulltimeLeaveCodes</field>
+            <field name="label">Voltijds-verlof codes</field>
+            <field name="description">Komma-gescheiden lijst van Informat-onderbrekingscodes die als VOLTIJDS verlof gelden. Leeg = ingebouwde default (197,200,203,206,209 = voltijds zorgkrediet).</field>
+            <field name="category">lifecycle</field>
+            <field name="value_type">string</field>
+            <field name="scope_kind">global</field>
+            <field name="default_string">197,200,203,206,209</field>
+        </record>
+
+        <record id="si_actief_op_school_enforce" model="myschool.settings.item">
+            <field name="key">ActiefOpSchoolEnforce</field>
+            <field name="label">Eigen veld 'ActiefOpSchool' afdwingen</field>
+            <field name="description">Indien aan: het Informat eigen veld 'ActiefOpSchool' (waarde Neen) blokkeert account-creatie en deactiveert bestaande actieve accounts. Uit = enkel opslaan/tonen, geen mutatie.</field>
+            <field name="category">lifecycle</field>
+            <field name="value_type">boolean</field>
+            <field name="scope_kind">global</field>
+            <field name="default_boolean">0</field>
+        </record>
+
     </data>
 </odoo>
