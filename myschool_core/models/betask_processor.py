@@ -7433,17 +7433,19 @@ class BeTaskProcessor(models.AbstractModel):
         
         @param user: res.users record
         """
-        Role = self.env['myschool.role']
-        
-        # Get all managed groups
-        managed_roles = Role.search([
+        # ``has_odoo_group`` / ``odoo_group_ids`` zijn van myschool.role naar
+        # myschool.org verhuisd; de set "beheerde groepen" is de unie over elke
+        # org met has_odoo_group (idem als _sync_user_groups hierboven).
+        Org = self.env['myschool.org']
+
+        managed_orgs = Org.search([
             ('has_odoo_group', '=', True),
-            ('odoo_group_ids', '!=', False)
+            ('odoo_group_ids', '!=', False),
         ])
 
         managed_group_ids = []
-        for r in managed_roles:
-            managed_group_ids.extend(r.odoo_group_ids.ids)
+        for o in managed_orgs:
+            managed_group_ids.extend(o.odoo_group_ids.ids)
         
         # Remove user from all managed groups
         for group_id in managed_group_ids:
