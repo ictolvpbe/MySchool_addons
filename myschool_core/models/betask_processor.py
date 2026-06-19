@@ -2474,9 +2474,17 @@ class BeTaskProcessor(models.AbstractModel):
 
         try:
             had_odoo_user = bool(person.odoo_user_id)
-            self._deactivate_person(person, data, inst_nr)
-            changes.append(f"Deactivated person: {person.name} (ID: {person.id})")
-            changes.append(f"Deactivated related PropRelations")
+            if data.get('leave_suspend'):
+                # Voltijds-verlof-deactivatie: volledige cascade (DB + rollen/
+                # groepen + AD + Cloud + connector + brief) i.p.v. enkel de
+                # DB-deactivatie. _suspend_person_fully bevat _deactivate_person.
+                self._suspend_person_fully(
+                    person, reason=data.get('reason') or 'Voltijds verlof')
+                changes.append(f"Suspended (voltijds verlof): {person.name} (ID: {person.id})")
+            else:
+                self._deactivate_person(person, data, inst_nr)
+                changes.append(f"Deactivated person: {person.name} (ID: {person.id})")
+                changes.append(f"Deactivated related PropRelations")
             if had_odoo_user:
                 changes.append(f"Created ODOO-PERSON-DEACT task for Odoo user deactivation")
             return {'success': True, 'changes': '\n'.join(changes)}

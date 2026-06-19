@@ -1289,12 +1289,19 @@ class InformatService(models.AbstractModel):
         @return: ``{'action': 'suspend_account'|'deactivate_assignments'|'none', ...}``
         """
         res = self.classify_employee_leave(assignments, interruptions_by_doid)
-        proc = self.env['myschool.betask.processor']
         if res['all_on_leave']:
             res['action'] = 'suspend_account'
             if not dry_run:
-                proc._suspend_person_fully(
-                    person, reason='Voltijds verlof (alle opdrachten)')
+                # Reviewbaar: binnen een sync.run wordt dit een sap.sync.change,
+                # buiten een run een directe betask. Op commit draait de
+                # DB/PERSON/DEACT-handler de volledige suspend-cascade dankzij
+                # de leave_suspend-vlag.
+                self._create_betask('DB', 'PERSON', 'DEACT', json.dumps({
+                    'person_id': person.id,
+                    'personId': person.sap_person_uuid or '',
+                    'reason': 'Voltijds verlof (alle opdrachten)',
+                    'leave_suspend': True,
+                }), '')
         elif res['any_on_leave']:
             res['action'] = 'deactivate_assignments'
             if not dry_run:
@@ -1332,11 +1339,13 @@ class InformatService(models.AbstractModel):
                 ('is_active', '=', True),
             ])
             for ppsbr in ppsbrs:
-                proc._create_betask_internal('DB', 'PROPRELATION', 'DEACT', json.dumps({
+                # Reviewbaar via de sync.change-flow (zoals de andere
+                # DB/PROPRELATION/DEACT-changes).
+                self._create_betask('DB', 'PROPRELATION', 'DEACT', json.dumps({
                     'proprelation_id': ppsbr.id,
                     'personId': person.sap_person_uuid or '',
                     'reason': 'Opdracht op voltijds verlof',
-                }), None)
+                }), '')
 
     def _apply_leave_policy(self, dev_mode):
         """Phase 1c: haal de interruptions op en pas het verlof-beleid toe op
