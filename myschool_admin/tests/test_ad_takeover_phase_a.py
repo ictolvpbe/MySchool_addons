@@ -1641,6 +1641,42 @@ class TestAdTakeoverOuExclusion(TransactionCase):
         self.assertEqual(act['params'].get('next'),
                          {'type': 'ir.actions.client', 'tag': 'soft_reload'})
 
+    def test_load_children_lazy_drilldown(self):
+        # top-niveau
+        self._run_list([
+            self._entry('OU=School,OU=exs,DC=olvp,DC=int', ou='School')])
+        top = self.session.ou_exclusion_ids
+        self.assertEqual(len(top), 1)
+        self.assertEqual(top.level, 0)
+        self.assertFalse(top.loaded)
+
+        # drill-down in School → Klassen + Personeel
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        kids = [
+            self._entry('OU=Klassen,OU=School,OU=exs,DC=olvp,DC=int', ou='Klassen'),
+            self._entry('OU=Personeel,OU=School,OU=exs,DC=olvp,DC=int', ou='Personeel'),
+        ]
+        with _mock_ldap_connection() as (mock_conn, ctx_mgr):
+            mock_conn.entries = kids
+            with patch.object(ldap_cls, '_check_ldap3_available',
+                              return_value=None), \
+                 patch.object(ldap_cls, '_get_connection',
+                              return_value=ctx_mgr):
+                top.action_load_children()
+
+        self.assertTrue(top.loaded)
+        self.assertEqual(len(top.child_ids), 2)
+        self.assertEqual(set(top.child_ids.mapped('level')), {1})
+        self.assertEqual(set(top.child_ids.mapped('name')),
+                         {'Klassen', 'Personeel'})
+
+        # een diepe child uitsluiten → komt in _excluded_ou_dns (subtree-skip)
+        klassen = top.child_ids.filtered(lambda r: r.name == 'Klassen')
+        klassen.exclude = True
+        self.assertIn(
+            self.Session._norm_dn('OU=Klassen,OU=School,OU=exs,DC=olvp,DC=int'),
+            self.session._excluded_ou_dns())
+
     def test_list_top_ous_includes_containers(self):
         # CN=Users is een container (cn, geen ou) — moet ook verschijnen,
         # met zijn cn als naam, zodat je hem kan uitsluiten.

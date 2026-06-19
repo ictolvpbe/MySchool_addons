@@ -525,34 +525,25 @@ class AdTakeoverSession(models.Model):
     # Pre-run OU-exclusion (top-OU picker)
     # ------------------------------------------------------------------
 
-    def action_list_top_ous(self):
-        """ONELEVEL scan: list the top-level OUs *and* containers under base_dn.
+    def _discover_ous_under(self, base_dn):
+        """LEVEL-scan: directe OU's én containers onder ``base_dn``.
 
-        Includes both ``organizationalUnit`` (OU=…) and ``container`` (CN=…)
-        objects, because AD's default holders for accounts/computers —
-        ``CN=Users``, ``CN=Computers``, ``CN=Managed Service Accounts``, … —
-        are containers, not OUs. They must be listable so the admin can
-        exclude e.g. the computer-account container.
-
-        Upserts ``ou_exclusion_ids`` so the admin can tick which top-level
-        nodes (and their whole subtree) to skip. Existing tick-marks for nodes
-        that still exist are preserved; rows for vanished nodes are dropped.
+        Geeft ``[(dn, name), …]`` terug. Bevat zowel ``organizationalUnit``
+        (OU=…) als ``container`` (CN=…), want AD's standaardhouders voor
+        accounts/computers — ``CN=Users``, ``CN=Computers``, … — zijn
+        containers, geen OUs, en moeten uitsluitbaar zijn.
         """
         self.ensure_one()
         if not self.ldap_config_id:
             raise UserError(_('Geen LDAP-server gekozen voor deze sessie.'))
-        if not self.base_dn:
-            raise UserError(_(
-                'Scope-org "%s" heeft geen base_dn — kan geen top-OUs '
-                'ophalen.') % self.scope_org_id.name)
-
+        if not base_dn:
+            raise UserError(_('Geen base_dn opgegeven voor de OU-scan.'))
         ldap_service = self.env['myschool.ldap.service']
         ldap_service._check_ldap3_available()
-        rows = []
         try:
             with ldap_service._get_connection(self.ldap_config_id) as conn:
                 conn.search(
-                    search_base=self.base_dn,
+                    search_base=base_dn,
                     search_filter=(
                         '(|(objectClass=organizationalUnit)'
                         '(objectClass=container))'),
@@ -561,26 +552,45 @@ class AdTakeoverSession(models.Model):
                                 'description'])
                 rows = list(conn.entries)
         except Exception as e:
-            _logger.exception('[AD2DB] top-OU list failed')
-            raise UserError(_('Top-OU-scan mislukt: %s') % e)
-
-        existing = {self._norm_dn(r.dn): r for r in self.ou_exclusion_ids}
-        seen = set()
-        cmds = []
+            _logger.exception('[AD2DB] OU-discovery onder %s mislukt', base_dn)
+            raise UserError(_('OU-scan mislukt: %s') % e)
+        out = []
         for entry in rows:
             dn = self._entry_str(entry, 'distinguishedName')
             if not dn:
                 continue
+            name = (self._entry_str(entry, 'ou')
+                    or self._entry_str(entry, 'cn') or dn)
+            out.append((dn, name))
+        return out
+
+    def action_list_top_ous(self):
+        """Bouw/ververs de top-niveau-nodes van de uitsluitingsboom.
+
+        LEVEL-scan onder base_dn. Upsert van de top-rijen (parent_id leeg):
+        bestaande blijven (vinkjes behouden), verdwenen takken vallen weg
+        (cascade ruimt hun kinderen op). Diepere niveaus laad je lazy via
+        ``action_load_children`` op een node.
+        """
+        self.ensure_one()
+        if not self.base_dn:
+            raise UserError(_(
+                'Scope-org "%s" heeft geen base_dn — kan geen top-OUs '
+                'ophalen.') % self.scope_org_id.name)
+
+        discovered = self._discover_ous_under(self.base_dn)
+        top = self.ou_exclusion_ids.filtered(lambda r: not r.parent_id)
+        existing = {self._norm_dn(r.dn): r for r in top}
+        seen = set()
+        cmds = []
+        for dn, name in discovered:
             key = self._norm_dn(dn)
             seen.add(key)
             if key in existing:
                 continue  # preserve the admin's exclude-flag
-            # OUs expose 'ou', containers expose 'cn'.
             cmds.append((0, 0, {
-                'dn': dn,
-                'name': (self._entry_str(entry, 'ou')
-                         or self._entry_str(entry, 'cn') or dn),
-                'exclude': False,
+                'dn': dn, 'name': name, 'level': 0,
+                'has_children': True, 'loaded': False, 'exclude': False,
             }))
         for key, rec in existing.items():
             if key not in seen:
@@ -588,11 +598,12 @@ class AdTakeoverSession(models.Model):
         if cmds:
             self.ou_exclusion_ids = cmds
 
-        # _notify herlaadt de form (soft_reload) zodat de lijst meteen vult.
+        # _notify herlaadt de form (soft_reload) zodat de boom meteen vult.
         return self._notify(
             _("Top-OU's opgehaald"),
             _('%d OU(s)/container(s) op het hoogste niveau onder de scope. '
-              'Vink aan wat je wil overslaan.') % len(seen))
+              'Klik een node open om dieper te gaan; vink aan wat je wil '
+              'overslaan.') % len(seen))
 
     def _excluded_ou_dns(self):
         """Normalized DNs of the OUs the admin ticked to exclude."""
@@ -4428,12 +4439,15 @@ class AdTakeoverFinding(models.Model):
 
 
 class AdTakeoverOuExclusion(models.Model):
-    """Top-level OU discovered under a session's scope.
+    """An OU/container node in the session's exclusion tree.
 
-    Populated by ``AdTakeoverSession.action_list_top_ous`` (a ONELEVEL
-    scan). When ``exclude`` is ticked, the AD scan drops that OU and its
-    entire subtree before any finding is created — useful for OUs that
-    only hold computer accounts or other out-of-scope objects.
+    Top-level nodes are populated by ``action_list_top_ous`` (LEVEL scan
+    under base_dn); deeper levels are fetched lazily via
+    ``action_load_children`` (LEVEL scan under the node's DN). The OWL tree
+    renders this hierarchy and lets the admin tick ``exclude`` at any level.
+    When excluded, the AD scan drops that node and its entire subtree before
+    any finding is created (DN-based, via ``_is_dn_under_any``) — useful for
+    computer-account containers or yearly-recreated class OUs.
     """
     _name = 'myschool.ad.takeover.ou.exclusion'
     _description = 'AD2DB OU-uitsluiting'
@@ -4442,8 +4456,52 @@ class AdTakeoverOuExclusion(models.Model):
     session_id = fields.Many2one(
         'myschool.ad.takeover.session',
         required=True, ondelete='cascade', index=True)
+    parent_id = fields.Many2one(
+        'myschool.ad.takeover.ou.exclusion',
+        ondelete='cascade', index=True,
+        help='Bovenliggende OU-node in de uitsluitingsboom.')
+    child_ids = fields.One2many(
+        'myschool.ad.takeover.ou.exclusion', 'parent_id')
+    level = fields.Integer(
+        default=0, help='Diepte in de boom (0 = direct onder de scope).')
     dn = fields.Char(string='OU DN', required=True)
     name = fields.Char(string='OU')
+    has_children = fields.Boolean(
+        default=True,
+        help='Of er (mogelijk) sub-OUs onder deze node zitten. Optimistisch '
+             'true tot een drill-down geen kinderen oplevert.')
+    loaded = fields.Boolean(
+        default=False,
+        help='Of de directe sub-OUs al opgehaald zijn (lazy drill-down).')
     exclude = fields.Boolean(
         string='Uitsluiten', default=False,
         help="Sla deze OU én al haar sub-OU's over bij de scan.")
+
+    def action_load_children(self):
+        """Lazy drill-down: LEVEL-scan de directe sub-OUs onder deze node.
+
+        Maakt child-rows aan (idempotent: bestaande blijven, vinkjes behouden).
+        Zet ``loaded`` en corrigeert ``has_children`` als de node toch een blad
+        blijkt. Wordt vanuit de OWL-boom aangeroepen.
+        """
+        self.ensure_one()
+        session = self.session_id
+        children = session._discover_ous_under(self.dn)
+        existing = {session._norm_dn(c.dn): c for c in self.child_ids}
+        for dn, name in children:
+            key = session._norm_dn(dn)
+            if key in existing:
+                continue
+            self.env['myschool.ad.takeover.ou.exclusion'].create({
+                'session_id': session.id,
+                'parent_id': self.id,
+                'level': self.level + 1,
+                'dn': dn,
+                'name': name,
+                'has_children': True,
+                'loaded': False,
+                'exclude': self.exclude,  # erf de uitsluiting van de ouder
+            })
+        self.loaded = True
+        self.has_children = bool(self.child_ids)
+        return True
