@@ -1,0 +1,19 @@
+[
+  {
+    "pOnderbreking": 90001,
+    "doId": "6187563b-1ba9-4ac5-a0ad-8e1cb5006c2a",
+    "personId": "031f036f-83e9-4521-a8a8-872053c559b5",
+    "hfd": "211",
+    "begindatum": "2025-09-01T00:00:00",
+    "einddatum": "2026-08-31T00:00:00",
+    "code": "197",
+    "omschrijving": "Voltijds zorgkrediet kinderen <= 12 jaar",
+    "soort": "2",
+    "verstuurdAgODi": false,
+    "opmSecretariaat": "",
+    "opmPersoneelslid": null,
+    "staking": null,
+    "stakingUren": null,
+    "ziekteverlofZonderBezoldiging": false
+  }
+]
