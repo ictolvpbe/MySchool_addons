@@ -63,6 +63,7 @@ class InformatService(models.AbstractModel):
     STUDENTS_API_URL = f'{LEERLINGEN_API_BASE}/students'
     EMPLOYEES_API_URL = 'https://personeelsapi.informatsoftware.be/employees'
     EMPLOYEE_ASSIGNMENTS_API_URL = 'https://personeelsapi.informatsoftware.be/employees/assignments'
+    EMPLOYEE_INTERRUPTIONS_API_URL = 'https://personeelsapi.informatsoftware.be/employees/interruptions'
 
     # =========================================================================
     # BeTask Configuration - ADJUST THESE TO MATCH YOUR MODEL!
@@ -1093,10 +1094,234 @@ class InformatService(models.AbstractModel):
             
             self._create_sys_event("SAPSYNC-001", "Employee assignments retrieved successfully")
             return all_assignments
-            
+
         except Exception as e:
             self._create_sys_error("BETASK-900", f"{procedure_name}: {traceback.format_exc()}")
             return None
+
+    def _get_employee_interruptions_from_informat(self, dev_mode: bool) -> Optional[Dict[str, str]]:
+        """Retrieve Employee Interruptions (dienstonderbrekingen / verlofstelsels).
+
+        Mirrors :meth:`_get_employee_assignments_from_informat` but hits
+        ``/employees/interruptions``. An interruption carries a ``doId`` that
+        the assignments reference via ``vervangingen[].doId`` — the link used
+        to tell which opdracht a verlof affects.
+
+        @param dev_mode: read local ``dev-interruptions-{instNr}.json`` if True
+        @return: dict keyed ``{personId}&{instNr}&{doId}`` -> interruption JSON,
+                 or None on error.
+        """
+        procedure_name = '_get_employee_interruptions_from_informat'
+        all_interruptions: Dict[str, str] = {}
+
+        self._create_sys_event("SAPSYNC-001", "Start importing Employee Interruption information")
+
+        try:
+            current_school_year = self.env['myschool.settings.item'].get('CurrentSchoolYear')
+
+            bearer_token = None
+            if not dev_mode:
+                bearer_token = self._get_bearer_token()
+                if not bearer_token:
+                    return None
+
+            Org = self.env['myschool.org']
+            schools = self._informat_schools(Org)
+
+            def _store(items, inst_nr):
+                for itr in items:
+                    person_id = itr.get('personId')
+                    do_id = itr.get('doId') or itr.get('pOnderbreking') or ''
+                    if person_id:
+                        key = f"{person_id}&{inst_nr}&{do_id}"
+                        all_interruptions[key] = json.dumps(itr)
+
+            for school in schools:
+                institution_number = school.inst_nr
+                self._create_sys_event("SAPSYNC-001", f"Start importing interruption data for {institution_number}")
+
+                if dev_mode:
+                    json_file_path = self._get_file_path(
+                        f"dev-interruptions-{institution_number}.json", dev_mode=True)
+                    data = self._read_json_file(json_file_path)
+                    if data:
+                        _store(data, institution_number)
+                    else:
+                        self._create_sys_event("SAPSYNC-900", f"File not found: {json_file_path}")
+                else:
+                    file_suffix = datetime.now().strftime('%Y%m%d%H%M%S.json')
+                    json_file_path = self._get_file_path(
+                        f"interruptions-{institution_number}-{file_suffix}", dev_mode=False)
+                    response = requests.get(
+                        f"{self.EMPLOYEE_INTERRUPTIONS_API_URL}?schoolyear={current_school_year}",
+                        headers={
+                            'Authorization': f'Bearer {bearer_token}',
+                            'Api-Version': '2',
+                            'InstituteNo': institution_number,
+                            'Accept': 'application/json',
+                        },
+                        timeout=60,
+                    )
+                    if response.status_code != 200:
+                        self._create_sys_error("BETASK-900", f"{procedure_name}: Problem retrieving Interruption Data")
+                        continue
+                    if response.text and response.text != '[]':
+                        self._write_json_file(json_file_path, response.text)
+                        _store(response.json(), institution_number)
+
+            self._create_sys_event("SAPSYNC-001",
+                                   f"Employee interruptions retrieved ({len(all_interruptions)})")
+            return all_interruptions
+
+        except Exception:
+            self._create_sys_error("BETASK-900", f"{procedure_name}: {traceback.format_exc()}")
+            return None
+
+    # =========================================================================
+    # Verlofstelsel / interruption classification
+    # =========================================================================
+
+    # Interruption-codes die VOLTIJDS verlof betekenen → account/assignment
+    # deactiveren. Voorlopig de gedocumenteerde voltijdse zorgkrediet-codes;
+    # te vervolledigen zodra Informat de volledige codetabel + het
+    # voltijds/deeltijds-onderscheid bevestigt (zie
+    # docs/INFORMAT_VRAAG_interruption_codes.md). Overrijdbaar via de SI
+    # ``FulltimeLeaveCodes`` (komma-gescheiden) zonder code-wijziging.
+    FULLTIME_LEAVE_CODES_DEFAULT = {'197', '200', '203', '206', '209'}
+
+    def _fulltime_leave_codes(self):
+        raw = self.env['myschool.settings.item'].get('FulltimeLeaveCodes', default='')
+        if raw:
+            return {c.strip() for c in str(raw).split(',') if c.strip()}
+        return set(self.FULLTIME_LEAVE_CODES_DEFAULT)
+
+    def _as_date(self, value):
+        d = self._parse_date_safe(value)
+        if d is None:
+            return None
+        # normaliseer datetime → date (datetime heeft .hour, date niet)
+        return d.date() if hasattr(d, 'hour') else d
+
+    def _interruption_is_active(self, interruption, today):
+        begin = self._as_date(interruption.get('begindatum'))
+        end = self._as_date(interruption.get('einddatum'))
+        if begin and begin > today:
+            return False
+        if end and end < today:
+            return False
+        return True
+
+    def _interruption_is_fulltime_leave(self, interruption, fulltime_codes=None):
+        code = str(interruption.get('code') or '').strip()
+        codes = fulltime_codes if fulltime_codes is not None else self._fulltime_leave_codes()
+        return code in codes
+
+    def classify_employee_leave(self, assignments, interruptions_by_doid, today=None):
+        """Bepaal per persoon welke (actieve) assignments op VOLTIJDS verlof
+        staan, en of de héle persoon op voltijds verlof staat.
+
+        @param assignments: lijst assignment-dicts (met ``vervangingen[].doId``)
+        @param interruptions_by_doid: ``{doId: interruption-dict}``
+        @return: ``{'assignments': [{assignmentId, fulltime_leave, codes}],
+                    'any_on_leave': bool, 'all_on_leave': bool,
+                    'active_assignments': int}``
+        """
+        if today is None:
+            today = fields.Date.context_today(self)
+        fulltime_codes = self._fulltime_leave_codes()
+        results, active_count, fulltime_count = [], 0, 0
+        for a in (assignments or []):
+            if not isinstance(a, dict):
+                continue
+            a_end = self._as_date(a.get('einddatum'))
+            if a_end and a_end < today:
+                continue  # opdracht zelf al verstreken
+            active_count += 1
+            codes, fulltime = [], False
+            for v in (a.get('vervangingen') or []):
+                do_id = v.get('doId') if isinstance(v, dict) else None
+                itr = interruptions_by_doid.get(do_id) if do_id else None
+                if not itr or not self._interruption_is_active(itr, today):
+                    continue
+                codes.append(str(itr.get('code') or ''))
+                if self._interruption_is_fulltime_leave(itr, fulltime_codes):
+                    fulltime = True
+            if fulltime:
+                fulltime_count += 1
+            results.append({
+                'assignmentId': a.get('assignmentId') or a.get('id'),
+                'fulltime_leave': fulltime,
+                'interruption_codes': codes,
+            })
+        return {
+            'assignments': results,
+            'active_assignments': active_count,
+            'any_on_leave': fulltime_count > 0,
+            'all_on_leave': active_count > 0 and fulltime_count == active_count,
+        }
+
+    def apply_leave_policy_for_person(self, person, assignments,
+                                      interruptions_by_doid, dry_run=False):
+        """Pas het verlof-beleid toe op één persoon (na classificatie):
+
+          * **alle** actieve opdrachten op voltijds verlof → **volledige
+            account-deactivatie** (DB + rollen/groepen + AD/Cloud + brief);
+          * **sommige** opdrachten op voltijds verlof → enkel die opdracht-
+            rollen (PPSBR) deactiveren, **account blijft**;
+          * geen voltijds verlof → niets.
+
+        @param dry_run: enkel classificeren + beslissen, niets muteren.
+        @return: ``{'action': 'suspend_account'|'deactivate_assignments'|'none', ...}``
+        """
+        res = self.classify_employee_leave(assignments, interruptions_by_doid)
+        proc = self.env['myschool.betask.processor']
+        if res['all_on_leave']:
+            res['action'] = 'suspend_account'
+            if not dry_run:
+                proc._suspend_person_fully(
+                    person, reason='Voltijds verlof (alle opdrachten)')
+        elif res['any_on_leave']:
+            res['action'] = 'deactivate_assignments'
+            if not dry_run:
+                self._deactivate_fulltime_leave_assignments(person, res, assignments)
+        else:
+            res['action'] = 'none'
+        return res
+
+    def _deactivate_fulltime_leave_assignments(self, person, classification, assignments):
+        """Deactiveer (via DB/PROPRELATION/DEACT) de rol-PPSBR's van de
+        opdrachten die op voltijds verlof staan, terwijl het account blijft.
+        Mapt opdracht → rol via de gedeelde ambtCode-resolver."""
+        PropRelation = self.env['myschool.proprelation']
+        PRType = self.env['myschool.proprelation.type']
+        proc = self.env['myschool.betask.processor']
+        ppsbr_type = PRType.search([('name', '=', 'PPSBR')], limit=1)
+        if not ppsbr_type:
+            return
+        by_id = {(a.get('assignmentId') or a.get('id')): a
+                 for a in (assignments or []) if isinstance(a, dict)}
+        for item in classification['assignments']:
+            if not item.get('fulltime_leave'):
+                continue
+            a = by_id.get(item.get('assignmentId'))
+            ambt = a.get('ambtCode') if a else None
+            if not ambt:
+                continue
+            _sap, _be, role_to_use = proc._resolve_role_for_ambt(ambt)
+            if not role_to_use:
+                continue
+            ppsbrs = PropRelation.search([
+                ('id_person', '=', person.id),
+                ('proprelation_type_id', '=', ppsbr_type.id),
+                ('id_role', '=', role_to_use.id),
+                ('is_active', '=', True),
+            ])
+            for ppsbr in ppsbrs:
+                proc._create_betask_internal('DB', 'PROPRELATION', 'DEACT', json.dumps({
+                    'proprelation_id': ppsbr.id,
+                    'personId': person.sap_person_uuid or '',
+                    'reason': 'Opdracht op voltijds verlof',
+                }), None)
 
     # =========================================================================
     # Analysis and Task Creation Methods

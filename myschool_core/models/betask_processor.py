@@ -1152,7 +1152,70 @@ class BeTaskProcessor(models.AbstractModel):
         if active_proprels:
             active_proprels.write({'is_active': False})
             _logger.info(f'Deactivated {len(active_proprels)} PropRelations for {person.name}')
-        
+
+        return True
+
+    def _suspend_person_fully(self, person, reason='Voltijds verlof'):
+        """Volledige account-deactivatie voor ÉÉN persoon — identiek aan het
+        lifecycle suspend-scenario (Phase 0 + Phase 1), gebundeld op één plek:
+
+          1. rollen + groepen loskoppelen (breed: ook PG-P/PERSON-TREE waar de
+             persoon parent/child is);
+          2. AD-account verwijderen (LDAP/USER/DEL) + Cloud deactiveren
+             (CLOUD/USER/DEACT) + connector-suspend (Smartschool e.d.);
+          3. account_suspended-brief (vóór de is_active-flip, zodat email_cloud
+             nog resolvebaar is);
+          4. DB-account op inactief (+ ODOO/PERSON/DEACT) via _deactivate_person.
+
+        Bestaande bouwstenen worden hergebruikt — geen gedupliceerde logica.
+        Externe mutaties lopen via betasks (niet meteen uitgevoerd).
+        """
+        PropRelation = self.env['myschool.proprelation']
+        BeTaskService = self.env['myschool.betask.service']
+        today = fields.Date.context_today(self)
+
+        # 1) rollen + groepen loskoppelen
+        PropRelation.search([
+            '|', '|',
+            ('id_person', '=', person.id),
+            ('id_person_parent', '=', person.id),
+            ('id_person_child', '=', person.id),
+            ('is_active', '=', True),
+        ]).write({'is_active': False})
+
+        # 2) externe accounts
+        if person.automatic_sync:
+            try:
+                BeTaskService.create_task('LDAP', 'USER', 'DEL', data={
+                    'person_id': person.id,
+                    'personId': person.sap_person_uuid or '',
+                    'reason': reason,
+                })
+            except Exception as e:
+                _logger.error('[SUSPEND] LDAP/USER/DEL faalde voor %s: %s', person.name, e)
+            if self._cloud_provisioning_enabled():
+                try:
+                    BeTaskService.create_task('CLOUD', 'USER', 'DEACT', data={
+                        'person_id': person.id, 'reason': reason,
+                    })
+                except Exception as e:
+                    _logger.error('[SUSPEND] CLOUD/USER/DEACT faalde voor %s: %s', person.name, e)
+        try:
+            self._emit_connector_user_suspend_for_person(person)
+        except Exception as e:
+            _logger.error('[SUSPEND] connector-suspend faalde voor %s: %s', person.name, e)
+
+        # 3) brief vóór de flip
+        try:
+            self._emit_letter_generate_for_person(
+                person, [], trigger_event='account_suspended')
+        except Exception as e:
+            _logger.error('[SUSPEND] brief faalde voor %s: %s', person.name, e)
+
+        # 4) DB-account deactiveren (+ ODOO/PERSON/DEACT) en datum stempelen
+        self._deactivate_person(person)
+        person.write({'deactivation_date': today})
+        _logger.info('[SUSPEND] %s volledig gedeactiveerd (reden: %s)', person.name, reason)
         return True
 
     # =========================================================================
