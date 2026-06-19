@@ -36,6 +36,56 @@ class PersonDetails(models.Model):
     extra_field_1 = fields.Char(string='Extra Veld 1 / InstNr')  # Mapped from extraField1 in Java
     is_active = fields.Boolean(string='Is Actief', default=False)
 
+    # Verlof/onderbrekings-signaal, afgeleid uit de reeds-opgeslagen
+    # assignment-data (quick-win, ZONDER de Informat interruptions-endpoint).
+    # Detectie, geen classificatie: het tÝpe verlofstelsel vergt nog de
+    # /employees/interruptions-endpoint — zie
+    # myschool_edu_informat/docs/VERLOFSTELSEL_INTEGRATIE_ANALYSE.md.
+    has_interruption_signal = fields.Boolean(
+        string='Onderbreking gedetecteerd',
+        compute='_compute_interruption_signal')
+    interruption_signal = fields.Char(
+        string='Onderbrekings-signaal',
+        compute='_compute_interruption_signal',
+        help='Vervanging gelinkt aan een dienstonderbreking '
+             '(vervangingen.doId), of TBS-/reaffectatie-velden ingevuld.')
+
+    @api.depends('assignments')
+    def _compute_interruption_signal(self):
+        for record in self:
+            record.has_interruption_signal = False
+            record.interruption_signal = ''
+            try:
+                assignments = json.loads(record.assignments or '[]')
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(assignments, list):
+                continue
+            do_ids = set()
+            signals = []
+            for a in assignments:
+                if not isinstance(a, dict):
+                    continue
+                # Sterkste signaal: de opdracht wordt vervangen wegens een
+                # dienstonderbreking — vervangingen[].doId == interruption-doId.
+                for v in (a.get('vervangingen') or []):
+                    if isinstance(v, dict) and v.get('doId'):
+                        do_ids.add(v['doId'])
+                if a.get('urenTbsOB') or 0:
+                    signals.append('TBS-uren %s' % a.get('urenTbsOB'))
+                reaff = (a.get('reaffWedertew') or '').strip()
+                if reaff:
+                    signals.append('reaffectatie %s' % reaff)
+                if a.get('afstandWachtgeld') or 0:
+                    signals.append('afstand-wachtgeld %s' % a.get('afstandWachtgeld'))
+                if a.get('isTao'):
+                    signals.append('TAO (tijdelijk)')
+            if do_ids:
+                signals.insert(0, 'vervanging→dienstonderbreking (%d)' % len(do_ids))
+            if signals:
+                record.has_interruption_signal = True
+                record.interruption_signal = '; '.join(signals)
+
     # Computed Html fields for formatted display
     full_json_string_html = fields.Html(string='JSON Data', compute='_compute_json_html', sanitize=False)
     addresses_html = fields.Html(string='Adressen', compute='_compute_json_html', sanitize=False)
