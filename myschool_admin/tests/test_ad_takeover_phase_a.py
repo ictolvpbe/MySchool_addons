@@ -1633,6 +1633,14 @@ class TestAdTakeoverOuExclusion(TransactionCase):
             self._entry('OU=Nieuw,OU=exs,DC=olvp,DC=int', 'Nieuw')])
         self.assertEqual(self.session.ou_exclusion_ids.name, 'Nieuw')
 
+    def test_notify_chains_soft_reload(self):
+        # Elke knop-actie (via _notify) moet de form verversen, anders zie je
+        # het resultaat (pipeline/top-OU's) pas na handmatig herladen.
+        act = self.session._notify('t', 'm')
+        self.assertEqual(act['tag'], 'display_notification')
+        self.assertEqual(act['params'].get('next'),
+                         {'type': 'ir.actions.client', 'tag': 'soft_reload'})
+
     def test_list_top_ous_includes_containers(self):
         # CN=Users is een container (cn, geen ou) — moet ook verschijnen,
         # met zijn cn als naam, zodat je hem kan uitsluiten.

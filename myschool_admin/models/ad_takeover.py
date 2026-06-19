@@ -581,22 +581,11 @@ class AdTakeoverSession(models.Model):
         if cmds:
             self.ou_exclusion_ids = cmds
 
-        # Een kale display_notification herlaadt de form NIET, dus de zojuist
-        # aangemaakte ou_exclusion_ids-rijen (op de hoofd-sheet) zouden niet
-        # verschijnen. Koppel een soft_reload zodat de lijst meteen vult.
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': _("Top-OU's opgehaald"),
-                'message': _(
-                    '%d OU(s)/container(s) op het hoogste niveau onder de '
-                    'scope. Vink aan wat je wil overslaan.') % len(seen),
-                'type': 'success',
-                'sticky': False,
-                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
-            },
-        }
+        # _notify herlaadt de form (soft_reload) zodat de lijst meteen vult.
+        return self._notify(
+            _("Top-OU's opgehaald"),
+            _('%d OU(s)/container(s) op het hoogste niveau onder de scope. '
+              'Vink aan wat je wil overslaan.') % len(seen))
 
     def _excluded_ou_dns(self):
         """Normalized DNs of the OUs the admin ticked to exclude."""
@@ -3151,6 +3140,11 @@ class AdTakeoverSession(models.Model):
             'tag': 'display_notification',
             'params': {
                 'title': title, 'message': message, 'type': kind, 'sticky': True,
+                # Herstel de huidige form-controller ná de toast, zodat elke
+                # knop-actie haar resultaat meteen toont (pipeline-findings,
+                # top-OU-lijst, gewijzigde tellingen, …) zonder handmatig
+                # verversen. Een kale display_notification herlaadt de form niet.
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
             },
         }
 
