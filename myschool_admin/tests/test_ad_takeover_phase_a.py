@@ -1739,3 +1739,61 @@ class TestAdTakeoverWipe(TransactionCase):
         self.assertFalse(self.session.last_scan_at)
         self.assertEqual(self.session.state, 'draft')
         self.assertEqual(self.session.current_phase, 'preflight')
+
+
+@tagged('post_install', '-at_install')
+class TestAdTakeoverDbDirection(TransactionCase):
+    """Stap 3a: reconciliatie-richting DB volgt AD (rename_db) via betask."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        OrgType = cls.env['myschool.org.type']
+        st = OrgType.search([('name', '=', 'SCHOOL')], limit=1) \
+            or OrgType.create({'name': 'SCHOOL'})
+        cls.org = cls.env['myschool.org'].create({
+            'name': 'DB Naam', 'name_short': 'dbn', 'inst_nr': '990999',
+            'org_type_id': st.id,
+            'ou_fqdn_internal': 'OU=DB Naam,DC=olvp,DC=int',
+        })
+        cls.cfg = cls.env['myschool.ldap.server.config'].create({
+            'name': 'DBdir prod', 'environment': 'prod',
+            'server_url': 'dc01.olvp.int', 'base_dn': 'DC=olvp,DC=int',
+            'bind_dn': 'CN=bind,DC=olvp,DC=int', 'bind_password': 'pw',
+            'active': True,
+        })
+        cls.session = cls.env['myschool.ad.takeover.session'].create({
+            'name': 'DBdir sessie', 'ldap_config_id': cls.cfg.id,
+            'scope_org_id': cls.org.id, 'environment': 'prod',
+        })
+
+    def _ou_finding(self, **vals):
+        defaults = {
+            'session_id': self.session.id, 'kind': 'ou', 'source': 'ad',
+            'ad_dn': 'OU=AD Naam,DC=olvp,DC=int',
+            'external_id': 'OU=AD Naam,DC=olvp,DC=int',
+            'ad_cn': 'AD Naam', 'match_kind': 'matched_in_db',
+            'matched_org_id': self.org.id, 'diff_kind': 'name',
+            'state': 'proposed', 'proposal_kind': 'rename_db',
+        }
+        defaults.update(vals)
+        return self.env['myschool.ad.takeover.finding'].create(defaults)
+
+    def test_rename_db_routes_org_upd_through_pipeline(self):
+        f = self._ou_finding()
+        svc_cls = self.env['myschool.manual.task.service'].__class__
+        with patch.object(svc_cls, 'create_manual_task',
+                          return_value=MagicMock()) as m:
+            f.action_takeover()
+        m.assert_called_once()
+        obj, action, data = m.call_args[0]
+        self.assertEqual(obj, 'ORG')
+        self.assertEqual(action, 'UPD')
+        self.assertEqual(data['org_id'], self.org.id)
+        self.assertEqual(data['vals']['name'], 'AD Naam')
+        self.assertEqual(f.state, 'done')
+
+    def test_rename_db_without_match_raises(self):
+        f = self._ou_finding(matched_org_id=False)
+        with self.assertRaises(UserError):
+            f.action_takeover()

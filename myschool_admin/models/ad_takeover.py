@@ -56,11 +56,21 @@ SOURCE_SELECTION = [
 PROPOSAL_KIND_SELECTION = [
     ('link_only',      'Koppel — DB-record maken, bron ongewijzigd'),
     ('stamp_id',       'Schrijf sap_ref naar bron'),
-    ('rename',         'Hernoem in bron'),
-    ('move',           'Verplaats in bron'),
+    ('rename',         'Hernoem in AD (AD volgt DB)'),
+    ('rename_db',      'Hernoem in DB (DB volgt AD)'),
+    ('move',           'Verplaats in AD (AD volgt DB)'),
+    ('move_db',        'Herplaats in DB (DB volgt AD)'),
     ('membership_add', 'Voeg toe aan groep'),
     ('delete_after',   'Verwijder na migratie'),
     ('ignore',         'Negeer'),
+]
+# Verschil-type per OU-finding (wat de scan detecteerde). Stuurt de
+# "Verschil"-badge en welke resoluties zinvol zijn.
+DIFF_KIND_SELECTION = [
+    ('new',     'Nieuw in AD'),
+    ('name',    'Naam verschilt'),
+    ('place',   'Andere plaats'),
+    ('db_only', 'Enkel in DB'),
 ]
 STATE_SELECTION = [
     ('discovered',        'Ontdekt'),
@@ -727,7 +737,7 @@ class AdTakeoverSession(models.Model):
 
         # Wipe + existing_by_extid construction now happen in the
         # orchestrator (action_scan), shared across all source-scanners.
-        ou_total = ou_match = 0
+        ou_total = ou_match = ou_namediff = 0
         gr_total = gr_match = 0
         us_total = us_match = us_conflict = us_stamp = us_orphan = 0
         skipped = 0
@@ -750,7 +760,39 @@ class AdTakeoverSession(models.Model):
                 continue
             matched_org_id = index['ou_dn_to_org'].get(dn_norm)
             if matched_org_id:
-                ou_match += 1
+                # Gematcht op DN. Toch een verschil als de naam afwijkt →
+                # reconciliatie-finding (de admin kiest de richting).
+                org = self.env['myschool.org'].browse(matched_org_id)
+                ad_name = (self._entry_str(entry, 'ou')
+                           or self._first_rdn_value(dn) or '').strip()
+                db_name = (org.name or '').strip()
+                if ad_name and db_name and ad_name.lower() != db_name.lower():
+                    ou_namediff += 1
+                    new_findings.append({
+                        'session_id': self.id,
+                        'source': 'ad',
+                        'external_id': dn,
+                        'kind': 'ou',
+                        'ad_dn': dn,
+                        'ad_cn': self._entry_str(entry, 'ou'),
+                        'ad_attributes_json': self._entry_to_json(entry),
+                        'match_kind': 'matched_in_db',
+                        'matched_org_id': matched_org_id,
+                        'diff_kind': 'name',
+                        'status': 'investigate',
+                        'state': 'proposed',
+                        # Default: AD volgt DB (DB = bron van waarheid). De admin
+                        # kan in de tab omschakelen naar 'rename_db' (DB volgt AD).
+                        'proposal_kind': 'rename',
+                        'proposal_payload_json': json.dumps({'new_name': db_name}),
+                        'risk_level': 'low',
+                        'notes': _(
+                            'Naam verschilt: AD "%(ad)s" ↔ DB "%(db)s". Kies de '
+                            'richting: hernoem in AD (AD volgt DB) of in DB '
+                            '(DB volgt AD).') % {'ad': ad_name, 'db': db_name},
+                    })
+                else:
+                    ou_match += 1
                 continue
             proposed = self._guess_ou_takeover(dn)
             new_findings.append({
@@ -765,6 +807,7 @@ class AdTakeoverSession(models.Model):
                 'status': 'investigate',           # legacy mirror
                 'state': 'proposed',
                 'proposal_kind': 'link_only',
+                'diff_kind': 'new',
                 'risk_level': 'low',
                 'proposed_parent_org_id': proposed.get('parent_id'),
                 'proposed_org_type_id': proposed.get('type_id'),
@@ -933,7 +976,8 @@ class AdTakeoverSession(models.Model):
         summary = (
             f'AD-scan:\n'
             f'  OUs: {ou_total} gevonden — {ou_match} al gelinkt, '
-            f'{ou_total - ou_match} nieuw.\n'
+            f'{ou_namediff} naamverschil, '
+            f'{ou_total - ou_match - ou_namediff} nieuw.\n'
             f'  Groups: {gr_total} gevonden — {gr_match} al gelinkt, '
             f'{gr_total - gr_match} nieuw.\n'
             f'  Users: {us_total} gevonden — {us_match} al gelinkt, '
@@ -3244,6 +3288,10 @@ class AdTakeoverFinding(models.Model):
     matched_org_id = fields.Many2one(
         'myschool.org', ondelete='set null', index=True,
         string='Gematchte organisatie')
+    diff_kind = fields.Selection(
+        DIFF_KIND_SELECTION, index=True, string='Verschil',
+        help='Wat de scan vond: nieuw in AD, naam/plaats verschilt t.o.v. de '
+             'gematchte DB-org, of enkel in DB (niet meer in AD).')
 
     proposal_kind = fields.Selection(
         PROPOSAL_KIND_SELECTION,
@@ -3460,8 +3508,12 @@ class AdTakeoverFinding(models.Model):
                     rec._apply_stamp_id()
                 elif pk == 'rename':
                     rec._apply_rename()
+                elif pk == 'rename_db':
+                    rec._apply_rename_db()
                 elif pk == 'move':
                     rec._apply_move()
+                elif pk == 'move_db':
+                    rec._apply_move_db()
                 elif pk == 'membership_add':
                     rec._apply_membership_add()
                 elif pk == 'delete_after':
@@ -4065,6 +4117,71 @@ class AdTakeoverFinding(models.Model):
         })
         self._mutate_rename()
         self._mark_done(action_message=_('Hernoemd in %s.') % self.source)
+
+    # ------------------------------------------------------------------
+    # DB-richting — de DB volgt AD (via de betask-pipeline, ORG/UPD)
+    # ------------------------------------------------------------------
+
+    def _apply_rename_db(self):
+        """DB volgt AD: hernoem de gematchte org naar de AD-naam.
+
+        Loopt via de betask-pipeline (MANUAL/ORG/UPD met vals) — die schrijft
+        de org-naam én cascadeert de AD-groep-renames. Geen pilot/rollback:
+        dit is een DB-mutatie, geen AD-bron-write.
+        """
+        self.ensure_one()
+        if not self.matched_org_id:
+            raise UserError(_('Geen gematchte DB-org om te hernoemen.'))
+        new_name = (self.ad_cn or self._first_rdn_value(self.ad_dn) or '').strip()
+        if not new_name:
+            raise UserError(_('Geen AD-naam beschikbaar om naar te hernoemen.'))
+        self.env['myschool.manual.task.service'].create_manual_task(
+            'ORG', 'UPD', {
+                'org_id': self.matched_org_id.id,
+                'vals': {'name': new_name},
+            })
+        self._mark_done(
+            action_message=_('DB-org hernoemd naar AD-naam "%s" (betask).')
+            % new_name)
+
+    def _apply_move_db(self):
+        """DB volgt AD: herplaats de gematchte org onder de AD-parent.
+
+        Resolveert de AD-parent-DN (domein-bewust) naar een DB-org en stuurt
+        een MANUAL/ORG/UPD met new_parent_id door de pipeline.
+        """
+        self.ensure_one()
+        if not self.matched_org_id:
+            raise UserError(_('Geen gematchte DB-org om te herplaatsen.'))
+        parent_dn = self._strip_first_rdn(self.ad_dn)
+        if not parent_dn:
+            raise UserError(_('Kan de AD-parent-DN niet bepalen uit "%s".')
+                            % self.ad_dn)
+        session = self.session_id
+        target_dcs = session._active_domain_dcs()
+
+        def _key(dn):
+            return session._norm_dn(
+                session._rewrite_dn_domain(dn, target_dcs) if target_dcs else dn)
+
+        want = _key(parent_dn)
+        parent_org = self.env['myschool.org'].browse()
+        for org in self.env['myschool.org'].search(
+                [('ou_fqdn_internal', '!=', False)]):
+            if _key(org.ou_fqdn_internal) == want:
+                parent_org = org
+                break
+        if not parent_org:
+            raise UserError(_(
+                'Geen DB-org gevonden voor de AD-parent "%s".') % parent_dn)
+        self.env['myschool.manual.task.service'].create_manual_task(
+            'ORG', 'UPD', {
+                'org_id': self.matched_org_id.id,
+                'new_parent_id': parent_org.id,
+            })
+        self._mark_done(
+            action_message=_('DB-org herplaatst onder "%s" (betask).')
+            % parent_org.name)
 
     # ------------------------------------------------------------------
     # MOVE — snapshot / mutate / restore (Fase C3)

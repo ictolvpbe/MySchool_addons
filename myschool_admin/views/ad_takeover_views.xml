@@ -480,14 +480,22 @@
                                            decoration-info="source == 'ad'"
                                            decoration-warning="source == 'cloud'"
                                            decoration-success="source == 'smartschool'"/>
-                                    <field name="ad_dn" readonly="1"/>
-                                    <field name="ad_cn" readonly="1"/>
+                                    <field name="ad_cn" readonly="1" string="AD-naam"/>
+                                    <field name="matched_org_id" readonly="1"
+                                           string="DB-org" optional="show"/>
+                                    <field name="diff_kind" widget="badge"
+                                           string="Verschil"
+                                           decoration-info="diff_kind == 'new'"
+                                           decoration-warning="diff_kind in ('name', 'place')"
+                                           decoration-danger="diff_kind == 'db_only'"/>
+                                    <field name="ad_dn" readonly="1" optional="hide"/>
                                     <field name="proposed_parent_org_id"
-                                           options="{'no_create': True}"/>
-                                    <field name="proposed_org_type_id"
-                                           options="{'no_create': True}"/>
-                                    <field name="proposal_kind" widget="badge"
+                                           options="{'no_create': True}"
                                            optional="show"/>
+                                    <field name="proposed_org_type_id"
+                                           options="{'no_create': True}"
+                                           optional="hide"/>
+                                    <field name="proposal_kind" string="Resolutie"/>
                                     <field name="state" widget="badge"
                                            decoration-info="state in ('discovered', 'proposed')"
                                            decoration-warning="state in ('approved', 'applied_pilot')"
