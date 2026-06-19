@@ -1448,3 +1448,234 @@ class TestAdTakeoverFaseA(TransactionCase):
         self.assertEqual(f.state, 'applied_pilot')
         snap = json.loads(f.rollback_snapshot_json or '{}')
         self.assertEqual(snap.get('source'), 'ad')
+
+
+@tagged('post_install', '-at_install')
+class TestAdTakeoverDomainRewrite(TransactionCase):
+    """Taak 1: een sessie is omgeving-bewust.
+
+    De DB bewaart één interne AD-DN per org; die kan een test-domein
+    dragen (DC=olvp,DC=test). Een prod-sessie moet de DC-domeincomponent
+    omschrijven naar het domein van de actieve LDAP-config (DC=olvp,DC=int)
+    zodat base_dn en de scan de juiste boom raken.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        Model = cls.env['myschool.ad.takeover.session']
+        cls.Model = Model
+        OrgType = cls.env['myschool.org.type']
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1) \
+            or OrgType.create({'name': 'SCHOOL'})
+        # Org met een TEST-domein-DN in de DB (de bug-conditie).
+        cls.school = cls.env['myschool.org'].create({
+            'name': 'Watermolendreef',
+            'name_short': 'wmd',
+            'inst_nr': '990123',
+            'org_type_id': school_type.id,
+            'ou_fqdn_internal': 'OU=Watermolendreef,OU=Scholen,DC=olvp,DC=test',
+        })
+        cls.prod_cfg = cls.env['myschool.ldap.server.config'].create({
+            'name': 'Prod olvp.int',
+            'environment': 'prod',
+            'server_url': 'dc01.olvp.int',
+            'base_dn': 'DC=olvp,DC=int',
+            'bind_dn': 'CN=bind,DC=olvp,DC=int',
+            'bind_password': 'pw',
+            'active': True,
+        })
+
+    # ---- pure helpers (geen DB) ----
+    def test_dn_domain_dcs_extracts_dc_tail(self):
+        self.assertEqual(
+            self.Model._dn_domain_dcs('OU=a,OU=b,DC=olvp,DC=int'),
+            'DC=olvp,DC=int')
+        self.assertEqual(self.Model._dn_domain_dcs('OU=a,OU=b'), '')
+        self.assertEqual(self.Model._dn_domain_dcs(''), '')
+
+    def test_rewrite_dn_domain_swaps_tail(self):
+        out = self.Model._rewrite_dn_domain(
+            'OU=Watermolendreef,OU=Scholen,DC=olvp,DC=test', 'DC=olvp,DC=int')
+        self.assertEqual(out, 'OU=Watermolendreef,OU=Scholen,DC=olvp,DC=int')
+
+    def test_rewrite_dn_domain_noop_without_tail(self):
+        # Geen DC-tail om te vervangen → ongewijzigd.
+        self.assertEqual(
+            self.Model._rewrite_dn_domain('OU=a,OU=b', 'DC=olvp,DC=int'),
+            'OU=a,OU=b')
+        # Geen target → ongewijzigd.
+        self.assertEqual(
+            self.Model._rewrite_dn_domain('OU=a,DC=x', ''), 'OU=a,DC=x')
+
+    def test_rewrite_dn_domain_pure_domain_dn(self):
+        self.assertEqual(
+            self.Model._rewrite_dn_domain('DC=olvp,DC=test', 'DC=olvp,DC=int'),
+            'DC=olvp,DC=int')
+
+    # ---- compute_base_dn end-to-end ----
+    def test_prod_session_base_dn_rehomed_to_prod_domain(self):
+        session = self.Model.create({
+            'name': 'Prod AD2DB',
+            'ldap_config_id': self.prod_cfg.id,
+            'scope_org_id': self.school.id,
+            'environment': 'prod',
+        })
+        self.assertEqual(
+            session.base_dn,
+            'OU=Watermolendreef,OU=Scholen,DC=olvp,DC=int',
+            'Prod-sessie moet de in DB opgeslagen test-DN naar het '
+            'prod-domein omschrijven.')
+        self.assertNotIn('DC=test', session.base_dn)
+
+
+@tagged('post_install', '-at_install')
+class TestAdTakeoverOuExclusion(TransactionCase):
+    """Taak 2: pre-run OU-picker — sluit OU-takken uit vóór de scan."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Session = cls.env['myschool.ad.takeover.session']
+        OrgType = cls.env['myschool.org.type']
+        school_type = OrgType.search([('name', '=', 'SCHOOL')], limit=1) \
+            or OrgType.create({'name': 'SCHOOL'})
+        cls.school = cls.env['myschool.org'].create({
+            'name': 'Excl School', 'name_short': 'exs', 'inst_nr': '990777',
+            'org_type_id': school_type.id,
+            'ou_fqdn_internal': 'OU=exs,DC=olvp,DC=int',
+        })
+        cls.cfg = cls.env['myschool.ldap.server.config'].create({
+            'name': 'Excl prod', 'environment': 'prod',
+            'server_url': 'dc01.olvp.int', 'base_dn': 'DC=olvp,DC=int',
+            'bind_dn': 'CN=bind,DC=olvp,DC=int', 'bind_password': 'pw',
+            'active': True,
+        })
+        cls.session = cls.Session.create({
+            'name': 'Excl sessie', 'ldap_config_id': cls.cfg.id,
+            'scope_org_id': cls.school.id, 'environment': 'prod',
+        })
+
+    def _entry(self, dn, ou):
+        e = MagicMock()
+        attrs = {'distinguishedName': dn, 'ou': ou, 'description': ''}
+        e.__contains__.side_effect = lambda k, _a=attrs: k in _a
+        e.__getitem__.side_effect = (
+            lambda k, _a=attrs: MagicMock(value=_a.get(k, '')))
+        return e
+
+    # ---- pure subtree-logica ----
+    def test_is_dn_under_any_matches_self_and_subtree(self):
+        S = self.Session
+        ex = {S._norm_dn('OU=Computers,OU=exs,DC=olvp,DC=int')}
+        # de OU zelf
+        self.assertTrue(S._is_dn_under_any(
+            S._norm_dn('OU=Computers,OU=exs,DC=olvp,DC=int'), ex))
+        # een sub-object
+        self.assertTrue(S._is_dn_under_any(
+            S._norm_dn('CN=PC1,OU=Computers,OU=exs,DC=olvp,DC=int'), ex))
+        # buiten de tak
+        self.assertFalse(S._is_dn_under_any(
+            S._norm_dn('CN=Jan,OU=Personeel,OU=exs,DC=olvp,DC=int'), ex))
+
+    def test_excluded_ou_dns_only_ticked(self):
+        self.session.ou_exclusion_ids = [
+            (0, 0, {'dn': 'OU=A,DC=olvp,DC=int', 'name': 'A', 'exclude': True}),
+            (0, 0, {'dn': 'OU=B,DC=olvp,DC=int', 'name': 'B', 'exclude': False}),
+        ]
+        self.assertEqual(
+            self.session._excluded_ou_dns(),
+            {self.Session._norm_dn('OU=A,DC=olvp,DC=int')})
+
+    # ---- action_list_top_ous met gemockte LDAP ----
+    def _run_list(self, entries):
+        ldap_cls = self.env['myschool.ldap.service'].__class__
+        with _mock_ldap_connection() as (mock_conn, ctx_mgr):
+            mock_conn.entries = entries
+            with patch.object(ldap_cls, '_check_ldap3_available',
+                              return_value=None), \
+                 patch.object(ldap_cls, '_get_connection',
+                              return_value=ctx_mgr):
+                self.session.action_list_top_ous()
+
+    def test_list_top_ous_upserts_and_preserves_flags(self):
+        entries = [
+            self._entry('OU=Personeel,OU=exs,DC=olvp,DC=int', 'Personeel'),
+            self._entry('OU=Computers,OU=exs,DC=olvp,DC=int', 'Computers'),
+        ]
+        self._run_list(entries)
+        self.assertEqual(len(self.session.ou_exclusion_ids), 2)
+
+        # admin vinkt Computers aan
+        comp = self.session.ou_exclusion_ids.filtered(
+            lambda r: r.name == 'Computers')
+        comp.exclude = True
+
+        # herscan: geen duplicaten, vinkje blijft behouden
+        self._run_list(entries)
+        self.assertEqual(len(self.session.ou_exclusion_ids), 2)
+        self.assertTrue(self.session.ou_exclusion_ids.filtered(
+            lambda r: r.name == 'Computers').exclude)
+        self.assertEqual(
+            self.session._excluded_ou_dns(),
+            {self.Session._norm_dn('OU=Computers,OU=exs,DC=olvp,DC=int')})
+
+    def test_list_top_ous_drops_vanished(self):
+        self._run_list([
+            self._entry('OU=Oud,OU=exs,DC=olvp,DC=int', 'Oud')])
+        self.assertEqual(len(self.session.ou_exclusion_ids), 1)
+        # volgende scan: OU verdwenen → rij weg
+        self._run_list([
+            self._entry('OU=Nieuw,OU=exs,DC=olvp,DC=int', 'Nieuw')])
+        self.assertEqual(self.session.ou_exclusion_ids.name, 'Nieuw')
+
+
+@tagged('post_install', '-at_install')
+class TestAdTakeoverWipe(TransactionCase):
+    """Wis-knop: blanco slate voor een nieuwe run."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        OrgType = cls.env['myschool.org.type']
+        st = OrgType.search([('name', '=', 'SCHOOL')], limit=1) \
+            or OrgType.create({'name': 'SCHOOL'})
+        cls.school = cls.env['myschool.org'].create({
+            'name': 'Wipe School', 'name_short': 'wps', 'inst_nr': '990888',
+            'org_type_id': st.id, 'ou_fqdn_internal': 'OU=wps,DC=olvp,DC=int',
+        })
+        cls.cfg = cls.env['myschool.ldap.server.config'].create({
+            'name': 'Wipe prod', 'environment': 'prod',
+            'server_url': 'dc01.olvp.int', 'base_dn': 'DC=olvp,DC=int',
+            'bind_dn': 'CN=bind,DC=olvp,DC=int', 'bind_password': 'pw',
+            'active': True,
+        })
+        cls.session = cls.env['myschool.ad.takeover.session'].create({
+            'name': 'Wipe sessie', 'ldap_config_id': cls.cfg.id,
+            'scope_org_id': cls.school.id, 'environment': 'prod',
+        })
+
+    def test_wipe_all_clears_findings_ous_and_resets_state(self):
+        # vul wat data
+        self.env['myschool.ad.takeover.finding'].create({
+            'session_id': self.session.id, 'kind': 'ou', 'source': 'ad',
+            'ad_dn': 'OU=Oud,OU=wps,DC=olvp,DC=test',
+            'external_id': 'OU=Oud,OU=wps,DC=olvp,DC=test',
+            'state': 'done', 'proposal_kind': 'link_only',
+        })
+        self.session.ou_exclusion_ids = [
+            (0, 0, {'dn': 'OU=Computers,OU=wps,DC=olvp,DC=test',
+                    'name': 'Computers', 'exclude': True})]
+        self.session.write({'scan_summary': 'oude scan',
+                            'state': 'in_progress', 'current_phase': 'link'})
+        self.assertTrue(self.session.finding_ids)
+        self.assertTrue(self.session.ou_exclusion_ids)
+
+        self.session.action_wipe_all()
+
+        self.assertFalse(self.session.finding_ids)
+        self.assertFalse(self.session.ou_exclusion_ids)
+        self.assertFalse(self.session.scan_summary)
+        self.assertFalse(self.session.last_scan_at)
+        self.assertEqual(self.session.state, 'draft')
+        self.assertEqual(self.session.current_phase, 'preflight')

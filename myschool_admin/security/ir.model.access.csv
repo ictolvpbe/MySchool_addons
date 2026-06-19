@@ -48,3 +48,4 @@ access_bulk_cleanup_wizard,myschool.bulk.cleanup.wizard,model_myschool_bulk_clea
 access_ad_takeover_session,myschool.ad.takeover.session,model_myschool_ad_takeover_session,myschool_core.group_myschool_core_admin,1,1,1,1
 access_ad_takeover_finding,myschool.ad.takeover.finding,model_myschool_ad_takeover_finding,myschool_core.group_myschool_core_admin,1,1,1,1
 access_ad_takeover_diff_wizard,myschool.ad.takeover.diff.wizard,model_myschool_ad_takeover_diff_wizard,myschool_core.group_myschool_core_admin,1,1,1,1
+access_ad_takeover_ou_exclusion,myschool.ad.takeover.ou.exclusion,model_myschool_ad_takeover_ou_exclusion,myschool_core.group_myschool_core_admin,1,1,1,1

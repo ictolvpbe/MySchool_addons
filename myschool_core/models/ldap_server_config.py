@@ -58,7 +58,7 @@ class LdapServerConfig(models.Model):
         default='prod',
         index=True,
         string='Omgeving',
-        help='Markeer deze config als productie- of test-omgeving. AD-takeover '
+        help='Markeer deze config als productie- of test-omgeving. AD2DB '
              'sessies binden zich aan één omgeving en kunnen voorstellen '
              'eerst op test draaien voordat ze naar prod gepromoot worden.'
     )
@@ -314,6 +314,20 @@ class LdapServerConfig(models.Model):
                 if others:
                     super(type(self), others).write({'active': False})
         return super().write(vals)
+
+    def copy_data(self, default=None):
+        # A duplicate must NOT inherit ``active=True``: the single-active-per-
+        # environment rule (create/_check_single_active_per_env) would silently
+        # archive the original server when the copy is created. Make copies
+        # inactive with a distinct name so the source stays untouched; the admin
+        # activates the copy deliberately (which then archives the old one).
+        default = dict(default or {})
+        default.setdefault('active', False)
+        vals_list = super().copy_data(default=default)
+        if 'name' not in default:
+            for rec, vals in zip(self, vals_list):
+                vals['name'] = _('%s (kopie)', rec.name)
+        return vals_list
 
     # =========================================================================
     # Helper Methods

@@ -200,11 +200,11 @@
                     </block>
 
                     <block title="Migratie &amp; Onderhoud" name="ms_admin_migration">
-                        <setting string="AD-takeover"
-                                 help="Migratie-assistent: ontdek AD-objecten die nog niet in de DB zitten en beslis per item.">
+                        <setting string="AD2DB"
+                                 help="Migratie-assistent: ontdek AD-objecten die nog niet in de DB zitten en voeg ze per item samen in de database.">
                             <button name="action_open_ad_takeover"
                                     type="object" icon="fa-windows"
-                                    string="Open AD-takeover" class="btn-link"/>
+                                    string="Open AD2DB" class="btn-link"/>
                         </setting>
                         <setting string="Domeinnamen wijzigen"
                                  help="Bulk-rename van het interne of externe AD/Google-domein over alle orgs en personen.">

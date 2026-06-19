@@ -16,7 +16,7 @@ _logger = logging.getLogger(__name__)
 
 class AdTakeoverDiffWizard(models.TransientModel):
     _name = 'myschool.ad.takeover.diff.wizard'
-    _description = 'AD-Takeover Diff Preview'
+    _description = 'AD2DB Diff Preview'
 
     finding_id = fields.Many2one(
         'myschool.ad.takeover.finding', required=True, ondelete='cascade')

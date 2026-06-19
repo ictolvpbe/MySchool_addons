@@ -486,7 +486,7 @@
 
 
     <menuitem id="menu_ad_takeover"
-              name="AD-takeover (migratie)"
+              name="AD2DB (migratie)"
               parent="menu_maint_bulk"
               action="action_ad_takeover_session"
               sequence="60"

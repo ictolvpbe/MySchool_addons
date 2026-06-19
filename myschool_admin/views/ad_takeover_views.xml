@@ -244,14 +244,14 @@
     </record>
 
     <record id="action_ad_takeover_finding" model="ir.actions.act_window">
-        <field name="name">AD-takeover findings</field>
+        <field name="name">AD2DB findings</field>
         <field name="res_model">myschool.ad.takeover.finding</field>
         <field name="view_mode">kanban,list,form</field>
         <field name="search_view_id" ref="view_ad_takeover_finding_search"/>
         <field name="context">{'search_default_gb_state': 1}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
-                Geen findings — start een AD-takeover sessie en draai
+                Geen findings — start een AD2DB sessie en draai
                 "Scan" om de pipeline te vullen.
             </p>
         </field>
@@ -296,8 +296,12 @@
         <field name="name">myschool.ad.takeover.session.form</field>
         <field name="model">myschool.ad.takeover.session</field>
         <field name="arch" type="xml">
-            <form string="AD-takeover sessie">
+            <form string="AD2DB sessie">
                 <header>
+                    <button name="action_list_top_ous" type="object"
+                            string="Toon top-OU's" class="btn-secondary"
+                            icon="fa-sitemap"
+                            invisible="not ldap_config_id"/>
                     <button name="action_scan" type="object"
                             string="Scan AD" class="btn-primary"
                             icon="fa-search"/>
@@ -306,7 +310,7 @@
                             icon="fa-stethoscope"
                             invisible="not last_scan_at"/>
                     <button name="action_apply_pending_takeovers" type="object"
-                            string="Pas takeovers toe" class="btn-success"
+                            string="Pas AD2DB toe" class="btn-success"
                             icon="fa-check"
                             invisible="takeover_pending_count == 0"
                             confirm="Alle items met status 'takeover_pending' worden naar de DB gesynced."/>
@@ -319,7 +323,7 @@
                             string="Verwijder uit AD" class="btn-danger"
                             icon="fa-trash"
                             invisible="delete_after_count == 0"
-                            confirm="LET OP: alle items gemarkeerd 'verwijder na migratie' worden definitief uit AD verwijderd. Bevestig alleen als alle takeovers afgerond en gecontroleerd zijn."/>
+                            confirm="LET OP: alle items gemarkeerd 'verwijder na migratie' worden definitief uit AD verwijderd. Bevestig alleen als alle AD2DB-acties afgerond en gecontroleerd zijn."/>
                     <button name="action_advance_phase" type="object"
                             string="Volgende fase →" class="btn-warning"
                             icon="fa-arrow-right"
@@ -334,6 +338,10 @@
                             string="Audit-rapport (CSV)" class="btn-secondary"
                             icon="fa-download"
                             invisible="finding_count == 0"/>
+                    <button name="action_wipe_all" type="object"
+                            string="Wis alle data" class="btn-danger"
+                            icon="fa-eraser"
+                            confirm="LET OP: alle verzamelde findings (incl. genomen beslissingen), de top-OU-lijst en de rapporten van deze sessie worden definitief verwijderd. De configuratie (bron/scope/omgeving) blijft. Daarna kan je een blanco scan starten."/>
                     <button name="action_clone_to_test" type="object"
                             string="Stage in test ⤵" class="btn-warning"
                             icon="fa-copy"
@@ -410,6 +418,23 @@
                                    string="STAMP_ID openstaand"
                                    invisible="stamp_id_pending_count == 0"/>
                         </group>
+                    </group>
+
+                    <group string="OU-uitsluiting (optioneel)"
+                           invisible="not ldap_config_id">
+                        <div class="text-muted" colspan="2">
+                            Klik <strong>"Toon top-OU's"</strong> om de OU's op het
+                            hoogste niveau onder de scope op te halen. Vink een OU
+                            aan om die <strong>én al haar sub-OU's</strong> over te
+                            slaan bij de scan (bv. OU's met computeraccounts).
+                        </div>
+                        <field name="ou_exclusion_ids" nolabel="1" colspan="2">
+                            <list editable="bottom" decoration-muted="not exclude">
+                                <field name="exclude" widget="boolean_toggle"/>
+                                <field name="name" readonly="1"/>
+                                <field name="dn" readonly="1"/>
+                            </list>
+                        </field>
                     </group>
 
                     <group invisible="not scan_summary">
@@ -658,7 +683,7 @@
     </record>
 
     <record id="action_ad_takeover_session" model="ir.actions.act_window">
-        <field name="name">AD-takeover</field>
+        <field name="name">AD2DB</field>
         <field name="res_model">myschool.ad.takeover.session</field>
         <field name="view_mode">list,form</field>
         <field name="help" type="html">

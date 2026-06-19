@@ -105,10 +105,10 @@ LEGACY_STATUS_MIGRATION = {
 
 class AdTakeoverSession(models.Model):
     _name = 'myschool.ad.takeover.session'
-    _description = 'AD Takeover Session'
+    _description = 'AD2DB Session'
     _order = 'create_date desc'
 
-    name = fields.Char(required=True, default='Nieuwe AD-takeover sessie')
+    name = fields.Char(required=True, default='Nieuwe AD2DB sessie')
     # Fase B: ldap_config_id is no longer strictly required — a session
     # can scan AD, Cloud, or both. At least one source must be selected
     # (enforced via _check_at_least_one_source).
@@ -150,10 +150,14 @@ class AdTakeoverSession(models.Model):
         help='Scan-scope is SUBTREE onder ou_fqdn_internal van deze org '
              '(AD) en orgUnitPath (Cloud). Strikt — geen scan buiten '
              'deze tak.')
+    # NIET store=True: base_dn/cloud_ou_path zijn afgeleid van de scope-org
+    # én de actieve config (incl. domein-rewrite). Een opgeslagen waarde wordt
+    # niet automatisch herberekend bij een code-upgrade en blijft dan stale
+    # (bv. dc=olvp,dc=test op een prod-sessie). Live berekenen = altijd correct.
     base_dn = fields.Char(
-        compute='_compute_base_dn', store=True, readonly=True)
+        compute='_compute_base_dn', readonly=True)
     cloud_ou_path = fields.Char(
-        compute='_compute_cloud_ou_path', store=True, readonly=True,
+        compute='_compute_cloud_ou_path', readonly=True,
         string='Cloud orgUnitPath')
 
     state = fields.Selection([
@@ -212,6 +216,14 @@ class AdTakeoverSession(models.Model):
         'myschool.ad.takeover.finding', 'session_id',
         domain=[('kind', '=', 'user')])
 
+    # Pre-run OU-exclusion: top-level OUs discovered under the scope; the
+    # admin ticks the ones to skip. The scan then drops every object in an
+    # excluded OU subtree (e.g. computer-account OUs) before it becomes a
+    # finding. See action_list_top_ous / _excluded_ou_dns.
+    ou_exclusion_ids = fields.One2many(
+        'myschool.ad.takeover.ou.exclusion', 'session_id',
+        string="Top-OU's")
+
     # Phase-filtered finding lists. Used by the per-phase notebook tabs
     # in the new UI (commit 4) so the admin only sees findings relevant
     # to the current phase.
@@ -268,10 +280,16 @@ class AdTakeoverSession(models.Model):
         help='STAMP_ID-voorstellen die nog wachten op approve/apply — '
              'blokkeren de overgang van pre-flight naar de koppel-fase.')
 
-    @api.depends('scope_org_id.ou_fqdn_internal')
+    @api.depends('scope_org_id.ou_fqdn_internal', 'ldap_config_id.base_dn')
     def _compute_base_dn(self):
         for rec in self:
-            rec.base_dn = (rec.scope_org_id.ou_fqdn_internal or '').strip()
+            raw = (rec.scope_org_id.ou_fqdn_internal or '').strip()
+            # Re-home the scope DN onto the active config's domain. The DB
+            # may store a test-domain DN (DC=olvp,DC=test); a prod session
+            # must scan the prod tree (DC=olvp,DC=int), not the stored one.
+            target_dcs = rec._active_domain_dcs()
+            rec.base_dn = (rec._rewrite_dn_domain(raw, target_dcs)
+                           if target_dcs else raw)
 
     @api.depends('scope_org_id', 'google_workspace_config_id')
     def _compute_cloud_ou_path(self):
@@ -461,6 +479,128 @@ class AdTakeoverSession(models.Model):
             _('Scan voltooid'), scan_summary or _('Geen findings.'),
             kind='success')
 
+    def action_wipe_all(self):
+        """Hard-reset the session to a blank slate for a fresh run.
+
+        Removes ALL collected data — findings (any state, incl. human
+        decisions), the top-OU exclusion list, scan summary and reports —
+        and resets the session to draft/preflight. The configuration
+        (LDAP/Google source, scope, environment) is kept. Use this when a
+        previous scan collected wrong-domain data (e.g. DC=…,DC=test on a
+        prod session) and you want to rescan from scratch.
+
+        These are admin-tooling scratch records, not core business models,
+        so a direct unlink is appropriate (no betask pipeline).
+        """
+        self.ensure_one()
+        n_find = len(self.finding_ids)
+        n_ou = len(self.ou_exclusion_ids)
+        self.finding_ids.unlink()
+        self.ou_exclusion_ids.unlink()
+        self.write({
+            'scan_summary': False,
+            'preflight_report_html': False,
+            'preflight_report_at': False,
+            'clone_report_html': False,
+            'clone_report_at': False,
+            'last_scan_at': False,
+            'state': 'draft',
+            'current_phase': 'preflight',
+        })
+        return self._notify(
+            _('Sessie leeggemaakt'),
+            _('%(f)d finding(s) en %(o)d OU-rij(en) verwijderd. De sessie '
+              'staat terug op draft — start een nieuwe scan.')
+            % {'f': n_find, 'o': n_ou},
+            kind='success')
+
+    # ------------------------------------------------------------------
+    # Pre-run OU-exclusion (top-OU picker)
+    # ------------------------------------------------------------------
+
+    def action_list_top_ous(self):
+        """ONELEVEL scan: list the OUs directly under the scope base_dn.
+
+        Upserts ``ou_exclusion_ids`` so the admin can tick which top-level
+        OUs (and their whole subtree) to skip. Existing tick-marks for OUs
+        that still exist are preserved; rows for vanished OUs are dropped.
+        """
+        self.ensure_one()
+        if not self.ldap_config_id:
+            raise UserError(_('Geen LDAP-server gekozen voor deze sessie.'))
+        if not self.base_dn:
+            raise UserError(_(
+                'Scope-org "%s" heeft geen base_dn — kan geen top-OUs '
+                'ophalen.') % self.scope_org_id.name)
+
+        ldap_service = self.env['myschool.ldap.service']
+        ldap_service._check_ldap3_available()
+        rows = []
+        try:
+            with ldap_service._get_connection(self.ldap_config_id) as conn:
+                conn.search(
+                    search_base=self.base_dn,
+                    search_filter='(objectClass=organizationalUnit)',
+                    search_scope='LEVEL',
+                    attributes=['distinguishedName', 'ou', 'description'])
+                rows = list(conn.entries)
+        except Exception as e:
+            _logger.exception('[AD2DB] top-OU list failed')
+            raise UserError(_('Top-OU-scan mislukt: %s') % e)
+
+        existing = {self._norm_dn(r.dn): r for r in self.ou_exclusion_ids}
+        seen = set()
+        cmds = []
+        for entry in rows:
+            dn = self._entry_str(entry, 'distinguishedName')
+            if not dn:
+                continue
+            key = self._norm_dn(dn)
+            seen.add(key)
+            if key in existing:
+                continue  # preserve the admin's exclude-flag
+            cmds.append((0, 0, {
+                'dn': dn,
+                'name': self._entry_str(entry, 'ou') or dn,
+                'exclude': False,
+            }))
+        for key, rec in existing.items():
+            if key not in seen:
+                cmds.append((2, rec.id))
+        if cmds:
+            self.ou_exclusion_ids = cmds
+
+        # Een kale display_notification herlaadt de form NIET, dus de zojuist
+        # aangemaakte ou_exclusion_ids-rijen (op de hoofd-sheet) zouden niet
+        # verschijnen. Koppel een soft_reload zodat de lijst meteen vult.
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _("Top-OU's opgehaald"),
+                'message': _(
+                    '%d OU(s) op het hoogste niveau onder de scope. Vink aan '
+                    'wat je wil overslaan.') % len(seen),
+                'type': 'success',
+                'sticky': False,
+                'next': {'type': 'ir.actions.client', 'tag': 'soft_reload'},
+            },
+        }
+
+    def _excluded_ou_dns(self):
+        """Normalized DNs of the OUs the admin ticked to exclude."""
+        self.ensure_one()
+        return {self._norm_dn(r.dn)
+                for r in self.ou_exclusion_ids if r.exclude and r.dn}
+
+    @staticmethod
+    def _is_dn_under_any(dn_norm, excluded_norm):
+        """True if dn_norm equals or sits under any excluded (normalized) DN."""
+        for ex in excluded_norm:
+            if dn_norm == ex or dn_norm.endswith(',' + ex):
+                return True
+        return False
+
     # ------------------------------------------------------------------
     # Cross-source linker
     # ------------------------------------------------------------------
@@ -572,7 +712,11 @@ class AdTakeoverSession(models.Model):
         ou_total = ou_match = 0
         gr_total = gr_match = 0
         us_total = us_match = us_conflict = us_stamp = us_orphan = 0
+        skipped = 0
         new_findings = []
+
+        # Pre-run exclusions: skip every object inside an excluded OU subtree.
+        excluded = self._excluded_ou_dns()
 
         # ---------- OUs ----------
         for entry in ou_rows:
@@ -581,6 +725,9 @@ class AdTakeoverSession(models.Model):
             if not dn:
                 continue
             dn_norm = self._norm_dn(dn)
+            if excluded and self._is_dn_under_any(dn_norm, excluded):
+                skipped += 1
+                continue
             if ('ad', dn_norm) in existing_by_extid:
                 continue
             matched_org_id = index['ou_dn_to_org'].get(dn_norm)
@@ -612,6 +759,9 @@ class AdTakeoverSession(models.Model):
             if not dn:
                 continue
             dn_norm = self._norm_dn(dn)
+            if excluded and self._is_dn_under_any(dn_norm, excluded):
+                skipped += 1
+                continue
             if ('ad', dn_norm) in existing_by_extid:
                 continue
             matched_org_id = index['group_dn_to_org'].get(dn_norm)
@@ -648,6 +798,9 @@ class AdTakeoverSession(models.Model):
             if not dn:
                 continue
             dn_norm = self._norm_dn(dn)
+            if excluded and self._is_dn_under_any(dn_norm, excluded):
+                skipped += 1
+                continue
             if ('ad', dn_norm) in existing_by_extid:
                 continue
 
@@ -769,6 +922,10 @@ class AdTakeoverSession(models.Model):
             f'{us_stamp} STAMP_ID, {us_orphan} orphan, '
             f'{us_conflict} identity-conflict.'
         )
+        if excluded:
+            summary += (
+                f'\n  Overgeslagen (uitgesloten OU-takken): {skipped} object(en) '
+                f'in {len(excluded)} OU-tak(ken).')
         return new_findings, summary
 
     # ------------------------------------------------------------------
@@ -1216,7 +1373,7 @@ class AdTakeoverSession(models.Model):
         csv_bytes = buf.getvalue().encode('utf-8')
         ts = fields.Datetime.now().strftime('%Y%m%d-%H%M%S')
         safe_name = (self.name or 'sessie').replace('/', '_').replace(' ', '_')
-        filename = f'ad-takeover-{safe_name}-{ts}.csv'
+        filename = f'ad2db-{safe_name}-{ts}.csv'
 
         attachment = self.env['ir.attachment'].create({
             'name': filename,
@@ -2374,7 +2531,7 @@ class AdTakeoverSession(models.Model):
     def _open_session(self, session):
         return {
             'type': 'ir.actions.act_window',
-            'name': _('AD-takeover sessie'),
+            'name': _('AD2DB sessie'),
             'res_model': 'myschool.ad.takeover.session',
             'res_id': session.id,
             'view_mode': 'form',
@@ -2745,11 +2902,21 @@ class AdTakeoverSession(models.Model):
                 if self.google_workspace_config_id else None)
         gcfg = self.google_workspace_config_id
 
+        # Re-home DB-stored DNs onto the active config's domain before
+        # keying, so prod AD DNs match DB records that were stamped with
+        # a different (e.g. test) domain. No-op for a test session whose
+        # DB DNs already carry the test domain.
+        target_dcs = self._active_domain_dcs()
+
+        def _dn_key(dn):
+            return self._norm_dn(self._rewrite_dn_domain(dn, target_dcs)
+                                 if target_dcs else dn)
+
         for org in Org.search([]):
             if org.ou_fqdn_internal:
-                ou_dn_to_org[self._norm_dn(org.ou_fqdn_internal)] = org.id
+                ou_dn_to_org[_dn_key(org.ou_fqdn_internal)] = org.id
             for f in ('com_group_fqdn_internal', 'sec_group_fqdn_internal'):
-                v = self._norm_dn(getattr(org, f, '') or '')
+                v = _dn_key(getattr(org, f, '') or '')
                 if v:
                     group_dn_to_org[v] = org.id
             if gsvc and gcfg:
@@ -2767,7 +2934,7 @@ class AdTakeoverSession(models.Model):
 
         for p in Person.search([]):
             if p.person_fqdn_internal:
-                user_dn_to_person[self._norm_dn(p.person_fqdn_internal)] = p.id
+                user_dn_to_person[_dn_key(p.person_fqdn_internal)] = p.id
             if p.email_cloud:
                 user_mail_to_person[p.email_cloud.strip().lower()] = p.id
             if p.sap_ref:
@@ -2897,6 +3064,46 @@ class AdTakeoverSession(models.Model):
                 parts.append(rdn.strip())
         return ','.join(parts).lower()
 
+    @staticmethod
+    def _dn_domain_dcs(dn):
+        """Return the ``DC=...`` (domain) suffix of a DN, '' if none.
+
+        ``OU=a,OU=b,DC=olvp,DC=int`` → ``DC=olvp,DC=int``. The DC-tail is
+        the only part that differs between the test (``DC=olvp,DC=test``)
+        and prod (``DC=olvp,DC=int``) Active Directory trees.
+        """
+        if not dn:
+            return ''
+        dcs = [p.strip() for p in dn.split(',')
+               if p.strip().lower().startswith('dc=')]
+        return ','.join(dcs)
+
+    @classmethod
+    def _rewrite_dn_domain(cls, dn, target_dcs):
+        """Swap the ``DC=...`` domain tail of ``dn`` for ``target_dcs``.
+
+        Keeps the OU/CN structure intact, only re-homes the DN onto the
+        target domain. Returns ``dn`` unchanged when either side lacks a
+        DC-tail (nothing safe to rewrite). This makes a session
+        environment-aware: a prod session re-homes DB-stored DNs (which
+        may carry the test domain) onto the active config's prod domain
+        so the scan hits the right tree and matches correctly.
+        """
+        if not dn or not target_dcs:
+            return dn or ''
+        parts = dn.split(',')
+        non_dc = [p for p in parts if not p.strip().lower().startswith('dc=')]
+        if len(non_dc) == len(parts):
+            return dn  # no DC-tail present — leave as-is
+        return ','.join(non_dc + [target_dcs]) if non_dc else target_dcs
+
+    def _active_domain_dcs(self):
+        """DC-tail of the session's active LDAP config, '' if no AD source."""
+        self.ensure_one()
+        if not self.ldap_config_id:
+            return ''
+        return self._dn_domain_dcs(self.ldap_config_id.base_dn or '')
+
     # ------------------------------------------------------------------
     # LDAP entry helpers
     # ------------------------------------------------------------------
@@ -2939,7 +3146,7 @@ class AdTakeoverSession(models.Model):
 
 class AdTakeoverFinding(models.Model):
     _name = 'myschool.ad.takeover.finding'
-    _description = 'AD Takeover Finding'
+    _description = 'AD2DB Finding'
     _order = 'kind, ad_dn'
     _rec_name = 'ad_dn'
 
@@ -4206,3 +4413,25 @@ class AdTakeoverFinding(models.Model):
             return None
         rdn = dn.split(',', 1)[0]
         return rdn.split('=', 1)[1].strip() if '=' in rdn else None
+
+
+class AdTakeoverOuExclusion(models.Model):
+    """Top-level OU discovered under a session's scope.
+
+    Populated by ``AdTakeoverSession.action_list_top_ous`` (a ONELEVEL
+    scan). When ``exclude`` is ticked, the AD scan drops that OU and its
+    entire subtree before any finding is created — useful for OUs that
+    only hold computer accounts or other out-of-scope objects.
+    """
+    _name = 'myschool.ad.takeover.ou.exclusion'
+    _description = 'AD2DB OU-uitsluiting'
+    _order = 'dn'
+
+    session_id = fields.Many2one(
+        'myschool.ad.takeover.session',
+        required=True, ondelete='cascade', index=True)
+    dn = fields.Char(string='OU DN', required=True)
+    name = fields.Char(string='OU')
+    exclude = fields.Boolean(
+        string='Uitsluiten', default=False,
+        help="Sla deze OU én al haar sub-OU's over bij de scan.")
