@@ -64,6 +64,7 @@ class InformatService(models.AbstractModel):
     EMPLOYEES_API_URL = 'https://personeelsapi.informatsoftware.be/employees'
     EMPLOYEE_ASSIGNMENTS_API_URL = 'https://personeelsapi.informatsoftware.be/employees/assignments'
     EMPLOYEE_INTERRUPTIONS_API_URL = 'https://personeelsapi.informatsoftware.be/employees/interruptions'
+    EMPLOYEE_OWNFIELDS_API_URL = 'https://personeelsapi.informatsoftware.be/employees/ownfields'
 
     # =========================================================================
     # BeTask Configuration - ADJUST THESE TO MATCH YOUR MODEL!
@@ -383,6 +384,12 @@ class InformatService(models.AbstractModel):
                 # Geen tussen-commit meer: commit gebeurt collectief
                 # aan het einde via sap_sync_service.finalise_analysis.
 
+            # Eigen velden (bv. ActiefOpSchool) — één keer ophalen, gebruikt door
+            # zowel de create-gate (Phase 1b) als de policy (Phase 1c).
+            all_imported_ownfields = None
+            if config.sync_employees:
+                all_imported_ownfields = self._get_employee_ownfields_from_informat(dev_mode)
+
             # =====================================================
             # PHASE 1b: Employee Processing
             # =====================================================
@@ -407,7 +414,8 @@ class InformatService(models.AbstractModel):
 
                 if not self._sync_employees(
                     all_imported_employees,
-                    all_imported_employee_assignments
+                    all_imported_employee_assignments,
+                    all_imported_ownfields,
                 ):
                     self._create_sys_error("SAPSYNC-900", "Error in _sync_employees")
                     run.write({
@@ -428,7 +436,7 @@ class InformatService(models.AbstractModel):
             # docs/VERLOFSTELSEL_INTEGRATIE_ANALYSE.md.
             if config.sync_employees:
                 try:
-                    self._apply_leave_policy(dev_mode)
+                    self._apply_leave_policy(dev_mode, all_imported_ownfields)
                 except Exception:
                     self._create_sys_error(
                         "SAPSYNC-900", f"Phase Verlof: {traceback.format_exc()}")
@@ -1192,6 +1200,96 @@ class InformatService(models.AbstractModel):
             self._create_sys_error("BETASK-900", f"{procedure_name}: {traceback.format_exc()}")
             return None
 
+    def _get_employee_ownfields_from_informat(self, dev_mode: bool) -> Optional[Dict[str, str]]:
+        """Retrieve Employee Own fields (eigen/vrije velden, bv. ActiefOpSchool).
+
+        Mirrors the assignments/interruptions fetch but hits
+        ``/employees/ownfields``. Read-only.
+
+        @param dev_mode: read local ``dev-ownfields-{instNr}.json`` if True
+        @return: dict keyed ``{personId}&{instNr}&{vvId}`` -> ownfield JSON,
+                 or None on error.
+        """
+        procedure_name = '_get_employee_ownfields_from_informat'
+        all_ownfields: Dict[str, str] = {}
+
+        self._create_sys_event("SAPSYNC-001", "Start importing Employee Own field information")
+
+        try:
+            current_school_year = self.env['myschool.settings.item'].get('CurrentSchoolYear')
+            bearer_token = None
+            if not dev_mode:
+                bearer_token = self._get_bearer_token()
+                if not bearer_token:
+                    return None
+
+            Org = self.env['myschool.org']
+            schools = self._informat_schools(Org)
+
+            def _store(items, inst_nr):
+                for of in items:
+                    person_id = of.get('personId')
+                    vv_id = of.get('vvId') or of.get('naam') or ''
+                    if person_id:
+                        all_ownfields[f"{person_id}&{inst_nr}&{vv_id}"] = json.dumps(of)
+
+            for school in schools:
+                institution_number = school.inst_nr
+                if dev_mode:
+                    json_file_path = self._get_file_path(
+                        f"dev-ownfields-{institution_number}.json", dev_mode=True)
+                    data = self._read_json_file(json_file_path)
+                    if data:
+                        _store(data, institution_number)
+                    else:
+                        self._create_sys_event("SAPSYNC-900", f"File not found: {json_file_path}")
+                else:
+                    file_suffix = datetime.now().strftime('%Y%m%d%H%M%S.json')
+                    json_file_path = self._get_file_path(
+                        f"ownfields-{institution_number}-{file_suffix}", dev_mode=False)
+                    response = requests.get(
+                        f"{self.EMPLOYEE_OWNFIELDS_API_URL}?schoolyear={current_school_year}",
+                        headers={
+                            'Authorization': f'Bearer {bearer_token}',
+                            'Api-Version': '2',
+                            'InstituteNo': institution_number,
+                            'Accept': 'application/json',
+                        },
+                        timeout=60,
+                    )
+                    if response.status_code != 200:
+                        self._create_sys_error("BETASK-900", f"{procedure_name}: Problem retrieving Own field Data")
+                        continue
+                    if response.text and response.text != '[]':
+                        self._write_json_file(json_file_path, response.text)
+                        _store(response.json(), institution_number)
+
+            self._create_sys_event("SAPSYNC-001",
+                                   f"Employee own fields retrieved ({len(all_ownfields)})")
+            return all_ownfields
+
+        except Exception:
+            self._create_sys_error("BETASK-900", f"{procedure_name}: {traceback.format_exc()}")
+            return None
+
+    # Waarden van het eigen veld 'ActiefOpSchool' die als "niet actief" gelden.
+    INACTIVE_AT_SCHOOL_VALUES = {'neen', 'nee', 'no', 'false', 'onwaar', '0', 'n'}
+
+    def _ownfield_value(self, ownfields, naam):
+        """Haal de waarde van een genoemd eigen veld uit een lijst ownfield-dicts."""
+        target = (naam or '').strip().lower()
+        for of in (ownfields or []):
+            if isinstance(of, dict) and (of.get('naam') or '').strip().lower() == target:
+                return of.get('waarde')
+        return None
+
+    def _ownfields_says_inactive(self, ownfields):
+        """True als het eigen veld 'ActiefOpSchool' op Neen (e.d.) staat."""
+        val = self._ownfield_value(ownfields, 'ActiefOpSchool')
+        if val is None:
+            return False  # veld niet gezet → geen uitspraak → actief
+        return str(val).strip().lower() in self.INACTIVE_AT_SCHOOL_VALUES
+
     # =========================================================================
     # Verlofstelsel / interruption classification
     # =========================================================================
@@ -1347,7 +1445,7 @@ class InformatService(models.AbstractModel):
                     'reason': 'Opdracht op voltijds verlof',
                 }), '')
 
-    def _apply_leave_policy(self, dev_mode):
+    def _apply_leave_policy(self, dev_mode, all_imported_ownfields=None):
         """Phase 1c: haal de interruptions op en pas het verlof-beleid toe op
         elke actieve employee.
 
@@ -1357,12 +1455,14 @@ class InformatService(models.AbstractModel):
         echt door te voeren.
         """
         SettingsItem = self.env['myschool.settings.item']
-        enforce = bool(SettingsItem.get('LeavePolicyEnforce', default=False))
+        leave_enforce = bool(SettingsItem.get('LeavePolicyEnforce', default=False))
+        ownfield_enforce = bool(SettingsItem.get('ActiefOpSchoolEnforce', default=False))
 
+        # --- interruptions (verlofstelsels) ---
         all_interruptions = self._get_employee_interruptions_from_informat(dev_mode)
         if all_interruptions is None:
             self._create_sys_error("SAPSYNC-900", "Phase Verlof: interruptions-fetch faalde")
-            return
+            all_interruptions = {}
         interruptions_by_doid = {}
         interruptions_by_person = {}
         for val in all_interruptions.values():
@@ -1376,6 +1476,24 @@ class InformatService(models.AbstractModel):
             if pid:
                 interruptions_by_person.setdefault(pid, []).append(itr)
 
+        # --- eigen velden (bv. ActiefOpSchool) ---
+        # Hergebruik de in Phase 1a opgehaalde set indien doorgegeven (geen 2e call).
+        all_ownfields = all_imported_ownfields
+        if all_ownfields is None:
+            all_ownfields = self._get_employee_ownfields_from_informat(dev_mode)
+        if all_ownfields is None:
+            self._create_sys_error("SAPSYNC-900", "Phase Eigen velden: ownfields-fetch faalde")
+            all_ownfields = {}
+        ownfields_by_person = {}
+        for val in all_ownfields.values():
+            try:
+                of = json.loads(val)
+            except (ValueError, TypeError):
+                continue
+            pid = of.get('personId')
+            if pid:
+                ownfields_by_person.setdefault(pid, []).append(of)
+
         scoped_inst_nrs = self.env.context.get('informat_inst_nrs')
         Person = self.env['myschool.person']
         PersonDetails = self.env['myschool.person.details']
@@ -1384,24 +1502,46 @@ class InformatService(models.AbstractModel):
             ('automatic_sync', '=', True),
             ('person_type_id.name', '=', 'EMPLOYEE'),
         ])
-        mode = 'ENFORCE' if enforce else 'dry-run'
-        acted = stored = 0
+        leave_mode = 'ENFORCE' if leave_enforce else 'dry-run'
+        of_mode = 'ENFORCE' if ownfield_enforce else 'dry-run'
+        leave_acted = of_acted = stored = 0
         for person in employees:
             det = PersonDetails.search([
                 ('person_id', '=', person.id), ('is_active', '=', True)], limit=1)
             if not det:
                 continue
-            # ALTIJD (voor in-scope personen) de geïmporteerde verlof-JSON op de
-            # persoon bewaren — voor de Verlof-tab — ook in dry-run. Bij een
-            # scoped run niet de details van out-of-scope scholen aanraken.
+            uuid = person.sap_person_uuid or ''
+            # ALTIJD (in-scope) de geïmporteerde JSON bewaren voor de tabs,
+            # ook in dry-run; out-of-scope scholen niet aanraken.
             in_scope = (not scoped_inst_nrs) or (det.extra_field_1 in scoped_inst_nrs)
             if in_scope:
-                itrs = interruptions_by_person.get(person.sap_person_uuid or '', [])
-                new_json = json.dumps(itrs, indent=2, ensure_ascii=False) if itrs else False
-                if (det.interruptions or '') != (new_json or ''):
-                    det.interruptions = new_json
-                    stored += 1
-            # beleid (dry-run tenzij enforce)
+                itrs = interruptions_by_person.get(uuid, [])
+                itr_json = json.dumps(itrs, indent=2, ensure_ascii=False) if itrs else False
+                if (det.interruptions or '') != (itr_json or ''):
+                    det.interruptions = itr_json
+                ofs = ownfields_by_person.get(uuid, [])
+                of_json = json.dumps(ofs, indent=2, ensure_ascii=False) if ofs else False
+                if (det.ownfields or '') != (of_json or ''):
+                    det.ownfields = of_json
+                stored += 1
+
+            # 1) ActiefOpSchool = Neen → deactiveren (heeft voorrang op verlof)
+            if self._ownfields_says_inactive(ownfields_by_person.get(uuid, [])):
+                of_acted += 1
+                self._create_sys_event(
+                    "SAPSYNC-001",
+                    f"ActiefOpSchool=Neen [{of_mode}]: {person.name} → deactiveren")
+                if ownfield_enforce:
+                    # Reviewbaar via _create_betask; leave_suspend → volledige cascade.
+                    self._create_betask('DB', 'PERSON', 'DEACT', json.dumps({
+                        'person_id': person.id,
+                        'personId': uuid,
+                        'reason': 'ActiefOpSchool = Neen',
+                        'leave_suspend': True,
+                    }), '')
+                continue
+
+            # 2) Voltijds verlof → deactiveren
             if not det.assignments:
                 continue
             try:
@@ -1409,17 +1549,17 @@ class InformatService(models.AbstractModel):
             except (ValueError, TypeError):
                 continue
             res = self.apply_leave_policy_for_person(
-                person, assignments, interruptions_by_doid, dry_run=not enforce)
+                person, assignments, interruptions_by_doid, dry_run=not leave_enforce)
             if res.get('action') and res['action'] != 'none':
-                acted += 1
+                leave_acted += 1
                 self._create_sys_event(
                     "SAPSYNC-001",
-                    f"Verlof [{mode}]: {person.name} → {res['action']}")
-        self._create_sys_event(
-            "SAPSYNC-001", f"Phase Verlof: {stored} verlof-detail(s) opgeslagen")
+                    f"Verlof [{leave_mode}]: {person.name} → {res['action']}")
         self._create_sys_event(
             "SAPSYNC-001",
-            f"Phase Verlof [{mode}]: {acted} persoon/personen met voltijds verlof "
+            f"Phase Verlof/Eigen velden: {stored} detail(s) bijgewerkt; "
+            f"verlof [{leave_mode}]={leave_acted}, "
+            f"ActiefOpSchool [{of_mode}]={of_acted} "
             f"(van {len(employees)} actieve employees)")
 
     # =========================================================================
@@ -1443,7 +1583,8 @@ class InformatService(models.AbstractModel):
     def _sync_employees(
             self,
             all_imported_employee_data: Dict[str, str],
-            all_imported_employee_assignments: Dict[str, str]
+            all_imported_employee_assignments: Dict[str, str],
+            all_imported_ownfields: Optional[Dict[str, str]] = None,
     ) -> bool:
         """
         Main employee synchronization method - two phase approach.
@@ -1462,7 +1603,7 @@ class InformatService(models.AbstractModel):
             # =====================================================
             self._create_sys_event("BETASK-001", "Phase 1: Syncing Person objects")
 
-            if not self._sync_employee_persons(all_imported_employee_data, all_imported_employee_assignments):
+            if not self._sync_employee_persons(all_imported_employee_data, all_imported_employee_assignments, all_imported_ownfields):
                 self._create_sys_error("BETASK-900", f"{procedure_name}: Error in Phase 1 (Person sync)")
                 return False
 
@@ -1567,7 +1708,8 @@ class InformatService(models.AbstractModel):
     def _sync_employee_persons(
             self,
             all_imported_employee_data: Dict[str, str],
-            all_imported_employee_assignments: Dict[str, str] = None
+            all_imported_employee_assignments: Dict[str, str] = None,
+            all_imported_ownfields: Dict[str, str] = None
     ) -> bool:
         """
         Phase 1: Synchronize Person objects based on imported employee data.
@@ -1601,6 +1743,19 @@ class InformatService(models.AbstractModel):
 
             today = datetime.now().date()
             one_month_ago = today - relativedelta(months=1)
+
+            # Eigen-velden-gate (ActiefOpSchool=Neen → niet aanmaken), gated.
+            ownfield_enforce = bool(
+                self.env['myschool.settings.item'].get('ActiefOpSchoolEnforce', default=False))
+            ownfields_by_person = {}
+            for _val in (all_imported_ownfields or {}).values():
+                try:
+                    _of = json.loads(_val)
+                except (ValueError, TypeError):
+                    continue
+                _pid = _of.get('personId')
+                if _pid:
+                    ownfields_by_person.setdefault(_pid, []).append(_of)
 
             # Track processed person UUIDs to detect persons to deactivate
             processed_person_uuids = set()
@@ -1658,8 +1813,16 @@ class InformatService(models.AbstractModel):
                     pension_ok = pension_date is None or pension_date >= one_month_ago
 
                     if pension_ok and is_active_import and not is_overleden:
+                        # ActiefOpSchool = Neen (eigen veld) → GEEN account aanmaken
+                        # (gated achter SI ActiefOpSchoolEnforce).
+                        if ownfield_enforce and self._ownfields_says_inactive(
+                                ownfields_by_person.get(person_uuid, [])):
+                            self._create_sys_event(
+                                "BETASK-001",
+                                f"ActiefOpSchool=Neen: account-creatie overgeslagen "
+                                f"voor {person_uuid}")
                         # Check if already added in this run (for another instNr)
-                        if person_uuid not in added_persons:
+                        elif person_uuid not in added_persons:
                             # CREATE: New person
                             self._create_betask(
                                 'DB', 'PERSON', 'ADD',

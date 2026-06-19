@@ -1,0 +1,18 @@
+[
+  {
+    "personId": "031f036f-83e9-4521-a8a8-872053c559b5",
+    "vvId": "a1b2c3d4-0001-0001-0001-000000000001",
+    "naam": "ActiefOpSchool",
+    "waarde": "Neen",
+    "dataType": "Tekst",
+    "rubriek": 2
+  },
+  {
+    "personId": "031f036f-83e9-4521-a8a8-872053c559b5",
+    "vvId": "a1b2c3d4-0001-0001-0001-000000000002",
+    "naam": "kastnummer",
+    "waarde": "B-114",
+    "dataType": "Tekst",
+    "rubriek": 1
+  }
+]

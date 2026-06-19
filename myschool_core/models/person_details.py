@@ -35,6 +35,10 @@ class PersonDetails(models.Model):
         string='Verlof / onderbrekingen (JSON)',
         help='Geïmporteerde dienstonderbrekingen (verlofstelsels) uit de '
              'Informat /employees/interruptions-endpoint, per persoon.')
+    ownfields = fields.Text(
+        string='Eigen velden (JSON)',
+        help='Geïmporteerde eigen/vrije velden (bv. ActiefOpSchool) uit de '
+             'Informat /employees/ownfields-endpoint, per persoon.')
 
     hoofd_ambt = fields.Char(string='Hoofd Ambt')
     extra_field_1 = fields.Char(string='Extra Veld 1 / InstNr')  # Mapped from extraField1 in Java
@@ -101,9 +105,11 @@ class PersonDetails(models.Model):
     children_html = fields.Html(string='Kinderen', compute='_compute_json_html', sanitize=False)
     assignments_html = fields.Html(string='Assignments', compute='_compute_json_html', sanitize=False)
     interruptions_html = fields.Html(string='Verlof / onderbrekingen', compute='_compute_json_html', sanitize=False)
+    ownfields_html = fields.Html(string='Eigen velden', compute='_compute_json_html', sanitize=False)
 
     @api.depends('full_json_string', 'addresses', 'emails', 'comnrs', 'bank_accounts',
-                 'relations', 'partner', 'children', 'assignments', 'interruptions')
+                 'relations', 'partner', 'children', 'assignments', 'interruptions',
+                 'ownfields')
     def _compute_json_html(self):
         """Convert JSON text fields to formatted HTML with <pre> tags."""
         import html
@@ -119,7 +125,7 @@ class PersonDetails(models.Model):
     _JSON_FIELDS = [
         'full_json_string', 'addresses', 'emails', 'comnrs',
         'bank_accounts', 'relations', 'partner', 'children', 'assignments',
-        'interruptions'
+        'interruptions', 'ownfields'
     ]
 
     def _reformat_json_field(self, value):

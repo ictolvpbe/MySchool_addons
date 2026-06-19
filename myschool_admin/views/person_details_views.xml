@@ -86,6 +86,9 @@
                         <page string="Verlof / onderbrekingen" name="interruptions">
                             <field name="interruptions_html" nolabel="1"/>
                         </page>
+                        <page string="Eigen velden" name="ownfields">
+                            <field name="ownfields_html" nolabel="1"/>
+                        </page>
                     </notebook>
                 </sheet>
             </form>
