@@ -26,12 +26,14 @@
     --myschool-brand-4: #7FC4CD;   // active-underline indicator (licht petrol)
     --myschool-text: #3B454B;      // leisteen (handoff body-tekst)
     --myschool-text-muted: #5E686E;
-    --myschool-bg: #FBFAF6;        // zuiver warm ivoor (handoff achtergrond)
-    --myschool-bg-card: #FFFFFF;   // kaart-oppervlak (handoff = puur wit)
-    --myschool-border: #ECE6DA;    // subtiele kaartrand
-    --myschool-border-light: #F4EFE6;
-    --myschool-hover-row: #F1F6F6;     // heel licht petrol
-    --myschool-hover-btn: #EAF3F4;
+    // GEÏNVERTEERD SCHEMA: alle achtergrondvlakken één uniforme warme kleur,
+    // de invoervelden ivoorwit (zie --ms-field-bg) zodat die helder oppoppen.
+    --myschool-bg: #F5F0E6;        // uniform warm vel
+    --myschool-bg-card: #F5F0E6;   // sheet/kaarten = zelfde warme kleur
+    --myschool-border: #E7DECE;    // iets dieper dan het vel → zichtbare velrand
+    --myschool-border-light: #EFE9DD;
+    --myschool-hover-row: #EDE6D8;     // warme rij-hover (iets dieper dan het vel)
+    --myschool-hover-btn: #EDE6D8;
     --myschool-sidebar-bg: #F1ECE2;    // licht warm
     --myschool-statusbar-current: #007E8C;
     --myschool-statusbar-done: #BFE0E4;     // licht petrol
@@ -39,11 +41,12 @@
     --myschool-appsmenu-text: #33403C;      // ink op licht
 
     // -- Laag-2 (--ms-*): handoff-surfaces + semantiek --
-    --ms-surface-base: #FBFAF6;    // pagina-bg · ivoor
-    --ms-surface-1: #FFFFFF;       // primair paneel (kaarten, pane-bodies)
-    --ms-surface-2: #F4EFE6;       // warm vlak (headers, inputs, statusbar)
+    --ms-surface-base: #F5F0E6;    // pagina-bg · uniform warm
+    --ms-surface-1: #F5F0E6;       // primair paneel = zelfde warme kleur
+    --ms-surface-2: #F5F0E6;       // banden (modal-/lijst-/statusbar) = zelfde warm
+    --ms-field-bg: #FFFFFF;        // INVOERVELDEN ivoorwit — poppen op het warm
     --ms-surface-3: #E2EEEF;       // petrol-tint (vlakken in dezelfde familie)
-    --ms-hover: #F1F6F6;
+    --ms-hover: #EDE6D8;           // warme hover
     --ms-active: #E2EEEF;          // selectie / actieve pill / facet (petrol-tint)
     // Semantisch — salie blijft het SECUNDAIRE/"succes"-accent (handoff)
     --ms-success: #6F8E69;
@@ -105,6 +108,37 @@
 }
 
 // ----------------------------------------------------------------------------
+// 2b. GEÏNVERTEERD VELD-SCHEMA — warme vlakken, ivoorwitte velden
+//     De basis-theme omkadert elk veld met een rand op een wit vel. Hier is
+//     de achtergrond uniform warm en zijn de velden ivoorwit (--ms-field-bg),
+//     zodat ze als de enige heldere elementen helder oppoppen. De focus-ring
+//     blijft petrol (§2 wint via :focus-specificiteit).
+//     Selectors spiegelen de basis (zelfde specificiteit, later geladen → wint
+//     in rust; de :focus-regel uit §2 heeft hogere specificiteit → wint actief).
+// ----------------------------------------------------------------------------
+.o_field_widget input.o_input,
+.o_field_widget textarea.o_input,
+.o_field_widget select.o_input,
+.o_field_widget .o_input {
+    background-color: var(--ms-field-bg);     // ivoorwit
+    border-color: var(--myschool-border);     // subtiele warme velrand
+}
+// Readonly-velden: óók ivoorwit, maar zachtere rand + gedimde tekst (basis)
+.o_field_widget.o_readonly_modifier input.o_input,
+.o_field_widget.o_readonly_modifier textarea.o_input,
+.o_field_widget.o_readonly_modifier select.o_input,
+.o_field_widget.o_readonly_modifier .o_input {
+    background-color: var(--ms-field-bg);
+    border-color: var(--myschool-border-light);
+}
+
+// Modal: het hele dialoogvlak (incl. footer/randen) in dezelfde warme kleur,
+// zodat er geen wit kader rond het warme formulier overblijft.
+.modal-content {
+    background-color: var(--ms-surface-1);
+}
+
+// ----------------------------------------------------------------------------
 // 3. DESIGN TOKENS — DARK (OLVP-petrol op de calm-tech warme near-blacks)
 //    Erft calm's donkere canvas/structuur; kantelt enkel brand + petrol-tints.
 //    Selector-specificiteit gelijk aan calm's dark-blok, geladen erna → wint.
@@ -120,6 +154,7 @@ html body[data-theme="dark"] {
 
     // -- Laag-2 (--ms-*) --
     --ms-surface-3: #143438;         // petrol-tint op dark (was salie)
+    --ms-field-bg: #2E312C;          // invoervelden iets lichter dan het vel → poppen
     --ms-active: #143438;
     // Succes blijft salie op dark (handoff: groen = secundair); klei-warning:
     --ms-warning: #B79A86;
